@@ -1,0 +1,31 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| : Thought for 4 s
+  ~ 1..2 fg Rgb(117, 117, 117); 3..18 fg Rgb(146, 164, 178)
+|------------------------------------------------------------------------------------------------------------------------
+  ~ 0..120 fg Rgb(88, 88, 88)
+| : Placeholder thought line one, wrapped narrowly.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..50 fg Rgb(146, 164, 178) italic
+| : Placeholder thought line two, longer than the first.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..55 fg Rgb(146, 164, 178) italic
+| : Placeholder thought, 3rd.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..28 fg Rgb(146, 164, 178) italic
+| : Placeholder thought line 4, middling.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..40 fg Rgb(146, 164, 178) italic
+| : Placeholder thought line five, medium.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..41 fg Rgb(146, 164, 178) italic
+| : Placeholder thought line six, rather long.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..45 fg Rgb(146, 164, 178) italic
+| : Placeholder thought seven.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..29 fg Rgb(146, 164, 178) italic
+| : Placeholder 8th.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..19 fg Rgb(146, 164, 178) italic
+| : Placeholder 9.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..17 fg Rgb(146, 164, 178) italic
+|(24 blank rows)
+|   / search - 1-9/9 - ctrl-o every detail - q esc back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..19 fg Rgb(166, 166, 166); 19..22 fg Rgb(117, 117, 117); 22..28 fg Rgb(166, 166, 166); 28..44 fg Rgb(117, 117, 117); 44..49 fg Rgb(166, 166, 166); 49..54 fg Rgb(117, 117, 117)

@@ -1,0 +1,18 @@
+{
+  "type": "cache_refreshed",
+  "outcome": "missed",
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 80,
+    "cache_read_input_tokens": 9000,
+    "cache_creation_input_tokens": 300,
+    "cache_creation_5m_input_tokens": 0,
+    "cache_creation_1h_input_tokens": 300
+  },
+  "cost": {
+    "turn_usd": 0.0125,
+    "session_usd": 0.5,
+    "turn_lower_bound": false,
+    "session_lower_bound": true
+  }
+}

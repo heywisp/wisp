@@ -1,0 +1,44 @@
+[agents.presets.main-session]
+description = "The main session's own preset, never a child"
+instructions = "<flow>/roles/main.md"
+
+[agents.presets.coordinator]
+description = "Runs one task's whole flow: plans, reviews, fixes, verifies, hands over to merge"
+effort = "xhigh"
+instructions = "<flow>/roles/coordinator.md"
+
+[agents.presets.planner]
+description = "Writes a task's plan from the real code and research; no code"
+effort = "xhigh"
+spawn = false
+instructions = "<flow>/roles/planner.md"
+
+[agents.presets.plan-reviewer]
+description = "Reviews a plan from scratch against HEAD; labelled findings only"
+effort = "xhigh"
+spawn = false
+instructions = "<flow>/roles/plan-reviewer.md"
+
+[agents.presets.code-reviewer]
+description = "Reviews an MR's diff against its plan; labelled, verified findings only"
+effort = "high"
+spawn = false
+instructions = "<flow>/roles/code-reviewer.md"
+
+[agents.presets.coder]
+description = "Implements an MR exactly as planned and keeps the checks green"
+effort = "medium"
+spawn = false
+instructions = "<flow>/roles/coder.md"
+
+[agents.presets.helper]
+description = "Reads files for its parent; notes, cleanup and health checks for the main session"
+effort = "medium"
+spawn = false
+instructions = "<flow>/roles/helper.md"
+
+[agents.presets.merge-agent]
+description = "The only agent that commits, verifies and merges MRs"
+effort = "medium"
+spawn = false
+instructions = "<flow>/roles/merge-agent.md"

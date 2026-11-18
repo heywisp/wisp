@@ -1,0 +1,41 @@
+---
+source: crates/wisp-render/src/transcript/search/tests.rs
+assertion_line: 264
+expression: "format!(\"=== scrollback ===\\n{scroll}\\n=== ctrl-o ===\\n{full}\")"
+---
+=== scrollback ===
+ ⠶ Let me look that up.
+
+ ✓ Searched "rust ripgrep crates" · 2 results
+ ⨯ Search failed
+ ✓ Opened https://github.com/BurntSushi/ripgrep
+ ✓ Searched page for "recursive"
+
+ ⠶ ripgrep is published as a crate[1][2] and it searches recursively[2].
+
+   Sources
+   [1] ripgrep on crates.io · https://crates.io/crates/ripgrep
+   [2] BurntSushi/ripgrep · https://github.com/BurntSushi/ripgrep
+
+   9s · cost unknown
+=== ctrl-o ===
+ ⠶ Let me look that up.
+
+ ✓ Searched "rust ripgrep crates" · 2 results
+   ripgrep on crates.io · https://crates.io/crates/ripgrep · 2 days ago
+   BurntSushi/ripgrep · https://github.com/BurntSushi/ripgrep
+ ⨯ Search failed
+   "ripgrep 15 roadmap"
+ ✓ Opened https://github.com/BurntSushi/ripgrep
+ ✓ Searched page for "recursive"
+   https://github.com/BurntSushi/ripgrep
+
+ ⠶ ripgrep is published as a crate[1][2] and it searches recursively[2].
+
+   Sources
+   [1] ripgrep on crates.io · https://crates.io/crates/ripgrep
+   [2] BurntSushi/ripgrep · https://github.com/BurntSushi/ripgrep
+
+   9s · cost unknown
+   ✓ end_turn · 9.0s (first token 0.7s) · in 0 · out 0 · cost unknown ·
+   opus-5-5

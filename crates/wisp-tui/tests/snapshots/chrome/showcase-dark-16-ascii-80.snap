@@ -1,0 +1,59 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== answering
+|+-----------------------------------------------------------------------------+
+  ~ 0..79 fg Idx(8)
+||                                                                             |
+  ~ 0..1 fg Idx(8); 78..79 fg Idx(8)
+||    .-''  .   wisp                                                     0.1.0 |
+  ~ 0..1 fg Idx(8); 4..12 fg Idx(8); 15..19 bold; 72..77 fg Idx(8); 78..79 fg Idx(8)
+||   :  **  :   Your own AI. With a computer of its own.                       |
+  ~ 0..1 fg Idx(8); 4..7 fg Idx(8); 7..9 fg Idx(12); 9..12 fg Idx(8); 15..28 fg Idx(7); 28..55 bold; 78..79 fg Idx(8)
+||    '-..-'    sonnet-5-5 low                                                 |
+  ~ 0..1 fg Idx(8); 4..12 fg Idx(8); 78..79 fg Idx(8)
+||              ~/Projects/Wisp - Claude API                                   |
+  ~ 0..1 fg Idx(8); 15..43 fg Idx(7); 78..79 fg Idx(8)
+||                                                                             |
+  ~ 0..1 fg Idx(8); 78..79 fg Idx(8)
+|+-----------------------------------------------------------------------------+
+  ~ 0..79 fg Idx(8)
+|  enter send - ctrl-j new line - /help - /model switch model
+  ~ 7..15 fg Idx(7); 21..33 fg Idx(7); 38..41 fg Idx(7); 47..60 fg Idx(7)
+|(21 blank rows)
+| > Make cache misses name their cause
+  ~ 1..2 fg Idx(8)
+|
+| : Thought for 4 s >
+  ~ 1..2 fg Idx(8); 3..18 fg Idx(7); 18..20 fg Idx(8)
+| : Placeholder thought seven.
+  ~ 1..2 fg Idx(8); 3..29 fg Idx(7) italic
+| : Placeholder 8th.
+  ~ 1..2 fg Idx(8); 3..19 fg Idx(7) italic
+| : Placeholder 9.
+  ~ 1..2 fg Idx(8); 3..17 fg Idx(7) italic
+|
+| * I'll start with how request prefixes are built:
+  ~ 1..2 fg Idx(12)
+|
+|   let key = Fingerprint::of(req)?;                                        rust
+  ~ 75..79 fg Idx(8)
+|
+|   Misses now say which part of the prefix changed: the system prompt, the
+|   tools or the _
+  ~ 15..17 fg Idx(12)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Idx(8)
+||                                                                              |
+  ~ 0..1 fg Idx(8); 79..80 fg Idx(8)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Idx(8)
+|| > Ask anything, or type / for commands                                       |
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(12); 4..5 fg Idx(8) inverse; 5..40 fg Idx(8); 79..80 fg Idx(8)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Idx(8)
+|| (*)  Kindling... 4s - v ~45 tokens - esc to stop     Claude API   sonnet-5-5 |
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(8); 3..4 fg Idx(12); 4..5 fg Idx(8); 18..50 fg Idx(7); 55..65 fg Idx(7); 79..80 fg Idx(8)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Idx(8)

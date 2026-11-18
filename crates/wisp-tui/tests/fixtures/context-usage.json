@@ -1,0 +1,54 @@
+{
+  "note": [
+    {
+      "type": "fill",
+      "fill": {
+        "used": 159000,
+        "window": 1000000,
+        "limit": 400000,
+        "auto_compact": true,
+        "parts": [
+          {
+            "part": "system",
+            "tokens": 12000
+          },
+          {
+            "part": "tools",
+            "tokens": 18000
+          },
+          {
+            "part": "chat",
+            "tokens": 129000
+          }
+        ],
+        "cached": 96
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "type": "fill",
+      "fill": {
+        "used": 159000,
+        "window": 1000000,
+        "limit": 400000,
+        "auto_compact": true,
+        "parts": [
+          {
+            "part": "system",
+            "tokens": 12000
+          },
+          {
+            "part": "tools",
+            "tokens": 18000
+          },
+          {
+            "part": "chat",
+            "tokens": 129000
+          }
+        ],
+        "cached": 96
+      }
+    }
+  ]
+}

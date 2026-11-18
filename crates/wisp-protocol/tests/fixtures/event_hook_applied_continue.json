@@ -1,0 +1,12 @@
+{
+  "type": "hook_applied",
+  "hook": "acme/guard",
+  "point": "before-tool",
+  "turn": 3,
+  "step": 2,
+  "call_id": "toolu_7",
+  "change": {
+    "type": "continue",
+    "text": "Run the tests before you stop."
+  }
+}

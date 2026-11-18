@@ -1,0 +1,233 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== first
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(10 blank rows)
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..80 bg Rgb(38, 38, 38)
+|
+| ⢠ Asking Database, Features, Infrastructu…, Name                            0s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..49 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ? Database                  Database · Features · Infrastructu… · Name  1 of 4
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..11 fg Rgb(212, 212, 212) bold; 29..37 fg Rgb(86, 156, 214); 37..71 fg Rgb(166, 166, 166); 73..79 fg Rgb(166, 166, 166)
+|   Which database should the notes service use?
+  ~ 3..47 fg Rgb(212, 212, 212)
+|
+| › 1 PostgreSQL (Recommended)
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..29 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 29..80 bg Rgb(4, 57, 94)
+|     Relational; the billing service already runs it, so backups, monitoring
+  ~ 0..5 bg Rgb(4, 57, 94); 5..76 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 76..80 bg Rgb(4, 57, 94)
+|     and the on-call runbook carry over without new work.
+  ~ 0..5 bg Rgb(4, 57, 94); 5..57 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 57..80 bg Rgb(4, 57, 94)
+|   2 SQLite
+  ~ 3..5 fg Rgb(166, 166, 166); 5..11 fg Rgb(212, 212, 212)
+|     One file, no server; fine for a single writer.
+  ~ 5..51 fg Rgb(166, 166, 166)
+|   3 DynamoDB
+  ~ 3..5 fg Rgb(166, 166, 166); 5..13 fg Rgb(212, 212, 212)
+|     Managed, but ties the service to AWS.
+  ~ 5..42 fg Rgb(166, 166, 166)
+|   4 Type your own answer
+  ~ 3..5 fg Rgb(166, 166, 166); 5..25 fg Rgb(117, 117, 117)
+|
+|   enter next · 1–4 choose · tab next question · pgup/pgdn scroll · ↑↓ move
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..29 fg Rgb(117, 117, 117); 29..32 fg Rgb(166, 166, 166); 32..49 fg Rgb(117, 117, 117); 49..58 fg Rgb(166, 166, 166); 58..68 fg Rgb(117, 117, 117); 68..70 fg Rgb(166, 166, 166); 70..75 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                total $0.004+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 65..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡱  Waiting for your answer · 0s   esc to stop      Claude API   sonnet-5-5 │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 7..35 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..49 fg Rgb(117, 117, 117); 55..65 fg Rgb(166, 166, 166); 68..78 fg Rgb(212, 212, 212); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)
+== waiting
+|│ ⢎⠶⡱  Waiting for your answer · 0s   esc to stop      Claude API   sonnet-5-5 │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 7..35 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..49 fg Rgb(117, 117, 117); 55..65 fg Rgb(166, 166, 166); 68..78 fg Rgb(212, 212, 212); 79..80 fg Rgb(88, 88, 88)
+== multi
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(11 blank rows)
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..80 bg Rgb(38, 38, 38)
+|
+| ⣀ Asking Database, Features, Infrastructu…, Name                            0s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..49 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ? Features                Database ✓ · Features · Infrastructu… · Name  2 of 4
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..11 fg Rgb(212, 212, 212) bold; 27..35 fg Rgb(166, 166, 166); 35..37 fg Rgb(137, 209, 133); 37..40 fg Rgb(166, 166, 166); 40..48 fg Rgb(86, 156, 214); 48..71 fg Rgb(166, 166, 166); 73..79 fg Rgb(166, 166, 166)
+|   Which features should ship first? (choose any)
+  ~ 3..36 fg Rgb(212, 212, 212); 36..49 fg Rgb(166, 166, 166)
+|
+| › [ ] 1 Auth
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..9 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 9..13 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 13..80 bg Rgb(4, 57, 94)
+|         Email and passkeys.
+  ~ 0..9 bg Rgb(4, 57, 94); 9..28 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 28..80 bg Rgb(4, 57, 94)
+|   [ ] 2 Search
+  ~ 3..9 fg Rgb(166, 166, 166); 9..15 fg Rgb(212, 212, 212)
+|         Full-text over notes.
+  ~ 9..30 fg Rgb(166, 166, 166)
+|   [ ] 3 Export
+  ~ 3..9 fg Rgb(166, 166, 166); 9..15 fg Rgb(212, 212, 212)
+|         CSV and JSON.
+  ~ 9..22 fg Rgb(166, 166, 166)
+|   [ ] 4 Type your own answer
+  ~ 3..9 fg Rgb(166, 166, 166); 9..29 fg Rgb(117, 117, 117)
+|
+|   space toggle · enter next · tab next question · pgup/pgdn scroll
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..23 fg Rgb(166, 166, 166); 23..31 fg Rgb(117, 117, 117); 31..34 fg Rgb(166, 166, 166); 34..51 fg Rgb(117, 117, 117); 51..60 fg Rgb(166, 166, 166); 60..67 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                total $0.004+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 65..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡱  Waiting for your answer · 0s   esc to stop      Claude API   sonnet-5-5 │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 7..35 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..49 fg Rgb(117, 117, 117); 55..65 fg Rgb(166, 166, 166); 68..78 fg Rgb(212, 212, 212); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)
+== own
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(11 blank rows)
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..80 bg Rgb(38, 38, 38)
+|
+| ⡄ Asking Database, Features, Infrastructu…, Name                            0s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..49 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ? Features              Database ✓ · Features ✓ · Infrastructu… · Name  2 of 4
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..11 fg Rgb(212, 212, 212) bold; 25..33 fg Rgb(166, 166, 166); 33..35 fg Rgb(137, 209, 133); 35..38 fg Rgb(166, 166, 166); 38..46 fg Rgb(86, 156, 214); 46..48 fg Rgb(137, 209, 133); 48..71 fg Rgb(166, 166, 166); 73..79 fg Rgb(166, 166, 166)
+|   Which features should ship first? (choose any)
+  ~ 3..36 fg Rgb(212, 212, 212); 36..49 fg Rgb(166, 166, 166)
+|
+|   [x] 1 Auth
+  ~ 3..7 fg Rgb(86, 156, 214); 7..9 fg Rgb(166, 166, 166); 9..13 fg Rgb(212, 212, 212)
+|         Email and passkeys.
+  ~ 9..28 fg Rgb(166, 166, 166)
+|   [ ] 2 Search
+  ~ 3..9 fg Rgb(166, 166, 166); 9..15 fg Rgb(212, 212, 212)
+|         Full-text over notes.
+  ~ 9..30 fg Rgb(166, 166, 166)
+|   [x] 3 Export
+  ~ 3..7 fg Rgb(86, 156, 214); 7..9 fg Rgb(166, 166, 166); 9..15 fg Rgb(212, 212, 212)
+|         CSV and JSON.
+  ~ 9..22 fg Rgb(166, 166, 166)
+| › [x] 4 Your own: Webhooks for new notes
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..7 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 7..9 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 9..41 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 41..42 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) inverse; 42..80 bg Rgb(4, 57, 94)
+|
+|   enter next · ctrl-j new line · tab next question · pgup/pgdn scroll
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..22 fg Rgb(166, 166, 166); 22..34 fg Rgb(117, 117, 117); 34..37 fg Rgb(166, 166, 166); 37..54 fg Rgb(117, 117, 117); 54..63 fg Rgb(166, 166, 166); 63..70 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                total $0.004+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 65..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡱  Waiting for your answer · 0s   esc to stop      Claude API   sonnet-5-5 │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 7..35 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..49 fg Rgb(117, 117, 117); 55..65 fg Rgb(166, 166, 166); 68..78 fg Rgb(212, 212, 212); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)
+== review
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(13 blank rows)
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..80 bg Rgb(38, 38, 38)
+|
+| ⡄ Asking Database, Features, Infrastructu…, Name                            1s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..49 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ? Review                        Database ✓ · Features ✓ · Infrastructu… · Name
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..9 fg Rgb(212, 212, 212) bold; 33..41 fg Rgb(166, 166, 166); 41..43 fg Rgb(137, 209, 133); 43..54 fg Rgb(166, 166, 166); 54..56 fg Rgb(137, 209, 133); 56..79 fg Rgb(166, 166, 166)
+|   Database        PostgreSQL (Recommended)
+  ~ 3..11 fg Rgb(166, 166, 166); 19..43 fg Rgb(212, 212, 212)
+|   Features        Auth · Export · your own: Webhooks for new notes
+  ~ 3..11 fg Rgb(166, 166, 166); 19..67 fg Rgb(212, 212, 212)
+|   Infrastructu…   not answered yet
+  ~ 3..16 fg Rgb(166, 166, 166); 19..35 fg Rgb(117, 117, 117)
+|   Name            not answered yet
+  ~ 3..7 fg Rgb(166, 166, 166); 19..35 fg Rgb(117, 117, 117)
+|
+| › Send answers
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..15 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 15..80 bg Rgb(4, 57, 94)
+|   Go back
+  ~ 3..10 fg Rgb(212, 212, 212)
+|
+|   enter send · unanswered questions are sent as skipped · pgup/pgdn scroll
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..56 fg Rgb(166, 166, 166); 56..59 fg Rgb(117, 117, 117); 59..68 fg Rgb(166, 166, 166); 68..75 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                total $0.004+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 65..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡱  Waiting for your answer · 1s   esc to stop      Claude API   sonnet-5-5 │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 7..35 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..49 fg Rgb(117, 117, 117); 55..65 fg Rgb(166, 166, 166); 68..78 fg Rgb(212, 212, 212); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)

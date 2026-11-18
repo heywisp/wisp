@@ -1,0 +1,12 @@
+id = "instructions"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Puts the AGENTS.md files in the system prompt"
+settings = ["instructions.source", "instructions.warn_tokens"]
+
+[[prompt_sections]]
+name = "instructions"
+place = "system"
+in = ["core/state"]
+after = ["workspace/environment"]
+before = []

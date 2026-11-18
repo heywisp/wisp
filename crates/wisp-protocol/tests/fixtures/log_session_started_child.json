@@ -1,0 +1,25 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 1,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "session_started",
+  "session_id": "s-child",
+  "wisp_version": "0.1.0",
+  "model": "claude-opus-4-1",
+  "effort": "high",
+  "cache_ttl": "one_hour",
+  "system_prompt": null,
+  "system_prompt_sha256": null,
+  "endpoint": "https://api.anthropic.com",
+  "credential_source": "environment",
+  "parent": {
+    "session_id": "s-root",
+    "agent": "/review/planner",
+    "depth": 2,
+    "config": {
+      "preset": "reviewer",
+      "spawn": false,
+      "instructions": "~/roles/reviewer/AGENTS.md"
+    }
+  }
+}

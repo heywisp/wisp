@@ -1,0 +1,20 @@
+{
+  "type": "tool_call_requested",
+  "step": 2,
+  "block": 1,
+  "call_id": "toolu_1",
+  "tool": "bash",
+  "input": {
+    "command": "cargo test",
+    "timeout_ms": 120000
+  },
+  "display": {
+    "action": {
+      "type": "run"
+    },
+    "target": "cargo test",
+    "output": {
+      "type": "text"
+    }
+  }
+}

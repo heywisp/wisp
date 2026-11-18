@@ -1,0 +1,48 @@
+---
+source: crates/wisp-tui/tests/app/settings_screen.rs
+expression: shot
+---
+| ⢎⠶⡰ wisp   Settings                               opus-5-5 · high · Claude API
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 12..20 fg Rgb(212, 212, 212); 51..79 fg Rgb(166, 166, 166)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+| › Model       claude-opus-5-5
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..13 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 13..15 bg Rgb(4, 57, 94); 15..68 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 68..80 bg Rgb(4, 57, 94)
+|   Effort      high                                                   this chat
+  ~ 3..13 fg Rgb(212, 212, 212); 15..68 fg Rgb(212, 212, 212); 70..79 fg Rgb(166, 166, 166)
+|   Account     manifest
+  ~ 3..13 fg Rgb(212, 212, 212); 15..68 fg Rgb(212, 212, 212)
+|   Tools       none on
+  ~ 3..13 fg Rgb(212, 212, 212); 15..68 fg Rgb(212, 212, 212)
+|   Compact at  850,000 of 1,000,000
+  ~ 3..13 fg Rgb(212, 212, 212); 15..68 fg Rgb(212, 212, 212)
+|   Theme       dark
+  ~ 3..13 fg Rgb(212, 212, 212); 15..68 fg Rgb(212, 212, 212)
+|
+|   Plugins     none on
+  ~ 3..13 fg Rgb(212, 212, 212); 15..68 fg Rgb(212, 212, 212)
+|   More settings…
+  ~ 3..68 fg Rgb(212, 212, 212)
+|(8 blank rows)
+|   Model       $/MTok in · out  next turn
+  ~ 0..41 fg Rgb(166, 166, 166)
+|   fable-5-1   $10 · $50        nothing cached yet, so nothing to rebuild
+  ~ 3..13 fg Rgb(212, 212, 212); 15..30 fg Rgb(212, 212, 212); 32..73 fg Rgb(166, 166, 166)
+|   haiku-5-5   $0.10 · $0.50    nothing cached yet, so nothing to rebuild
+  ~ 3..13 fg Rgb(212, 212, 212); 15..30 fg Rgb(212, 212, 212); 32..73 fg Rgb(166, 166, 166)
+|   opus-4-5    $5 · $25         not supported yet (no adaptive thinking)
+  ~ 3..13 fg Rgb(117, 117, 117); 15..30 fg Rgb(117, 117, 117); 32..72 fg Rgb(117, 117, 117)
+|   opus-4-8    $5 · $25         nothing cached yet, so nothing to rebuild
+  ~ 3..13 fg Rgb(212, 212, 212); 15..30 fg Rgb(212, 212, 212); 32..73 fg Rgb(166, 166, 166)
+| › opus-5-5 ✓  $4 · $20         now
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..11 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 11..12 bg Rgb(4, 57, 94); 12..13 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 13..15 bg Rgb(4, 57, 94); 15..30 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 30..32 bg Rgb(4, 57, 94); 32..35 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 35..80 bg Rgb(4, 57, 94)
+|   sonnet-4-6  $3 · $15         nothing cached yet, so nothing to rebuild
+  ~ 3..13 fg Rgb(212, 212, 212); 15..30 fg Rgb(212, 212, 212); 32..73 fg Rgb(166, 166, 166)
+|   sonnet-5-5  $2 · $10         nothing cached yet, so nothing to rebuild
+  ~ 3..13 fg Rgb(212, 212, 212); 15..30 fg Rgb(212, 212, 212); 32..73 fg Rgb(166, 166, 166)
+|   claude-… (type any model ID, then enter)
+  ~ 3..43 fg Rgb(117, 117, 117)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+| ⢎⠶⡰  Settings   esc cancel · enter save
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..14 fg Rgb(212, 212, 212); 17..20 fg Rgb(166, 166, 166); 20..30 fg Rgb(117, 117, 117); 30..35 fg Rgb(166, 166, 166); 35..40 fg Rgb(117, 117, 117)

@@ -1,0 +1,8 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests/verbs.rs
+expression: "format!(\"=== running ===\\n{running}\\n=== done ===\\n{done}\")"
+---
+=== running ===
+ ⠃ Using teleport tea                                                        0s
+=== done ===
+ ✓ Used teleport tea                                                exit 0 · 1s

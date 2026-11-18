@@ -1,0 +1,19 @@
+{
+  "header": "Features",
+  "question": "Which features should ship first?",
+  "options": [
+    {
+      "label": "Auth",
+      "description": "Email and passkeys."
+    },
+    {
+      "label": "Search",
+      "description": "Full-text over notes."
+    },
+    {
+      "label": "Export",
+      "description": "CSV and JSON."
+    }
+  ],
+  "multi_select": true
+}

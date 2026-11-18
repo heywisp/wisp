@@ -1,0 +1,9 @@
+{
+  "type": "process_started",
+  "id": 3,
+  "call_id": "toolu_03",
+  "target": "npm run dev",
+  "tty": false,
+  "stdin": true,
+  "reason": "started"
+}

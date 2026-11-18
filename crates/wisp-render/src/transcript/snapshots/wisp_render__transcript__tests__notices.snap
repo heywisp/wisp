@@ -1,0 +1,28 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: "scene(\"Read the file\", &events)"
+---
+[on surface| ][user on surface|›][on surface| ][text on surface|Read the file]
+
+   [text.muted|Anthropic is overloaded.]
+   [text.muted|Retrying step 1 (1 of 5) in 8 s.]
+
+   [text.muted|Anthropic declined, so this answer came from claude-sonnet-5-5.]
+
+   [text.muted|Anthropic sent an event this version doesn't know. It's kept in the log.]
+
+ [text.faint|◦] [text.muted|Writing a read_file call]                                            [text.muted|not sent]
+
+   [text.muted|A server_tool block this version doesn't show.]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+
+   [text.muted|Session logging stopped: the disk is full. The chat carries on.]
+
+   [text.muted|Anthropic sent an event this version doesn't know.]
+
+   [text|This message wasn't sent: a turn is already running; cancel it first.]
+
+   [text.faint|2.4s · ][text|stopped for a tool call][text.faint| · $0.014 · ][text|cache miss][text.faint| · ][text|not kept in history]
+
+   [text|This message wasn't sent: empty message: nothing to send.]

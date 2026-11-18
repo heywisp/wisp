@@ -1,0 +1,51 @@
+{
+  "type": "process_input",
+  "id": 5,
+  "items": [
+    {
+      "type": "text",
+      "text": "y"
+    },
+    {
+      "type": "key",
+      "key": {
+        "code": {
+          "type": "enter"
+        }
+      }
+    },
+    {
+      "type": "key",
+      "key": {
+        "code": {
+          "type": "char",
+          "char": "c"
+        },
+        "ctrl": true
+      }
+    },
+    {
+      "type": "key",
+      "key": {
+        "code": {
+          "type": "up"
+        },
+        "shift": true,
+        "alt": true
+      }
+    },
+    {
+      "type": "key",
+      "key": {
+        "code": {
+          "type": "f",
+          "n": 5
+        }
+      }
+    },
+    {
+      "type": "paste",
+      "text": "line one\nline two"
+    }
+  ]
+}

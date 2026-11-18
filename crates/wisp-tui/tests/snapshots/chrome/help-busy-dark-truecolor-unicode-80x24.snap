@@ -1,0 +1,50 @@
+---
+source: crates/wisp-tui/tests/app/help.rs
+expression: shot
+---
+|   enter, e                Edit
+  ~ 3..11 fg Rgb(212, 212, 212); 27..31 fg Rgb(166, 166, 166)
+|   del, x                  Remove
+  ~ 3..9 fg Rgb(212, 212, 212); 27..33 fg Rgb(166, 166, 166)
+|   tab                     Switch next step and next turn
+  ~ 3..6 fg Rgb(212, 212, 212); 27..57 fg Rgb(166, 166, 166)
+|   esc                     Back to your message
+  ~ 3..6 fg Rgb(212, 212, 212); 27..47 fg Rgb(166, 166, 166)
+|   ctrl-c                  Stop, staying here
+  ~ 3..9 fg Rgb(212, 212, 212); 27..45 fg Rgb(166, 166, 166)
+|   enter, while editing    Save the edit
+  ~ 3..23 fg Rgb(212, 212, 212); 27..40 fg Rgb(166, 166, 166)
+|   esc, while editing      Cancel the edit
+  ~ 3..21 fg Rgb(212, 212, 212); 27..42 fg Rgb(166, 166, 166)
+|   enter, empty message    Send held messages
+  ~ 3..23 fg Rgb(212, 212, 212); 27..45 fg Rgb(166, 166, 166)
+|
+| Keys: reading
+  ~ 1..7 fg Rgb(166, 166, 166); 7..14 fg Rgb(212, 212, 212) bold
+|   wheel, pgup, pgdn       Scroll
+  ~ 3..20 fg Rgb(212, 212, 212); 27..33 fg Rgb(166, 166, 166)
+|   ctrl-home, ctrl-end     Jump to the top or the bottom
+  ~ 3..22 fg Rgb(212, 212, 212); 27..56 fg Rgb(166, 166, 166)
+|   esc                     Back to the bottom
+  ~ 3..6 fg Rgb(212, 212, 212); 27..45 fg Rgb(166, 166, 166)
+|   drag, ctrl-c            Select, then copy
+  ~ 3..15 fg Rgb(212, 212, 212); 27..44 fg Rgb(166, 166, 166)
+|   right-click             Copy the selection
+  ~ 3..14 fg Rgb(212, 212, 212); 27..45 fg Rgb(166, 166, 166)
+|   esc                     Clear the selection
+  ~ 3..6 fg Rgb(212, 212, 212); 27..46 fg Rgb(166, 166, 166)
+|   shift-drag              Select in the terminal
+  ~ 3..13 fg Rgb(212, 212, 212); 27..49 fg Rgb(166, 166, 166)
+|   ctrl-o                  Pick what to read in full
+  ~ 3..9 fg Rgb(212, 212, 212); 27..52 fg Rgb(166, 166, 166)
+|
+| Keys: transcript
+  ~ 1..7 fg Rgb(166, 166, 166); 7..17 fg Rgb(212, 212, 212) bold
+|   ↑ ↓, j k                Scroll a line
+  ~ 3..11 fg Rgb(212, 212, 212); 27..40 fg Rgb(166, 166, 166)
+|   pgup, pgdn, space, b f  Scroll a page
+  ~ 3..25 fg Rgb(212, 212, 212); 27..40 fg Rgb(166, 166, 166)
+|   u d                     Scroll half a page
+  ~ 3..6 fg Rgb(212, 212, 212); 27..45 fg Rgb(166, 166, 166)
+|   / search · 46-68/83 · ctrl-c to stop · q esc ctrl-o back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..22 fg Rgb(166, 166, 166); 22..25 fg Rgb(117, 117, 117); 25..31 fg Rgb(166, 166, 166); 31..42 fg Rgb(117, 117, 117); 42..54 fg Rgb(166, 166, 166); 54..59 fg Rgb(117, 117, 117)

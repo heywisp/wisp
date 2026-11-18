@@ -1,0 +1,268 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== opened
+| (*) wisp 0.1.0 - claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(12 blank rows)
+| + Add an API key
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..17 fg Rgb(212, 212, 212) bold
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+| > Connect    (*) Anthropic's API
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..14 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 14..18 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 18..33 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 33..40 bg Rgb(4, 57, 94)
+|                  api.anthropic.com
+  ~ 0..18 bg Rgb(4, 57, 94); 18..35 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 35..40 bg Rgb(4, 57, 94)
+|              ( ) A gateway or proxy
+  ~ 0..14 bg Rgb(4, 57, 94); 14..36 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 36..40 bg Rgb(4, 57, 94)
+|   Key        paste the key
+  ~ 3..14 fg Rgb(166, 166, 166); 14..27 fg Rgb(117, 117, 117)
+|   Name       anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|
+|   enter next - tab move - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..36 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..25 fg Rgb(166, 166, 166); 28..38 fg Rgb(212, 212, 212); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== gateway
+| (*) wisp 0.1.0 - claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(7 blank rows)
+| + Add an API key
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..17 fg Rgb(212, 212, 212) bold
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ( ) Anthropic's API
+  ~ 3..33 fg Rgb(166, 166, 166)
+|                  api.anthropic.com
+  ~ 18..35 fg Rgb(166, 166, 166)
+|              (*) A gateway or proxy
+  ~ 14..36 fg Rgb(212, 212, 212)
+|   URL        ....example.com/anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+| > Sends as   (*) x-api-key header (an
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..14 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 14..18 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 18..38 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 38..40 bg Rgb(4, 57, 94)
+|                  API key)
+  ~ 0..18 bg Rgb(4, 57, 94); 18..26 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 26..40 bg Rgb(4, 57, 94)
+|              ( ) Authorization: Bearer
+  ~ 0..14 bg Rgb(4, 57, 94); 14..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|                  header (a token)
+  ~ 0..18 bg Rgb(4, 57, 94); 18..34 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 34..40 bg Rgb(4, 57, 94)
+|   Key        paste the key
+  ~ 3..14 fg Rgb(166, 166, 166); 14..27 fg Rgb(117, 117, 117)
+|   Name       gw
+  ~ 3..14 fg Rgb(166, 166, 166); 14..16 fg Rgb(212, 212, 212)
+|
+|   enter next - tab move - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..36 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..25 fg Rgb(166, 166, 166); 28..38 fg Rgb(212, 212, 212); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== key
+| (*) wisp 0.1.0 - claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(7 blank rows)
+| + Add an API key
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..17 fg Rgb(212, 212, 212) bold
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ( ) Anthropic's API
+  ~ 3..33 fg Rgb(166, 166, 166)
+|                  api.anthropic.com
+  ~ 18..35 fg Rgb(166, 166, 166)
+|              (*) A gateway or proxy
+  ~ 14..36 fg Rgb(212, 212, 212)
+|   URL        ....example.com/anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+|   Sends as   ( ) x-api-key header (an
+  ~ 3..38 fg Rgb(166, 166, 166)
+|                  API key)
+  ~ 18..26 fg Rgb(166, 166, 166)
+|              (*) Authorization: Bearer
+  ~ 14..39 fg Rgb(212, 212, 212)
+|                  header (a token)
+  ~ 18..34 fg Rgb(212, 212, 212)
+| > Key        sk-ant-api03-***...6789
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..14 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 14..37 fg Rgb(206, 145, 120) bg Rgb(4, 57, 94); 37..38 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) inverse; 38..40 bg Rgb(4, 57, 94)
+|   Name       gw
+  ~ 3..14 fg Rgb(166, 166, 166); 14..16 fg Rgb(212, 212, 212)
+|
+|   enter next - tab move - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..36 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..25 fg Rgb(166, 166, 166); 28..38 fg Rgb(212, 212, 212); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== saving
+| (*) wisp 0.1.0 - claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(5 blank rows)
+| + Add an API key
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..17 fg Rgb(212, 212, 212) bold
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ( ) Anthropic's API
+  ~ 3..33 fg Rgb(166, 166, 166)
+|                  api.anthropic.com
+  ~ 18..35 fg Rgb(166, 166, 166)
+|              (*) A gateway or proxy
+  ~ 14..36 fg Rgb(212, 212, 212)
+|   URL        ....example.com/anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+|   Sends as   ( ) x-api-key header (an
+  ~ 3..38 fg Rgb(166, 166, 166)
+|                  API key)
+  ~ 18..26 fg Rgb(166, 166, 166)
+|              (*) Authorization: Bearer
+  ~ 14..39 fg Rgb(212, 212, 212)
+|                  header (a token)
+  ~ 18..34 fg Rgb(212, 212, 212)
+|   Key        sk-ant-api03-***...6789
+  ~ 3..14 fg Rgb(166, 166, 166); 14..37 fg Rgb(206, 145, 120)
+|   Name       gw
+  ~ 3..14 fg Rgb(166, 166, 166); 14..16 fg Rgb(212, 212, 212)
+|
+|   saving the account...
+  ~ 3..24 fg Rgb(166, 166, 166)
+|
+|   esc close
+  ~ 3..6 fg Rgb(166, 166, 166); 6..12 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..25 fg Rgb(166, 166, 166); 28..38 fg Rgb(212, 212, 212); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== refused
+| (*) wisp 0.1.0 - claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|
+|
+| + Add an API key
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..17 fg Rgb(212, 212, 212) bold
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ( ) Anthropic's API
+  ~ 3..33 fg Rgb(166, 166, 166)
+|                  api.anthropic.com
+  ~ 18..35 fg Rgb(166, 166, 166)
+|              (*) A gateway or proxy
+  ~ 14..36 fg Rgb(212, 212, 212)
+|   URL        ....example.com/anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+|   Sends as   ( ) x-api-key header (an
+  ~ 3..38 fg Rgb(166, 166, 166)
+|                  API key)
+  ~ 18..26 fg Rgb(166, 166, 166)
+|              (*) Authorization: Bearer
+  ~ 14..39 fg Rgb(212, 212, 212)
+|                  header (a token)
+  ~ 18..34 fg Rgb(212, 212, 212)
+|   Key        sk-ant-api03-***...6789
+  ~ 3..14 fg Rgb(166, 166, 166); 14..37 fg Rgb(206, 145, 120)
+|   Name       gw
+  ~ 3..14 fg Rgb(166, 166, 166); 14..16 fg Rgb(212, 212, 212)
+|
+|   That key was refused.
+  ~ 3..24 fg Rgb(212, 212, 212)
+| > 1 Enter it again
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..19 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 19..40 bg Rgb(4, 57, 94)
+|   2 Save anyway
+  ~ 3..5 fg Rgb(166, 166, 166); 5..16 fg Rgb(212, 212, 212)
+|   3 Cancel
+  ~ 3..5 fg Rgb(166, 166, 166); 5..11 fg Rgb(212, 212, 212)
+|
+|   enter choose - esc back
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..21 fg Rgb(166, 166, 166); 21..26 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..25 fg Rgb(166, 166, 166); 28..38 fg Rgb(212, 212, 212); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== saved
+| (*) wisp 0.1.0 - claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(15 blank rows)
+| - Saved "gw" in the keychain. Switch
+  ~ 1..2 fg Rgb(117, 117, 117); 3..37 fg Rgb(166, 166, 166)
+|   to it with /account gw.
+  ~ 3..26 fg Rgb(166, 166, 166)
+|
+| - note: this folder is inside a git
+  ~ 1..2 fg Rgb(117, 117, 117); 3..36 fg Rgb(166, 166, 166)
+|   work tree
+  ~ 3..12 fg Rgb(166, 166, 166)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| > Ask anything                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..25 fg Rgb(166, 166, 166); 28..38 fg Rgb(212, 212, 212); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)

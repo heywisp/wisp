@@ -1,0 +1,69 @@
+package wisp:plugin@0.1.0;
+
+interface hook-types {
+  record lead-item { by: string, text: string }
+  record session-start { resumed: bool }
+  record user-input { text: string, images: u32, steer: bool }
+  record before-turn { turn: u64, lead: list<lead-item>, typed: string, images: u32, retry: bool }
+  record after-turn { turn: u64, outcome: string }
+  record step-info { turn: u64, step: u32, attempt: u32 }
+  record response-info { turn: u64, step: u32, stop-reason: string }
+  record before-end { turn: u64, step: u32, reply: string, continues: u32 }
+  record tool-call { call-id: string, tool: string, input: string }
+  record tool-result { call-id: string, tool: string, input: string, %result: string, is-error: bool }
+  record fill-info {
+    turn: u64, step: u32, before-turn: bool,
+    estimate: u64, measured: option<u64>,
+    window: option<u64>, point: option<u64>, ceiling: option<u64>,
+    auto-compact: bool, epoch: u64,
+  }
+  record compact-info {
+    trigger: string, engine: string, turn: option<u64>,
+    focus: option<string>, estimate: u64, point: option<u64>,
+    epoch: u64, requested-by: option<string>, instruction: string,
+  }
+  record head-info { epoch: u64, trigger: string, engine: string, first-turn: u64, last-turn: u64 }
+  record compacted-info {
+    epoch: u64, trigger: string, engine: string, before: u64, after: u64,
+    summary: option<string>, cost-micros: option<u64>, partial: bool, failed: option<string>,
+  }
+  record rewind-info { turn: u64, epoch: u64 }
+  record command-info { name: string, args: string }
+  record tools-change { added: list<string>, removed: list<string>, via: string }
+  record model-switch { endpoint: string, model: string }
+  record custom { point: string, version: string, payload: string }
+  variant event {
+    session-start(session-start),
+    session-end,
+    user-input(user-input),
+    before-turn(before-turn),
+    after-turn(after-turn),
+    before-request(step-info),
+    after-response(response-info),
+    before-end(before-end),
+    before-tool(tool-call),
+    after-tool(tool-result),
+    context-threshold(fill-info),
+    before-compact(compact-info),
+    compaction-head(head-info),
+    after-compact(compacted-info),
+    rewound(rewind-info),
+    command(command-info),
+    tools-changed(tools-change),
+    settings-changed(list<string>),
+    model-switched(model-switch),
+    custom(custom),
+  }
+  variant reply { none, append(list<string>), rewrite(string), block(string), continue(string), compact(option<string>) }
+}
+
+interface hooks {
+  use hook-types.{event, reply};
+  on-hook: async func(hook: string, ev: event) -> reply;
+}
+
+interface points {
+  use hook-types.{reply};
+  record answer { hook: string, reply: reply }
+  fire: async func(point: string, payload: string) -> list<answer>;
+}

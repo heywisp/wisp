@@ -1,0 +1,37 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== picker
+| + Showed crates/wisp-core/src/cache.rs                                  +40 -0
+  ~ 3..9 bold
+|        1 +     let part_1 = fingerprint.segment(1);
+|        2 +     let part_2 = fingerprint.segment(2);
+|        3 +     let part_3 = fingerprint.segment(3);
+|        4 +     let part_4 = fingerprint.segment(4);
+|        5 +     let part_5 = fingerprint.segment(5);
+|        6 +     let part_6 = fingerprint.segment(6);
+|        7 +     let part_7 = fingerprint.segment(7);
+|        8 +     let part_8 = fingerprint.segment(8);
+|        9 +     let part_9 = fingerprint.segment(9);
+|       10 +     let part_10 = fingerprint.segment(10);
+|--------------------------------------------------------------------------------
+|   Open
+  ~ 3..7 bold
+|   Full transcript    every cell in full
+| > + Showed crates/wisp-core/src/cache.rs                                 +40 -0
+  ~ 0..5 inverse; 5..11 bold inverse; 11..80 inverse
+|   x Ran cargo build --release                                     exit 101 - 3s
+  ~ 5..8 bold
+|   + Ran cargo test -p wisp-core --all-features                      exit 0 - 1s
+  ~ 5..8 bold
+|   : Thought for 4 s  Placeholder 9.
+  ~ 22..36 italic
+|   enter open - type to filter - ctrl-o transcript - esc close
+|+------------------------------------------------------------------------------+
+||                                                                  total $0.01 |
+|+------------------------------------------------------------------------------+
+|| (*)  Ready                          Claude API   sonnet-5-5 low - cached 92% |
+  ~ 51..61 bold
+|+------------------------------------------------------------------------------+

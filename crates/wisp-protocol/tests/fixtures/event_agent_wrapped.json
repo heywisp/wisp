@@ -1,0 +1,9 @@
+{
+  "type": "agent",
+  "agent": "/review",
+  "event": {
+    "type": "text_delta",
+    "index": 0,
+    "text": "Reading"
+  }
+}

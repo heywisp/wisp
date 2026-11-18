@@ -1,0 +1,6 @@
+{
+  "type": "compaction_started",
+  "trigger": "auto",
+  "turn": 4,
+  "requested_by": "aa/ask"
+}

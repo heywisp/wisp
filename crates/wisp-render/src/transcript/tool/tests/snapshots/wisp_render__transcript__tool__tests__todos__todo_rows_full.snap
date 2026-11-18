@@ -1,0 +1,15 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests/todos.rs
+expression: full
+---
+ ✓ Used write_todos 2 of 5 completed                                         0s
+     2 of 5 completed
+     in ~/work · done · 0s
+     ✓ Read the plan
+     ◌ Write the parser and its validation table
+     ◦ Draw the list in the tool row
+     − Keep the old renderer
+     ✓ Run the checks
+
+   18s · 2 requests · 1 tool · cost unknown
+   ✓ end_turn · 18.0s · in 0 · out 0 · cost unknown · sonnet-5-5

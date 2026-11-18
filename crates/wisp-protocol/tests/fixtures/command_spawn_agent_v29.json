@@ -1,0 +1,21 @@
+{
+  "type": "spawn_agent",
+  "request": 7,
+  "spawn": {
+    "name": "planner",
+    "task": "Plan the change in docs/plans/x.md.",
+    "todos": [
+      "Read the report",
+      "Write the plan"
+    ],
+    "cwd": "~/Projects/Wisp-worktrees/review",
+    "preset": "reviewer",
+    "model": "claude-opus-4-1",
+    "effort": "high",
+    "tools_off": [
+      "show_diff"
+    ],
+    "spawn": false,
+    "report": "plan"
+  }
+}

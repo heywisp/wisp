@@ -1,0 +1,255 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== welcome
+| ⢎⠶⡰ wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   ● manifest · API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..13 fg Rgb(166, 166, 166); 13..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166)
+|   sonnet-5-5 low · ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send · /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(39 blank rows)
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│                                      │
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ › Ask anything                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready          ● manifest · API │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 22..24 fg Rgb(41, 184, 219); 24..32 fg Rgb(166, 166, 166); 32..35 fg Rgb(117, 117, 117); 35..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Rgb(88, 88, 88)
+== endpoints
+| ⢎⠶⡰ wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   ● manifest · API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..13 fg Rgb(166, 166, 166); 13..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166)
+|   sonnet-5-5 low · ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send · /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(18 blank rows)
+| › Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| ⠶ Misses now say which part of the
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   prefix changed: the system prompt,
+|   the tools or the messages. The
+|   prefix-stability test covers each
+|   case.
+|
+|   ∙ the system prompt
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the tool list
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the messages
+  ~ 3..4 fg Rgb(166, 166, 166)
+|
+|   2s · $0.014 · cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|────────────────────────────────────────
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Account
+  ~ 3..10 fg Rgb(212, 212, 212) bold
+|   ● direct      Claude API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..15 fg Rgb(212, 212, 212); 17..40 fg Rgb(166, 166, 166)
+|   ● gateway     Gateway · API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..15 fg Rgb(212, 212, 212); 17..40 fg Rgb(166, 166, 166)
+| › ● manifest ✓  Gateway · API
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(41, 184, 219) bg Rgb(4, 57, 94); 5..13 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 13..14 bg Rgb(4, 57, 94); 14..15 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 15..17 bg Rgb(4, 57, 94); 17..40 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94)
+|   ● work        WORK_KEY is not set
+  ~ 3..5 fg Rgb(41, 184, 219); 5..15 fg Rgb(212, 212, 212); 17..40 fg Rgb(244, 135, 113)
+|   + Sign in to another account…
+  ~ 3..32 fg Rgb(212, 212, 212)
+|   This chat uses it now
+  ~ 3..24 fg Rgb(166, 166, 166)
+|
+|   enter switch · → models · esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..19 fg Rgb(166, 166, 166); 19..29 fg Rgb(117, 117, 117); 29..32 fg Rgb(166, 166, 166); 32..38 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│                         total $0.014 │
+  ~ 0..1 fg Rgb(88, 88, 88); 26..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready          ● manifest · API │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(132, 132, 132); 3..4 fg Rgb(86, 155, 213); 4..5 fg Rgb(132, 132, 132); 7..12 fg Rgb(166, 166, 166); 22..24 fg Rgb(41, 184, 219); 24..32 fg Rgb(166, 166, 166); 32..35 fg Rgb(117, 117, 117); 35..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Rgb(88, 88, 88)
+== moved
+| ⢎⠶⡰ wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   ● manifest · API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..13 fg Rgb(166, 166, 166); 13..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166)
+|   sonnet-5-5 low · ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send · /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(18 blank rows)
+| › Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| ⠶ Misses now say which part of the
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   prefix changed: the system prompt,
+|   the tools or the messages. The
+|   prefix-stability test covers each
+|   case.
+|
+|   ∙ the system prompt
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the tool list
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the messages
+  ~ 3..4 fg Rgb(166, 166, 166)
+|
+|   2s · $0.014 · cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|────────────────────────────────────────
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Account
+  ~ 3..10 fg Rgb(212, 212, 212) bold
+|   ● direct      Claude API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..15 fg Rgb(212, 212, 212); 17..40 fg Rgb(166, 166, 166)
+| › ● gateway     Gateway · API
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(41, 184, 219) bg Rgb(4, 57, 94); 5..15 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 15..17 bg Rgb(4, 57, 94); 17..40 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94)
+|   ● manifest ✓  Gateway · API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..13 fg Rgb(212, 212, 212); 14..15 fg Rgb(86, 156, 214); 17..40 fg Rgb(166, 166, 166)
+|   ● work        WORK_KEY is not set
+  ~ 3..5 fg Rgb(41, 184, 219); 5..15 fg Rgb(212, 212, 212); 17..40 fg Rgb(244, 135, 113)
+|   + Sign in to another account…
+  ~ 3..32 fg Rgb(212, 212, 212)
+|   Moves this chat to ● gateway
+  ~ 3..22 fg Rgb(166, 166, 166); 22..24 fg Rgb(41, 184, 219); 24..31 fg Rgb(166, 166, 166)
+|   cache rebuild ~$0.04
+  ~ 3..23 fg Rgb(166, 166, 166)
+|   enter switch · → models · esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..19 fg Rgb(166, 166, 166); 19..29 fg Rgb(117, 117, 117); 29..32 fg Rgb(166, 166, 166); 32..38 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│                         total $0.014 │
+  ~ 0..1 fg Rgb(88, 88, 88); 26..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready          ● manifest · API │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 22..24 fg Rgb(41, 184, 219); 24..32 fg Rgb(166, 166, 166); 32..35 fg Rgb(117, 117, 117); 35..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Rgb(88, 88, 88)
+== filtered
+| ⢎⠶⡰ wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   ● manifest · API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..13 fg Rgb(166, 166, 166); 13..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166)
+|   sonnet-5-5 low · ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send · /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(20 blank rows)
+| › Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| ⠶ Misses now say which part of the
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   prefix changed: the system prompt,
+|   the tools or the messages. The
+|   prefix-stability test covers each
+|   case.
+|
+|   ∙ the system prompt
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the tool list
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the messages
+  ~ 3..4 fg Rgb(166, 166, 166)
+|
+|   2s · $0.014 · cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|────────────────────────────────────────
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Account
+  ~ 3..10 fg Rgb(212, 212, 212) bold
+| › ● gateway  Gateway · API
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(41, 184, 219) bg Rgb(4, 57, 94); 5..12 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 12..14 bg Rgb(4, 57, 94); 14..27 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 27..40 bg Rgb(4, 57, 94)
+|   Moves this chat to ● gateway
+  ~ 3..22 fg Rgb(166, 166, 166); 22..24 fg Rgb(41, 184, 219); 24..31 fg Rgb(166, 166, 166)
+|   cache rebuild ~$0.04
+  ~ 3..23 fg Rgb(166, 166, 166)
+|   matching "ga" (backspace edit, esc
+  ~ 3..37 fg Rgb(117, 117, 117)
+|   close)
+  ~ 3..9 fg Rgb(117, 117, 117)
+|   enter switch · → models · esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..19 fg Rgb(166, 166, 166); 19..29 fg Rgb(117, 117, 117); 29..32 fg Rgb(166, 166, 166); 32..38 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│                         total $0.014 │
+  ~ 0..1 fg Rgb(88, 88, 88); 26..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready          ● manifest · API │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 22..24 fg Rgb(41, 184, 219); 24..32 fg Rgb(166, 166, 166); 32..35 fg Rgb(117, 117, 117); 35..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Rgb(88, 88, 88)
+== pending
+| ⢎⠶⡰ wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   ● direct · API
+  ~ 3..5 fg Rgb(41, 184, 219); 5..11 fg Rgb(166, 166, 166); 11..14 fg Rgb(117, 117, 117); 14..17 fg Rgb(166, 166, 166)
+|   sonnet-5-5 low · ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send · /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(19 blank rows)
+| › Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| ⠶ Misses now say which part of the
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   prefix changed: the system prompt,
+|   the tools or the messages. The
+|   prefix-stability test covers each
+|   case.
+|
+|   ∙ the system prompt
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the tool list
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the messages
+  ~ 3..4 fg Rgb(166, 166, 166)
+|
+|   2s · $0.014 · cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|
+| ∙ Switched to ● direct · API
+  ~ 1..2 fg Rgb(117, 117, 117); 3..15 fg Rgb(166, 166, 166); 15..17 fg Rgb(41, 184, 219); 17..29 fg Rgb(166, 166, 166)
+|   sonnet-5-5 low
+  ~ 3..17 fg Rgb(166, 166, 166)
+|   cache rebuild ~$0.04
+  ~ 3..23 fg Rgb(166, 166, 166)
+|
+| ∙ earlier Sonnet 5.5 reasoning may not
+  ~ 1..2 fg Rgb(117, 117, 117); 3..39 fg Rgb(166, 166, 166)
+|   carry over
+  ~ 3..13 fg Rgb(166, 166, 166)
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│                         total $0.014 │
+  ~ 0..1 fg Rgb(88, 88, 88); 26..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ › Ask anything                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready            ● direct · API │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 24..26 fg Rgb(41, 184, 219); 26..32 fg Rgb(166, 166, 166); 32..35 fg Rgb(117, 117, 117); 35..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Rgb(88, 88, 88)

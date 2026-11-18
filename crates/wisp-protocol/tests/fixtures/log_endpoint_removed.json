@@ -1,0 +1,10 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 13,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "endpoint_removed",
+  "turn": null,
+  "name": "direct",
+  "kept_item": false,
+  "default_cleared": true
+}

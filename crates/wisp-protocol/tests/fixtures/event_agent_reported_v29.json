@@ -1,0 +1,15 @@
+{
+  "type": "agent_reported",
+  "agent": "/review/planner",
+  "turn": 1,
+  "outcome": "reported",
+  "report": {
+    "decisions": [],
+    "kind": "plan",
+    "plan_path": "docs/plans/x.md",
+    "status": "done",
+    "summary": "Planned."
+  },
+  "cost": 0.84,
+  "duration_ms": 372000
+}

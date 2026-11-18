@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "reason": "Nothing to compact yet.",
+  "kind": "nothing_to_compact",
+  "request": 4
+}

@@ -1,0 +1,11 @@
+{
+  "type": "endpoint_not_saved",
+  "answers": 12,
+  "name": "manifest",
+  "why": {
+    "check": {
+      "outcome": "unreachable",
+      "reason": "unreachable: connection refused"
+    }
+  }
+}

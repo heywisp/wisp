@@ -1,0 +1,432 @@
+---
+source: crates/wisp-render/src/transcript/tool/diff/tests.rs
+expression: out
+---
+--- one file, 120, before the grammars ---
+ [114|✓] [188 bold|Showed][188| crates/wisp-core/src/cache.rs]                                                                           [114|+1] [209|−1]
+     [248|   1 ]  impl Cache {
+     [248|   2 ]      fn key(req: &Request) -> Key {
+     [248 on 52|   3 ][209 on 52|-][on 52| ][on 52|        let key = hash(&req.system);][on 52|                                                                       ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|        let key = Fingerprint::of(req)?;][on 22|                                                                   ]
+     [248|   4 ]          key
+     [248|   5 ]      }
+     [248|   6 ]  }
+--- one file, 120, highlighted ---
+ [114|✓] [188 bold|Showed][188| crates/wisp-core/src/cache.rs]                                                                           [114|+1] [209|−1]
+     [248|   1 ]  [74|impl] Cache {
+     [248|   2 ]      [74|fn] [187|key]([153|req]: &Request) -> Key {
+     [248 on 52|   3 ][209 on 52|-][on 52| ][on 52|        ][74 on 52|let][on 52| key = ][188 on 88|hash][on 52|(][188 on 88|&][on 52|req][188 on 88|.system][on 52|);][on 52|                                                                       ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|        ][188 on 22|let][on 22| key = ][188 on 22 bold|Fingerprint::of][on 22|(req)][188 on 22 bold|?][on 22|;][on 22|                                                                   ]
+     [248|   4 ]          key
+     [248|   5 ]      }
+     [248|   6 ]  }
+--- one file, 80, before the grammars ---
+ [114|✓] [188 bold|Showed][188| crates/wisp-core/src/cache.rs]                                   [114|+1] [209|−1]
+     [248|   1 ]  impl Cache {
+     [248|   2 ]      fn key(req: &Request) -> Key {
+     [248 on 52|   3 ][209 on 52|-][on 52| ][on 52|        let key = hash(&req.system);][on 52|                               ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|        let key = Fingerprint::of(req)?;][on 22|                           ]
+     [248|   4 ]          key
+     [248|   5 ]      }
+     [248|   6 ]  }
+--- one file, 80, highlighted ---
+ [114|✓] [188 bold|Showed][188| crates/wisp-core/src/cache.rs]                                   [114|+1] [209|−1]
+     [248|   1 ]  [74|impl] Cache {
+     [248|   2 ]      [74|fn] [187|key]([153|req]: &Request) -> Key {
+     [248 on 52|   3 ][209 on 52|-][on 52| ][on 52|        ][74 on 52|let][on 52| key = ][188 on 88|hash][on 52|(][188 on 88|&][on 52|req][188 on 88|.system][on 52|);][on 52|                               ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|        ][188 on 22|let][on 22| key = ][188 on 22 bold|Fingerprint::of][on 22|(req)][188 on 22 bold|?][on 22|;][on 22|                           ]
+     [248|   4 ]          key
+     [248|   5 ]      }
+     [248|   6 ]  }
+--- one file, 40, before the grammars ---
+ [114|✓] [188 bold|Showed][188| crates/wisp-core/src/cache.rs]
+     [248|   1 ]  impl Cache {
+     [248|   2 ]      fn key(req: &Request) -
+            > Key {
+     [248 on 52|   3 ][209 on 52|-][on 52| ][on 52|        let key = hash(&req]
+     [on 52|       ][on 52|.system);][on 52|                  ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|        let key = Fingerpri]
+     [on 22|       ][on 22|nt::of(req)?;][on 22|              ]
+     [248|   4 ]          key
+     [248|   5 ]      }
+     [248|   6 ]  }
+--- one file, 40, highlighted ---
+ [114|✓] [188 bold|Showed][188| crates/wisp-core/src/cache.rs]
+     [248|   1 ]  [74|impl] Cache {
+     [248|   2 ]      [74|fn] [187|key]([153|req]: &Request) -
+            > Key {
+     [248 on 52|   3 ][209 on 52|-][on 52| ][on 52|        ][74 on 52|let][on 52| key = ][188 on 88|hash][on 52|(][188 on 88|&][on 52|req]
+     [on 52|       ][188 on 88|.system][on 52|);][on 52|                  ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|        ][188 on 22|let][on 22| key = ][188 on 22 bold|Fingerpri]
+     [on 22|       ][188 on 22 bold|nt::of][on 22|(req)][188 on 22 bold|?][on 22|;][on 22|              ]
+     [248|   4 ]          key
+     [248|   5 ]      }
+     [248|   6 ]  }
+--- several files with a title, one renamed, 120, before the grammars ---
+ [114|✓] [188|Rename the cache key]                                                                                           [114|+3] [209|−1]
+     [188 bold|src/key.rs → src/fingerprint.rs]                                                                              [114|+1] [209|−1]
+     [248|   1 ]  fn key(req: &Request) -> Key {
+     [248 on 52|   2 ][209 on 52|-][on 52| ][on 52|    hash(&req.system)][on 52|                                                                                      ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|    Fingerprint::of(req)][on 22|                                                                                   ]
+     [248|   3 ]  }
+     [188 bold|README.md]                                                                                                    [114|+2] [209|−0]
+     [248|   1 ]  # Cache
+     [248 on 22|   2 ][114 on 22|+][on 22|                                                                                                            ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|Keys are fingerprints.][on 22|                                                                                     ]
+--- several files with a title, one renamed, 120, highlighted ---
+ [114|✓] [188|Rename the cache key]                                                                                           [114|+3] [209|−1]
+     [188 bold|src/key.rs → src/fingerprint.rs]                                                                              [114|+1] [209|−1]
+     [248|   1 ]  [74|fn] [187|key]([153|req]: &Request) -> Key {
+     [248 on 52|   2 ][209 on 52|-][on 52| ][on 52|    ][187 on 52|hash][on 52|(&req.system)][on 52|                                                                                      ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|    Fingerprint::of(req)][on 22|                                                                                   ]
+     [248|   3 ]  }
+     [188 bold|README.md]                                                                                                    [114|+2] [209|−0]
+     [248|   1 ]  # Cache
+     [248 on 22|   2 ][114 on 22|+][on 22|                                                                                                            ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|Keys are fingerprints.][on 22|                                                                                     ]
+--- several files with a title, one renamed, 80, before the grammars ---
+ [114|✓] [188|Rename the cache key]                                                   [114|+3] [209|−1]
+     [188 bold|src/key.rs → src/fingerprint.rs]                                      [114|+1] [209|−1]
+     [248|   1 ]  fn key(req: &Request) -> Key {
+     [248 on 52|   2 ][209 on 52|-][on 52| ][on 52|    hash(&req.system)][on 52|                                              ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|    Fingerprint::of(req)][on 22|                                           ]
+     [248|   3 ]  }
+     [188 bold|README.md]                                                            [114|+2] [209|−0]
+     [248|   1 ]  # Cache
+     [248 on 22|   2 ][114 on 22|+][on 22|                                                                    ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|Keys are fingerprints.][on 22|                                             ]
+--- several files with a title, one renamed, 80, highlighted ---
+ [114|✓] [188|Rename the cache key]                                                   [114|+3] [209|−1]
+     [188 bold|src/key.rs → src/fingerprint.rs]                                      [114|+1] [209|−1]
+     [248|   1 ]  [74|fn] [187|key]([153|req]: &Request) -> Key {
+     [248 on 52|   2 ][209 on 52|-][on 52| ][on 52|    ][187 on 52|hash][on 52|(&req.system)][on 52|                                              ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|    Fingerprint::of(req)][on 22|                                           ]
+     [248|   3 ]  }
+     [188 bold|README.md]                                                            [114|+2] [209|−0]
+     [248|   1 ]  # Cache
+     [248 on 22|   2 ][114 on 22|+][on 22|                                                                    ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|Keys are fingerprints.][on 22|                                             ]
+--- several files with a title, one renamed, 40, before the grammars ---
+ [114|✓] [188|Rename the cache key]           [114|+3] [209|−1]
+     [188 bold|src/key.rs → …ingerprint.rs]  [114|+1] [209|−1]
+     [248|   1 ]  fn key(req: &Request) -> Ke
+            y {
+     [248 on 52|   2 ][209 on 52|-][on 52| ][on 52|    hash(&req.system)][on 52|      ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|    Fingerprint::of(req)][on 22|   ]
+     [248|   3 ]  }
+     [188 bold|README.md]                    [114|+2] [209|−0]
+     [248|   1 ]  # Cache
+     [248 on 22|   2 ][114 on 22|+][on 22|                            ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|Keys are fingerprints.][on 22|     ]
+--- several files with a title, one renamed, 40, highlighted ---
+ [114|✓] [188|Rename the cache key]           [114|+3] [209|−1]
+     [188 bold|src/key.rs → …ingerprint.rs]  [114|+1] [209|−1]
+     [248|   1 ]  [74|fn] [187|key]([153|req]: &Request) -> Ke
+            y {
+     [248 on 52|   2 ][209 on 52|-][on 52| ][on 52|    ][187 on 52|hash][on 52|(&req.system)][on 52|      ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|    Fingerprint::of(req)][on 22|   ]
+     [248|   3 ]  }
+     [188 bold|README.md]                    [114|+2] [209|−0]
+     [248|   1 ]  # Cache
+     [248 on 22|   2 ][114 on 22|+][on 22|                            ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|Keys are fingerprints.][on 22|     ]
+--- unknown numbers and a removed --- line, 120, before the grammars ---
+ [114|✓] [188 bold|Showed][188| schema.sql]                                                                                              [114|+1] [209|−2]
+       select 1;
+     [209 on 52|-][on 52| ][on 52|-- old comment][on 52|                                                                                                  ]
+     [209 on 52|-][on 52| ][on 52|select 2;][on 52|                                                                                                       ]
+     [114 on 22|+][on 22| ][on 22|select 3;][on 22|                                                                                                       ]
+--- unknown numbers and a removed --- line, 120, highlighted ---
+ [114|✓] [188 bold|Showed][188| schema.sql]                                                                                              [114|+1] [209|−2]
+       [74|select] [151|1];
+     [209 on 52|-][on 52| ][71 on 52 italic|-- old comment][on 52|                                                                                                  ]
+     [209 on 52|-][on 52| ][74 on 52|select][on 52| ][188 on 88|2][on 52|;][on 52|                                                                                                       ]
+     [114 on 22|+][on 22| ][188 on 22|select][on 22| ][188 on 22 bold|3][on 22|;][on 22|                                                                                                       ]
+--- unknown numbers and a removed --- line, 80, before the grammars ---
+ [114|✓] [188 bold|Showed][188| schema.sql]                                                      [114|+1] [209|−2]
+       select 1;
+     [209 on 52|-][on 52| ][on 52|-- old comment][on 52|                                                          ]
+     [209 on 52|-][on 52| ][on 52|select 2;][on 52|                                                               ]
+     [114 on 22|+][on 22| ][on 22|select 3;][on 22|                                                               ]
+--- unknown numbers and a removed --- line, 80, highlighted ---
+ [114|✓] [188 bold|Showed][188| schema.sql]                                                      [114|+1] [209|−2]
+       [74|select] [151|1];
+     [209 on 52|-][on 52| ][71 on 52 italic|-- old comment][on 52|                                                          ]
+     [209 on 52|-][on 52| ][74 on 52|select][on 52| ][188 on 88|2][on 52|;][on 52|                                                               ]
+     [114 on 22|+][on 22| ][188 on 22|select][on 22| ][188 on 22 bold|3][on 22|;][on 22|                                                               ]
+--- unknown numbers and a removed --- line, 40, before the grammars ---
+ [114|✓] [188 bold|Showed][188| schema.sql]              [114|+1] [209|−2]
+       select 1;
+     [209 on 52|-][on 52| ][on 52|-- old comment][on 52|                  ]
+     [209 on 52|-][on 52| ][on 52|select 2;][on 52|                       ]
+     [114 on 22|+][on 22| ][on 22|select 3;][on 22|                       ]
+--- unknown numbers and a removed --- line, 40, highlighted ---
+ [114|✓] [188 bold|Showed][188| schema.sql]              [114|+1] [209|−2]
+       [74|select] [151|1];
+     [209 on 52|-][on 52| ][71 on 52 italic|-- old comment][on 52|                  ]
+     [209 on 52|-][on 52| ][74 on 52|select][on 52| ][188 on 88|2][on 52|;][on 52|                       ]
+     [114 on 22|+][on 22| ][188 on 22|select][on 22| ][188 on 22 bold|3][on 22|;][on 22|                       ]
+--- folded, 120, before the grammars ---
+ [114|✓] [188 bold|Showed][188| big.rs]                                                                                                 [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][on 22|let v1 = 1;][on 22|                                                                                                ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|let v2 = 2;][on 22|                                                                                                ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|let v3 = 3;][on 22|                                                                                                ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][on 22|let v4 = 4;][on 22|                                                                                                ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][on 22|let v5 = 5;][on 22|                                                                                                ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][on 22|let v6 = 6;][on 22|                                                                                                ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][on 22|let v7 = 7;][on 22|                                                                                                ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][on 22|let v8 = 8;][on 22|                                                                                                ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][on 22|let v9 = 9;][on 22|                                                                                                ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][on 22|let v10 = 10;][on 22|                                                                                              ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][on 22|let v11 = 11;][on 22|                                                                                              ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][on 22|let v12 = 12;][on 22|                                                                                              ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][on 22|let v13 = 13;][on 22|                                                                                              ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][on 22|let v14 = 14;][on 22|                                                                                              ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][on 22|let v15 = 15;][on 22|                                                                                              ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][on 22|let v16 = 16;][on 22|                                                                                              ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][on 22|let v17 = 17;][on 22|                                                                                              ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][on 22|let v18 = 18;][on 22|                                                                                              ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][on 22|let v19 = 19;][on 22|                                                                                              ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][on 22|let v20 = 20;][on 22|                                                                                              ]
+     [243|… 20 more lines][243| ▸]
+--- folded, 120, highlighted ---
+ [114|✓] [188 bold|Showed][188| big.rs]                                                                                                 [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v1 = ][151 on 22|1][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v2 = ][151 on 22|2][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v3 = ][151 on 22|3][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v4 = ][151 on 22|4][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v5 = ][151 on 22|5][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v6 = ][151 on 22|6][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v7 = ][151 on 22|7][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v8 = ][151 on 22|8][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v9 = ][151 on 22|9][on 22|;][on 22|                                                                                                ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v10 = ][151 on 22|10][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v11 = ][151 on 22|11][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v12 = ][151 on 22|12][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v13 = ][151 on 22|13][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v14 = ][151 on 22|14][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v15 = ][151 on 22|15][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v16 = ][151 on 22|16][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v17 = ][151 on 22|17][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v18 = ][151 on 22|18][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v19 = ][151 on 22|19][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v20 = ][151 on 22|20][on 22|;][on 22|                                                                                              ]
+     [243|… 20 more lines][243| ▸]
+--- folded, 120, ctrl-o ---
+ [114|✓] [188 bold|Showed][188| big.rs]                                                                                                 [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v1 = ][151 on 22|1][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v2 = ][151 on 22|2][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v3 = ][151 on 22|3][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v4 = ][151 on 22|4][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v5 = ][151 on 22|5][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v6 = ][151 on 22|6][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v7 = ][151 on 22|7][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v8 = ][151 on 22|8][on 22|;][on 22|                                                                                                ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v9 = ][151 on 22|9][on 22|;][on 22|                                                                                                ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v10 = ][151 on 22|10][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v11 = ][151 on 22|11][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v12 = ][151 on 22|12][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v13 = ][151 on 22|13][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v14 = ][151 on 22|14][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v15 = ][151 on 22|15][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v16 = ][151 on 22|16][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v17 = ][151 on 22|17][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v18 = ][151 on 22|18][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v19 = ][151 on 22|19][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v20 = ][151 on 22|20][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  21 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v21 = ][151 on 22|21][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  22 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v22 = ][151 on 22|22][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  23 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v23 = ][151 on 22|23][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  24 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v24 = ][151 on 22|24][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  25 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v25 = ][151 on 22|25][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  26 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v26 = ][151 on 22|26][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  27 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v27 = ][151 on 22|27][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  28 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v28 = ][151 on 22|28][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  29 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v29 = ][151 on 22|29][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  30 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v30 = ][151 on 22|30][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  31 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v31 = ][151 on 22|31][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  32 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v32 = ][151 on 22|32][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  33 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v33 = ][151 on 22|33][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  34 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v34 = ][151 on 22|34][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  35 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v35 = ][151 on 22|35][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  36 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v36 = ][151 on 22|36][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  37 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v37 = ][151 on 22|37][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  38 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v38 = ][151 on 22|38][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  39 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v39 = ][151 on 22|39][on 22|;][on 22|                                                                                              ]
+     [248 on 22|  40 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v40 = ][151 on 22|40][on 22|;][on 22|                                                                                              ]
+--- folded, 80, before the grammars ---
+ [114|✓] [188 bold|Showed][188| big.rs]                                                         [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][on 22|let v1 = 1;][on 22|                                                        ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|let v2 = 2;][on 22|                                                        ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|let v3 = 3;][on 22|                                                        ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][on 22|let v4 = 4;][on 22|                                                        ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][on 22|let v5 = 5;][on 22|                                                        ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][on 22|let v6 = 6;][on 22|                                                        ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][on 22|let v7 = 7;][on 22|                                                        ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][on 22|let v8 = 8;][on 22|                                                        ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][on 22|let v9 = 9;][on 22|                                                        ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][on 22|let v10 = 10;][on 22|                                                      ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][on 22|let v11 = 11;][on 22|                                                      ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][on 22|let v12 = 12;][on 22|                                                      ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][on 22|let v13 = 13;][on 22|                                                      ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][on 22|let v14 = 14;][on 22|                                                      ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][on 22|let v15 = 15;][on 22|                                                      ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][on 22|let v16 = 16;][on 22|                                                      ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][on 22|let v17 = 17;][on 22|                                                      ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][on 22|let v18 = 18;][on 22|                                                      ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][on 22|let v19 = 19;][on 22|                                                      ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][on 22|let v20 = 20;][on 22|                                                      ]
+     [243|… 20 more lines][243| ▸]
+--- folded, 80, highlighted ---
+ [114|✓] [188 bold|Showed][188| big.rs]                                                         [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v1 = ][151 on 22|1][on 22|;][on 22|                                                        ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v2 = ][151 on 22|2][on 22|;][on 22|                                                        ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v3 = ][151 on 22|3][on 22|;][on 22|                                                        ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v4 = ][151 on 22|4][on 22|;][on 22|                                                        ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v5 = ][151 on 22|5][on 22|;][on 22|                                                        ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v6 = ][151 on 22|6][on 22|;][on 22|                                                        ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v7 = ][151 on 22|7][on 22|;][on 22|                                                        ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v8 = ][151 on 22|8][on 22|;][on 22|                                                        ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v9 = ][151 on 22|9][on 22|;][on 22|                                                        ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v10 = ][151 on 22|10][on 22|;][on 22|                                                      ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v11 = ][151 on 22|11][on 22|;][on 22|                                                      ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v12 = ][151 on 22|12][on 22|;][on 22|                                                      ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v13 = ][151 on 22|13][on 22|;][on 22|                                                      ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v14 = ][151 on 22|14][on 22|;][on 22|                                                      ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v15 = ][151 on 22|15][on 22|;][on 22|                                                      ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v16 = ][151 on 22|16][on 22|;][on 22|                                                      ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v17 = ][151 on 22|17][on 22|;][on 22|                                                      ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v18 = ][151 on 22|18][on 22|;][on 22|                                                      ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v19 = ][151 on 22|19][on 22|;][on 22|                                                      ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v20 = ][151 on 22|20][on 22|;][on 22|                                                      ]
+     [243|… 20 more lines][243| ▸]
+--- folded, 80, ctrl-o ---
+ [114|✓] [188 bold|Showed][188| big.rs]                                                         [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v1 = ][151 on 22|1][on 22|;][on 22|                                                        ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v2 = ][151 on 22|2][on 22|;][on 22|                                                        ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v3 = ][151 on 22|3][on 22|;][on 22|                                                        ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v4 = ][151 on 22|4][on 22|;][on 22|                                                        ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v5 = ][151 on 22|5][on 22|;][on 22|                                                        ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v6 = ][151 on 22|6][on 22|;][on 22|                                                        ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v7 = ][151 on 22|7][on 22|;][on 22|                                                        ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v8 = ][151 on 22|8][on 22|;][on 22|                                                        ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v9 = ][151 on 22|9][on 22|;][on 22|                                                        ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v10 = ][151 on 22|10][on 22|;][on 22|                                                      ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v11 = ][151 on 22|11][on 22|;][on 22|                                                      ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v12 = ][151 on 22|12][on 22|;][on 22|                                                      ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v13 = ][151 on 22|13][on 22|;][on 22|                                                      ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v14 = ][151 on 22|14][on 22|;][on 22|                                                      ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v15 = ][151 on 22|15][on 22|;][on 22|                                                      ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v16 = ][151 on 22|16][on 22|;][on 22|                                                      ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v17 = ][151 on 22|17][on 22|;][on 22|                                                      ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v18 = ][151 on 22|18][on 22|;][on 22|                                                      ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v19 = ][151 on 22|19][on 22|;][on 22|                                                      ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v20 = ][151 on 22|20][on 22|;][on 22|                                                      ]
+     [248 on 22|  21 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v21 = ][151 on 22|21][on 22|;][on 22|                                                      ]
+     [248 on 22|  22 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v22 = ][151 on 22|22][on 22|;][on 22|                                                      ]
+     [248 on 22|  23 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v23 = ][151 on 22|23][on 22|;][on 22|                                                      ]
+     [248 on 22|  24 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v24 = ][151 on 22|24][on 22|;][on 22|                                                      ]
+     [248 on 22|  25 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v25 = ][151 on 22|25][on 22|;][on 22|                                                      ]
+     [248 on 22|  26 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v26 = ][151 on 22|26][on 22|;][on 22|                                                      ]
+     [248 on 22|  27 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v27 = ][151 on 22|27][on 22|;][on 22|                                                      ]
+     [248 on 22|  28 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v28 = ][151 on 22|28][on 22|;][on 22|                                                      ]
+     [248 on 22|  29 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v29 = ][151 on 22|29][on 22|;][on 22|                                                      ]
+     [248 on 22|  30 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v30 = ][151 on 22|30][on 22|;][on 22|                                                      ]
+     [248 on 22|  31 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v31 = ][151 on 22|31][on 22|;][on 22|                                                      ]
+     [248 on 22|  32 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v32 = ][151 on 22|32][on 22|;][on 22|                                                      ]
+     [248 on 22|  33 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v33 = ][151 on 22|33][on 22|;][on 22|                                                      ]
+     [248 on 22|  34 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v34 = ][151 on 22|34][on 22|;][on 22|                                                      ]
+     [248 on 22|  35 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v35 = ][151 on 22|35][on 22|;][on 22|                                                      ]
+     [248 on 22|  36 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v36 = ][151 on 22|36][on 22|;][on 22|                                                      ]
+     [248 on 22|  37 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v37 = ][151 on 22|37][on 22|;][on 22|                                                      ]
+     [248 on 22|  38 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v38 = ][151 on 22|38][on 22|;][on 22|                                                      ]
+     [248 on 22|  39 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v39 = ][151 on 22|39][on 22|;][on 22|                                                      ]
+     [248 on 22|  40 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v40 = ][151 on 22|40][on 22|;][on 22|                                                      ]
+--- folded, 40, before the grammars ---
+ [114|✓] [188 bold|Showed][188| big.rs]                 [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][on 22|let v1 = 1;][on 22|                ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][on 22|let v2 = 2;][on 22|                ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][on 22|let v3 = 3;][on 22|                ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][on 22|let v4 = 4;][on 22|                ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][on 22|let v5 = 5;][on 22|                ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][on 22|let v6 = 6;][on 22|                ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][on 22|let v7 = 7;][on 22|                ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][on 22|let v8 = 8;][on 22|                ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][on 22|let v9 = 9;][on 22|                ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][on 22|let v10 = 10;][on 22|              ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][on 22|let v11 = 11;][on 22|              ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][on 22|let v12 = 12;][on 22|              ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][on 22|let v13 = 13;][on 22|              ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][on 22|let v14 = 14;][on 22|              ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][on 22|let v15 = 15;][on 22|              ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][on 22|let v16 = 16;][on 22|              ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][on 22|let v17 = 17;][on 22|              ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][on 22|let v18 = 18;][on 22|              ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][on 22|let v19 = 19;][on 22|              ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][on 22|let v20 = 20;][on 22|              ]
+     [243|… 20 more lines][243| ▸]
+--- folded, 40, highlighted ---
+ [114|✓] [188 bold|Showed][188| big.rs]                 [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v1 = ][151 on 22|1][on 22|;][on 22|                ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v2 = ][151 on 22|2][on 22|;][on 22|                ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v3 = ][151 on 22|3][on 22|;][on 22|                ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v4 = ][151 on 22|4][on 22|;][on 22|                ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v5 = ][151 on 22|5][on 22|;][on 22|                ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v6 = ][151 on 22|6][on 22|;][on 22|                ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v7 = ][151 on 22|7][on 22|;][on 22|                ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v8 = ][151 on 22|8][on 22|;][on 22|                ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v9 = ][151 on 22|9][on 22|;][on 22|                ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v10 = ][151 on 22|10][on 22|;][on 22|              ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v11 = ][151 on 22|11][on 22|;][on 22|              ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v12 = ][151 on 22|12][on 22|;][on 22|              ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v13 = ][151 on 22|13][on 22|;][on 22|              ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v14 = ][151 on 22|14][on 22|;][on 22|              ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v15 = ][151 on 22|15][on 22|;][on 22|              ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v16 = ][151 on 22|16][on 22|;][on 22|              ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v17 = ][151 on 22|17][on 22|;][on 22|              ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v18 = ][151 on 22|18][on 22|;][on 22|              ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v19 = ][151 on 22|19][on 22|;][on 22|              ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v20 = ][151 on 22|20][on 22|;][on 22|              ]
+     [243|… 20 more lines][243| ▸]
+--- folded, 40, ctrl-o ---
+ [114|✓] [188 bold|Showed][188| big.rs]                 [114|+40] [209|−0]
+     [248 on 22|   1 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v1 = ][151 on 22|1][on 22|;][on 22|                ]
+     [248 on 22|   2 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v2 = ][151 on 22|2][on 22|;][on 22|                ]
+     [248 on 22|   3 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v3 = ][151 on 22|3][on 22|;][on 22|                ]
+     [248 on 22|   4 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v4 = ][151 on 22|4][on 22|;][on 22|                ]
+     [248 on 22|   5 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v5 = ][151 on 22|5][on 22|;][on 22|                ]
+     [248 on 22|   6 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v6 = ][151 on 22|6][on 22|;][on 22|                ]
+     [248 on 22|   7 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v7 = ][151 on 22|7][on 22|;][on 22|                ]
+     [248 on 22|   8 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v8 = ][151 on 22|8][on 22|;][on 22|                ]
+     [248 on 22|   9 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v9 = ][151 on 22|9][on 22|;][on 22|                ]
+     [248 on 22|  10 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v10 = ][151 on 22|10][on 22|;][on 22|              ]
+     [248 on 22|  11 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v11 = ][151 on 22|11][on 22|;][on 22|              ]
+     [248 on 22|  12 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v12 = ][151 on 22|12][on 22|;][on 22|              ]
+     [248 on 22|  13 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v13 = ][151 on 22|13][on 22|;][on 22|              ]
+     [248 on 22|  14 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v14 = ][151 on 22|14][on 22|;][on 22|              ]
+     [248 on 22|  15 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v15 = ][151 on 22|15][on 22|;][on 22|              ]
+     [248 on 22|  16 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v16 = ][151 on 22|16][on 22|;][on 22|              ]
+     [248 on 22|  17 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v17 = ][151 on 22|17][on 22|;][on 22|              ]
+     [248 on 22|  18 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v18 = ][151 on 22|18][on 22|;][on 22|              ]
+     [248 on 22|  19 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v19 = ][151 on 22|19][on 22|;][on 22|              ]
+     [248 on 22|  20 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v20 = ][151 on 22|20][on 22|;][on 22|              ]
+     [248 on 22|  21 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v21 = ][151 on 22|21][on 22|;][on 22|              ]
+     [248 on 22|  22 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v22 = ][151 on 22|22][on 22|;][on 22|              ]
+     [248 on 22|  23 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v23 = ][151 on 22|23][on 22|;][on 22|              ]
+     [248 on 22|  24 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v24 = ][151 on 22|24][on 22|;][on 22|              ]
+     [248 on 22|  25 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v25 = ][151 on 22|25][on 22|;][on 22|              ]
+     [248 on 22|  26 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v26 = ][151 on 22|26][on 22|;][on 22|              ]
+     [248 on 22|  27 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v27 = ][151 on 22|27][on 22|;][on 22|              ]
+     [248 on 22|  28 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v28 = ][151 on 22|28][on 22|;][on 22|              ]
+     [248 on 22|  29 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v29 = ][151 on 22|29][on 22|;][on 22|              ]
+     [248 on 22|  30 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v30 = ][151 on 22|30][on 22|;][on 22|              ]
+     [248 on 22|  31 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v31 = ][151 on 22|31][on 22|;][on 22|              ]
+     [248 on 22|  32 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v32 = ][151 on 22|32][on 22|;][on 22|              ]
+     [248 on 22|  33 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v33 = ][151 on 22|33][on 22|;][on 22|              ]
+     [248 on 22|  34 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v34 = ][151 on 22|34][on 22|;][on 22|              ]
+     [248 on 22|  35 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v35 = ][151 on 22|35][on 22|;][on 22|              ]
+     [248 on 22|  36 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v36 = ][151 on 22|36][on 22|;][on 22|              ]
+     [248 on 22|  37 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v37 = ][151 on 22|37][on 22|;][on 22|              ]
+     [248 on 22|  38 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v38 = ][151 on 22|38][on 22|;][on 22|              ]
+     [248 on 22|  39 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v39 = ][151 on 22|39][on 22|;][on 22|              ]
+     [248 on 22|  40 ][114 on 22|+][on 22| ][188 on 22|let][on 22| v40 = ][151 on 22|40][on 22|;][on 22|              ]

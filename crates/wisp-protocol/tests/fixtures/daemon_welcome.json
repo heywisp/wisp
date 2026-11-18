@@ -1,0 +1,6 @@
+{
+  "type": "welcome",
+  "data": {
+    "daemon": 1
+  }
+}

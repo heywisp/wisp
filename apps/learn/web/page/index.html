@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn</title>
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<button id="gear" type="button" aria-label="Settings">
+<svg viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="40"/><path d="M130.05,206.11c-1.34,0-2.69,0-4,0L94,224a104.61,104.61,0,0,1-34.11-19.2l-.12-36c-.71-1.12-1.38-2.25-2-3.41L25.9,147.24a99.15,99.15,0,0,1,0-38.46l31.84-18.1c.65-1.15,1.32-2.29,2-3.41l.16-36A104.58,104.58,0,0,1,94,32l32,17.89c1.34,0,2.69,0,4,0L162,32a104.61,104.61,0,0,1,34.11,19.2l.12,36c.71,1.12,1.38,2.25,2,3.41l31.85,18.14a99.15,99.15,0,0,1,0,38.46l-31.84,18.1c-.65,1.15-1.32,2.29-2,3.41l-.16,36A104.58,104.58,0,0,1,162,224Z"/></svg>
+</button>
+<main>
+<svg id="orb" viewBox="0 0 12 8" aria-hidden="true"></svg>
+<p id="pill" role="status">
+<span data-state="ready" class="shown"><span class="word">Ready</span><span class="hint"> · tap to talk</span></span>
+<span data-state="listening"><span class="word">Listening</span><span class="hint"> · tap to stop</span></span>
+<span data-state="muted"><span class="word">Muted</span><span class="hint"> · tap to stop</span></span>
+<span data-state="thinking"><span class="word">Thinking</span><span class="hint"> · tap to stop</span></span>
+<span data-state="answering"><span class="word">Speaking</span><span class="hint"> · tap to stop</span></span>
+<span data-state="another"><span class="word">On another screen</span></span>
+<span data-state="offline"><span class="word">Offline. Reconnecting</span></span>
+</p>
+<button id="mic" type="button" aria-label="Mute" hidden>
+<svg class="open" viewBox="0 0 256 256" aria-hidden="true"><rect x="88" y="24" width="80" height="144" rx="40"/><line x1="128" y1="200" x2="128" y2="240"/><path d="M200,128a72,72,0,0,1-144,0"/></svg>
+<svg class="shut" viewBox="0 0 256 256" aria-hidden="true"><line x1="128" y1="200" x2="128" y2="240"/><line x1="48" y1="48" x2="208" y2="224"/><path d="M172.32,184.75A72,72,0,0,1,56,128"/><path d="M200,128a71.7,71.7,0,0,1-7.29,31.61"/><path d="M150.68,161A39.77,39.77,0,0,1,128,168h0a40,40,0,0,1-40-40V92"/><path d="M91.3,48.06A40,40,0,0,1,128,24h0a40,40,0,0,1,40,40v64a38.66,38.66,0,0,1-.22,4.19"/></svg>
+</button>
+<div id="error" role="alert" hidden>
+<p class="said"><span class="mark">⨯</span><span data-for="start">The voice didn't start:</span><span data-for="stop">The voice stopped:</span><span data-for="microphone">The microphone is blocked.</span><span id="why"></span></p>
+<p>The board still works.</p>
+<p class="hint"><span data-for="start stop">tap to try again</span><span data-for="microphone">Allow it for this page in the browser, then tap to try again</span></p>
+</div>
+<template id="frame"><iframe id="board" sandbox="allow-scripts" src="/frame" title="Board"></iframe></template>
+</main>
+<dialog id="sheet">
+<header><h2 id="title">Settings</h2><button id="done" type="button">Done</button></header>
+<div id="rows"></div>
+<p id="spent"><span>Spent this session</span><span id="spend"></span></p>
+</dialog>
+</body>
+</html>

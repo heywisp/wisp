@@ -1,0 +1,16 @@
+The user answered:
+
+1. [Database] Which database should the service use?
+   PostgreSQL (Recommended)
+
+2. [Features] Which features should ship first?
+   - Auth
+   - Search
+
+3. [Deploy] Where will it run?
+   In their own words: Fly.io, but keep a Dockerfile in the repo
+
+4. [Name] What should the crate be called?
+   Skipped. Decide yourself and say what you assumed.
+
+Read the answers in the user's own words carefully: they may ask for something else, or ask you not to go on. Follow what they say.

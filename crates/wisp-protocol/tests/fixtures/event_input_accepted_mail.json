@@ -1,0 +1,12 @@
+{
+  "type": "input_accepted",
+  "id": "mail-m3",
+  "mode": "steer",
+  "text": "<wisp:message from=\"/review/planner\" kind=\"report\">\n/review/planner reported: done\n</wisp:message>",
+  "held": false,
+  "from": {
+    "agent": "/review/planner",
+    "kind": "report",
+    "mail": "m3"
+  }
+}

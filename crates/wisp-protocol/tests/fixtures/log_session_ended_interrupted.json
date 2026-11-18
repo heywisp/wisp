@@ -1,0 +1,8 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 57,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "session_ended",
+  "turns": 3,
+  "interrupted": 3
+}

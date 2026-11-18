@@ -1,0 +1,54 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== picker
+| ✓ Showed crates/wisp-core/src/cache.rs                                  +40 −0
+  ~ 1..2 fg Rgb(137, 209, 133); 3..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(212, 212, 212); 73..76 fg Rgb(137, 209, 133); 77..79 fg Rgb(244, 135, 113)
+|        1 +     let part_1 = fingerprint.segment(1);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        2 +     let part_2 = fingerprint.segment(2);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        3 +     let part_3 = fingerprint.segment(3);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        4 +     let part_4 = fingerprint.segment(4);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        5 +     let part_5 = fingerprint.segment(5);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        6 +     let part_6 = fingerprint.segment(6);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        7 +     let part_7 = fingerprint.segment(7);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        8 +     let part_8 = fingerprint.segment(8);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|        9 +     let part_9 = fingerprint.segment(9);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|       10 +     let part_10 = fingerprint.segment(10);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..79 bg Rgb(45, 49, 37)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+|   Open
+  ~ 3..7 fg Rgb(212, 212, 212) bold
+|   Full transcript    every cell in full
+  ~ 3..18 fg Rgb(212, 212, 212); 22..40 fg Rgb(166, 166, 166)
+| › ✓ Showed crates/wisp-core/src/cache.rs                                 +40 −0
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..4 fg Rgb(137, 209, 133) bg Rgb(4, 57, 94); 4..5 bg Rgb(4, 57, 94); 5..11 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) bold; 11..41 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 41..74 bg Rgb(4, 57, 94); 74..77 fg Rgb(137, 209, 133) bg Rgb(4, 57, 94); 77..78 bg Rgb(4, 57, 94); 78..80 fg Rgb(244, 135, 113) bg Rgb(4, 57, 94)
+|   ⨯ Ran cargo build --release                                     exit 101 · 3s
+  ~ 3..4 fg Rgb(244, 135, 113); 5..8 fg Rgb(212, 212, 212) bold; 8..30 fg Rgb(212, 212, 212); 67..75 fg Rgb(244, 135, 113); 75..80 fg Rgb(166, 166, 166)
+|   ✓ Ran cargo test -p wisp-core --all-features                      exit 0 · 1s
+  ~ 3..4 fg Rgb(137, 209, 133); 5..8 fg Rgb(212, 212, 212) bold; 8..47 fg Rgb(212, 212, 212); 69..80 fg Rgb(166, 166, 166)
+|   ╎ Thought for 4 s  Placeholder 9.
+  ~ 3..4 fg Rgb(117, 117, 117); 5..20 fg Rgb(146, 164, 178); 22..36 fg Rgb(146, 164, 178) italic
+|   enter open · type to filter · ctrl-o transcript · esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..20 fg Rgb(166, 166, 166); 20..33 fg Rgb(117, 117, 117); 33..39 fg Rgb(166, 166, 166); 39..53 fg Rgb(117, 117, 117); 53..56 fg Rgb(166, 166, 166); 56..62 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                  total $0.01 │
+  ~ 0..1 fg Rgb(88, 88, 88); 67..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready                          Claude API   sonnet-5-5 low · cached 92% │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 38..48 fg Rgb(166, 166, 166); 51..61 fg Rgb(212, 212, 212); 62..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)

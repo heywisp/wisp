@@ -1,0 +1,9 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 8,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "rejected",
+  "turn": 3,
+  "reason": "no question toolu_7 is open",
+  "kind": "no_question"
+}

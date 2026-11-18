@@ -1,0 +1,8 @@
+{
+  "type": "endpoint_not_saved",
+  "answers": 13,
+  "name": "manifest",
+  "why": {
+    "keychain_failed": "didn't answer"
+  }
+}

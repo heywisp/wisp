@@ -1,0 +1,102 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(PARAGRAPH, GlyphSet::Unicode)"
+---
+--- 120 ---
+   Misses now say which part of the prefix changed: the system prompt, the tools or the messages. The prefix-stability
+   test covers each case, and a long word like supercalifragilisticexpialidocious_and_then_some_more_to_overflow still
+   wraps.
+
+   A second paragraph with a soft break and a hard
+   break.
+--- 80 ---
+   Misses now say which part of the prefix changed: the system prompt, the
+   tools or the messages. The prefix-stability test covers each case, and a
+   long word like
+   supercalifragilisticexpialidocious_and_then_some_more_to_overflow still
+   wraps.
+
+   A second paragraph with a soft break and a hard
+   break.
+--- 60 ---
+   Misses now say which part of the prefix changed: the
+   system prompt, the tools or the messages. The
+   prefix-stability test covers each case, and a long word
+   like
+   supercalifragilisticexpialidocious_and_then_some_more_to
+   _overflow still wraps.
+
+   A second paragraph with a soft break and a hard
+   break.
+--- 24 ---
+   Misses now say which
+   part of the prefix
+   changed: the system
+   prompt, the tools or
+   the messages. The
+   prefix-stability
+   test covers each
+   case, and a long
+   word like
+   supercalifragilistic
+   expialidocious_and_t
+   hen_some_more_to_ove
+   rflow still wraps.
+
+   A second paragraph
+   with a soft break
+   and a hard
+   break.
+--- 10 ---
+   Misses
+   now
+   say
+   which
+   part
+   of the
+   prefix
+   change
+   d: the
+   system
+   prompt
+   , the
+   tools
+   or the
+   messag
+   es.
+   The
+   prefix
+   -stabi
+   lity
+   test
+   covers
+   each
+   case,
+   and a
+   long
+   word
+   like
+   superc
+   alifra
+   gilist
+   icexpi
+   alidoc
+   ious_a
+   nd_the
+   n_some
+   _more_
+   to_ove
+   rflow
+   still
+   wraps.
+
+   A
+   second
+   paragr
+   aph
+   with a
+   soft
+   break
+   and a
+   hard
+   break.

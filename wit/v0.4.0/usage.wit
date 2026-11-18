@@ -1,0 +1,8 @@
+package wisp:plugin@0.4.0;
+
+interface usage {
+  use wisp:plugin/accounts@0.2.0.{limit-window};
+  enum usage-state { ok, stale, checking, signed-out, off, unavailable, unknown }
+  record account-usage { name: string, yours: bool, state: usage-state, limited: bool, retry-at: option<s64>, windows: list<limit-window> }
+  accounts: func() -> list<account-usage>;
+}

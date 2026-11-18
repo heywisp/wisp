@@ -1,0 +1,33 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "input_transformations",
+  "turn": 2,
+  "provider": "anthropic",
+  "transformations": [
+    {
+      "type": "thinking_dropped",
+      "path": "messages.7.content.0",
+      "reason": "prefix_binding_mismatch"
+    },
+    {
+      "type": "thinking_mismatch_allowed",
+      "path": null,
+      "reason": "prefix_binding_mismatch"
+    },
+    {
+      "type": "later_kind",
+      "reason": null,
+      "detail": {
+        "blocks": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "type": "bare"
+    }
+  ]
+}

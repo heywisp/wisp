@@ -1,0 +1,12 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 1,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "input_accepted",
+  "turn": null,
+  "id": "tui-5",
+  "mode": "queue",
+  "text": "then write it up",
+  "replaces": "tui-3",
+  "held": true
+}

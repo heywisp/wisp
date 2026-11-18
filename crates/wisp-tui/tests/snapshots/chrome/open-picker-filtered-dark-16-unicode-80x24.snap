@@ -1,0 +1,54 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== filtered
+| ⨯ Ran cargo build --release                                      exit 101 · 3s
+  ~ 1..2 fg Idx(9); 3..6 bold; 66..74 fg Idx(9); 74..79 fg Idx(7)
+| ✓ Showed crates/wisp-core/src/cache.rs                                  +40 −0
+  ~ 1..2 fg Idx(10); 3..9 bold; 73..76 fg Idx(10); 77..79 fg Idx(9)
+|        1 +     let part_1 = fingerprint.segment(1);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        2 +     let part_2 = fingerprint.segment(2);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        3 +     let part_3 = fingerprint.segment(3);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        4 +     let part_4 = fingerprint.segment(4);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        5 +     let part_5 = fingerprint.segment(5);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        6 +     let part_6 = fingerprint.segment(6);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        7 +     let part_7 = fingerprint.segment(7);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        8 +     let part_8 = fingerprint.segment(8);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        9 +     let part_9 = fingerprint.segment(9);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       10 +     let part_10 = fingerprint.segment(10);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       11 +     let part_11 = fingerprint.segment(11);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Idx(8)
+|   Open
+  ~ 3..7 bold
+| › ⨯ Ran cargo build --release                                     exit 101 · 3s
+  ~ 0..1 inverse; 1..2 fg Idx(12) inverse; 2..3 inverse; 3..4 fg Idx(9) inverse; 4..5 inverse; 5..8 bold inverse; 8..67 inverse; 67..75 fg Idx(9) inverse; 75..80 fg Idx(7) inverse
+|   ✓ Ran cargo test -p wisp-core --all-features                      exit 0 · 1s
+  ~ 3..4 fg Idx(10); 5..8 bold; 69..80 fg Idx(7)
+|   matching "ran cargo" (backspace edit, esc close)
+  ~ 3..51 fg Idx(8)
+|   enter open · type to filter · ctrl-o transcript · esc close
+  ~ 3..8 fg Idx(7); 8..16 fg Idx(8); 16..20 fg Idx(7); 20..33 fg Idx(8); 33..39 fg Idx(7); 39..53 fg Idx(8); 53..56 fg Idx(7); 56..62 fg Idx(8)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Idx(8)
+|│                                                                  total $0.01 │
+  ~ 0..1 fg Idx(8); 67..78 fg Idx(7); 79..80 fg Idx(8)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Idx(8)
+|│ ⢎⠶⡰  Ready                          Claude API   sonnet-5-5 low · cached 92% │
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(8); 3..4 fg Idx(12); 4..5 fg Idx(8); 7..12 fg Idx(7); 38..48 fg Idx(7); 62..78 fg Idx(7); 79..80 fg Idx(8)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Idx(8)

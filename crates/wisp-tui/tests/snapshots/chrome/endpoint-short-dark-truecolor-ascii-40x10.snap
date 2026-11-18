@@ -1,0 +1,65 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== gateway
+|   URL        ....example.com/anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+| > Sends as   (*) x-api-key header (an
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..14 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 14..18 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 18..38 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 38..40 bg Rgb(4, 57, 94)
+|                  API key)
+  ~ 0..18 bg Rgb(4, 57, 94); 18..26 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 26..40 bg Rgb(4, 57, 94)
+|              ( ) Authorization: Bearer
+  ~ 0..14 bg Rgb(4, 57, 94); 14..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|                  header (a token)
+  ~ 0..18 bg Rgb(4, 57, 94); 18..34 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 34..40 bg Rgb(4, 57, 94)
+|   Key        paste the key
+  ~ 3..14 fg Rgb(166, 166, 166); 14..27 fg Rgb(117, 117, 117)
+|   Name       gw
+  ~ 3..14 fg Rgb(166, 166, 166); 14..16 fg Rgb(212, 212, 212)
+|
+|   enter next - tab move - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..36 fg Rgb(117, 117, 117)
+| (*)  Ready     Claude API   sonnet-5-5
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..11 fg Rgb(166, 166, 166); 16..26 fg Rgb(166, 166, 166); 29..39 fg Rgb(212, 212, 212)
+== down
+|   URL        ....example.com/anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+| > Sends as   ( ) x-api-key header (an
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..14 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 14..38 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 38..40 bg Rgb(4, 57, 94)
+|                  API key)
+  ~ 0..18 bg Rgb(4, 57, 94); 18..26 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 26..40 bg Rgb(4, 57, 94)
+|              (*) Authorization: Bearer
+  ~ 0..14 bg Rgb(4, 57, 94); 14..18 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 18..39 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|                  header (a token)
+  ~ 0..18 bg Rgb(4, 57, 94); 18..34 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 34..40 bg Rgb(4, 57, 94)
+|   Key        paste the key
+  ~ 3..14 fg Rgb(166, 166, 166); 14..27 fg Rgb(117, 117, 117)
+|   Name       gw
+  ~ 3..14 fg Rgb(166, 166, 166); 14..16 fg Rgb(212, 212, 212)
+|
+|   enter next - tab move - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..36 fg Rgb(117, 117, 117)
+| (*)  Ready     Claude API   sonnet-5-5
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..11 fg Rgb(166, 166, 166); 16..26 fg Rgb(166, 166, 166); 29..39 fg Rgb(212, 212, 212)
+== tab
+|   URL        ....example.com/anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+|   Sends as   ( ) x-api-key header (an
+  ~ 3..38 fg Rgb(166, 166, 166)
+|                  API key)
+  ~ 18..26 fg Rgb(166, 166, 166)
+|              (*) Authorization: Bearer
+  ~ 14..39 fg Rgb(212, 212, 212)
+|                  header (a token)
+  ~ 18..34 fg Rgb(212, 212, 212)
+| > Key         paste the key
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..14 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 14..15 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) inverse; 15..28 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 28..40 bg Rgb(4, 57, 94)
+|   Name       gw
+  ~ 3..14 fg Rgb(166, 166, 166); 14..16 fg Rgb(212, 212, 212)
+|
+|   enter next - tab move - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..36 fg Rgb(117, 117, 117)
+| (*)  Ready     Claude API   sonnet-5-5
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..11 fg Rgb(166, 166, 166); 16..26 fg Rgb(166, 166, 166); 29..39 fg Rgb(212, 212, 212)

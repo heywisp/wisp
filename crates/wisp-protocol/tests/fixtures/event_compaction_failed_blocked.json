@@ -1,0 +1,8 @@
+{
+  "type": "compaction_failed",
+  "trigger": "overflow",
+  "engine": "native",
+  "kind": "blocked",
+  "message": "Blocked by aa/keep: not now",
+  "turn": 3
+}

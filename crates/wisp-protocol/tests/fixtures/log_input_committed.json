@@ -1,0 +1,23 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 4,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "input_committed",
+  "turn": 3,
+  "step": 2,
+  "inputs": [
+    {
+      "id": "tui-4",
+      "text": "or even if we can study claude code itself",
+      "images": [
+        {
+          "sha256": "0101010101010101010101010101010101010101010101010101010101010101",
+          "media_type": "image/png",
+          "bytes": 123456,
+          "width": 1456,
+          "height": 819
+        }
+      ]
+    }
+  ]
+}

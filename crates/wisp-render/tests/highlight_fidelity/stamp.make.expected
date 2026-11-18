@@ -1,0 +1,8 @@
+syn.variable:7 -:4 syn.string:6
+syn.keyword:2 syn.variable:3 syn.keyword:1 syn.function:46 -:1 syn.variable:8 -:4 syn.keyword:2 syn.variable:7 syn.keyword:1
+syn.variable:4 -:4 syn.keyword:2 syn.function:2 syn.string:1 syn.keyword:2 syn.variable:12 syn.keyword:1 syn.string:31 syn.keyword:2 syn.variable:12 syn.keyword:1 syn.string:6 syn.keyword:1
+syn.variable:6 -:4 syn.string:10 syn.comment:10
+syn.function:3 -:2 syn.string:10
+-:1 syn.keyword:1 syn.function:4 -:1 syn.string:10 syn.keyword:2 syn.string:6 syn.keyword:2 syn.string:1
+-:1 syn.keyword:2 syn.variable:2 syn.keyword:1 -:1 syn.keyword:2 syn.variable:6 syn.keyword:1 -:1 syn.function:2 -:1 syn.keyword:2 -:1 syn.keyword:2
+syn.function:6 -:2 syn.string:3

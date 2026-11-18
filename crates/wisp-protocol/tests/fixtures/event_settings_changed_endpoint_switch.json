@@ -1,0 +1,10 @@
+{
+  "type": "settings_changed",
+  "endpoint": "direct",
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "endpoint_switch"
+  }
+}

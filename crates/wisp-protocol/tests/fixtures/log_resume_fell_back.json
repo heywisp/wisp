@@ -1,0 +1,24 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 58,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "resume_fell_back",
+  "kept_through": 41,
+  "dropped_through": 57,
+  "last_turn": 6,
+  "turns_seen": 8,
+  "processes_seen": 2,
+  "spent_usd": 0.42,
+  "damage": [
+    {
+      "kind": "unreadable",
+      "seq": 45
+    },
+    {
+      "kind": "image",
+      "seq": 43,
+      "turn": 7,
+      "sha256": "0101010101010101010101010101010101010101010101010101010101010101"
+    }
+  ]
+}

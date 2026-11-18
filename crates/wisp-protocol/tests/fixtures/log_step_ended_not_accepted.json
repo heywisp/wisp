@@ -1,0 +1,14 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 10,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "step_ended",
+  "turn": 4,
+  "step": 2,
+  "usage": null,
+  "cost_usd": null,
+  "lower_bound": false,
+  "prompt_tokens": null,
+  "response_id": null,
+  "accepted": false
+}

@@ -1,0 +1,63 @@
+package wisp:plugin@0.2.0;
+
+interface agent-types {
+  enum queue-reason { concurrency, stagger, endpoint, retry, unknown }
+  enum hold-reason { stopped, held-messages, retry-offer, concurrency, unknown }
+  enum idle-outcome { reported, asked, waiting, no-report, invalid-report, failed, stopped, unknown }
+  variant agent-state { queued(queue-reason), running, stopping, idle(option<idle-outcome>), held(hold-reason), ended, unknown }
+  variant activity { idle, streaming, tool(string), queued(queue-reason), held(hold-reason), unknown }
+  record progress { completed: u32, total: u32 }
+  record agent-fill { used: u64, window: option<u64>, limit: option<u64>, estimated: bool }
+  record identity { path: string, name: string, parent: option<string>, preset: option<string>, depth: u32, session-id: string, root-session-id: string }
+  record agent-node {
+    path: string,
+    name: string,
+    parent: option<string>,
+    session-id: string,
+    preset: option<string>,
+    model: string,
+    effort: string,
+    endpoint: option<string>,
+    provider: option<string>,
+    depth: u32,
+    state: agent-state,
+    activity: activity,
+    since-ms: u64,
+    spent-micros: u64,
+    lower-bound: bool,
+    priced: bool,
+    checklist: option<progress>,
+    cwd: option<string>,
+    running-ms: option<u64>,
+    context: option<agent-fill>,
+  }
+  enum mail-kind { task, message, report, notice, unknown }
+  enum report-outcome { reported, no-report, invalid-report, unknown }
+  record state-change { agent: string, state: agent-state, activity: activity, spent-micros: u64, lower-bound: bool }
+  record mail-info { id: string, %from: string, to: string, kind: mail-kind, wake: bool, bytes: u64 }
+  record report-info { agent: string, turn: u64, outcome: report-outcome, cost-micros: option<u64>, duration-ms: u64 }
+  record stop-info { agent: string, target: string, by: option<string> }
+  variant tree-event {
+    agent-spawned(agent-node),
+    agent-state(state-change),
+    agent-mail(mail-info),
+    agent-reported(report-info),
+    agent-stopped(stop-info),
+    agent-ended(stop-info),
+  }
+}
+
+interface agent {
+  use agent-types.{identity};
+  current: func() -> option<identity>;
+}
+
+interface agent-tree {
+  use agent-types.{agent-node};
+  snapshot: func() -> list<agent-node>;
+}
+
+interface agent-hooks {
+  use agent-types.{tree-event};
+  on-agent-hook: async func(hook: string, ev: tree-event);
+}

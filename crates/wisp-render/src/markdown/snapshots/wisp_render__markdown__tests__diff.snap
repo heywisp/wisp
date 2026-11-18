@@ -1,0 +1,71 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(DIFF, GlyphSet::Unicode)"
+---
+--- 120 ---
+   [text.muted|--- a/cache.rs]                                                                                                  [text.faint|diff]
+   [text.muted|+++ b/cache.rs]
+   [text.muted|@@ -209,3 +209,3 @@]
+    [code|fn key(req: &Request) -> Key {]
+   [error on diff.del|-][code on diff.del|    let key = hash(&req.system);]{83 on diff.del}
+   [ok on diff.add|+][code on diff.add|    let key = Fingerprint::of(req)?;]{79 on diff.add}
+    [code|    key]
+--- 80 ---
+   [text.muted|--- a/cache.rs]                                                          [text.faint|diff]
+   [text.muted|+++ b/cache.rs]
+   [text.muted|@@ -209,3 +209,3 @@]
+    [code|fn key(req: &Request) -> Key {]
+   [error on diff.del|-][code on diff.del|    let key = hash(&req.system);]{43 on diff.del}
+   [ok on diff.add|+][code on diff.add|    let key = Fingerprint::of(req)?;]{39 on diff.add}
+    [code|    key]
+--- 60 ---
+   [text.muted|--- a/cache.rs]                                      [text.faint|diff]
+   [text.muted|+++ b/cache.rs]
+   [text.muted|@@ -209,3 +209,3 @@]
+    [code|fn key(req: &Request) -> Key {]
+   [error on diff.del|-][code on diff.del|    let key = hash(&req.system);]{23 on diff.del}
+   [ok on diff.add|+][code on diff.add|    let key = Fingerprint::of(req)?;]{19 on diff.add}
+    [code|    key]
+--- 24 ---
+   [text.muted|--- a/cache.rs]  [text.faint|diff]
+   [text.muted|+++ b/cache.rs]
+   [text.muted|@@ -209,3 +209,3 @@]
+    [code|fn key(req: &Reques]
+   [code|t) -> Key {]
+   [error on diff.del|-][code on diff.del|    let key = hash(]{0 on diff.del}
+   [code on diff.del|&req.system);]{7 on diff.del}
+   [ok on diff.add|+][code on diff.add|    let key = Finge]{0 on diff.add}
+   [code on diff.add|rprint::of(req)?;]{3 on diff.add}
+    [code|    key]
+--- 10 ---
+   [text.muted|--- a/]
+   [text.muted|cache.]
+   [text.muted|rs]
+   [text.muted|+++ b/]
+   [text.muted|cache.]
+   [text.muted|rs]
+   [text.muted|@@ -20]
+   [text.muted|9,3 +2]
+   [text.muted|09,3 @]
+   [text.muted|@]
+    [code|fn ke]
+   [code|y(req:]
+   [code| &Requ]
+   [code|est) -]
+   [code|> Key]
+   [code|{]
+   [error on diff.del|-][code on diff.del|    l]{0 on diff.del}
+   [code on diff.del|et key]{0 on diff.del}
+   [code on diff.del| = has]{0 on diff.del}
+   [code on diff.del|h(&req]{0 on diff.del}
+   [code on diff.del|.syste]{0 on diff.del}
+   [code on diff.del|m);]{3 on diff.del}
+   [ok on diff.add|+][code on diff.add|    l]{0 on diff.add}
+   [code on diff.add|et key]{0 on diff.add}
+   [code on diff.add| = Fin]{0 on diff.add}
+   [code on diff.add|gerpri]{0 on diff.add}
+   [code on diff.add|nt::of]{0 on diff.add}
+   [code on diff.add|(req)?]{0 on diff.add}
+   [code on diff.add|;]{5 on diff.add}
+    [code|    k]
+   [code|ey]

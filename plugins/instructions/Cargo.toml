@@ -1,0 +1,20 @@
+[package]
+name = "wisp-plugin-instructions"
+description = "The project's instruction files as a bundled Wisp plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wisp-instructions.workspace = true
+wisp-plugin-api.workspace = true
+
+[dev-dependencies]
+futures = { workspace = true, features = ["executor"] }
+tempfile.workspace = true
+wisp-plugin-testkit.workspace = true

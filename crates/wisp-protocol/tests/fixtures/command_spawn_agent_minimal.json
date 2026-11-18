@@ -1,0 +1,8 @@
+{
+  "type": "spawn_agent",
+  "request": 8,
+  "spawn": {
+    "name": "docs",
+    "task": "Update the docs."
+  }
+}

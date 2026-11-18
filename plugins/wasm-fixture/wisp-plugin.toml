@@ -1,0 +1,127 @@
+id = "wasm-fixture"
+version = "0.1.0"
+world = "0.3.0"
+summary = "Test tools of the WASM test component"
+index = true
+
+[[tools]]
+name = "count"
+
+[[tools]]
+name = "echo"
+
+[[tools]]
+name = "files"
+
+[[tools]]
+name = "spawn"
+
+[[tools]]
+name = "probe"
+
+[[tools]]
+name = "spin"
+
+[[tools]]
+name = "stall"
+
+[[tools]]
+name = "stream"
+
+[[tools]]
+name = "trap"
+
+[[tools]]
+name = "wait"
+
+[[tools]]
+name = "whoami"
+
+[[hooks]]
+name = "setup"
+point = "session-start"
+
+[[hooks]]
+name = "lead"
+point = "before-turn"
+
+[[hooks]]
+name = "block"
+point = "before-tool"
+
+[[hooks]]
+name = "rewrite"
+point = "after-tool"
+
+[[hooks]]
+name = "compact"
+point = "before-compact"
+
+[[hooks]]
+name = "fires"
+point = "user-input"
+
+[[hooks]]
+name = "loops"
+point = "user-input"
+timeout_ms = 300
+
+[[hooks]]
+name = "traps"
+point = "user-input"
+
+[[hooks]]
+name = "relay"
+point = "wasm-fixture/ping"
+
+[[hooks]]
+name = "spawned"
+point = "agent-spawned"
+
+[[slots]]
+slot = "sidebar"
+name = "status"
+title = "Status"
+default = "off"
+
+[[slots]]
+slot = "sidebar"
+name = "loops"
+title = "Loops"
+default = "off"
+marks = ["after-turn"]
+
+[[slots]]
+slot = "sidebar"
+name = "map"
+title = "Map"
+default = "off"
+
+[[points]]
+name = "ping"
+kind = "observe"
+version = "1"
+
+[[prompt_sections]]
+name = "clock"
+place = "system"
+
+[[commands]]
+name = "send"
+summary = "Send the words as a message"
+
+[strategy]
+summary = "The WASM fixture's compaction"
+
+[[commands]]
+name = "lines"
+summary = "Show fixture lines"
+
+[[settings]]
+name = "depth"
+label = "Depth"
+kind = "int"
+default = 2
+min = 1
+max = 5
+help = "Fixture depth"

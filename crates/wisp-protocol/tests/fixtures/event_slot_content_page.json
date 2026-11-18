@@ -1,0 +1,8 @@
+{
+  "type": "slot_content",
+  "section": "agent-viz/topology",
+  "view": "page",
+  "content": {
+    "blocks": []
+  }
+}

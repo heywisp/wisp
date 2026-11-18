@@ -1,0 +1,21 @@
+{
+  "type": "rewound",
+  "to": 1,
+  "point": {
+    "type": "turn",
+    "turn": 2
+  },
+  "reason": "user",
+  "messages": 2,
+  "blocks": 1,
+  "dropped": {
+    "turns": [
+      2,
+      3
+    ],
+    "messages": 4
+  },
+  "cache": {
+    "type": "kept"
+  }
+}

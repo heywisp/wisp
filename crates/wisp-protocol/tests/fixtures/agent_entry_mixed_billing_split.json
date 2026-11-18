@@ -1,0 +1,30 @@
+{
+  "path": "/review/planner",
+  "name": "planner",
+  "parent": "/review",
+  "preset": "reviewer",
+  "model": "claude-opus-4-1",
+  "effort": "high",
+  "depth": 2,
+  "state": {
+    "state": "idle",
+    "outcome": "reported"
+  },
+  "activity": {
+    "type": "idle"
+  },
+  "spent_usd": 16.4,
+  "plan_usd": 4.1,
+  "billing": "mixed",
+  "accounts": {
+    "claude-main": {
+      "usd": 4.1,
+      "plan_usd": 4.1
+    },
+    "old": {
+      "usd": 12.3
+    }
+  },
+  "last_report": "Plan written to docs/plans/x.md",
+  "cwd": "~/Projects/Wisp-worktrees/review"
+}

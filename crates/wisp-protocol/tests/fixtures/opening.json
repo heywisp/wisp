@@ -1,0 +1,215 @@
+{
+  "version": "0.2.0",
+  "provider": "provider",
+  "model": "model",
+  "effort": "high",
+  "cache_ttl": "one_hour",
+  "credential": "api_key",
+  "host": "gateway.invalid",
+  "log": "/work/log.jsonl",
+  "home": "/home/user",
+  "cwd": "/work/project",
+  "endpoint": "custom",
+  "models": [
+    {
+      "provider": "provider",
+      "shipped": true,
+      "id": "model",
+      "listed": 2,
+      "rates": {
+        "writes": {
+          "prefix": 1.5,
+          "tail": 1.0,
+          "five_minutes": 1.0,
+          "one_hour": 1.5
+        },
+        "input_per_mtok": 2.0,
+        "output_per_mtok": 8.0,
+        "cache_read_per_mtok": 0.2,
+        "long_prompt": {
+          "prompt_tokens_over": 200000,
+          "input_per_mtok": 3.0,
+          "cache_read_per_mtok": 0.3
+        }
+      },
+      "caps": {
+        "supported": true,
+        "efforts": [
+          "low",
+          "high"
+        ],
+        "default_effort": "low",
+        "per_message_effort": true,
+        "adaptive_thinking": true,
+        "max_output": 4096
+      },
+      "image_tier": {
+        "max_edge": 512,
+        "max_tokens": 128
+      },
+      "variant": null
+    }
+  ],
+  "on_accounts": [
+    {
+      "account": "account",
+      "model": "model",
+      "rates": {
+        "writes": {
+          "prefix": 1.5,
+          "tail": 1.0,
+          "five_minutes": 1.0,
+          "one_hour": 1.5
+        },
+        "input_per_mtok": 2.0,
+        "output_per_mtok": 8.0,
+        "cache_read_per_mtok": 0.2,
+        "long_prompt": {
+          "prompt_tokens_over": 200000,
+          "input_per_mtok": 3.0,
+          "cache_read_per_mtok": 0.3
+        }
+      },
+      "max_output": 2048
+    }
+  ],
+  "write_multipliers": {
+    "prefix": 1.5,
+    "tail": 1.0,
+    "five_minutes": 1.0,
+    "one_hour": 1.5
+  },
+  "next": {
+    "endpoint": "next",
+    "model": "other",
+    "effort": "low",
+    "cache_ttl": "five_minutes"
+  },
+  "max_tokens": 64000,
+  "endpoint_name": "account",
+  "endpoints": [
+    {
+      "name": "account",
+      "provider": "provider",
+      "credential": "api_key",
+      "official": false,
+      "host": "gateway.invalid",
+      "priced": true,
+      "default": true,
+      "keys_file": true,
+      "expired": true,
+      "key_var": {
+        "name": "TEST_KEY",
+        "in_keys_file": true
+      },
+      "mark": 3,
+      "models": [
+        {
+          "id": "model",
+          "listed": 2
+        }
+      ],
+      "complete": true,
+      "default_model": "model",
+      "voice_model": "voice"
+    }
+  ],
+  "endpoint_note": "placeholder account note",
+  "resume_refused": true,
+  "instructions": {
+    "chosen": "project",
+    "summary": {
+      "chosen": {
+        "scope": "project",
+        "name": "AGENTS.md",
+        "display_path": "/work/project/AGENTS.md",
+        "bytes": 8,
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "note": "placeholder instructions note"
+  },
+  "search": {
+    "requested": true,
+    "chat_only": true,
+    "pairs": [
+      {
+        "endpoint": "account",
+        "model": "model",
+        "form": "native"
+      },
+      {
+        "endpoint": "second",
+        "model": "model",
+        "form": {
+          "none": "turned_off"
+        }
+      }
+    ],
+    "refused": [
+      "other"
+    ],
+    "kept": [
+      "account",
+      "model",
+      true
+    ]
+  },
+  "resumed": "placeholder resumed note",
+  "claude_usage": true,
+  "start_pick": {
+    "query": "work",
+    "head": [
+      {
+        "text": "placeholder picker note"
+      }
+    ]
+  },
+  "card": {
+    "catalogue": [
+      {
+        "name": "provider",
+        "title": "Provider",
+        "default_url": "https://provider.invalid",
+        "auths": [
+          {
+            "name": "api_key",
+            "words": "API key"
+          }
+        ],
+        "official_auth": "api_key"
+      }
+    ],
+    "presence": [
+      "TEST_KEY"
+    ],
+    "credentials_shown": "/work/credentials.json",
+    "keys_file": "/work/keys",
+    "lead": "placeholder card note"
+  },
+  "start": {
+    "warnings": [
+      "placeholder warning"
+    ],
+    "note": {
+      "said": {
+        "text": "placeholder start note"
+      }
+    },
+    "continued": {
+      "reason": {
+        "is": [
+          {
+            "account": [
+              "previous",
+              2
+            ]
+          },
+          "unavailable"
+        ]
+      },
+      "from": "anthropic_plan",
+      "quote": 0.5
+    }
+  }
+}

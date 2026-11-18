@@ -1,0 +1,34 @@
+---
+source: crates/wisp-tui/tests/app/pickers.rs
+expression: shot
+---
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+│    ⡐⠈ ⠁⠁     wisp                                                                          0.0.0 │
+│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                                            │
+│    ⠡⢀ ⡀⡀⠌    opus-5-5 medium                                                                     │
+│              ~/project · Claude API                                                              │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+  enter send · ctrl-j new line · /help · /model switch model
+
+
+
+
+
+
+
+ › go
+
+ ⠶ answered
+
+   0s · cost unknown · cache rebuilt: web search isn't enabled for this account
+
+ ∙ web search isn't enabled for this account on claude-api; continuing without web search · nothing cached yet, so nothing to rebuild
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                              │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ › Ask anything, or type / for commands                                                                                                                       │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ⠢⡠⠊  Done · 0s · ↓ 50 tokens · cache rebuilt: web search isn't enabled for this account                             Claude API   opus-5-5 medium · cached 0% │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

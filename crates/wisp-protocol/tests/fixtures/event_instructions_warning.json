@@ -1,0 +1,7 @@
+{
+  "type": "instructions_warning",
+  "diagnostic": {
+    "kind": "large",
+    "message": "instructions are large: about 20,000 tokens, about $0.004 per request to read and $0.16 per cache write (claude-opus-5-5)"
+  }
+}

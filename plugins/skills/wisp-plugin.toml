@@ -1,0 +1,29 @@
+id = "skills"
+version = "0.1.0"
+world = "0.3.0"
+summary = "Finds and reads how-to skills when they are needed"
+index = true
+settings = ["turned_off"]
+
+[[commands]]
+name = "skills"
+summary = "List the skills in your folders"
+
+[[hooks]]
+name = "scan"
+point = "before-turn"
+in = ["core/state"]
+
+[[hooks]]
+name = "nudge"
+point = "before-turn"
+in = ["core/notes"]
+after = ["skills/scan"]
+
+[[hooks]]
+name = "compacted"
+point = "after-compact"
+
+[[hooks]]
+name = "rewound"
+point = "rewound"

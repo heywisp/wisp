@@ -1,0 +1,6 @@
+{
+  "type": "agent_renamed",
+  "request": 11,
+  "agent": "/review/planner",
+  "to": "/review/fixer"
+}

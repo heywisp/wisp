@@ -1,0 +1,6 @@
+syn.comment:19
+syn.function:3 -:14
+syn.control:3 -:3 syn.control:2 -:1 syn.string:1 -:2 syn.variable:6 syn.keyword:1 syn.variable:1 -:1 syn.string:1 -:2 syn.control:2
+-:2 syn.function:4 -:1 syn.string:1 -:2 syn.variable:3 -:3 syn.string:1 -:2 syn.function:2 syn.variable:3 -:3 syn.string:1 -:1 syn.variable:1 syn.string:1 -:1 syn.string:1 -:4 syn.string:1 -:1 syn.variable:3 syn.string:1 -:1 syn.comment:7
+-:4
+syn.function:2 -:1 syn.variable:2 -:3 syn.variable:5 -:4 syn.function:2 -:4 syn.function:4 syn.variable:8 -:1 syn.string:10 -:1 syn.variable:5 syn.string:1 -:25

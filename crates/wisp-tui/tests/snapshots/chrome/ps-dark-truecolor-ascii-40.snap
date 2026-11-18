@@ -1,0 +1,247 @@
+---
+source: crates/wisp-tui/tests/app/sidebar.rs
+expression: body
+---
+== listed
+| (*) wisp 0.0.0 - test-model - ...oject
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(4 blank rows)
+| > start the dev server
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..23 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 23..40 bg Rgb(38, 38, 38)
+|
+| * I'll start the dev server and a
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   Python shell in the background.
+|
+| ^ Preview site     process 3 - running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..15 fg Rgb(212, 212, 212); 20..39 fg Rgb(166, 166, 166)
+| Processes
+  ~ 1..10 fg Rgb(212, 212, 212) bold
+| Running                              2
+  ~ 1..8 fg Rgb(166, 166, 166) bold; 38..39 fg Rgb(166, 166, 166)
+| > / 3  Preview site       running - 2s
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..4 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 4..5 bg Rgb(4, 57, 94); 5..6 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 6..8 bg Rgb(4, 57, 94); 8..20 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 20..27 bg Rgb(4, 57, 94); 27..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|   / 5  Python s...  terminal 40x6 - 2s
+  ~ 3..4 fg Rgb(86, 156, 214); 5..6 fg Rgb(212, 212, 212); 8..19 fg Rgb(212, 212, 212); 21..39 fg Rgb(166, 166, 166)
+| History                              0
+  ~ 1..8 fg Rgb(166, 166, 166) bold; 38..39 fg Rgb(166, 166, 166)
+|   enter open - x stop - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..17 fg Rgb(166, 166, 166); 17..25 fg Rgb(117, 117, 117); 25..28 fg Rgb(166, 166, 166); 28..34 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready - agent continues when... |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== idle-several
+| (*) wisp 0.0.0 - test-model - ...oject
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|
+|
+| > start the dev server
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..23 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 23..40 bg Rgb(38, 38, 38)
+|
+| * I'll start the dev server and a
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   Python shell in the background.
+|
+| ^ Preview site     process 3 - running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..15 fg Rgb(212, 212, 212); 20..39 fg Rgb(166, 166, 166)
+| ^ Python shell     process 5 - running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..15 fg Rgb(212, 212, 212); 20..39 fg Rgb(166, 166, 166)
+|
+| * Both are running.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   4.2s - 2 requests - 2 tools - cost
+  ~ 3..37 fg Rgb(117, 117, 117)
+|   unknown - cached 38%
+  ~ 3..23 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| > Ask anything                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready - agent continues when... |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== moved
+| (*) wisp 0.0.0 - test-model - ...oject
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(4 blank rows)
+| > start the dev server
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..23 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 23..40 bg Rgb(38, 38, 38)
+|
+| * I'll start the dev server and a
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   Python shell in the background.
+|
+| ^ Preview site     process 3 - running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..15 fg Rgb(212, 212, 212); 20..39 fg Rgb(166, 166, 166)
+| Processes
+  ~ 1..10 fg Rgb(212, 212, 212) bold
+| Running                              2
+  ~ 1..8 fg Rgb(166, 166, 166) bold; 38..39 fg Rgb(166, 166, 166)
+|   \ 3  Preview site       running - 3s
+  ~ 3..4 fg Rgb(86, 156, 214); 5..6 fg Rgb(212, 212, 212); 8..20 fg Rgb(212, 212, 212); 27..39 fg Rgb(166, 166, 166)
+| > \ 5  Python s...  terminal 40x6 - 3s
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..4 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 4..5 bg Rgb(4, 57, 94); 5..6 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 6..8 bg Rgb(4, 57, 94); 8..19 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 19..21 bg Rgb(4, 57, 94); 21..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+| History                              0
+  ~ 1..8 fg Rgb(166, 166, 166) bold; 38..39 fg Rgb(166, 166, 166)
+|   enter open - a take over - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..17 fg Rgb(166, 166, 166); 17..30 fg Rgb(117, 117, 117); 30..33 fg Rgb(166, 166, 166); 33..39 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready - agent continues when... |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== stopped
+| (*) wisp 0.0.0 - test-model - ...oject
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(4 blank rows)
+| > start the dev server
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..23 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 23..40 bg Rgb(38, 38, 38)
+|
+| * I'll start the dev server and a
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   Python shell in the background.
+|
+| - Previ...  process 3 - stopped by you
+  ~ 1..2 fg Rgb(166, 166, 166); 3..11 fg Rgb(212, 212, 212); 13..39 fg Rgb(166, 166, 166)
+| Processes
+  ~ 1..10 fg Rgb(212, 212, 212) bold
+| Running                              1
+  ~ 1..8 fg Rgb(166, 166, 166) bold; 38..39 fg Rgb(166, 166, 166)
+|   / 5  Python s...  terminal 40x6 - 3s
+  ~ 3..4 fg Rgb(86, 156, 214); 5..6 fg Rgb(212, 212, 212); 8..19 fg Rgb(212, 212, 212); 21..39 fg Rgb(166, 166, 166)
+| History                              1
+  ~ 1..8 fg Rgb(166, 166, 166) bold; 38..39 fg Rgb(166, 166, 166)
+| > - 3  Preview...  stopped by you - 0s
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..4 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 4..5 bg Rgb(4, 57, 94); 5..6 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 6..8 bg Rgb(4, 57, 94); 8..18 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 18..20 bg Rgb(4, 57, 94); 20..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|   enter open - up/down move - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..23 fg Rgb(166, 166, 166); 23..31 fg Rgb(117, 117, 117); 31..34 fg Rgb(166, 166, 166); 34..40 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready - agent continues when... |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== idle-one
+| (*) wisp 0.0.0 - test-model - ...oject
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|
+|
+| > start the dev server
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..23 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 23..40 bg Rgb(38, 38, 38)
+|
+| * I'll start the dev server and a
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   Python shell in the background.
+|
+| - Previ...  process 3 - stopped by you
+  ~ 1..2 fg Rgb(166, 166, 166); 3..11 fg Rgb(212, 212, 212); 13..39 fg Rgb(166, 166, 166)
+| ^ Python shell     process 5 - running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..15 fg Rgb(212, 212, 212); 20..39 fg Rgb(166, 166, 166)
+|
+| * Both are running.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   4.2s - 2 requests - 2 tools - cost
+  ~ 3..37 fg Rgb(117, 117, 117)
+|   unknown - cached 38%
+  ~ 3..23 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| > Ask anything                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready - agent continues when... |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== idle-ready
+| (*) wisp 0.0.0 - test-model - ...oject
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(166, 166, 166)
+|   low effort - Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|
+|
+| > start the dev server
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..23 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 23..40 bg Rgb(38, 38, 38)
+|
+| * I'll start the dev server and a
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   Python shell in the background.
+|
+| - Previ...  process 3 - stopped by you
+  ~ 1..2 fg Rgb(166, 166, 166); 3..11 fg Rgb(212, 212, 212); 13..39 fg Rgb(166, 166, 166)
+| - Pytho...  process 5 - stopped by you
+  ~ 1..2 fg Rgb(166, 166, 166); 3..11 fg Rgb(212, 212, 212); 13..39 fg Rgb(166, 166, 166)
+|
+| * Both are running.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   4.2s - 2 requests - 2 tools - cost
+  ~ 3..37 fg Rgb(117, 117, 117)
+|   unknown - cached 38%
+  ~ 3..23 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| > Ask anything                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   Claude API   test-model |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..25 fg Rgb(166, 166, 166); 28..38 fg Rgb(212, 212, 212); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)

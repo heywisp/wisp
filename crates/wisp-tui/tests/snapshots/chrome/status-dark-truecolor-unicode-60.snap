@@ -1,0 +1,28 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== ready
+|│ ⢎⠶⡰  Ready                   Claude API   sonnet-5-5 low │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 31..41 fg Rgb(166, 166, 166); 44..54 fg Rgb(212, 212, 212); 55..58 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88)
+== listening
+|│ ⢎⠶⡱                          Claude API   sonnet-5-5 low │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 31..41 fg Rgb(166, 166, 166); 44..54 fg Rgb(212, 212, 212); 55..58 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88)
+== thinking
+|│ ⠎⠶⡰  Kindling… 4s   esc to stop                          │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(212, 212, 212); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(212, 212, 212); 7..8 fg Rgb(146, 164, 178); 8..9 fg Rgb(131, 146, 158); 9..10 fg Rgb(107, 119, 129); 10..11 fg Rgb(115, 128, 138); 11..12 fg Rgb(138, 155, 168); 12..16 fg Rgb(146, 164, 178); 16..19 fg Rgb(166, 166, 166); 22..25 fg Rgb(166, 166, 166); 25..33 fg Rgb(117, 117, 117); 59..60 fg Rgb(88, 88, 88)
+== retrying
+|│ ⠎⠶⡰  Retrying in 8 s (1 of 5): overloaded   esc to stop  │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(212, 212, 212); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(212, 212, 212); 7..43 fg Rgb(166, 166, 166); 46..49 fg Rgb(166, 166, 166); 49..57 fg Rgb(117, 117, 117); 59..60 fg Rgb(88, 88, 88)
+== answering
+|│ ⢎⠶⡰  Kindling… 4s · ↓ ≈1 token · esc to stop             │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(112, 112, 112); 3..4 fg Rgb(85, 153, 210); 4..5 fg Rgb(112, 112, 112); 7..16 fg Rgb(212, 212, 212); 16..46 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88)
+== working
+|│ ⢎⠶⡰  Writing a web_search call · 1s   esc to stop        │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(212, 212, 212); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(212, 212, 212); 7..37 fg Rgb(166, 166, 166); 40..43 fg Rgb(166, 166, 166); 43..51 fg Rgb(117, 117, 117); 59..60 fg Rgb(88, 88, 88)
+== done
+|│ ⠢⡠⠊  Done · 18s · ↓ 475 tokens · cached 92%   Claude API │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..5 fg Rgb(137, 209, 133); 7..11 fg Rgb(137, 209, 133); 11..45 fg Rgb(166, 166, 166); 48..58 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88)
+== stopped
+|│ ⢎⠶⡰  Stopped. Nothing from this turn was kept.           │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(128, 128, 128); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(128, 128, 128); 7..48 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88)

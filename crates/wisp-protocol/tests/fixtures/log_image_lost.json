@@ -1,0 +1,9 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 59,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "image_lost",
+  "turn": 3,
+  "sha256": "0202020202020202020202020202020202020202020202020202020202020202",
+  "note": "[image no longer available: image/png, 1.2 MB]"
+}

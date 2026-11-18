@@ -1,0 +1,75 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(CODE, GlyphSet::Unicode)"
+---
+--- 120 ---
+   fn main() {                                                                                                     [text.faint|rust]
+       let x = "a string that is long enough to need splitting at the narrow widths, and more besides to pass a hundred
+    columns";
+   }
+
+   indented code
+
+                                                                                                                 [text.faint|python]
+--- 80 ---
+   fn main() {                                                             [text.faint|rust]
+       let x = "a string that is long enough to need splitting at the narrow wi
+   dths, and more besides to pass a hundred columns";
+   }
+
+   indented code
+
+                                                                         [text.faint|python]
+--- 60 ---
+   fn main() {                                         [text.faint|rust]
+       let x = "a string that is long enough to need splitt
+   ing at the narrow widths, and more besides to pass a hun
+   dred columns";
+   }
+
+   indented code
+
+                                                     [text.faint|python]
+--- 24 ---
+   fn main() {     [text.faint|rust]
+       let x = "a strin
+   g that is long enoug
+   h to need splitting
+   at the narrow widths
+   , and more besides t
+   o pass a hundred col
+   umns";
+   }
+
+   indented code
+
+                 [text.faint|python]
+--- 10 ---
+   fn mai
+   n() {
+       le
+   t x =
+   "a str
+   ing th
+   at is
+   long e
+   nough
+   to nee
+   d spli
+   tting
+   at the
+    narro
+   w widt
+   hs, an
+   d more
+    besid
+   es to
+   pass a
+    hundr
+   ed col
+   umns";
+   }
+
+   indent
+   ed cod
+   e

@@ -1,0 +1,128 @@
+---
+source: crates/wisp-tui/src/app/picker/tests.rs
+expression: "text.join(\"\\n\")"
+---
+== whole
+------------------------------------------------------------------------------------------------------------------------
+   Model                                                            cache rebuild
+   * claude-subscription  Claude subscription
+ >   opus-5-5 +           medium                                              now
+     sonnet-5-5                                                            ~$0.08
+     haiku-5-5                                                            ~$0.004
+     opus-4-5
+     opus-4-8                                                              ~$0.20
+     sonnet-4-6                                                            ~$0.12
+   * claude-work          Claude subscription   opus-5-5 medium
+   v 3 more
+   This chat uses it now
+
+   enter switch - <- accounts - type to filter - esc close
+== claude-work
+------------------------------------------------------------------------------------------------------------------------
+   Model                                                              cache rebuild
+   * claude-subscription +  Claude subscription   opus-5-5 medium
+   * claude-work            Claude subscription
+ >   opus-5-5                                                                ~$0.16
+     sonnet-5-5                                                              ~$0.08
+     haiku-5-5                                                              ~$0.004
+     opus-4-5
+     opus-4-8                                                                ~$0.20
+     sonnet-4-6                                                              ~$0.12
+   v 3 more
+   Moves this chat to * claude-work - cache rebuild ~$0.16, subscription
+
+   enter switch - <- accounts - type to filter - esc close
+== chatgpt
+------------------------------------------------------------------------------------------------------------------------
+   Model                                                           cache rebuild
+   * claude-subscription +  Claude subscription   opus-5-5 medium
+   * claude-work            Claude subscription   opus-5-5 medium
+   * claude-api             Claude API            opus-5-5 medium
+   * chatgpt                ChatGPT subscription
+ >   gpt-6.1-sol                                                          ~$0.10
+     gpt-6-astra                                                          ~$0.04
+     gpt-6.1-terra                                                        ~$0.05
+     gpt-6-sol                                                            ~$0.08
+   v 6 more
+   Moves this chat to * chatgpt - cache rebuild ~$0.10, subscription
+   On chatgpt, earlier reasoning won't carry over.
+   enter switch - <- accounts - type to filter - esc close
+== typed reserve
+------------------------------------------------------------------------------------------------------------------------
+   Model                                cache rebuild
+   * chatgpt      ChatGPT subscription
+ >   gpt-reserve  cost unknown
+   Moves this chat to * chatgpt - cache rebuild ~20k tokens
+   On chatgpt, earlier reasoning won't carry over.
+   matching "reserve" (backspace edit, esc close)
+   enter switch - <- accounts - type to filter - esc close
+== filtered opus
+------------------------------------------------------------------------------------------------------------------------
+   Model                                       cache rebuild
+   * claude-subscription  Claude subscription
+ >   opus-5-5 +           medium                         now
+     opus-4-5
+     opus-4-8                                         ~$0.20
+   * claude-work          Claude subscription
+     opus-5-5                                         ~$0.16
+     opus-4-5
+     opus-4-8                                         ~$0.20
+   v 4 more
+   This chat uses it now
+   matching "opus" (backspace edit, esc close)
+   enter switch - <- accounts - type to filter - esc close
+== effort on chatgpt
+------------------------------------------------------------------------------------------------------------------------
+   Effort
+   low  default
+ > medium
+   high
+   xhigh
+   max
+   Moves this chat to * chatgpt - cache rebuild ~$0.10, subscription
+   On chatgpt, earlier reasoning won't carry over.
+   enter use - esc close
+== account 0
+------------------------------------------------------------------------------------------------------------------------
+   Account
+ > * claude-subscription +  Claude subscription   opus-5-5 medium
+   * claude-work            Claude subscription   opus-5-5 medium
+   * claude-api             Claude API            opus-5-5 medium
+   * chatgpt                ChatGPT subscription  gpt-6.1-sol medium
+   + Sign in to another account...
+   This chat uses it now
+
+   enter switch - -> models - type to filter - esc close
+== account 1
+------------------------------------------------------------------------------------------------------------------------
+   Account
+   * claude-subscription +  Claude subscription   opus-5-5 medium
+ > * claude-work            Claude subscription   opus-5-5 medium
+   * claude-api             Claude API            opus-5-5 medium
+   * chatgpt                ChatGPT subscription  gpt-6.1-sol medium
+   + Sign in to another account...
+   Moves this chat to * claude-work - cache rebuild ~$0.16, subscription
+
+   enter switch - -> models - type to filter - esc close
+== account 2
+------------------------------------------------------------------------------------------------------------------------
+   Account
+   * claude-subscription +  Claude subscription   opus-5-5 medium
+   * claude-work            Claude subscription   opus-5-5 medium
+ > * claude-api             Claude API            opus-5-5 medium
+   * chatgpt                ChatGPT subscription  gpt-6.1-sol medium
+   + Sign in to another account...
+   Moves this chat to * claude-api, from your subscription to the API - cache rebuild ~$0.16
+
+   enter switch - -> models - type to filter - esc close
+== account 3
+------------------------------------------------------------------------------------------------------------------------
+   Account
+   * claude-subscription +  Claude subscription   opus-5-5 medium
+   * claude-work            Claude subscription   opus-5-5 medium
+   * claude-api             Claude API            opus-5-5 medium
+ > * chatgpt                ChatGPT subscription  gpt-6.1-sol medium
+   + Sign in to another account...
+   Moves this chat to * chatgpt - cache rebuild ~$0.10, subscription
+   On chatgpt, earlier reasoning won't carry over.
+   enter switch - -> models - type to filter - esc close

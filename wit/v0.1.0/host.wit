@@ -1,0 +1,225 @@
+package wisp:plugin@0.1.0;
+
+interface session {
+  record facts { model: string, endpoint-kind: string, effort: string, platform: string, capabilities: list<string> }
+  current: func() -> facts;
+}
+
+interface workspace {
+  root: func() -> string;
+  home: func() -> option<string>;
+  shorten: func(path: string) -> string;
+  enum file-kind { regular, directory, fifo, socket, device, other }
+  kind-of: func(path: string) -> option<file-kind>;
+}
+
+interface clock {
+  record instant { seconds: s64, nanos: u32 }
+  now: func() -> instant;
+  local-offset: func(at: instant) -> option<s32>;
+  elapsed-ms: func() -> u64;
+  sleep: async func(ms: u64);
+}
+
+interface settings {
+  get: func(key: string) -> option<string>;
+}
+
+interface context {
+  enum fill-part { system, tools, chat, skills }
+  record part-tokens { part: fill-part, tokens: u64 }
+  record fill {
+    estimate: u64, measured: option<u64>, window: option<u64>,
+    point: option<u64>, ceiling: option<u64>, auto-compact: bool, epoch: u64,
+    parts: list<part-tokens>, cached: option<u8>,
+  }
+  current-fill: func() -> fill;
+  estimate-text: func(text: string) -> u64;
+}
+
+interface media {
+  variant token-count { counted(u64), unsupported, failed(string) }
+  media-types: func() -> list<string>;
+  image-edge: func() -> option<u32>;
+  count-tokens: async func(media-type: string, bytes: list<u8>) -> token-count;
+}
+
+interface call {
+  use types.{question, ask-reply};
+  record output-summary { text: string, bytes: u64, lines: u64, file: option<string> }
+  resource call-context {
+    id: func() -> string;
+    cwd: func() -> string;
+    deadline-ms: func() -> option<u64>;
+    cancelled: func() -> bool;
+    wait-cancelled: async func();
+    moved: func() -> bool;
+    steered: func() -> bool;
+    live-tail: func() -> bool;
+    write-output: func(bytes: list<u8>);
+    output-summary: func() -> output-summary;
+    private-file: func(suffix: string) -> result<string, string>;
+    ask: async func(items: list<question>) -> ask-reply;
+  }
+}
+
+interface jobs {
+  use types.{signal-kind, exit-status, ask-reply, typed, key};
+  use call.{call-context};
+  enum mode { pipe, terminal }
+  record size { cols: u16, rows: u16 }
+  record spawn-spec {
+    program: string,
+    args: list<string>,
+    cwd: string,
+    env: list<tuple<string, string>>,
+    mode: mode,
+    size: option<size>,
+    stdin: bool,
+    background: bool,
+    limit-ms: option<u64>,
+    label: string,
+    keep: bool,
+  }
+  variant stopped-by { model, user, session-ended, time-limit(u64) }
+  enum lost-reason { stopped-at-resume, gone }
+  variant job-end { exited(exit-status), stopped(stopped-by), lost(lost-reason), failed(string) }
+  variant job-error { driven, ended, no-input, closed, line-too-long(u64), invalid(string), io(string) }
+  record job-info {
+    id: option<u32>,
+    call-id: option<string>,
+    label: string,
+    end: option<job-end>,
+    mode: mode,
+    lines: u64,
+    bytes: u64,
+    restored: bool,
+    echo-off: bool,
+    full-screen: bool,
+    unread: u64,
+    limit-ms: option<u64>,
+    left-ms: option<u64>,
+    size: option<size>,
+    keep: bool,
+    log: option<string>,
+  }
+  enum settled { ended, quiet, cancelled }
+  record wait-for { timeout-ms: u64, until: option<string>, quiet-ms: option<u64> }
+  record handed-back { id: u32, quiet-ms: u64 }
+  record hold-spec { quiet-ms: option<u64>, yield-ms: option<u64> }
+  variant waited { ended(job-end), matched, quiet, timed-out, cancelled, steered, moved(u32), needs-input(handed-back), still-running(u32) }
+  record line { number: u64, text: string }
+  record span { first: u64, last: u64 }
+  variant row { line(line), gap(span) }
+  record write-failure { error: string, after: u64 }
+  record capped { cap: u64, dropped: u64 }
+  variant file-problem { not-created(string), write-failed(write-failure), capped(capped) }
+  record output-file { path: option<string>, problem: option<file-problem> }
+  record section { first: u64, last: u64, bytes: u64, lines: u64, head: string, tail: string }
+  record read { section: option<section>, complete: u64, held: option<string>, file: output-file }
+  record job-output { head: string, tail: string, bytes: u64, lines: u64, file: output-file }
+  record unreadable { path: string, error: string }
+  variant saved-file { readable(string), none-kept, missing(string), unreadable(unreadable) }
+  record rows { last: u64, complete: u64, rows: list<row>, cut: bool, held: option<string> }
+  record found-line { number: u64, text: string, matched: bool }
+  variant found-row { line(found-line), separator }
+  record found { last: u64, rows: list<found-row>, shown: u64, remaining: u64, last-shown: u64, gaps: list<span> }
+  record point { row: u16, col: u16 }
+  record screen { rows: list<string>, cursor: point, size: size, full-screen: bool, changed: bool }
+  record typing { text: option<string>, keys: list<key>, signal: option<signal-kind>, size: option<size> }
+  record written { total: u64, left: u64, typed: typed, stopped: bool, failed: option<job-error>, after-kill: option<waited> }
+  variant captured { not-found, failed(string), output(list<u8>) }
+  resource job {
+    info: async func() -> job-info;
+    write: async func(input: typing, within-ms: u64) -> written;
+    signal: async func(kind: signal-kind, within-ms: u64) -> written;
+    resize: func(to: size) -> result<_, job-error>;
+    set-limit: func(ms: option<u64>);
+    wait: async func(how: wait-for) -> result<waited, string>;
+    hold: async func(spec: hold-spec) -> waited;
+    settle: async func(quiet-ms: u64, max-ms: u64) -> settled;
+    screen: async func() -> option<screen>;
+    new-output: async func() -> read;
+    tail: async func(lines: u32) -> read;
+    output: async func() -> job-output;
+    saved: async func() -> option<saved-file>;
+    lines: async func(first: u64, count: u32) -> rows;
+    search: async func(pattern: string, %from: u64, context: u32, max: u32) -> result<found, string>;
+    background: async func() -> option<u32>;
+    ask-attach: async func(reason: string) -> ask-reply;
+  }
+  spawn: async func(spec: spawn-spec, ctx: borrow<call-context>) -> result<job, job-error>;
+  adopt: func(id: u32, ctx: borrow<call-context>) -> option<job>;
+  all: async func() -> list<job-info>;
+  mark-reported: func(id: u32, ctx: borrow<call-context>);
+  which: func(program: string) -> option<string>;
+  capture: async func(program: string, args: list<string>, timeout-ms: u64) -> captured;
+}
+
+interface todos {
+  use call.{call-context};
+  enum todo-status { pending, in-progress, completed, cancelled }
+  record todo { text: string, status: todo-status }
+  replace: func(items: list<todo>, ctx: borrow<call-context>) -> result<_, string>;
+}
+
+interface agents {
+  use call.{call-context};
+  record spawn-input {
+    name: string,
+    task: string,
+    todos: list<string>,
+    cwd: option<string>,
+    preset: option<string>,
+    endpoint: option<string>,
+    model: option<string>,
+    effort: option<string>,
+    tools-off: list<string>,
+    spawn: option<bool>,
+    keep-warm: option<bool>,
+  }
+  variant warm-mark { limit(u32), unsupported }
+  record started-agent { path: string, model: string, effort: string, endpoint: string, provider: string, cwd: string, keep-warm: option<warm-mark>, fell-back: option<string> }
+  enum relation { caller, parent, sibling, child, descendant }
+  record progress { completed: u32, total: u32 }
+  record warm-row { refreshes: u32, limit: u32, paused: bool }
+  record agent-row {
+    path: string,
+    session: string,
+    relation: relation,
+    preset: option<string>,
+    model: string,
+    effort: string,
+    endpoint: option<string>,
+    provider: option<string>,
+    state: option<string>,
+    detail: option<string>,
+    spent-micros: option<u64>,
+    billing-note: option<string>,
+    plan-micros: option<u64>,
+    lower-bound: bool,
+    priced: bool,
+    checklist: option<progress>,
+    last-report: option<string>,
+    cwd: option<string>,
+    running-ms: option<u64>,
+    context-used: option<u64>,
+    context-window: option<u64>,
+    context-limit: option<u64>,
+    context-estimated: bool,
+    keep-warm: option<warm-row>,
+  }
+  enum delivery { running, woken, idle, queued, held }
+  record sent { to: string, delivery: delivery }
+  record stopped { path: string, below: u32, ended: bool }
+  spawn-agent: async func(input: spawn-input, ctx: borrow<call-context>) -> result<started-agent, string>;
+  list-agents: func(ctx: borrow<call-context>) -> result<list<agent-row>, string>;
+  report: func(input: string, ctx: borrow<call-context>) -> result<_, string>;
+  send-message: func(to: string, text: string, wake: bool, ctx: borrow<call-context>) -> result<sent, string>;
+  stop-agent: func(name: string, end: bool, ctx: borrow<call-context>) -> result<stopped, string>;
+}
+
+interface log {
+  use types.{level};
+  write: func(level: level, line: string);
+}

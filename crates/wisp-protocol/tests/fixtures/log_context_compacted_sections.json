@@ -1,0 +1,35 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 31,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "context_compacted",
+  "turn": 3,
+  "epoch": 2,
+  "trigger": "convert",
+  "engine": "wisp",
+  "before": 9000,
+  "after": 7900,
+  "partial": true,
+  "from": 6,
+  "head": {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "<compacted_context epoch=\"2\" turns=\"1–2\">\n<user_messages>\nThe user's recent messages, word for word, newest first:\nTurn 2: and the tests\nTurn 1: fix the parser\n</user_messages>\n</compacted_context>\n"
+      }
+    ]
+  },
+  "summary": "So far: the parser.",
+  "duration_ms": 0,
+  "sections": [
+    {
+      "name": "acme/rules",
+      "snapshot": "rules v2"
+    },
+    {
+      "name": "workspace/environment",
+      "snapshot": "<environment>\nWorking directory: ~/p\n</environment>\n"
+    }
+  ]
+}

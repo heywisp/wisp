@@ -1,0 +1,30 @@
+{
+  "schema_version": 29,
+  "seq": 12,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "agent_spawned",
+  "turn": 3,
+  "agent": "/review/planner",
+  "session_id": "s-child",
+  "depth": 2,
+  "model": "claude-opus-4-1",
+  "effort": "medium",
+  "config": {
+    "preset": "reviewer",
+    "tools_off": [
+      "show_diff"
+    ],
+    "spawn": false,
+    "report": "plan",
+    "preset_values": {
+      "name": "reviewer",
+      "description": "Reviews a change",
+      "effort": "low",
+      "tools_off": [
+        "show_diff"
+      ],
+      "spawn": false,
+      "report": "plan"
+    }
+  }
+}

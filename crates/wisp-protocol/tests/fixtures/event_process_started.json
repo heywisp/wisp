@@ -1,0 +1,14 @@
+{
+  "type": "process_started",
+  "id": 5,
+  "call_id": "toolu_05",
+  "target": "python3 -i",
+  "tty": true,
+  "stdin": true,
+  "size": {
+    "cols": 100,
+    "rows": 30
+  },
+  "file": "/tmp/wisp-s1/0012-bash.out",
+  "reason": "quiet"
+}

@@ -1,0 +1,191 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "apps/*/web", "plugins/*", "vendor/syntect"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+learn-web = { path = "apps/learn/web" }
+wisp-client = { path = "crates/wisp-client" }
+wisp-contain = { path = "crates/wisp-contain" }
+wisp-core = { path = "crates/wisp-core" }
+wisp-diff = { path = "crates/wisp-diff" }
+wisp-index = { path = "crates/wisp-index" }
+wisp-instructions = { path = "crates/wisp-instructions" }
+wisp-media = { path = "crates/wisp-media" }
+wisp-plugin-agent-viz = { path = "plugins/agent-viz" }
+wisp-plugin-agents = { path = "plugins/agents" }
+wisp-plugin-anthropic = { path = "plugins/anthropic" }
+wisp-plugin-gemini = { path = "plugins/gemini" }
+wisp-plugin-openai = { path = "plugins/openai" }
+wisp-plugin-api = { path = "crates/wisp-plugin-api" }
+wisp-plugin-ask-user = { path = "plugins/ask-user" }
+wisp-plugin-chat = { path = "plugins/chat" }
+wisp-plugin-compaction = { path = "plugins/compaction" }
+wisp-plugin-context = { path = "plugins/context" }
+wisp-plugin-idle = { path = "plugins/idle" }
+wisp-plugin-instructions = { path = "plugins/instructions" }
+wisp-plugin-mcp = { path = "plugins/mcp" }
+wisp-plugin-menus = { path = "plugins/menus" }
+wisp-plugin-page = { path = "plugins/page" }
+wisp-plugin-search = { path = "plugins/search" }
+wisp-plugin-skills = { path = "plugins/skills" }
+wisp-plugin-secret = { path = "plugins/secret" }
+wisp-plugin-self-check = { path = "plugins/self-check" }
+wisp-plugin-shell = { path = "plugins/shell" }
+wisp-plugin-show-diff = { path = "plugins/show-diff" }
+wisp-plugin-testkit = { path = "plugins/testkit" }
+wisp-plugin-time = { path = "plugins/time" }
+wisp-plugin-todos = { path = "plugins/todos" }
+wisp-plugin-view-file = { path = "plugins/view-file" }
+wisp-plugin-web-search = { path = "plugins/web-search" }
+wisp-plugin-workspace = { path = "plugins/workspace" }
+wisp-plugins = { path = "crates/wisp-plugins" }
+wisp-protocol = { path = "crates/wisp-protocol" }
+wisp-render = { path = "crates/wisp-render" }
+wisp-start = { path = "crates/wisp-start" }
+wisp-tool-text = { path = "crates/wisp-tool-text" }
+wisp-tui = { path = "crates/wisp-tui" }
+wisp-wasm-guests = { path = "crates/wisp-wasm-guests" }
+board = { path = "plugins/board" }
+wisp-wasm-host = { path = "crates/wisp-wasm-host" }
+wispd = { path = "crates/wispd" }
+syntect = { path = "vendor/syntect" }
+
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
+async-trait = "0.1.92"
+base64 = "0.23.1"
+bincode = { version = "2.0.1", default-features = false, features = ["std", "serde"] }
+clap = { version = "4.6.7", features = ["derive", "string", "wrap_help"] }
+crossterm = { version = "0.29.0", features = ["event-stream", "use-dev-tty"] }
+dhat = "0.3.3"
+fancy-regex = "0.20.0"
+flate2 = "1.1.10"
+fnv = "1.0.7"
+form_urlencoded = "1.2.2"
+hmac-sha256 = { version = "1.1.15", default-features = false }
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+futures = { version = "0.3.34", default-features = false, features = ["std"] }
+image = { version = "0.25.10", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
+image-webp = "0.2.4"
+infer = { version = "0.22.0", default-features = false, features = ["alloc"] }
+insta = "1.49.0"
+jiff = { version = "0.2.38", default-features = false, features = ["std"] }
+keyring-core = "1.0.1"
+linkify = "0.11.0"
+nix = { version = "0.31.3", default-features = false, features = ["signal"] }
+opus = "0.4.0"
+pulldown-cmark = { version = "0.13.5", default-features = false }
+ratatui-core = "0.1.2"
+ratatui-crossterm = "0.1.2"
+ratatui-textarea = { version = "0.9.3", default-features = false }
+rcgen = "0.14.10"
+regex = "1.13.1"
+regex-syntax = "0.8.11"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "stream", "multipart"] }
+rmcp = { version = "3.9.0", default-features = false, features = ["client", "transport-async-rw", "transport-streamable-http-client-reqwest", "auth"] }
+rtc = "=0.20.3"
+rustix = { version = "1.1.5", default-features = false, features = ["std", "fs", "process", "termios", "event", "param"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = { version = "1.0.154", features = ["float_roundtrip"] }
+sha2 = "0.11.1"
+shlex = "2.0.1"
+signal-hook = "0.4.5"
+similar = { version = "3.2.1", default-features = false }
+sse-stream = "0.2.4"
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+tikv-jemallocator = { version = "0.7.0", features = ["background_threads"] }
+tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
+toml = { version = "1.1.8", default-features = false, features = ["std", "parse"] }
+toml_edit = "0.25.17"
+tokio = { version = "1.54.1", default-features = false }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+tokio-stream = { version = "0.1.19", default-features = false }
+tokio-util = { version = "0.7.20", default-features = false }
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.2"
+uuid = { version = "1.29.0", features = ["v7", "v4"] }
+vt100 = "0.18.1"
+wasmtime = { version = "50.0.1", default-features = false, features = ["runtime", "cranelift", "component-model", "component-model-async", "task-group-hook", "async", "cache", "parallel-compilation", "std"] }
+wasmtime-wasi = { version = "50.0.1", default-features = false, features = ["p2"] }
+webrtc = "=0.20.3"
+windows-native-keyring-store = { version = "1.1.0", default-features = false }
+wit-bindgen = "0.63.0"
+wit-parser = { version = "0.262.0", default-features = false, features = ["std"] }
+zbus = { version = "5.19.0", default-features = false, features = ["blocking-api", "tokio"] }
+zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-tokio-crypto-rust"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "warn"
+dbg_macro = "warn"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.reinstall]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+
+[profile.guest]
+inherits = "release"
+lto = false
+codegen-units = 16
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.package.image]
+opt-level = 2
+
+[profile.dev.package.image-webp]
+opt-level = 2
+
+[profile.dev.package.png]
+opt-level = 2
+
+[profile.dev.package.fdeflate]
+opt-level = 2
+
+[profile.dev.package.miniz_oxide]
+opt-level = 2
+
+[profile.dev.package.zune-jpeg]
+opt-level = 2
+
+[profile.dev.package.fancy-regex]
+opt-level = 2
+
+[profile.dev.package.regex-automata]
+opt-level = 2
+
+[profile.dev.package.regex-syntax]
+opt-level = 2
+
+[profile.dev.package.syntect]
+opt-level = 2
+
+[profile.dev.package.tikv-jemalloc-sys]
+opt-level = 2

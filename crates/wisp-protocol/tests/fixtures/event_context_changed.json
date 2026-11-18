@@ -1,0 +1,11 @@
+{
+  "type": "context_changed",
+  "used": 62400,
+  "used_estimated": false,
+  "next": 63100,
+  "window": 1000000,
+  "compact_at": 850000,
+  "meter_limit": 850000,
+  "auto_compact": true,
+  "epoch": 0
+}

@@ -1,0 +1,8 @@
+{
+  "status": "error",
+  "kind": "thinking_binding",
+  "message": "manifest rejected earlier thinking blocks as bound to a different conversation.",
+  "usage": null,
+  "cost": null,
+  "committed_steps": 0
+}

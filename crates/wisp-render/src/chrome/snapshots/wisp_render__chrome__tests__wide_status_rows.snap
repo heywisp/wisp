@@ -1,0 +1,17 @@
+---
+source: crates/wisp-render/src/chrome/tests.rs
+expression: out
+---
+--- 120 ---
+ ⢎⠶⡰  Ready                                                                    Claude API   sonnet-5-5 low · cached 92%
+ ⠎⠶⡰  Lantern-lighting… 1m 05s · ↓ ≈1.9k tokens · thinking with xhigh effort   esc to stop      Claude API   sonnet-5-5
+--- 160 ---
+ ⢎⠶⡰  Ready                                                                                                            Claude API   sonnet-5-5 low · cached 92%
+ ⠎⠶⡰  Lantern-lighting… 1m 05s · ↓ ≈1.9k tokens · thinking with xhigh effort   esc to stop                                          Claude API   sonnet-5-5 low
+--- 200 ---
+ ⢎⠶⡰  Ready                                                                                                                                                    Claude API   sonnet-5-5 low · cached 92%
+ ⠎⠶⡰  Lantern-lighting… 1m 05s · ↓ ≈1.9k tokens · thinking with xhigh effort   esc to stop                                                                                  Claude API   sonnet-5-5 low
+--- 106 Unicode background ---
+│ ⢎⠶⡰  Ready · agent continues when process 3 ends   ◌ 1 running · /ps      ● claude-main · subscription │
+--- 106 Ascii background ---
+| (*)  Ready - agent continues when process 3 ends   o 1 running - /ps      * claude-main - subscription |

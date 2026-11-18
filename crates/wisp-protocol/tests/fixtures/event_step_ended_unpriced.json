@@ -1,0 +1,7 @@
+{
+  "type": "step_ended",
+  "step": 3,
+  "usage": null,
+  "cost_usd": null,
+  "lower_bound": true
+}

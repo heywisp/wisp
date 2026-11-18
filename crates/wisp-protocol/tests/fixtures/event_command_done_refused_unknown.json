@@ -1,0 +1,9 @@
+{
+  "type": "command_done",
+  "answers": 7,
+  "outcome": {
+    "type": "refused",
+    "kind": "unknown",
+    "hint": "there is no command /acme:nope"
+  }
+}

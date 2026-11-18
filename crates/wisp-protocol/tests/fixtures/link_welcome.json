@@ -1,0 +1,13 @@
+{
+  "type": "welcome",
+  "data": {
+    "contract": 1,
+    "build": 7,
+    "wisp": "0.1.0",
+    "session": "abcd-1234",
+    "first_request": 1,
+    "folder": "/project",
+    "window": false,
+    "restart": true
+  }
+}

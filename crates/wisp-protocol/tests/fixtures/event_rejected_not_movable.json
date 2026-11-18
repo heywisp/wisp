@@ -1,0 +1,5 @@
+{
+  "type": "rejected",
+  "reason": "only a running foreground command can move to the background",
+  "kind": "not_movable"
+}

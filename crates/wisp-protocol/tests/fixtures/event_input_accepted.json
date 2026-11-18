@@ -1,0 +1,16 @@
+{
+  "type": "input_accepted",
+  "id": "tui-4",
+  "mode": "steer",
+  "text": "or even if we can study claude code itself",
+  "images": [
+    {
+      "sha256": "0101010101010101010101010101010101010101010101010101010101010101",
+      "media_type": "image/png",
+      "bytes": 123456,
+      "width": 1456,
+      "height": 819
+    }
+  ],
+  "held": false
+}

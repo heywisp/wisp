@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "reason": "A compaction is already running.",
+  "kind": "compacting",
+  "request": 4
+}

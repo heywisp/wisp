@@ -1,0 +1,10 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "rejected",
+  "turn": 3,
+  "reason": "32 messages are already waiting. Send this after the turn.",
+  "id": "tui-40",
+  "kind": "too_many"
+}

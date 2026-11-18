@@ -1,0 +1,5 @@
+{
+  "type": "watch_agent",
+  "agent": "/review",
+  "live": true
+}

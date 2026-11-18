@@ -1,0 +1,204 @@
+---
+source: crates/wisp-render/src/plan_usage/tests.rs
+expression: "sections.join(\"\\n\\n\")"
+---
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀     0%   resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | "  0%":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀   74.99%   resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)) | "⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | "74.99%":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀    75%   resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 75%":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "resets 19:00":Style::new().fg(Color::Rgb(212, 212, 212)).bold()
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀   89.99%   resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | "89.99%":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "resets 19:00":Style::new().fg(Color::Rgb(212, 212, 212)).bold()
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀    90%   resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 90%":Style::new().fg(Color::Rgb(244, 135, 113)) | "resets 19:00":Style::new().fg(Color::Rgb(244, 135, 113))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀    95%   resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 95%":Style::new().fg(Color::Rgb(244, 135, 113)) | "resets 19:00":Style::new().fg(Color::Rgb(244, 135, 113))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀   99.99%   resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | "99.99%":Style::new().fg(Color::Rgb(244, 135, 113)) | "resets 19:00":Style::new().fg(Color::Rgb(244, 135, 113))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * fictional-é-界界-long-account
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿   100%   limit reached, resets 19:00
+    API equivalent            ~$0.0001
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "fictional-e\u{301}-界界-long-account":Style::new().fg(Color::Rgb(212, 212, 212))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "100%":Style::new().fg(Color::Rgb(244, 135, 113)) | "limit reached, resets 19:00":Style::new().fg(Color::Rgb(244, 135, 113))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.0001":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    checking...
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"checking...":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    checking...
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"checking...":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    Unknown                     unknown   resets 19:00
+    usage unavailable
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"usage unavailable":Style::new().fg(Color::Rgb(212, 212, 212))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    checking...
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"checking...":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    Unknown                     unknown   resets 19:00
+    usage unavailable                     enter sign in again
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"usage unavailable":Style::new().fg(Color::Rgb(212, 212, 212)) | "enter sign in again":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    checking...
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"checking...":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * unknown   this chat
+    checking...
+    Unknown                     unknown   resets 19:00
+    Spent                       ~$0.25+ ∙ mixed billing ∙ split unavailable
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "unknown":Style::new().fg(Color::Rgb(212, 212, 212)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166))
+"checking...":Style::new().fg(Color::Rgb(166, 166, 166))
+"Unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "unknown":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.25+":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ mixed billing ∙ split unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+  ChatGPT subscription ∙ * reset-due
+    Model    reset since
+    Spent                       $2.00+
+    API equivalent             ~$1.00+
+Styles:
+"ChatGPT subscription ∙ ":Style::new().fg(Color::Rgb(212, 212, 212)) | "* ":Style::new().fg(Color::Rgb(41, 184, 219)) | "reset-due":Style::new().fg(Color::Rgb(212, 212, 212))
+"Model ":Style::new().fg(Color::Rgb(166, 166, 166)) | "reset since":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.00+":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$1.00+":Style::new().fg(Color::Rgb(137, 209, 133))
+
+
+ Usage
+--------------------------------------------------------------------------------
+  No configured accounts
+--------------------------------------------------------------------------------
+  This chat                      $0.00 API ∙ ~$0.00 subscriptions
+ r refresh ∙ esc close
+Styles:
+"Usage":Style::new().fg(Color::Rgb(212, 212, 212))
+"--------------------------------------------------------------------------------":Style::new().fg(Color::Rgb(88, 88, 88))
+"No configured accounts":Style::new().fg(Color::Rgb(166, 166, 166))
+"--------------------------------------------------------------------------------":Style::new().fg(Color::Rgb(88, 88, 88))
+"  This chat":Style::new().fg(Color::Rgb(212, 212, 212)) | "$0.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " ∙ ":Style::new().fg(Color::Rgb(117, 117, 117)) | "~$0.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"r":Style::new().fg(Color::Rgb(166, 166, 166)) | " refresh":Style::new().fg(Color::Rgb(117, 117, 117)) | " ∙ ":Style::new().fg(Color::Rgb(117, 117, 117)) | "esc":Style::new().fg(Color::Rgb(166, 166, 166)) | " close":Style::new().fg(Color::Rgb(117, 117, 117))

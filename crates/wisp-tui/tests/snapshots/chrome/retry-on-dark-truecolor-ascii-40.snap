@@ -1,0 +1,407 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== opens
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * claude - subscription
+  ~ 3..5 fg Rgb(220, 220, 170); 5..11 fg Rgb(137, 209, 133); 11..14 fg Rgb(117, 117, 117); 14..26 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(13 blank rows)
+| > Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| x Anthropic refused the request for
+  ~ 1..2 fg Rgb(244, 135, 113); 3..36 fg Rgb(244, 135, 113)
+|   billing reasons. 1 step was kept:
+  ~ 3..19 fg Rgb(244, 135, 113); 19..36 fg Rgb(212, 212, 212)
+|   the commands that ran and their
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   output.
+  ~ 3..10 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request
+  ~ 3..33 fg Rgb(166, 166, 166)
+|   req_011CTurn18 - mid-stream
+  ~ 3..30 fg Rgb(166, 166, 166)
+|   Upstream provider stream was
+  ~ 3..31 fg Rgb(166, 166, 166)
+|   interrupted.
+  ~ 3..15 fg Rgb(166, 166, 166)
+|
+|   Retry
+  ~ 3..8 fg Rgb(166, 166, 166)
+|   from step 2 - cache warm ~$0.002
+  ~ 3..35 fg Rgb(166, 166, 166)
+| > Switch account
+  ~ 1..2 fg Rgb(117, 117, 117); 3..17 fg Rgb(166, 166, 166)
+|   pick one, then retry - cache rebuild
+  ~ 3..39 fg Rgb(166, 166, 166)
+|
+|   2s - cost unknown, possibly billed
+  ~ 3..8 fg Rgb(117, 117, 117); 8..37 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Retry on which account?
+  ~ 3..26 fg Rgb(212, 212, 212) bold
+| > * claude-work  Claude subscription
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(218, 112, 214) bg Rgb(4, 57, 94); 5..16 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 16..18 bg Rgb(4, 57, 94); 18..38 fg Rgb(137, 209, 133) bg Rgb(4, 57, 94); 38..40 bg Rgb(4, 57, 94)
+|   * chatgpt      ChatGPT subscription
+  ~ 3..5 fg Rgb(78, 201, 176); 5..16 fg Rgb(212, 212, 212); 18..38 fg Rgb(137, 209, 133)
+|   * claude-api   Claude API
+  ~ 3..5 fg Rgb(177, 128, 215); 5..16 fg Rgb(212, 212, 212); 18..38 fg Rgb(166, 166, 166)
+|   cache rebuild ~$0.04, subscription
+  ~ 3..37 fg Rgb(166, 166, 166)
+|
+|
+|   enter retry - esc back
+  ~ 3..8 fg Rgb(166, 166, 166); 8..17 fg Rgb(117, 117, 117); 17..20 fg Rgb(166, 166, 166); 20..25 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   * claude - subscription |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..17 fg Rgb(220, 220, 170); 17..23 fg Rgb(137, 209, 133); 23..26 fg Rgb(117, 117, 117); 26..38 fg Rgb(137, 209, 133); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== down
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * claude - subscription
+  ~ 3..5 fg Rgb(220, 220, 170); 5..11 fg Rgb(137, 209, 133); 11..14 fg Rgb(117, 117, 117); 14..26 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(13 blank rows)
+| > Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| x Anthropic refused the request for
+  ~ 1..2 fg Rgb(244, 135, 113); 3..36 fg Rgb(244, 135, 113)
+|   billing reasons. 1 step was kept:
+  ~ 3..19 fg Rgb(244, 135, 113); 19..36 fg Rgb(212, 212, 212)
+|   the commands that ran and their
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   output.
+  ~ 3..10 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request
+  ~ 3..33 fg Rgb(166, 166, 166)
+|   req_011CTurn18 - mid-stream
+  ~ 3..30 fg Rgb(166, 166, 166)
+|   Upstream provider stream was
+  ~ 3..31 fg Rgb(166, 166, 166)
+|   interrupted.
+  ~ 3..15 fg Rgb(166, 166, 166)
+|
+|   Retry
+  ~ 3..8 fg Rgb(166, 166, 166)
+|   from step 2 - cache warm ~$0.002
+  ~ 3..35 fg Rgb(166, 166, 166)
+| > Switch account
+  ~ 1..2 fg Rgb(117, 117, 117); 3..17 fg Rgb(166, 166, 166)
+|   pick one, then retry - cache rebuild
+  ~ 3..39 fg Rgb(166, 166, 166)
+|
+|   2s - cost unknown, possibly billed
+  ~ 3..8 fg Rgb(117, 117, 117); 8..37 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Retry on which account?
+  ~ 3..26 fg Rgb(212, 212, 212) bold
+|   * claude-work  Claude subscription
+  ~ 3..5 fg Rgb(218, 112, 214); 5..16 fg Rgb(212, 212, 212); 18..38 fg Rgb(137, 209, 133)
+| > * chatgpt      ChatGPT subscription
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(78, 201, 176) bg Rgb(4, 57, 94); 5..16 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 16..18 bg Rgb(4, 57, 94); 18..38 fg Rgb(137, 209, 133) bg Rgb(4, 57, 94); 38..40 bg Rgb(4, 57, 94)
+|   * claude-api   Claude API
+  ~ 3..5 fg Rgb(177, 128, 215); 5..16 fg Rgb(212, 212, 212); 18..38 fg Rgb(166, 166, 166)
+|   cache rebuild ~$0.04, subscription
+  ~ 3..37 fg Rgb(166, 166, 166)
+|   On chatgpt, earlier reasoning won't
+  ~ 3..38 fg Rgb(166, 166, 166)
+|   carry over.
+  ~ 3..14 fg Rgb(166, 166, 166)
+|   enter retry - esc back
+  ~ 3..8 fg Rgb(166, 166, 166); 8..17 fg Rgb(117, 117, 117); 17..20 fg Rgb(166, 166, 166); 20..25 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   * claude - subscription |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..17 fg Rgb(220, 220, 170); 17..23 fg Rgb(137, 209, 133); 23..26 fg Rgb(117, 117, 117); 26..38 fg Rgb(137, 209, 133); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== down again
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * claude - subscription
+  ~ 3..5 fg Rgb(220, 220, 170); 5..11 fg Rgb(137, 209, 133); 11..14 fg Rgb(117, 117, 117); 14..26 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(13 blank rows)
+| > Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| x Anthropic refused the request for
+  ~ 1..2 fg Rgb(244, 135, 113); 3..36 fg Rgb(244, 135, 113)
+|   billing reasons. 1 step was kept:
+  ~ 3..19 fg Rgb(244, 135, 113); 19..36 fg Rgb(212, 212, 212)
+|   the commands that ran and their
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   output.
+  ~ 3..10 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request
+  ~ 3..33 fg Rgb(166, 166, 166)
+|   req_011CTurn18 - mid-stream
+  ~ 3..30 fg Rgb(166, 166, 166)
+|   Upstream provider stream was
+  ~ 3..31 fg Rgb(166, 166, 166)
+|   interrupted.
+  ~ 3..15 fg Rgb(166, 166, 166)
+|
+|   Retry
+  ~ 3..8 fg Rgb(166, 166, 166)
+|   from step 2 - cache warm ~$0.002
+  ~ 3..35 fg Rgb(166, 166, 166)
+| > Switch account
+  ~ 1..2 fg Rgb(117, 117, 117); 3..17 fg Rgb(166, 166, 166)
+|   pick one, then retry - cache rebuild
+  ~ 3..39 fg Rgb(166, 166, 166)
+|
+|   2s - cost unknown, possibly billed
+  ~ 3..8 fg Rgb(117, 117, 117); 8..37 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Retry on which account?
+  ~ 3..26 fg Rgb(212, 212, 212) bold
+|   * claude-work  Claude subscription
+  ~ 3..5 fg Rgb(218, 112, 214); 5..16 fg Rgb(212, 212, 212); 18..38 fg Rgb(137, 209, 133)
+|   * chatgpt      ChatGPT subscription
+  ~ 3..5 fg Rgb(78, 201, 176); 5..16 fg Rgb(212, 212, 212); 18..38 fg Rgb(137, 209, 133)
+| > * claude-api   Claude API
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(177, 128, 215) bg Rgb(4, 57, 94); 5..16 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 16..18 bg Rgb(4, 57, 94); 18..38 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 38..40 bg Rgb(4, 57, 94)
+|   cache rebuild ~$0.04
+  ~ 3..23 fg Rgb(166, 166, 166)
+|
+|
+|   enter use the API - esc back
+  ~ 3..8 fg Rgb(166, 166, 166); 8..23 fg Rgb(117, 117, 117); 23..26 fg Rgb(166, 166, 166); 26..31 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   * claude - subscription |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..17 fg Rgb(220, 220, 170); 17..23 fg Rgb(137, 209, 133); 23..26 fg Rgb(117, 117, 117); 26..38 fg Rgb(137, 209, 133); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== opens
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * claude - subscription
+  ~ 3..5 fg Rgb(220, 220, 170); 5..11 fg Rgb(137, 209, 133); 11..14 fg Rgb(117, 117, 117); 14..26 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(17 blank rows)
+| > Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| x Anthropic refused the request for
+  ~ 1..2 fg Rgb(244, 135, 113); 3..36 fg Rgb(244, 135, 113)
+|   billing reasons. 1 step was kept:
+  ~ 3..19 fg Rgb(244, 135, 113); 19..36 fg Rgb(212, 212, 212)
+|   the commands that ran and their
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   output.
+  ~ 3..10 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request
+  ~ 3..33 fg Rgb(166, 166, 166)
+|   req_011CTurn18 - mid-stream
+  ~ 3..30 fg Rgb(166, 166, 166)
+|   Upstream provider stream was
+  ~ 3..31 fg Rgb(166, 166, 166)
+|   interrupted.
+  ~ 3..15 fg Rgb(166, 166, 166)
+|
+|   Retry
+  ~ 3..8 fg Rgb(166, 166, 166)
+|   from step 2 - cache warm ~$0.002
+  ~ 3..35 fg Rgb(166, 166, 166)
+| > Switch account
+  ~ 1..2 fg Rgb(117, 117, 117); 3..17 fg Rgb(166, 166, 166)
+|   pick one, then retry - cache rebuild
+  ~ 3..39 fg Rgb(166, 166, 166)
+|
+|   2s - cost unknown, possibly billed
+  ~ 3..8 fg Rgb(117, 117, 117); 8..37 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Retry on which account?
+  ~ 3..26 fg Rgb(212, 212, 212) bold
+|   * claude-api  Claude API
+  ~ 3..5 fg Rgb(177, 128, 215); 5..15 fg Rgb(212, 212, 212); 17..27 fg Rgb(166, 166, 166)
+|
+|   up/down move - esc back
+  ~ 3..10 fg Rgb(166, 166, 166); 10..18 fg Rgb(117, 117, 117); 18..21 fg Rgb(166, 166, 166); 21..26 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   * claude - subscription |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..17 fg Rgb(220, 220, 170); 17..23 fg Rgb(137, 209, 133); 23..26 fg Rgb(117, 117, 117); 26..38 fg Rgb(137, 209, 133); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== down
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * claude - subscription
+  ~ 3..5 fg Rgb(220, 220, 170); 5..11 fg Rgb(137, 209, 133); 11..14 fg Rgb(117, 117, 117); 14..26 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(17 blank rows)
+| > Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| x Anthropic refused the request for
+  ~ 1..2 fg Rgb(244, 135, 113); 3..36 fg Rgb(244, 135, 113)
+|   billing reasons. 1 step was kept:
+  ~ 3..19 fg Rgb(244, 135, 113); 19..36 fg Rgb(212, 212, 212)
+|   the commands that ran and their
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   output.
+  ~ 3..10 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request
+  ~ 3..33 fg Rgb(166, 166, 166)
+|   req_011CTurn18 - mid-stream
+  ~ 3..30 fg Rgb(166, 166, 166)
+|   Upstream provider stream was
+  ~ 3..31 fg Rgb(166, 166, 166)
+|   interrupted.
+  ~ 3..15 fg Rgb(166, 166, 166)
+|
+|   Retry
+  ~ 3..8 fg Rgb(166, 166, 166)
+|   from step 2 - cache warm ~$0.002
+  ~ 3..35 fg Rgb(166, 166, 166)
+| > Switch account
+  ~ 1..2 fg Rgb(117, 117, 117); 3..17 fg Rgb(166, 166, 166)
+|   pick one, then retry - cache rebuild
+  ~ 3..39 fg Rgb(166, 166, 166)
+|
+|   2s - cost unknown, possibly billed
+  ~ 3..8 fg Rgb(117, 117, 117); 8..37 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Retry on which account?
+  ~ 3..26 fg Rgb(212, 212, 212) bold
+| > * claude-api  Claude API
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(177, 128, 215) bg Rgb(4, 57, 94); 5..15 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 15..17 bg Rgb(4, 57, 94); 17..27 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 27..40 bg Rgb(4, 57, 94)
+|   cache rebuild ~$0.04
+  ~ 3..23 fg Rgb(166, 166, 166)
+|   enter use the API - esc back
+  ~ 3..8 fg Rgb(166, 166, 166); 8..23 fg Rgb(117, 117, 117); 23..26 fg Rgb(166, 166, 166); 26..31 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   * claude - subscription |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..17 fg Rgb(220, 220, 170); 17..23 fg Rgb(137, 209, 133); 23..26 fg Rgb(117, 117, 117); 26..38 fg Rgb(137, 209, 133); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== down again
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * claude - subscription
+  ~ 3..5 fg Rgb(220, 220, 170); 5..11 fg Rgb(137, 209, 133); 11..14 fg Rgb(117, 117, 117); 14..26 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(17 blank rows)
+| > Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| x Anthropic refused the request for
+  ~ 1..2 fg Rgb(244, 135, 113); 3..36 fg Rgb(244, 135, 113)
+|   billing reasons. 1 step was kept:
+  ~ 3..19 fg Rgb(244, 135, 113); 19..36 fg Rgb(212, 212, 212)
+|   the commands that ran and their
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   output.
+  ~ 3..10 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request
+  ~ 3..33 fg Rgb(166, 166, 166)
+|   req_011CTurn18 - mid-stream
+  ~ 3..30 fg Rgb(166, 166, 166)
+|   Upstream provider stream was
+  ~ 3..31 fg Rgb(166, 166, 166)
+|   interrupted.
+  ~ 3..15 fg Rgb(166, 166, 166)
+|
+|   Retry
+  ~ 3..8 fg Rgb(166, 166, 166)
+|   from step 2 - cache warm ~$0.002
+  ~ 3..35 fg Rgb(166, 166, 166)
+| > Switch account
+  ~ 1..2 fg Rgb(117, 117, 117); 3..17 fg Rgb(166, 166, 166)
+|   pick one, then retry - cache rebuild
+  ~ 3..39 fg Rgb(166, 166, 166)
+|
+|   2s - cost unknown, possibly billed
+  ~ 3..8 fg Rgb(117, 117, 117); 8..37 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Retry on which account?
+  ~ 3..26 fg Rgb(212, 212, 212) bold
+| > * claude-api  Claude API
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(177, 128, 215) bg Rgb(4, 57, 94); 5..15 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 15..17 bg Rgb(4, 57, 94); 17..27 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 27..40 bg Rgb(4, 57, 94)
+|   cache rebuild ~$0.04
+  ~ 3..23 fg Rgb(166, 166, 166)
+|   enter use the API - esc back
+  ~ 3..8 fg Rgb(166, 166, 166); 8..23 fg Rgb(117, 117, 117); 23..26 fg Rgb(166, 166, 166); 26..31 fg Rgb(117, 117, 117)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                                      |
+  ~ 0..1 fg Rgb(88, 88, 88); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)  Ready   * claude - subscription |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 15..17 fg Rgb(220, 220, 170); 17..23 fg Rgb(137, 209, 133); 23..26 fg Rgb(117, 117, 117); 26..38 fg Rgb(137, 209, 133); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)

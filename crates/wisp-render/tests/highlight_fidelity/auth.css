@@ -1,0 +1,5 @@
+@media (max-width: 640px) {
+  .auth-form > input[type="email"]:focus-visible { outline: 2px solid #3b82f6; }
+}
+:root { --radius: calc(0.5rem + 2px); }
+.btn::after { content: "\2192"; transition: transform .2s ease-in-out !important; }

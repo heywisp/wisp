@@ -1,0 +1,5 @@
+{
+  "type": "rejected",
+  "reason": "another client has taken over process 3",
+  "kind": "already_attached"
+}

@@ -1,0 +1,15 @@
+id = "agent-viz"
+version = "0.1.0"
+world = "0.3.0"
+summary = "Draws your agents as a topology"
+
+[[slots]]
+slot = "sidebar"
+name = "topology"
+title = "Agents"
+after = ["context/window"]
+marks = ["agent-spawned", "agent-state", "agent-mail", "agent-reported", "agent-stopped", "agent-ended"]
+
+[[hooks]]
+name = "mail"
+point = "agent-mail"

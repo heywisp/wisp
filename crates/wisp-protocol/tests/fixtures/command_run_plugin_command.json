@@ -1,0 +1,6 @@
+{
+  "type": "run_plugin_command",
+  "name": "acme:deploy",
+  "args": "staging --dry",
+  "request": 7
+}

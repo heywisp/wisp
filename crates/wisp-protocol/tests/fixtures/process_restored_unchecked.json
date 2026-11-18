@@ -1,0 +1,12 @@
+{
+  "type": "process_restored",
+  "id": 3,
+  "call_id": "toolu_03",
+  "target": "python3 app.py",
+  "tty": false,
+  "duration_ms": 0,
+  "keeps_running": true,
+  "unchecked": true,
+  "pid": 4321,
+  "log": "/tmp/wisp-s1/0012-bash.log"
+}

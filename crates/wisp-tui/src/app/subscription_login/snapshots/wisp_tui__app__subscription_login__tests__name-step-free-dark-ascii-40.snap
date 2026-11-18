@@ -1,0 +1,10 @@
+---
+source: crates/wisp-tui/src/app/subscription_login/tests.rs
+assertion_line: 585
+expression: "screen(&wizard, width, glyphs)"
+---
+ ? Sign in
+
+ > Name for this account: claude
+
+   enter sign in - esc cancel

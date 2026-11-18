@@ -1,0 +1,49 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: out
+---
+=== Unicode ===
+   [b|Showcase]
+
+   [text.muted|∙] a bullet with [i|style]
+     [text.muted|1.] ordered
+
+   [text.faint|╎] [text.muted|quoted]
+
+   [b|a]  [b|b]
+   [line|────]
+   1  2
+
+   [line|────────────────────────────────────]
+
+   echo hi                           [text.faint|sh]
+=== AmbiguousWide ===
+   [b|Showcase]
+
+   [text.muted|∙] a bullet with [i|style]
+     [text.muted|1.] ordered
+
+   [text.faint|╎] [text.muted|quoted]
+
+   [b|a]  [b|b]
+   [line|----]
+   1  2
+
+   [line|------------------------------------]
+
+   echo hi                           [text.faint|sh]
+=== Ascii ===
+   [b|Showcase]
+
+   [text.muted|-] a bullet with [i|style]
+     [text.muted|1.] ordered
+
+   [text.faint|:] [text.muted|quoted]
+
+   [b|a]  [b|b]
+   [line|----]
+   1  2
+
+   [line|------------------------------------]
+
+   echo hi                           [text.faint|sh]

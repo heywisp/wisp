@@ -1,0 +1,5 @@
+/config.toml
+/credentials.json
+/.wisp.lock
+/oauth/
+/web/

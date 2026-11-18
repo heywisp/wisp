@@ -1,0 +1,74 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== code
+|│                                                                                                  │
+  ~ 0..1 fg Rgb(88, 88, 88); 99..100 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                                          0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 93..98 fg Rgb(117, 117, 117); 99..100 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                                            │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 99..100 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                                      │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 99..100 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                                        │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 99..100 fg Rgb(88, 88, 88)
+|│                                                                                                  │
+  ~ 0..1 fg Rgb(88, 88, 88); 99..100 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..100 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|
+| › Show me the fingerprint
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..26 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 26..120 bg Rgb(38, 38, 38)
+|
+| ⠶ Here is the change:
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   use std::collections::BTreeMap;                                                                                 rust
+  ~ 115..119 fg Rgb(117, 117, 117)
+|
+|   pub struct Fingerprint {
+|       system: u64,
+|       tools: u64,
+|       messages: Vec<u64>,
+|   }
+|
+|   impl Fingerprint {
+|       pub fn of(req: &Request) -> Result<Fingerprint, Error> {
+|           let system = hash(&req.system);
+|           let tools = hash(&req.tools);
+|           let messages = req.messages.iter().map(hash).collect();
+|           Ok(Fingerprint { system, tools, messages })
+|       }
+|
+|       pub fn cause(&self, before: &Fingerprint) -> Option<&'static str> {
+|           if self.system != before.system {
+|               return Some("system changed");
+|           }
+|           if self.tools != before.tools {
+|               return Some("tools changed");
+|           }
+|           None
+|       }
+|   }
+|
+|   The test covers each cause.
+|
+|   9s · $0.021 · cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..120 fg Rgb(88, 88, 88)
+|│                                                                                                         total $0.021 │
+  ~ 0..1 fg Rgb(88, 88, 88); 106..118 fg Rgb(166, 166, 166); 119..120 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..120 fg Rgb(88, 88, 88)
+|│ › Ask anything, or type / for commands                                                                               │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..40 fg Rgb(117, 117, 117); 119..120 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..120 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready                                                                  Claude API   sonnet-5-5 low · cached 92% │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 78..88 fg Rgb(166, 166, 166); 91..101 fg Rgb(212, 212, 212); 102..118 fg Rgb(166, 166, 166); 119..120 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..120 fg Rgb(88, 88, 88)

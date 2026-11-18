@@ -1,0 +1,75 @@
+---
+source: crates/wisp-tui/tests/app/help.rs
+expression: shot
+---
+| Help: commands and keys
+  ~ 1..7 fg Rgb(166, 166, 166); 7..24 fg Rgb(212, 212, 212) bold
+|
+| Commands                                                  │ Keys: waiting messages
+  ~ 1..9 fg Rgb(212, 212, 212) bold; 59..60 fg Rgb(88, 88, 88); 61..67 fg Rgb(166, 166, 166); 67..83 fg Rgb(212, 212, 212) bold
+|   /model [id]             Switch the model                │   ↑ ↓                     Move between them
+  ~ 3..9 fg Rgb(212, 212, 212); 9..14 fg Rgb(166, 166, 166); 27..43 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..104 fg Rgb(166, 166, 166)
+|   /effort [level]         Set how hard the model thinks   │   enter, e                Edit
+  ~ 3..10 fg Rgb(212, 212, 212); 10..18 fg Rgb(166, 166, 166); 27..56 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..71 fg Rgb(212, 212, 212); 87..91 fg Rgb(166, 166, 166)
+|   /account [name]         Switch the chat's account       │   del, x                  Remove
+  ~ 3..11 fg Rgb(212, 212, 212); 11..18 fg Rgb(166, 166, 166); 27..52 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..69 fg Rgb(212, 212, 212); 87..93 fg Rgb(166, 166, 166)
+|   /context [all]          Show what fills the context     │   tab                     Switch next step and next turn
+  ~ 3..11 fg Rgb(212, 212, 212); 11..17 fg Rgb(166, 166, 166); 27..54 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..117 fg Rgb(166, 166, 166)
+|   /compact [focus]        Summarize to free up context    │   esc                     Back to your message
+  ~ 3..11 fg Rgb(212, 212, 212); 11..19 fg Rgb(166, 166, 166); 27..55 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..107 fg Rgb(166, 166, 166)
+|   /rewind, /undo          Go back to an earlier message   │   ctrl-c                  Stop, staying here
+  ~ 3..17 fg Rgb(212, 212, 212); 27..56 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..69 fg Rgb(212, 212, 212); 87..105 fg Rgb(166, 166, 166)
+|   /config [filter]        View and change settings        │   enter, while editing    Save the edit
+  ~ 3..10 fg Rgb(212, 212, 212); 10..19 fg Rgb(166, 166, 166); 27..51 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..83 fg Rgb(212, 212, 212); 87..100 fg Rgb(166, 166, 166)
+|   /ps                     Show background processes       │   esc, while editing      Cancel the edit
+  ~ 3..6 fg Rgb(212, 212, 212); 27..52 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..81 fg Rgb(212, 212, 212); 87..102 fg Rgb(166, 166, 166)
+|   /agents                 Show agents and their spend     │   enter, empty message    Send held messages
+  ~ 3..10 fg Rgb(212, 212, 212); 27..54 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..83 fg Rgb(212, 212, 212); 87..105 fg Rgb(166, 166, 166)
+|   /sidebar [open]         Toggle sidebar, open a page     │
+  ~ 3..11 fg Rgb(212, 212, 212); 11..18 fg Rgb(166, 166, 166); 27..54 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88)
+|   /help                   Show commands and keys          │ Keys: reading
+  ~ 3..8 fg Rgb(212, 212, 212); 27..49 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 61..67 fg Rgb(166, 166, 166); 67..74 fg Rgb(212, 212, 212) bold
+|   /exit, /quit            Quit, ending the chat           │   wheel, pgup, pgdn       Scroll
+  ~ 3..15 fg Rgb(212, 212, 212); 27..48 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..80 fg Rgb(212, 212, 212); 87..93 fg Rgb(166, 166, 166)
+|   /leave                  Leave; the chat stays open      │   ctrl-home, ctrl-end     Jump to the top or the bottom
+  ~ 3..9 fg Rgb(212, 212, 212); 27..53 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..82 fg Rgb(212, 212, 212); 87..116 fg Rgb(166, 166, 166)
+|   /resume [filter]        Pick a chat here to continue    │   esc                     Back to the bottom
+  ~ 3..10 fg Rgb(212, 212, 212); 10..19 fg Rgb(166, 166, 166); 27..55 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..105 fg Rgb(166, 166, 166)
+|   /usage [name]           Open live usage page            │   drag, ctrl-c            Select, then copy
+  ~ 3..9 fg Rgb(212, 212, 212); 9..16 fg Rgb(166, 166, 166); 27..47 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..75 fg Rgb(212, 212, 212); 87..104 fg Rgb(166, 166, 166)
+|   /login [provider] [name]                                │   right-click             Copy the selection
+  ~ 3..9 fg Rgb(212, 212, 212); 9..27 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..74 fg Rgb(212, 212, 212); 87..105 fg Rgb(166, 166, 166)
+|                           Sign in to an account           │   esc                     Clear the selection
+  ~ 27..48 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..106 fg Rgb(166, 166, 166)
+|   /logout [name]          Sign out of an account          │   shift-drag              Select in the terminal
+  ~ 3..10 fg Rgb(212, 212, 212); 10..17 fg Rgb(166, 166, 166); 27..49 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..73 fg Rgb(212, 212, 212); 87..109 fg Rgb(166, 166, 166)
+|                                                           │   ctrl-o                  Pick what to read in full
+  ~ 59..60 fg Rgb(88, 88, 88); 63..69 fg Rgb(212, 212, 212); 87..112 fg Rgb(166, 166, 166)
+| Keys: writing                                             │
+  ~ 1..7 fg Rgb(166, 166, 166); 7..14 fg Rgb(212, 212, 212) bold; 59..60 fg Rgb(88, 88, 88)
+|   enter                   Send                            │ Keys: transcript
+  ~ 3..8 fg Rgb(212, 212, 212); 27..31 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 61..67 fg Rgb(166, 166, 166); 67..77 fg Rgb(212, 212, 212) bold
+|   alt-enter, ctrl-j       Add a line                      │   ↑ ↓, j k                Scroll a line
+  ~ 3..20 fg Rgb(212, 212, 212); 27..37 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..71 fg Rgb(212, 212, 212); 87..100 fg Rgb(166, 166, 166)
+|   /                       Suggest commands                │   pgup, pgdn, space, b f  Scroll a page
+  ~ 3..4 fg Rgb(212, 212, 212); 27..43 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..85 fg Rgb(212, 212, 212); 87..100 fg Rgb(166, 166, 166)
+|   ?                       This help, on an empty message  │   u d                     Scroll half a page
+  ~ 3..4 fg Rgb(212, 212, 212); 27..57 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..105 fg Rgb(166, 166, 166)
+|   esc esc                 Rewind, on an empty message     │   g G, home end           Jump to the top or the bottom
+  ~ 3..10 fg Rgb(212, 212, 212); 27..54 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..76 fg Rgb(212, 212, 212); 87..116 fg Rgb(166, 166, 166)
+|   tab                     Expand a paste                  │   [                       Hand off to the scrollback
+  ~ 3..6 fg Rgb(212, 212, 212); 27..41 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..64 fg Rgb(212, 212, 212); 87..113 fg Rgb(166, 166, 166)
+|   ctrl-v, alt-v           Attach the clipboard's image    │   / ?                     Search forward or back
+  ~ 3..16 fg Rgb(212, 212, 212); 27..55 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..109 fg Rgb(166, 166, 166)
+|   ↑ ↓                     Recall this session's messages  │   n N                     Next or previous match
+  ~ 3..6 fg Rgb(212, 212, 212); 27..57 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..66 fg Rgb(212, 212, 212); 87..109 fg Rgb(166, 166, 166)
+|   ctrl-u, ctrl-r          Undo, redo                      │   q, esc, ctrl-o          Back
+  ~ 3..17 fg Rgb(212, 212, 212); 27..37 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..77 fg Rgb(212, 212, 212); 87..91 fg Rgb(166, 166, 166)
+|   ctrl-c                  Clear the message               │   ctrl-o                  From a reader, every detail at
+  ~ 3..9 fg Rgb(212, 212, 212); 27..44 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 63..69 fg Rgb(212, 212, 212); 87..117 fg Rgb(166, 166, 166)
+|   shift-tab               Cycle effort where it is free   │                           that cell
+  ~ 3..12 fg Rgb(212, 212, 212); 27..56 fg Rgb(166, 166, 166); 59..60 fg Rgb(88, 88, 88); 87..96 fg Rgb(166, 166, 166)
+|                                                           │   s                       From a reader, a running
+  ~ 59..60 fg Rgb(88, 88, 88); 63..64 fg Rgb(212, 212, 212); 87..111 fg Rgb(166, 166, 166)
+|   / search · 1-35/44 · q esc ctrl-o back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..21 fg Rgb(166, 166, 166); 21..24 fg Rgb(117, 117, 117); 24..36 fg Rgb(166, 166, 166); 36..41 fg Rgb(117, 117, 117)

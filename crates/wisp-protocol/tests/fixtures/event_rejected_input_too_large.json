@@ -1,0 +1,5 @@
+{
+  "type": "rejected",
+  "reason": "input for process 3 is over 1 MiB",
+  "kind": "input_too_large"
+}

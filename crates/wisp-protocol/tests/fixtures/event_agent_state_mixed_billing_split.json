@@ -1,0 +1,24 @@
+{
+  "type": "agent_state_changed",
+  "plan_usd": 4.1,
+  "billing": "mixed",
+  "agent": "/review/planner",
+  "state": {
+    "state": "idle",
+    "outcome": "reported"
+  },
+  "activity": {
+    "type": "idle"
+  },
+  "spent_usd": 16.4,
+  "lower_bound": true,
+  "accounts": {
+    "claude-main": {
+      "usd": 4.1,
+      "plan_usd": 4.1
+    },
+    "old": {
+      "usd": 12.3
+    }
+  }
+}

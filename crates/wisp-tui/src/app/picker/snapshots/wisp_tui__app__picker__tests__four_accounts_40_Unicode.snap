@@ -1,0 +1,141 @@
+---
+source: crates/wisp-tui/src/app/picker/tests.rs
+expression: "text.join(\"\\n\")"
+---
+== whole
+────────────────────────────────────────
+   Model
+   ● claude-subscription  subscription
+ ›   opus-5-5 ✓           medium
+     sonnet-5-5
+     haiku-5-5
+     opus-4-5
+     opus-4-8
+   ↓ 5 more
+   This chat uses it now
+
+
+
+   enter switch · ← accounts · esc close
+== claude-work
+────────────────────────────────────────
+   Model
+   ● claude-subscription ✓  subscription
+   ● claude-work            subscription
+ ›   opus-5-5
+     sonnet-5-5
+     haiku-5-5
+     opus-4-5
+   ↓ 5 more
+   Moves this chat to ● claude-work
+   cache rebuild ~$0.16, subscription
+
+
+   enter switch · ← accounts · esc close
+== chatgpt
+────────────────────────────────────────
+   Model
+   ● claude-subscription ✓  subscription
+   ● claude-work            subscription
+   ● claude-api             Claude API
+   ● chatgpt                subscription
+ ›   gpt-6.1-sol
+     gpt-6-astra
+   ↓ 8 more
+   Moves this chat to ● chatgpt
+   cache rebuild ~$0.10, subscription
+   On chatgpt, earlier reasoning won't
+   carry over.
+   enter switch · ← accounts · esc close
+== typed reserve
+────────────────────────────────────────
+   Model
+   ● chatgpt      ChatGPT subscription
+ ›   gpt-reserve  cost unknown
+   Moves this chat to ● chatgpt
+   cache rebuild ≈20k tokens
+   On chatgpt, earlier reasoning won't
+   carry over.
+   matching "reserve" (backspace edit,
+   esc close)
+   enter switch · ← accounts · esc close
+== filtered opus
+────────────────────────────────────────
+   Model
+   ● claude-subscription  subscription
+ ›   opus-5-5 ✓           medium
+     opus-4-5
+     opus-4-8
+   ● claude-work          subscription
+   ↓ 7 more
+   This chat uses it now
+
+
+   matching "opus" (backspace edit, esc
+   close)
+   enter switch · ← accounts · esc close
+== effort on chatgpt
+────────────────────────────────────────
+   Effort
+   low  default
+ › medium
+   high
+   xhigh
+   max
+   Moves this chat to ● chatgpt
+   cache rebuild ~$0.10, subscription
+   On chatgpt, earlier reasoning won't
+   carry over.
+   enter use · esc close
+== account 0
+────────────────────────────────────────
+   Account
+ › ● claude-subscription ✓  subscription
+   ● claude-work            subscription
+   ● claude-api             Claude API
+   ● chatgpt                subscription
+   + Sign in to another account…
+   This chat uses it now
+
+
+
+   enter switch · → models · esc close
+== account 1
+────────────────────────────────────────
+   Account
+   ● claude-subscription ✓  subscription
+ › ● claude-work            subscription
+   ● claude-api             Claude API
+   ● chatgpt                subscription
+   + Sign in to another account…
+   Moves this chat to ● claude-work
+   cache rebuild ~$0.16, subscription
+
+
+   enter switch · → models · esc close
+== account 2
+────────────────────────────────────────
+   Account
+   ● claude-subscription ✓  subscription
+   ● claude-work            subscription
+ › ● claude-api             Claude API
+   ● chatgpt                subscription
+   + Sign in to another account…
+   Moves this chat to ● claude-api, from
+   your subscription to the API
+   cache rebuild ~$0.16
+
+   enter switch · → models · esc close
+== account 3
+────────────────────────────────────────
+   Account
+   ● claude-subscription ✓  subscription
+   ● claude-work            subscription
+   ● claude-api             Claude API
+ › ● chatgpt                subscription
+   + Sign in to another account…
+   Moves this chat to ● chatgpt
+   cache rebuild ~$0.10, subscription
+   On chatgpt, earlier reasoning won't
+   carry over.
+   enter switch · → models · esc close

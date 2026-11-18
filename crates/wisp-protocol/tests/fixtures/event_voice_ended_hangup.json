@@ -1,0 +1,16 @@
+{
+  "type": "voice",
+  "event": {
+    "type": "ended",
+    "call": "web-1",
+    "outcome": {
+      "type": "completed",
+      "end": "hangup"
+    },
+    "seconds": 95,
+    "cost": {
+      "usd": 0.25,
+      "plan_usd": 0.25
+    }
+  }
+}

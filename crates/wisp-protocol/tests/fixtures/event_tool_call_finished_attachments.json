@@ -1,0 +1,39 @@
+{
+  "type": "tool_call_finished",
+  "call_id": "toolu_09",
+  "outcome": {
+    "status": "completed",
+    "is_error": false,
+    "exit": null
+  },
+  "output": {
+    "tail": "",
+    "bytes": 0,
+    "lines": 0,
+    "file": null,
+    "file_problem": null,
+    "inlined": false
+  },
+  "facts": [
+    {
+      "type": "media",
+      "media_type": "application/pdf"
+    },
+    {
+      "type": "bytes",
+      "n": 912004
+    }
+  ],
+  "state": null,
+  "duration_ms": 12,
+  "result": "docs/spec.pdf: application/pdf, 912004 bytes, attached as is.",
+  "attachments": [
+    {
+      "media_type": "application/pdf",
+      "sha256": "0707070707070707070707070707070707070707070707070707070707070707",
+      "bytes": 912004,
+      "saved": "~/.local/share/wisp/attachments/0707.pdf"
+    }
+  ],
+  "notes": []
+}

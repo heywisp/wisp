@@ -1,0 +1,11 @@
+{
+  "type": "search_ended",
+  "step": 3,
+  "attempt": 0,
+  "call_id": "srvtoolu_03",
+  "outcome": {
+    "status": "unfinished",
+    "reason": "stopped",
+    "possibly_billed": true
+  }
+}

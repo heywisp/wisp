@@ -1,0 +1,18 @@
+id = "idle"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Ends turns without a reply while the user is idle"
+
+[[hooks]]
+name = "seen"
+point = "user-input"
+
+[[hooks]]
+name = "note"
+point = "before-turn"
+in = ["core/notes"]
+after = ["time/sent", "context/fill"]
+
+[[hooks]]
+name = "done"
+point = "after-turn"

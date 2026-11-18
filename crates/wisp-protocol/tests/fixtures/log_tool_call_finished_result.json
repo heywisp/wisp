@@ -1,0 +1,25 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 6,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "tool_call_finished",
+  "turn": 3,
+  "call_id": "toolu_7",
+  "outcome": {
+    "status": "completed",
+    "is_error": false,
+    "exit": null
+  },
+  "output": {
+    "tail": "",
+    "bytes": 0,
+    "lines": 0,
+    "file": null,
+    "file_problem": null,
+    "inlined": true
+  },
+  "facts": [],
+  "state": null,
+  "duration_ms": 12000,
+  "result": "The user answered:\n\n1. [Database] Which database should the service use?\n   PostgreSQL (Recommended)"
+}

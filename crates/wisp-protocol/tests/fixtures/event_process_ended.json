@@ -1,0 +1,14 @@
+{
+  "type": "process_ended",
+  "id": 4,
+  "end": {
+    "type": "exited",
+    "exit": {
+      "type": "code",
+      "code": 1
+    }
+  },
+  "bytes": 98765,
+  "lines": 1248,
+  "duration_ms": 72000
+}

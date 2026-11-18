@@ -1,0 +1,50 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 20,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "context_compacted",
+  "epoch": 1,
+  "trigger": "manual",
+  "engine": "native",
+  "focus": "the parser",
+  "before": 91200,
+  "after": 7400,
+  "covers": {
+    "first_seq": 0,
+    "last_seq": 19,
+    "first_turn": 1,
+    "last_turn": 2
+  },
+  "from": 4,
+  "head": {
+    "role": "user",
+    "content": [
+      {
+        "type": "opaque",
+        "provider": "anthropic",
+        "raw": {
+          "content": "So far: the parser.",
+          "type": "compaction"
+        }
+      },
+      {
+        "type": "text",
+        "text": "<compacted_context epoch=\"1\" turns=\"1–2\">\n<user_messages>\nThe user's recent messages, word for word, newest first:\nTurn 2: and the tests\nTurn 1: fix the parser\n</user_messages>\n</compacted_context>\n"
+      }
+    ]
+  },
+  "block": {
+    "content": "So far: the parser.",
+    "type": "compaction"
+  },
+  "usage": {
+    "input_tokens": 2000,
+    "output_tokens": 900,
+    "cache_read_input_tokens": 88000,
+    "cache_creation_input_tokens": 0,
+    "cache_creation_5m_input_tokens": null,
+    "cache_creation_1h_input_tokens": null
+  },
+  "cost_usd": 0.071,
+  "duration_ms": 4200
+}

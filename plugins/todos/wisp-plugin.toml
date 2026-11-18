@@ -1,0 +1,8 @@
+id = "todos"
+version = "0.1.0"
+world = "0.4.0"
+summary = "Keeps the agent's checklist for multi-step work"
+
+[[tools]]
+name = "write_todos"
+provides = ["todos"]

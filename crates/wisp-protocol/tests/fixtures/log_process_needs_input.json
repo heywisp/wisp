@@ -1,0 +1,8 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 8,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "process_needs_input",
+  "id": 5,
+  "kind": "hidden_input"
+}

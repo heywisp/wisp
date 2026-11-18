@@ -1,0 +1,10 @@
+{
+  "type": "model_asked",
+  "call_id": "search-1",
+  "cost": {
+    "turn_usd": 0.0125,
+    "session_usd": 0.5,
+    "turn_lower_bound": false,
+    "session_lower_bound": true
+  }
+}

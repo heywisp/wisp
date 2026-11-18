@@ -1,0 +1,30 @@
+---
+source: crates/wisp-render/src/chrome/context/tests.rs
+expression: "render(&counted_session(), &view_at(120, GlyphSet::Unicode, false))"
+---
+  ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣿ ⣀ ⣀ ⣀ ⣀   claude-opus-5-5 · direct
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   63.1k / 850k tokens (7%)
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   62.4k measured at turn 9, step 4 · 700 since
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   Usage by category              counted by the server
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   ⣿ System prompt               312   <0.1%  counted
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   ⣿ Tools (2)                  1.6k    0.2%  counted
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   ⣿ Instructions (2 files)     3.4k    0.3%  counted
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪   ⣿ Environment                ~120   <0.1%  split
+  ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪   ⣿ Your messages             ~5.5k    0.6%  split
+                                            ⣿ Replies and thinking      19.3k    1.9%  measured
+  1 cell = 5k                               ⣿ Tool results             ~30.7k    3.1%  split
+                                            ⣿ Attachments (2)           ~2.2k    0.2%  split
+                                            ⣀ Free before the point     ~787k   78.7%
+                                            ⡪ Reserve past the point     150k   15.0%
+                                              Would compact at 850k (window − reserve)
+                                              automatic compaction is off
+                                              window 1M (shipped)
+
+  Instructions · 2 files · 3.4k                               Tools · 2 · 1.6k
+  └─ AGENTS.md ~3.1k · docs/style.md ~300                     └─ shell ~1.1k · question ~500
+  Tool results · ~30.7k · largest 2                           Attachments · 2 · ~2.2k
+  └─ heavy cargo test --workspace ~9.8k (turn 7) · cat src…   └─ image 1 ~1.1k (turn 3) · image 2 ~1.1k (turn 5)
+
+  Each step re-reads 62.4k: $0.0125 · compacting now ~$0.137, then ~$0.114 to write the new head
+  /context all lists every item

@@ -1,0 +1,10 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 23,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "cache_miss",
+  "previous_prompt_tokens": 90000,
+  "cache_read_input_tokens": 0,
+  "cache_creation_input_tokens": 90000,
+  "diagnostics": null
+}

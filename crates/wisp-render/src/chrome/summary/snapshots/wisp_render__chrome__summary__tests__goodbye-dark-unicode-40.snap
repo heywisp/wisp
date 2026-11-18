@@ -1,0 +1,50 @@
+---
+source: crates/wisp-render/src/chrome/summary/tests.rs
+expression: out
+---
+== one stopped agent
+|⢎⠶⡰ wisp · Bye for now.
+  ~ 0..1 Text; 1..2 Accent; 2..3 Text; 4..8 Text bold; 8..11 TextFaint; 11..23 Text
+|That was 2 h 14 min, total ~$44.06.
+  ~ 0..9 TextMuted; 9..19 Text; 19..28 TextMuted; 28..34 Text; 34..35 TextMuted
+|Continue your agent with:
+  ~ 0..25 TextMuted
+|wisp --resume 01a18e69-13bd
+  ~ 0..27 Accent
+|
+  ~ 
+|Process 1 keeps running: npm run dev
+  ~ 0..25 TextMuted; 25..36 Text
+|  stop it   kill -- -4321
+  ~ 0..12 TextMuted; 12..25 Accent
+|  output    /tmp/wisp-01a18e69-13bd-7c2e-9d4f-3a5b6c7d8e9f/0001-job.log
+  ~ 0..12 TextMuted; 12..71 Accent
+|Process 3 may still be running: python3…
+  ~ 0..32 TextMuted; 32..39 Text; 39..40 Text
+|  check it  ps -p 4400
+  ~ 0..12 TextMuted; 12..22 Accent
+== two stopped agents
+|⢎⠶⡰ wisp · Bye for now.
+  ~ 0..1 Text; 1..2 Accent; 2..3 Text; 4..8 Text bold; 8..11 TextFaint; 11..23 Text
+|That was 2 h 14 min, total ~$44.06.
+  ~ 0..9 TextMuted; 9..19 Text; 19..28 TextMuted; 28..34 Text; 34..35 TextMuted
+|Continue your 2 agents with:
+  ~ 0..28 TextMuted
+|wisp --resume 01a18e69-13bd
+  ~ 0..27 Accent
+== all API
+|⢎⠶⡰ wisp · Bye for now.
+  ~ 0..1 Text; 1..2 Accent; 2..3 Text; 4..8 Text bold; 8..11 TextFaint; 11..23 Text
+|That was 12 min, total $0.31.
+  ~ 0..9 TextMuted; 9..15 Text; 15..23 TextMuted; 23..28 Text; 28..29 TextMuted
+|Come back any time with:
+  ~ 0..24 TextMuted
+|wisp --resume 01a18e69-13bd
+  ~ 0..27 Accent
+== no log
+|⢎⠶⡰ wisp · Bye for now.
+  ~ 0..1 Text; 1..2 Accent; 2..3 Text; 4..8 Text bold; 8..11 TextFaint; 11..23 Text
+|That was 2 h 14 min, total $0.31.
+  ~ 0..9 TextMuted; 9..19 Text; 19..27 TextMuted; 27..32 Text; 32..33 TextMuted
+|Your agent isn't saved.
+  ~ 0..23 TextMuted

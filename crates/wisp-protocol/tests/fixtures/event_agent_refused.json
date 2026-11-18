@@ -1,0 +1,6 @@
+{
+  "type": "agent_refused",
+  "by": "/review",
+  "action": "send",
+  "reason": "no agent named /docs/x"
+}

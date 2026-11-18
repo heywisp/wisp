@@ -1,0 +1,13 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 6,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "process_detached",
+  "id": 5,
+  "size": {
+    "cols": 100,
+    "rows": 30
+  },
+  "reason": "ended",
+  "typed": false
+}

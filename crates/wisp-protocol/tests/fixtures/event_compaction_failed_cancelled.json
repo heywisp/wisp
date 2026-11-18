@@ -1,0 +1,7 @@
+{
+  "type": "compaction_failed",
+  "trigger": "manual",
+  "kind": "cancelled",
+  "message": "The compaction was cancelled before it started.",
+  "answers": 4
+}

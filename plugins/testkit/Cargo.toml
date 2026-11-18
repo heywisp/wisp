@@ -1,0 +1,18 @@
+[package]
+name = "wisp-plugin-testkit"
+description = "Test tools for Wisp's kernel and its plugins, as a plugin, with a fake host for plugin tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+futures.workspace = true
+image.workspace = true
+serde_json.workspace = true
+wisp-plugin-api.workspace = true
+wisp-tool-text.workspace = true

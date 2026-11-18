@@ -1,0 +1,62 @@
+id = "testkit"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Test tools for the kernel's own tests"
+
+[[tools]]
+name = "confirm"
+default = "off"
+
+[[tools]]
+name = "echo"
+default = "off"
+
+[[tools]]
+name = "fetch"
+default = "off"
+
+[[tools]]
+name = "instantly"
+default = "off"
+
+[[tools]]
+name = "limited"
+default = "off"
+
+[[tools]]
+name = "panic"
+default = "off"
+
+[[tools]]
+name = "sleep"
+default = "off"
+
+[[tools]]
+name = "snap"
+default = "off"
+
+[[tools]]
+name = "starter"
+default = "off"
+
+[[tools]]
+name = "stubborn"
+default = "off"
+
+[[commands]]
+name = "note"
+aliases = ["say"]
+summary = "Answer with a note"
+
+[[commands.args]]
+name = "text"
+values = "free"
+
+[[commands]]
+name = "send"
+summary = "Send the words as a message"
+
+[[commands]]
+name = "tidy"
+summary = "Tidy up between turns"
+busy = { between_turns = "Tidy runs between turns." }

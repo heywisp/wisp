@@ -1,0 +1,17 @@
+[
+  {
+    "type": "failed",
+    "message": "boom"
+  },
+  {
+    "type": "timed_out"
+  },
+  {
+    "type": "too_large",
+    "bytes": 16385
+  },
+  {
+    "type": "invalid",
+    "rule": "tree_depth"
+  }
+]

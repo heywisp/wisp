@@ -1,0 +1,8 @@
+package wisp:plugin@0.2.0;
+
+interface pricing {
+  record usage { input: u64, output: u64, cache-read: u64, cache-write-5m: u64, cache-write-1h: u64, web-searches: u64 }
+  record spend-totals { turn: option<u64>, turn-at-least: bool, session: option<u64>, session-at-least: bool }
+  estimate: func(usage: usage) -> option<u64>;
+  spend: func() -> spend-totals;
+}

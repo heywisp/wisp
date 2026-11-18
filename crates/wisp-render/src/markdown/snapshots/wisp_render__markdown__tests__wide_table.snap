@@ -1,0 +1,124 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(WIDE_TABLE, GlyphSet::Unicode)"
+---
+--- 120 ---
+   [b|Model]              [b|Input price per million tokens]  [b|Output price per million tokens]  [b|Cache write]         [b|Cache read]
+   [line|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────]
+   claude-sonnet-5-5  three dollars and no cents      fifteen dollars                  three seventy five  thirty cents
+   claude-haiku       one dollar                      five dollars                                         ten cents
+--- 80 ---
+   [text.muted|Model:] claude-sonnet-5-5
+   [text.muted|Input price per million tokens:] three dollars and no cents
+   [text.muted|Output price per million tokens:] fifteen dollars
+   [text.muted|Cache write:] three seventy five
+   [text.muted|Cache read:] thirty cents
+
+   [text.muted|Model:] claude-haiku
+   [text.muted|Input price per million tokens:] one dollar
+   [text.muted|Output price per million tokens:] five dollars
+   [text.muted|Cache write:]
+   [text.muted|Cache read:] ten cents
+--- 60 ---
+   [text.muted|Model:] claude-sonnet-5-5
+   [text.muted|Input price per million tokens:] three dollars and no
+     cents
+   [text.muted|Output price per million tokens:] fifteen dollars
+   [text.muted|Cache write:] three seventy five
+   [text.muted|Cache read:] thirty cents
+
+   [text.muted|Model:] claude-haiku
+   [text.muted|Input price per million tokens:] one dollar
+   [text.muted|Output price per million tokens:] five dollars
+   [text.muted|Cache write:]
+   [text.muted|Cache read:] ten cents
+--- 24 ---
+   [text.muted|Model:]
+     claude-sonnet-5-5
+   [text.muted|Input price per]
+     [text.muted|million tokens:]
+     three dollars and
+     no cents
+   [text.muted|Output price per]
+     [text.muted|million tokens:]
+     fifteen dollars
+   [text.muted|Cache write:] three
+     seventy five
+   [text.muted|Cache read:] thirty
+     cents
+
+   [text.muted|Model:]
+     claude-haiku
+   [text.muted|Input price per]
+     [text.muted|million tokens:]
+     one dollar
+   [text.muted|Output price per]
+     [text.muted|million tokens:]
+     five dollars
+   [text.muted|Cache write:]
+   [text.muted|Cache read:] ten
+     cents
+--- 10 ---
+   [text.muted|Model:]
+   claude
+   -sonne
+   t-5-5
+   [text.muted|Input]
+   [text.muted|price]
+   [text.muted|per]
+   [text.muted|millio]
+   [text.muted|n]
+   [text.muted|tokens]
+   [text.muted|:]
+   three
+   dollar
+   s and
+   no
+   cents
+   [text.muted|Output]
+   [text.muted|price]
+   [text.muted|per]
+   [text.muted|millio]
+   [text.muted|n]
+   [text.muted|tokens]
+   [text.muted|:]
+   fiftee
+   n
+   dollar
+   s
+   [text.muted|Cache]
+   [text.muted|write:]
+   three
+   sevent
+   y five
+   [text.muted|Cache]
+   [text.muted|read:]
+   thirty
+   cents
+
+   [text.muted|Model:]
+   claude
+   -haiku
+   [text.muted|Input]
+   [text.muted|price]
+   [text.muted|per]
+   [text.muted|millio]
+   [text.muted|n]
+   [text.muted|tokens]
+   [text.muted|:] one
+   dollar
+   [text.muted|Output]
+   [text.muted|price]
+   [text.muted|per]
+   [text.muted|millio]
+   [text.muted|n]
+   [text.muted|tokens]
+   [text.muted|:] five
+   dollar
+   s
+   [text.muted|Cache]
+   [text.muted|write:]
+   [text.muted|Cache]
+   [text.muted|read:]
+   ten
+   cents

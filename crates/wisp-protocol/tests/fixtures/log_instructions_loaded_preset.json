@@ -1,0 +1,44 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 1,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "instructions_loaded",
+  "turn": null,
+  "chosen": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "imports": [
+    {
+      "scope": "preset",
+      "name": "AGENTS.md",
+      "display_path": "~/roles/planner/AGENTS.md",
+      "bytes": 9035,
+      "sha256": "abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "scope": "preset",
+      "name": "style.md",
+      "display_path": "~/roles/planner/style.md",
+      "bytes": 9035,
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "imported_by": "AGENTS.md"
+    }
+  ],
+  "candidates": [
+    {
+      "scope": "project",
+      "display_path": "~/Projects/Wisp/AGENTS.md",
+      "bytes": 9035,
+      "mtime": 1792756800000000000,
+      "sha256": "abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "scope": "default",
+      "display_path": "~/.config/wisp/AGENTS.md"
+    }
+  ]
+}

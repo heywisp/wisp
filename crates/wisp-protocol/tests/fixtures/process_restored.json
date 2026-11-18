@@ -1,0 +1,12 @@
+{
+  "type": "process_restored",
+  "id": 4,
+  "call_id": "toolu_04",
+  "target": "cargo test",
+  "tty": false,
+  "end": {
+    "type": "lost",
+    "reason": "stopped_at_resume"
+  },
+  "duration_ms": 0
+}

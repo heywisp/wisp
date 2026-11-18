@@ -1,0 +1,8 @@
+{
+  "type": "process_resized",
+  "id": 5,
+  "size": {
+    "cols": 100,
+    "rows": 30
+  }
+}

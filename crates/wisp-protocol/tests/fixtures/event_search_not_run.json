@@ -1,0 +1,5 @@
+{
+  "type": "search_not_run",
+  "endpoint_name": "router",
+  "model": "claude-haiku-5-5"
+}

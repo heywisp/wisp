@@ -1,0 +1,11 @@
+{
+  "action": {
+    "type": "other",
+    "name": "teleport"
+  },
+  "target": "{\"to\":\"mars\"}",
+  "output": {
+    "type": "code",
+    "lang": "rust"
+  }
+}

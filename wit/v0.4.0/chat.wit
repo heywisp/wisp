@@ -1,0 +1,5 @@
+package wisp:plugin@0.4.0;
+
+interface chat {
+  rename: func(name: string) -> result<string, string>;
+}

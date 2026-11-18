@@ -1,0 +1,14 @@
+{
+  "type": "edit_endpoint",
+  "request": 22,
+  "name": "work",
+  "edit": {
+    "provider": "anthropic",
+    "url": "provider_default",
+    "key_env": {
+      "set": "WORK_API_KEY"
+    },
+    "url_env": "unset"
+  },
+  "check": false
+}

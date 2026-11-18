@@ -1,0 +1,9 @@
+package wisp:plugin@0.4.0;
+
+interface manage {
+  use wisp:plugin/call@0.1.0.{call-context};
+  enum action { on, off, add, remove }
+  enum kind { tool, skill, server }
+  record change { action: action, kind: kind, name: string, %from: option<string>, keys: list<string> }
+  manage: async func(change: change, ctx: borrow<call-context>) -> result<string, string>;
+}

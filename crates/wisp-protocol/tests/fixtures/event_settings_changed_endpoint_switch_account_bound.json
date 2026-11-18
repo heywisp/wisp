@@ -1,0 +1,14 @@
+{
+  "type": "settings_changed",
+  "endpoint": "manifest",
+  "model": "claude-sonnet-5-5",
+  "effort": "low",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "endpoint_switch"
+  },
+  "account_bound": [
+    "claude-haiku-5-5",
+    "claude-sonnet-5-5"
+  ]
+}

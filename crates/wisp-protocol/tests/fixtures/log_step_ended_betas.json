@@ -1,0 +1,26 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 7,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "step_ended",
+  "turn": 2,
+  "step": 1,
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 80,
+    "cache_read_input_tokens": 9000,
+    "cache_creation_input_tokens": 300,
+    "cache_creation_5m_input_tokens": 0,
+    "cache_creation_1h_input_tokens": 300
+  },
+  "cost_usd": 0.01,
+  "lower_bound": false,
+  "prompt_tokens": 10500,
+  "response_id": "msg_02",
+  "view_len": 4,
+  "ttl": "one_hour",
+  "betas": [
+    "inline-tools-2026-09-15",
+    "mid-conversation-output-config-2026-07-01"
+  ]
+}

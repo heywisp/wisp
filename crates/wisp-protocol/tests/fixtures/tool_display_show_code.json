@@ -1,0 +1,15 @@
+{
+  "action": {
+    "type": "show"
+  },
+  "target": "A hello world",
+  "output": {
+    "type": "none"
+  },
+  "view": {
+    "type": "code",
+    "language": "rust",
+    "code": "fn main() {\n\tprintln!(\"hi\");\r\n}\n"
+  },
+  "purpose": "show"
+}

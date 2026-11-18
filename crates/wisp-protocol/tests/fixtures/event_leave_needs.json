@@ -1,0 +1,12 @@
+{
+  "type": "leave_needs",
+  "request": 19,
+  "ways": [
+    {
+      "chat": "other",
+      "stay": [
+        "worker"
+      ]
+    }
+  ]
+}

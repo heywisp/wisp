@@ -1,0 +1,19 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: at_wide_widths(WIDE_TABLE)
+---
+--- 120 ---
+   [b|Model]              [b|Input price per million tokens]  [b|Output price per million tokens]  [b|Cache write]         [b|Cache read]
+   [line|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────]
+   claude-sonnet-5-5  three dollars and no cents      fifteen dollars                  three seventy five  thirty cents
+   claude-haiku       one dollar                      five dollars                                         ten cents
+--- 160 ---
+   [b|Model]              [b|Input price per million tokens]  [b|Output price per million tokens]  [b|Cache write]         [b|Cache read]
+   [line|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────]
+   claude-sonnet-5-5  three dollars and no cents      fifteen dollars                  three seventy five  thirty cents
+   claude-haiku       one dollar                      five dollars                                         ten cents
+--- 200 ---
+   [b|Model]              [b|Input price per million tokens]  [b|Output price per million tokens]  [b|Cache write]         [b|Cache read]
+   [line|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────]
+   claude-sonnet-5-5  three dollars and no cents      fifteen dollars                  three seventy five  thirty cents
+   claude-haiku       one dollar                      five dollars                                         ten cents

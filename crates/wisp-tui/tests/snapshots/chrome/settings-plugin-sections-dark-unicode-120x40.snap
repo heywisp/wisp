@@ -1,0 +1,30 @@
+---
+source: crates/wisp-tui/tests/app/settings_screen.rs
+expression: shot
+---
+| ⢎⠶⡰ wisp   Settings                                                                       opus-5-5 · high · Claude API
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 12..20 fg Rgb(212, 212, 212); 91..119 fg Rgb(166, 166, 166)
+|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ~ 0..120 fg Rgb(88, 88, 88)
+| Filter  rules
+  ~ 1..7 fg Rgb(166, 166, 166); 9..14 fg Rgb(212, 212, 212)
+| rules: project rules and notes for the model
+  ~ 1..8 fg Rgb(166, 166, 166); 8..45 fg Rgb(212, 212, 212) bold
+|
+| State          on
+  ~ 1..16 fg Rgb(166, 166, 166); 16..18 fg Rgb(212, 212, 212)
+|
+|
+| prompt section: rules · in the project block
+  ~ 1..45 fg Rgb(212, 212, 212)
+|
+| prompt section: notes · in each turn's message
+  ~ 1..47 fg Rgb(212, 212, 212)
+|
+| enter turn off · → its settings · d remove
+  ~ 1..6 fg Rgb(166, 166, 166); 6..18 fg Rgb(117, 117, 117); 18..19 fg Rgb(166, 166, 166); 19..35 fg Rgb(117, 117, 117); 35..36 fg Rgb(166, 166, 166); 36..43 fg Rgb(117, 117, 117)
+|(25 blank rows)
+|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ~ 0..120 fg Rgb(88, 88, 88)
+| ⢎⠶⡰  Settings   ? back · esc back
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..14 fg Rgb(212, 212, 212); 17..18 fg Rgb(166, 166, 166); 18..26 fg Rgb(117, 117, 117); 26..29 fg Rgb(166, 166, 166); 29..34 fg Rgb(117, 117, 117)

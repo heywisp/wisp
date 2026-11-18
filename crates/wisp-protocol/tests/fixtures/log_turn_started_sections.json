@@ -1,0 +1,27 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 1,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "turn_started",
+  "turn": 1,
+  "lead": [
+    {
+      "by": "acme/rules",
+      "text": "<rules>\nv2\n</rules>\n",
+      "snapshot": "rules v2"
+    },
+    {
+      "by": "acme/news",
+      "text": "<news>\nbuild failed\n</news>\n",
+      "replay": true
+    }
+  ],
+  "text": "run the tests",
+  "model": "claude-opus-5-5",
+  "effort": "low",
+  "effort_marker": {
+    "level": "low",
+    "rendered": true
+  },
+  "endpoint_name": "direct"
+}

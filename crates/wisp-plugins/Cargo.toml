@@ -1,0 +1,69 @@
+[package]
+name = "wisp-plugins"
+description = "The list of Wisp's bundled plugins, one cargo feature each"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["openai", "gemini", "anthropic", "agent-viz", "agents", "ask-user", "chat", "compaction", "context", "idle", "instructions", "mcp", "menus", "page", "search", "secret", "self-check", "shell", "show-diff", "skills", "time", "todos", "view-file", "web-search", "workspace"]
+anthropic = ["dep:wisp-plugin-anthropic"]
+gemini = ["dep:wisp-plugin-gemini"]
+openai = ["dep:wisp-plugin-openai"]
+agent-viz = ["dep:wisp-plugin-agent-viz"]
+agents = ["dep:wisp-plugin-agents"]
+ask-user = ["dep:wisp-plugin-ask-user"]
+chat = ["dep:wisp-plugin-chat"]
+compaction = ["dep:wisp-plugin-compaction"]
+context = ["dep:wisp-plugin-context"]
+idle = ["dep:wisp-plugin-idle"]
+instructions = ["dep:wisp-plugin-instructions"]
+mcp = ["dep:wisp-plugin-mcp"]
+menus = ["dep:wisp-plugin-menus"]
+page = ["dep:wisp-plugin-page"]
+search = ["dep:wisp-plugin-search"]
+secret = ["dep:wisp-plugin-secret"]
+self-check = ["dep:wisp-plugin-self-check"]
+shell = ["dep:wisp-plugin-shell"]
+show-diff = ["dep:wisp-plugin-show-diff"]
+skills = ["dep:wisp-plugin-skills"]
+testkit = ["dep:wisp-plugin-testkit"]
+time = ["dep:wisp-plugin-time"]
+todos = ["dep:wisp-plugin-todos"]
+view-file = ["dep:wisp-plugin-view-file"]
+web-search = ["dep:wisp-plugin-web-search"]
+workspace = ["dep:wisp-plugin-workspace"]
+
+[dependencies]
+wisp-plugin-openai = { workspace = true, optional = true }
+wisp-plugin-gemini = { workspace = true, optional = true }
+wisp-plugin-anthropic = { workspace = true, optional = true }
+wisp-plugin-agent-viz = { workspace = true, optional = true }
+wisp-plugin-agents = { workspace = true, optional = true }
+wisp-plugin-api.workspace = true
+wisp-plugin-ask-user = { workspace = true, optional = true }
+wisp-plugin-chat = { workspace = true, optional = true }
+wisp-plugin-compaction = { workspace = true, optional = true }
+wisp-plugin-context = { workspace = true, optional = true }
+wisp-plugin-idle = { workspace = true, optional = true }
+wisp-plugin-instructions = { workspace = true, optional = true }
+wisp-plugin-mcp = { workspace = true, optional = true }
+wisp-plugin-menus = { workspace = true, optional = true }
+wisp-plugin-page = { workspace = true, optional = true }
+wisp-plugin-search = { workspace = true, optional = true }
+wisp-plugin-secret = { workspace = true, optional = true }
+wisp-plugin-self-check = { workspace = true, optional = true }
+wisp-plugin-shell = { workspace = true, optional = true }
+wisp-plugin-show-diff = { workspace = true, optional = true }
+wisp-plugin-skills = { workspace = true, optional = true }
+wisp-plugin-testkit = { workspace = true, optional = true }
+wisp-plugin-time = { workspace = true, optional = true }
+wisp-plugin-todos = { workspace = true, optional = true }
+wisp-plugin-view-file = { workspace = true, optional = true }
+wisp-plugin-web-search = { workspace = true, optional = true }
+wisp-plugin-workspace = { workspace = true, optional = true }

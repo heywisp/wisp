@@ -1,0 +1,196 @@
+---
+source: crates/wisp-render/src/transcript/tests/folds.rs
+expression: out
+---
+--- live, Unicode, 40 ---
+   [text.faint|╎] [thinking|Thinking]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the]
+   [text.faint|╎] [i thinking|first paragraph. Placeholder]
+   [text.faint|╎] [i thinking|sentence two of the first paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the]
+   [text.faint|╎] [i thinking|second paragraph. Placeholder]
+   [text.faint|╎] [i thinking|sentence two of the second]
+   [text.faint|╎] [i thinking|paragraph, here to fill the row.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the]
+   [text.faint|╎] [i thinking|third paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the]
+   [text.faint|╎] [i thinking|fourth paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the]
+   [text.faint|╎] [i thinking|fifth paragraph. Placeholder]
+   [text.faint|╎] [i thinking|sentence two of the fifth paragraph,]
+   [text.faint|╎] [i thinking|here to fill the row.]
+--- first frame after the collapse, Unicode, 40 ---
+F  [text.faint|╎] [thinking|Thought for 8 s][text.faint| ▸]
+   [text.faint|╎] [i thinking|fifth paragraph. Placeholder]
+   [text.faint|╎] [i thinking|sentence two of the fifth paragraph,]
+   [text.faint|╎] [i thinking|here to fill the row.]
+  
+   [accent|⠶] Placeholder answer, sentence one.
+--- collapsed turn, Unicode, 40 ---
+F  [text.faint|╎] [thinking|Thought for 8 s][text.faint| ▸]
+   [text.faint|╎] [i thinking|fifth paragraph. Placeholder]
+   [text.faint|╎] [i thinking|sentence two of the fifth paragraph,]
+   [text.faint|╎] [i thinking|here to fill the row.]
+  
+   [accent|⠶] Placeholder answer, sentence one.
+  
+     [text.faint|13s · $0.014 · cached 92%]
+--- live, Unicode, 80 ---
+   [text.faint|╎] [thinking|Thinking]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the first paragraph. Placeholder sentence two of]
+   [text.faint|╎] [i thinking|the first paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the second paragraph. Placeholder sentence two]
+   [text.faint|╎] [i thinking|of the second paragraph, here to fill the row.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the third paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of]
+   [text.faint|╎] [i thinking|the fifth paragraph, here to fill the row.]
+--- first frame after the collapse, Unicode, 80 ---
+F  [text.faint|╎] [thinking|Thought for 8 s][text.faint| ▸]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of]
+   [text.faint|╎] [i thinking|the fifth paragraph, here to fill the row.]
+  
+   [accent|⠶] Placeholder answer, sentence one.
+--- collapsed turn, Unicode, 80 ---
+F  [text.faint|╎] [thinking|Thought for 8 s][text.faint| ▸]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of]
+   [text.faint|╎] [i thinking|the fifth paragraph, here to fill the row.]
+  
+   [accent|⠶] Placeholder answer, sentence one.
+  
+     [text.faint|13s · $0.014 · cached 92%]
+--- live, Unicode, 120 ---
+   [text.faint|╎] [thinking|Thinking]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the first paragraph. Placeholder sentence two of the first paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the second paragraph. Placeholder sentence two of the second paragraph, here to fill the]
+   [text.faint|╎] [i thinking|row.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the third paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|╎]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of the fifth paragraph, here to fill the]
+   [text.faint|╎] [i thinking|row.]
+--- first frame after the collapse, Unicode, 120 ---
+F  [text.faint|╎] [thinking|Thought for 8 s][text.faint| ▸]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of the fifth paragraph, here to fill the]
+   [text.faint|╎] [i thinking|row.]
+  
+   [accent|⠶] Placeholder answer, sentence one.
+--- collapsed turn, Unicode, 120 ---
+F  [text.faint|╎] [thinking|Thought for 8 s][text.faint| ▸]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|╎] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of the fifth paragraph, here to fill the]
+   [text.faint|╎] [i thinking|row.]
+  
+   [accent|⠶] Placeholder answer, sentence one.
+  
+     [text.faint|13s · $0.014 · cached 92%]
+--- live, Ascii, 40 ---
+   [text.faint|:] [thinking|Thinking]
+   [text.faint|:] [i thinking|Placeholder sentence one of the]
+   [text.faint|:] [i thinking|first paragraph. Placeholder]
+   [text.faint|:] [i thinking|sentence two of the first paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the]
+   [text.faint|:] [i thinking|second paragraph. Placeholder]
+   [text.faint|:] [i thinking|sentence two of the second]
+   [text.faint|:] [i thinking|paragraph, here to fill the row.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the]
+   [text.faint|:] [i thinking|third paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the]
+   [text.faint|:] [i thinking|fourth paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the]
+   [text.faint|:] [i thinking|fifth paragraph. Placeholder]
+   [text.faint|:] [i thinking|sentence two of the fifth paragraph,]
+   [text.faint|:] [i thinking|here to fill the row.]
+--- first frame after the collapse, Ascii, 40 ---
+F  [text.faint|:] [thinking|Thought for 8 s][text.faint| >]
+   [text.faint|:] [i thinking|fifth paragraph. Placeholder]
+   [text.faint|:] [i thinking|sentence two of the fifth paragraph,]
+   [text.faint|:] [i thinking|here to fill the row.]
+  
+   [accent|*] Placeholder answer, sentence one.
+--- collapsed turn, Ascii, 40 ---
+F  [text.faint|:] [thinking|Thought for 8 s][text.faint| >]
+   [text.faint|:] [i thinking|fifth paragraph. Placeholder]
+   [text.faint|:] [i thinking|sentence two of the fifth paragraph,]
+   [text.faint|:] [i thinking|here to fill the row.]
+  
+   [accent|*] Placeholder answer, sentence one.
+  
+     [text.faint|13s - $0.014 - cached 92%]
+--- live, Ascii, 80 ---
+   [text.faint|:] [thinking|Thinking]
+   [text.faint|:] [i thinking|Placeholder sentence one of the first paragraph. Placeholder sentence two of]
+   [text.faint|:] [i thinking|the first paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the second paragraph. Placeholder sentence two]
+   [text.faint|:] [i thinking|of the second paragraph, here to fill the row.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the third paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of]
+   [text.faint|:] [i thinking|the fifth paragraph, here to fill the row.]
+--- first frame after the collapse, Ascii, 80 ---
+F  [text.faint|:] [thinking|Thought for 8 s][text.faint| >]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of]
+   [text.faint|:] [i thinking|the fifth paragraph, here to fill the row.]
+  
+   [accent|*] Placeholder answer, sentence one.
+--- collapsed turn, Ascii, 80 ---
+F  [text.faint|:] [thinking|Thought for 8 s][text.faint| >]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of]
+   [text.faint|:] [i thinking|the fifth paragraph, here to fill the row.]
+  
+   [accent|*] Placeholder answer, sentence one.
+  
+     [text.faint|13s - $0.014 - cached 92%]
+--- live, Ascii, 120 ---
+   [text.faint|:] [thinking|Thinking]
+   [text.faint|:] [i thinking|Placeholder sentence one of the first paragraph. Placeholder sentence two of the first paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the second paragraph. Placeholder sentence two of the second paragraph, here to fill the]
+   [text.faint|:] [i thinking|row.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the third paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|:]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of the fifth paragraph, here to fill the]
+   [text.faint|:] [i thinking|row.]
+--- first frame after the collapse, Ascii, 120 ---
+F  [text.faint|:] [thinking|Thought for 8 s][text.faint| >]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of the fifth paragraph, here to fill the]
+   [text.faint|:] [i thinking|row.]
+  
+   [accent|*] Placeholder answer, sentence one.
+--- collapsed turn, Ascii, 120 ---
+F  [text.faint|:] [thinking|Thought for 8 s][text.faint| >]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fourth paragraph.]
+   [text.faint|:] [i thinking|Placeholder sentence one of the fifth paragraph. Placeholder sentence two of the fifth paragraph, here to fill the]
+   [text.faint|:] [i thinking|row.]
+  
+   [accent|*] Placeholder answer, sentence one.
+  
+     [text.faint|13s - $0.014 - cached 92%]

@@ -1,0 +1,19 @@
+package wisp:plugin@0.2.0;
+
+world plugin {
+  include wisp:plugin/plugin@0.1.0;
+  import workspace-facts;
+  import instructions-report;
+  import job-news;
+  import pricing;
+  import http;
+  import agent;
+  import agent-tree;
+  import history;
+  import config;
+  import accounts;
+  export slot-render;
+  export prompt-sections;
+  export agent-hooks;
+  export strategy;
+}

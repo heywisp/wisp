@@ -1,0 +1,10 @@
+{
+  "type": "settings_changed",
+  "endpoint": "direct",
+  "model": "claude-haiku-5-5",
+  "effort": "low",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "native_search_refused"
+  }
+}

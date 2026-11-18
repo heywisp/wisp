@@ -1,0 +1,22 @@
+{
+  "type": "search_ended",
+  "step": 2,
+  "attempt": 0,
+  "call_id": "srvtoolu_01",
+  "outcome": {
+    "status": "done",
+    "type": "results",
+    "hits": [
+      {
+        "title": "ripgrep - crates.io",
+        "url": "https://crates.io/crates/ripgrep",
+        "page_age": "April 30, 2026"
+      },
+      {
+        "title": "BurntSushi/ripgrep",
+        "url": "https://github.com/BurntSushi/ripgrep",
+        "snippet": "A line-oriented search tool"
+      }
+    ]
+  }
+}

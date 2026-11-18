@@ -1,0 +1,25 @@
+{
+  "type": "retrying",
+  "attempt": 11,
+  "delay_ms": 30000,
+  "reason": "HTTP 429: Too many concurrent requests",
+  "step": 3,
+  "kind": "rate_limit",
+  "detail": {
+    "phase": "response",
+    "source": "endpoint",
+    "status": 429,
+    "error_type": "rate_limit_error",
+    "retry": {
+      "type": "transient"
+    },
+    "possibly_billed": false
+  },
+  "max_attempts": 0,
+  "discarded_blocks": 0,
+  "discarded_chars": 0,
+  "busy": {
+    "waited_ms": 151000,
+    "window_ms": 600000
+  }
+}

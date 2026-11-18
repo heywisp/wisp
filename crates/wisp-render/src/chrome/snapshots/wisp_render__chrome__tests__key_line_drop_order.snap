@@ -1,0 +1,14 @@
+---
+source: crates/wisp-render/src/chrome/tests.rs
+expression: out
+---
+--- ctrl-j ---
+ 60 |  enter send · ctrl-j new line · /model · /help
+ 47 |  enter send · ctrl-j new line · /help
+ 38 |  enter send · /help
+ 20 |  /help
+--- shift-enter ---
+ 60 |  enter send · shift-enter new line · /model · /help
+ 52 |  enter send · shift-enter new line · /help
+ 43 |  enter send · /help
+ 20 |  /help

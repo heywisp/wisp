@@ -1,0 +1,23 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: at_wide_widths(PARAGRAPH)
+---
+--- 120 ---
+   Misses now say which part of the prefix changed: the system prompt, the tools or the messages. The prefix-stability
+   test covers each case, and a long word like supercalifragilisticexpialidocious_and_then_some_more_to_overflow still
+   wraps.
+
+   A second paragraph with a soft break and a hard
+   break.
+--- 160 ---
+   Misses now say which part of the prefix changed: the system prompt, the tools or the messages. The prefix-stability test covers each case, and a long word
+   like supercalifragilisticexpialidocious_and_then_some_more_to_overflow still wraps.
+
+   A second paragraph with a soft break and a hard
+   break.
+--- 200 ---
+   Misses now say which part of the prefix changed: the system prompt, the tools or the messages. The prefix-stability test covers each case, and a long word like
+   supercalifragilisticexpialidocious_and_then_some_more_to_overflow still wraps.
+
+   A second paragraph with a soft break and a hard
+   break.

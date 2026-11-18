@@ -1,0 +1,35 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(INLINE, GlyphSet::Unicode)"
+---
+--- 120 ---
+   Plain [i|emphasis] [b|strong] [b i|both] inline code [s|struck] and [b|bold with code and ][b i|nested emphasis].
+--- 80 ---
+   Plain [i|emphasis] [b|strong] [b i|both] inline code [s|struck] and [b|bold with code and ][b i|nested]
+   [b i|emphasis].
+--- 60 ---
+   Plain [i|emphasis] [b|strong] [b i|both] inline code [s|struck] and [b|bold]
+   [b|with code and ][b i|nested emphasis].
+--- 24 ---
+   Plain [i|emphasis]
+   [b|strong] [b i|both] inline
+   code [s|struck] and [b|bold]
+   [b|with code and ][b i|nested]
+   [b i|emphasis].
+--- 10 ---
+   Plain
+   [i|emphas]
+   [i|is]
+   [b|strong]
+   [b i|both]
+   inline
+   code
+   [s|struck]
+   and
+   [b|bold]
+   [b|with]
+   [b|code]
+   [b|and]
+   [b i|nested]
+   [b i|emphas]
+   [b i|is].

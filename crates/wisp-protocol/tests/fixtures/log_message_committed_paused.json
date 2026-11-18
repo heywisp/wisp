@@ -1,0 +1,18 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 3,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "message_committed",
+  "turn": 2,
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "text",
+        "text": "Searching"
+      }
+    ]
+  },
+  "model": "claude-haiku-5-5",
+  "stop_reason": "pause_turn"
+}

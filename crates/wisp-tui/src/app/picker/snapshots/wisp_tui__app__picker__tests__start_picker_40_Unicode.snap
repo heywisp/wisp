@@ -1,0 +1,66 @@
+---
+source: crates/wisp-tui/src/app/picker/tests.rs
+assertion_line: 1583
+expression: "shots.join(\"\\n\")"
+---
+== several offer it
+────────────────────────────────────────
+   Model  ● chatgpt doesn't offer
+          opus-5-5
+   ● claude-subscription  subscription
+ ›   opus-5-5
+   ● claude-work          subscription
+     opus-5-5
+   ● claude-api           Claude API
+     opus-5-5
+   Starts on ● claude-subscription
+   covered by your subscription
+   matching "opus-5-5"
+   enter start · esc stay on ● chatgpt
+== several, on claude-api
+────────────────────────────────────────
+   Model  ● chatgpt doesn't offer
+          opus-5-5
+   ● claude-subscription  subscription
+     opus-5-5
+   ● claude-work          subscription
+     opus-5-5
+   ● claude-api           Claude API
+ ›   opus-5-5
+   Starts on ● claude-api, on the API
+
+   matching "opus-5-5"
+   enter start · esc stay on ● chatgpt
+== only the API
+────────────────────────────────────────
+   Model  ● chatgpt doesn't offer
+          opus-5-5
+   ● claude-api  Claude API
+     opus-5-5
+
+   matching "opus-5-5"
+   ↑↓ move · esc stay on ● chatgpt
+== only the API, after down
+────────────────────────────────────────
+   Model  ● chatgpt doesn't offer
+          opus-5-5
+   ● claude-api  Claude API
+ ›   opus-5-5
+   Starts on ● claude-api, on the API
+   matching "opus-5-5"
+   enter start · esc stay on ● chatgpt
+== no account offers it
+────────────────────────────────────────
+   Model  No account offers opus-55
+          · choose a model
+   ● claude-subscription  subscription
+ ›   opus-5-5 ✓           medium
+     sonnet-5-5
+     haiku-5-5
+   ● claude-work          subscription
+     opus-5-5
+     sonnet-5-5
+   ↓ 15 more
+   Starts on ● claude-subscription
+   covered by your subscription
+   enter start · esc stay

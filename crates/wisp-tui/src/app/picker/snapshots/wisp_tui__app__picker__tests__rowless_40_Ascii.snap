@@ -1,0 +1,18 @@
+---
+source: crates/wisp-tui/src/app/picker/tests.rs
+expression: text
+---
+----------------------------------------
+   Model
+   * claude-subscription  subscription
+     opus-5-5 +           medium
+     sonnet-5-5
+     haiku-5-5
+     fable-5-1
+ >   nova-7               cost unknown
+   v 13 more
+   Only the model changes
+   cache rebuild ~20k tokens
+   No data for this model yet: effort
+   changes rebuild the cache.
+   enter switch - esc close

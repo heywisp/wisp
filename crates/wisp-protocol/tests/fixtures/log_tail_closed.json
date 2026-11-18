@@ -1,0 +1,11 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 7,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "tail_closed",
+  "through": 4,
+  "calls": [
+    "srvtoolu_03"
+  ],
+  "reason": "paused"
+}

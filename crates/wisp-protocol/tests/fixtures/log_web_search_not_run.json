@@ -1,0 +1,9 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 13,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "web_search_not_run",
+  "turn": 2,
+  "endpoint_name": "router",
+  "model": "claude-haiku-5-5"
+}

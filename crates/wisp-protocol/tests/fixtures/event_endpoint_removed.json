@@ -1,0 +1,7 @@
+{
+  "type": "endpoint_removed",
+  "answers": 23,
+  "name": "direct",
+  "kept_item": true,
+  "default_cleared": true
+}

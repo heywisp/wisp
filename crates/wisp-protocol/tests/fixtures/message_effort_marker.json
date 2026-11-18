@@ -1,0 +1,10 @@
+{
+  "role": "system",
+  "content": [
+    {
+      "type": "effort",
+      "level": "max",
+      "rendered": false
+    }
+  ]
+}

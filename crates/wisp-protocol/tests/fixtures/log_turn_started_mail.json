@@ -1,0 +1,14 @@
+{
+  "schema_version": 28,
+  "seq": 10,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "turn_started",
+  "turn": 4,
+  "origin": "mail",
+  "inputs": [
+    {
+      "id": "mail-m3",
+      "text": "<wisp:message from=\"/review/planner\" kind=\"report\">\n/review/planner reported: done\n</wisp:message>"
+    }
+  ]
+}

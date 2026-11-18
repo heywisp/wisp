@@ -1,0 +1,15 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 15,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "compaction_failed",
+  "turn": 3,
+  "trigger": "background",
+  "engine": "native",
+  "kind": {
+    "discarded": {
+      "reason": "bound"
+    }
+  },
+  "message": "Wisp discarded the background summary: too much was added while it ran."
+}

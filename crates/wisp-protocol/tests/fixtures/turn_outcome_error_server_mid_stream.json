@@ -1,0 +1,25 @@
+{
+  "status": "error",
+  "kind": "server",
+  "message": "Upstream provider stream was interrupted.",
+  "usage": null,
+  "cost": {
+    "turn_usd": 1.2,
+    "session_usd": 5.15,
+    "turn_lower_bound": true,
+    "session_lower_bound": true
+  },
+  "committed_steps": 18,
+  "detail": {
+    "phase": "stream",
+    "source": "endpoint",
+    "status": 200,
+    "error_type": "api_error",
+    "request_id": "req_011CTurn18",
+    "model": "claude-nova-7",
+    "retry": {
+      "type": "transient"
+    },
+    "possibly_billed": true
+  }
+}

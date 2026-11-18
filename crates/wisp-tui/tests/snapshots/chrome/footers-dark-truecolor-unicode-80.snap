@@ -1,0 +1,84 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== footers
+|
+|   2.4s · $0.02 · cache miss
+  ~ 3..18 fg Rgb(117, 117, 117); 18..28 fg Rgb(212, 212, 212)
+|
+| › Question 3
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| ⠶ An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   2.4s · cut off at the output limit · $0.03 · cached 92%
+  ~ 3..10 fg Rgb(117, 117, 117); 10..37 fg Rgb(212, 212, 212); 37..58 fg Rgb(117, 117, 117)
+|
+| › Question 4
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| ⠶ An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   2.4s · $0.01 · cached 92% · not kept in history
+  ~ 3..31 fg Rgb(117, 117, 117); 31..50 fg Rgb(212, 212, 212)
+|
+| › Question 5
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| ⠶ An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   2.4s · cost unknown · cached 92%
+  ~ 3..35 fg Rgb(117, 117, 117)
+|
+| › Question 6
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| ⠶ An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   2.4s · $0.50+ · cached 92%
+  ~ 3..29 fg Rgb(117, 117, 117)
+|
+| › Question 7
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| ⠶ An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| ◦ Stopped. Nothing from this turn was kept.
+  ~ 1..2 fg Rgb(166, 166, 166); 3..44 fg Rgb(166, 166, 166)
+|
+|   2.4s · cost unknown, possibly billed
+  ~ 3..10 fg Rgb(117, 117, 117); 10..39 fg Rgb(212, 212, 212)
+|
+| › Question 8
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| ⠶ An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| ⨯ Anthropic is overloaded. Nothing from this turn was kept.
+  ~ 1..2 fg Rgb(244, 135, 113); 3..27 fg Rgb(244, 135, 113); 27..60 fg Rgb(212, 212, 212)
+|   overloaded_error: try again
+  ~ 3..30 fg Rgb(166, 166, 166)
+|
+|   2.4s · cost unknown, possibly billed
+  ~ 3..10 fg Rgb(117, 117, 117); 10..39 fg Rgb(212, 212, 212)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                 total $0.60+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 66..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ › Ask anything, or type / for commands                                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..40 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready                          Claude API   sonnet-5-5 low · cached 92% │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 38..48 fg Rgb(166, 166, 166); 51..61 fg Rgb(212, 212, 212); 62..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)

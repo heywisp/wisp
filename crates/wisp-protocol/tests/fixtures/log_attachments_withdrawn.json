@@ -1,0 +1,20 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "attachments_withdrawn",
+  "turn": 4,
+  "step": 1,
+  "items": [
+    {
+      "ordinal": 0,
+      "sha256": "0101010101010101010101010101010101010101010101010101010101010101",
+      "note": "[image #1 couldn't be processed: Could not process image]"
+    },
+    {
+      "ordinal": 1,
+      "sha256": "0202020202020202020202020202020202020202020202020202020202020202",
+      "note": "[image #2 couldn't be processed: Could not process image]"
+    }
+  ]
+}

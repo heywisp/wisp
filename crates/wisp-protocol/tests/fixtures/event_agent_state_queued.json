@@ -1,0 +1,13 @@
+{
+  "type": "agent_state_changed",
+  "agent": "/docs",
+  "state": {
+    "state": "queued",
+    "reason": "concurrency"
+  },
+  "activity": {
+    "type": "tool",
+    "name": "bash"
+  },
+  "spent_usd": 0.0
+}

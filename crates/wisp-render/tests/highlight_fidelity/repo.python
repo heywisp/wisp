@@ -1,0 +1,10 @@
+from typing import Optional
+import re
+
+class Repo(Base):
+    """Docstring."""
+    def find(self, name: str, limit: int = 10) -> Optional[dict]:
+        pattern = re.compile(r"^\w+(\d{2,})$")
+        msg = f"found {len(self.items)} items for {name!r} at {self.path}"
+        if name is None or not self.items: return None
+        return {"name": name, "n": 3.14, "ok": True}  # trailing

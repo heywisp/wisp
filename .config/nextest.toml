@@ -1,0 +1,61 @@
+nextest-version = "0.9.149"
+
+[test-groups]
+terminal = { max-threads = 1 }
+cli-and-pty = { max-threads = 10 }
+
+[profile.default]
+test-threads = 20
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 3 }
+
+[[profile.default.overrides]]
+filter = 'package(wisp-tui) & test(/^term::picture::tests::/)'
+priority = 100
+
+[[profile.default.overrides]]
+filter = """
+package(wisp-core) & (
+    test(/^jobs::exec::pty::tests::/)
+  | test(/^jobs::service::tests::terminal::/)
+  | test(/^plugin::shell_tests::process::terminal::/)
+  | test(/^agent::tool_tests::steering::jobs::terminals::/)
+)
+"""
+test-group = "terminal"
+
+[[profile.default.overrides]]
+filter = '(package(wisp-cli) & kind(test)) | (package(learn) & kind(test)) | (package(wisp-tui) & (binary(pty) | binary(multiplexers)))'
+test-group = "cli-and-pty"
+
+[[profile.default.overrides]]
+filter = """
+(package(wisp-core) & (
+    test(=agent::tool_tests::steering::jobs::wakes::two_exits_a_second_apart_share_one_wake)
+  | test(=agent::tool_tests::steering::jobs::wakes::worded::an_end_during_an_unworded_opening_still_wakes_once_the_turn_ends)
+  | test(=plugin::shell_tests::process::rows::the_mode_at_the_write_decides_even_when_echo_goes_off_after_it)
+))
+| (package(wisp-cli) & binary(it) & (
+    test(=tools::a_question_set_takes_an_own_answer_and_a_skip_from_the_review_page)
+  | test(=tools::a_tool_turned_off_in_the_config_while_closed_goes_to_the_resumed_session_as_a_removal)
+  | test(=wasm::two_children_move_their_own_cards_at_once_and_are_refused_the_rest)
+))
+| (package(learn) & binary(it) & test(=web::a_lesson_continues_from_any_folder_and_its_picks_start_the_next))
+"""
+retries = 1
+
+[[profile.default.overrides]]
+filter = 'test(/_soak$/)'
+slow-timeout = { period = "60s", terminate-after = 10 }
+
+[[profile.default.overrides]]
+filter = 'package(wisp-cli) & binary(memory) & test(/^memory_(profile|rss)/)'
+slow-timeout = { period = "60s", terminate-after = 30 }
+
+[[profile.default.overrides]]
+filter = '(package(wisp-cli) & binary(it) & test(/^live_\w+::live_/)) | (package(wisp-core) & test(/^(agent::settings::live::live_|plugin::shell_tests::bash::live_|provider::openai::tests::voice::live_)/))'
+slow-timeout = { period = "60s", terminate-after = 15 }
+
+[profile.ci]
+test-threads = "num-cpus"

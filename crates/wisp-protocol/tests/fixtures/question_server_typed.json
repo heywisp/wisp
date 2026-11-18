@@ -1,0 +1,18 @@
+{
+  "header": "Needs you",
+  "question": "What should the issue be called?",
+  "options": [
+    {
+      "label": "Not now",
+      "description": ""
+    }
+  ],
+  "multi_select": false,
+  "source": {
+    "asked_by": {
+      "kind": "server",
+      "name": "linear"
+    },
+    "typed": true
+  }
+}

@@ -1,0 +1,28 @@
+{"type":"turn_started","turn":1}
+{"type":"step_started","step":1}
+{"type":"input_delivered","ids":["tui-1"],"step":1}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"I'll start a reviewer and a docs agent."}
+{"type":"block_stopped","index":0}
+{"type":"block_started","index":1,"kind":{"type":"tool_use","name":"spawn_agent"}}
+{"type":"block_stopped","index":1}
+{"type":"tool_call_requested","step":1,"block":1,"call_id":"toolu_spawn_01","tool":"spawn_agent","input":{"name":"review","task":"Review the plan"},"display":{"action":{"type":"other","name":"spawn_agent"},"verbs":{"doing":"Starting","done":"Started","failed":"couldn't start"},"target":"review","output":{"type":"text"}}}
+{"type":"step_ended","step":1,"usage":{"input_tokens":812,"output_tokens":61,"cache_read_input_tokens":0,"cache_creation_input_tokens":2048,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2048},"cost_usd":0.0104,"lower_bound":false}
+{"type":"tool_call_started","call_id":"toolu_spawn_01","cwd":"~/Projects/Wisp"}
+{"type":"agent_spawned","agent":{"path":"/review","name":"review","session_id":"019a-review","parent":"/","model":"claude-opus-5-5","effort":"high","depth":1,"state":{"state":"running"},"activity":{"type":"idle"},"spent_usd":0.0,"since_ms":1793037598000,"cwd":"~/Projects/Wisp-worktrees/review"},"session_id":"019a-review","config":{}}
+{"type":"agent_spawned","agent":{"path":"/docs","name":"docs","session_id":"019a-docs","parent":"/","model":"claude-opus-5-5","effort":"high","depth":1,"state":{"state":"running"},"activity":{"type":"idle"},"spent_usd":0.0,"since_ms":1793037598000,"cwd":"~/Projects/Wisp-worktrees/docs"},"session_id":"019a-docs","config":{}}
+{"type":"tool_call_finished","call_id":"toolu_spawn_01","outcome":{"status":"completed","is_error":false,"exit":null},"output":{"tail":"","bytes":0,"lines":0,"file":null,"file_problem":null,"inlined":true},"facts":[],"state":null,"duration_ms":40,"result":"Started /review (claude-opus-5-5, high) in ~/Projects/Wisp-worktrees/review."}
+{"type":"step_started","step":2}
+{"type":"agent_state_changed","agent":"/review","state":{"state":"running"},"activity":{"type":"streaming"},"spent_usd":0.62,"lower_bound":false,"since_ms":1793037598000}
+{"type":"agent_reported","agent":"/review","turn":1,"outcome":"reported","report":"Plan ready: docs/plans/x.md\nThe rest.","cost":0.84,"duration_ms":372000}
+{"type":"agent_state_changed","agent":"/review","state":{"state":"idle","outcome":"reported"},"activity":{"type":"idle"},"spent_usd":0.84,"lower_bound":false,"since_ms":1793037600000}
+{"type":"agent_state_changed","agent":"/docs","state":{"state":"running"},"activity":{"type":"tool","name":"bash"},"spent_usd":0.4,"lower_bound":false,"since_ms":1793037598000}
+{"type":"input_accepted","id":"mail-m1","mode":"steer","text":"<wisp:message from=\"/review\" kind=\"report\">\n/review reported · 6m12s · $0.840 in all\nPlan ready: docs/plans/x.md\n</wisp:message>","held":false,"from":{"agent":"/review","kind":"report","mail":"m1"}}
+{"type":"input_accepted","id":"mail-m2","mode":"steer","text":"<wisp:message from=\"/docs\" kind=\"notice\">\n/docs was stopped by the user\n</wisp:message>","held":false,"from":{"agent":"/docs","kind":"notice","mail":"m2","wake":false}}
+{"type":"input_delivered","ids":["mail-m1","mail-m2"],"step":2}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"The reviewer's plan is ready."}
+{"type":"block_stopped","index":0}
+{"type":"step_ended","step":2,"usage":{"input_tokens":812,"output_tokens":61,"cache_read_input_tokens":0,"cache_creation_input_tokens":2048,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2048},"cost_usd":0.0104,"lower_bound":false}
+{"type":"spend_changed","total":{"usd":0.0208,"plan_usd":0.0}}
+{"type":"turn_ended","outcome":{"status":"completed","stop_reason":"end_turn","model":"claude-opus-5-5","usage":{"input_tokens":812,"output_tokens":61,"cache_read_input_tokens":0,"cache_creation_input_tokens":2048,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2048},"cost":{"turn_usd":0.0208,"session_usd":0.0208,"agents_usd":1.24},"committed":true,"steps":2,"tool_calls":1},"stats":{"started_at":"2026-10-29T01:00:00Z","duration_ms":4200,"retries":0}}

@@ -1,0 +1,4 @@
+The user answered:
+
+1. [Database] Which database should the service use?
+   SQLite

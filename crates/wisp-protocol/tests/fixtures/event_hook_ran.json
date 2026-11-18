@@ -1,0 +1,11 @@
+{
+  "type": "hook_ran",
+  "hook": "context/fill",
+  "point": "before-turn",
+  "turn": 3,
+  "outcome": {
+    "type": "rejected",
+    "rule": "too_large"
+  },
+  "ms": 7
+}

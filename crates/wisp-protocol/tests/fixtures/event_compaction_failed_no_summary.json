@@ -1,0 +1,12 @@
+{
+  "type": "compaction_failed",
+  "trigger": "manual",
+  "engine": "native",
+  "kind": {
+    "no_summary": {
+      "stop_reason": "end_turn"
+    }
+  },
+  "message": "The model stopped (end_turn) without writing a summary.",
+  "answers": 4
+}

@@ -1,0 +1,199 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== queued
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(38 blank rows)
+| › Work through the todo list
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..80 bg Rgb(38, 38, 38)
+|
+| ⠶ I'll work through the list.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| ✓ Run the wisp-core tests  cargo test -p wisp-core                exit 0 · 12s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..26 fg Rgb(212, 212, 212); 28..51 fg Rgb(166, 166, 166); 67..79 fg Rgb(166, 166, 166)
+| ✓ Ran cargo fmt --all --check                                      exit 0 · 0s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..6 fg Rgb(212, 212, 212) bold; 6..30 fg Rgb(212, 212, 212); 68..79 fg Rgb(166, 166, 166)
+| ⨯ Lint the workspace  cargo clippy --workspace                   exit 101 · 2s
+  ~ 1..2 fg Rgb(244, 135, 113); 3..21 fg Rgb(212, 212, 212); 23..47 fg Rgb(166, 166, 166); 66..74 fg Rgb(244, 135, 113); 74..79 fg Rgb(166, 166, 166)
+| ⇗ Start the dev server  npm run dev                       process 27 · running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..23 fg Rgb(212, 212, 212); 25..36 fg Rgb(166, 166, 166); 59..79 fg Rgb(166, 166, 166)
+| ⇗ Running psql -U app notes                               process 31 · running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..10 fg Rgb(212, 212, 212) bold; 10..28 fg Rgb(212, 212, 212); 59..79 fg Rgb(166, 166, 166)
+| ◦ Typing into process 31 and pressing Enter                             queued
+  ~ 1..2 fg Rgb(166, 166, 166); 3..9 fg Rgb(212, 212, 212) bold; 9..44 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
+| ◦ Typing into process 31 and pressing Enter                             queued
+  ~ 1..2 fg Rgb(166, 166, 166); 3..9 fg Rgb(212, 212, 212) bold; 9..44 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
+| ◦ Typing into process 31                                                queued
+  ~ 1..2 fg Rgb(166, 166, 166); 3..9 fg Rgb(212, 212, 212) bold; 9..25 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
+| ◦ Using terminal {action, input}                                        queued
+  ~ 1..2 fg Rgb(166, 166, 166); 3..8 fg Rgb(212, 212, 212) bold; 8..33 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
+| ◦ Build the docs  cargo doc --no-deps                                   queued
+  ~ 1..2 fg Rgb(166, 166, 166); 3..17 fg Rgb(212, 212, 212); 19..38 fg Rgb(166, 166, 166); 73..79 fg Rgb(166, 166, 166)
+|
+|⢆⠶⠱
+  ~ 0..1 fg Rgb(212, 212, 212); 1..2 fg Rgb(72, 124, 168); 2..3 fg Rgb(212, 212, 212)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                 total $0.02+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 66..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ › Ask anything, or type / for commands                                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..40 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢆⠶⠱   ◌ 2 running · esc to stop · /ps            Claude API   sonnet-5-5 low │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(212, 212, 212); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(212, 212, 212); 8..19 fg Rgb(166, 166, 166); 19..22 fg Rgb(117, 117, 117); 22..25 fg Rgb(166, 166, 166); 25..36 fg Rgb(117, 117, 117); 36..39 fg Rgb(166, 166, 166); 51..61 fg Rgb(166, 166, 166); 64..74 fg Rgb(212, 212, 212); 75..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)
+== live
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(36 blank rows)
+| › Work through the todo list
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..80 bg Rgb(38, 38, 38)
+|
+| ⠶ I'll work through the list.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| ✓ Run the wisp-core tests  cargo test -p wisp-core                exit 0 · 12s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..26 fg Rgb(212, 212, 212); 28..51 fg Rgb(166, 166, 166); 67..79 fg Rgb(166, 166, 166)
+| ✓ Ran cargo fmt --all --check                                      exit 0 · 0s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..6 fg Rgb(212, 212, 212) bold; 6..30 fg Rgb(212, 212, 212); 68..79 fg Rgb(166, 166, 166)
+| ⨯ Lint the workspace  cargo clippy --workspace                   exit 101 · 2s
+  ~ 1..2 fg Rgb(244, 135, 113); 3..21 fg Rgb(212, 212, 212); 23..47 fg Rgb(166, 166, 166); 66..74 fg Rgb(244, 135, 113); 74..79 fg Rgb(166, 166, 166)
+| ⇗ Start the dev server  npm run dev                       process 27 · running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..23 fg Rgb(212, 212, 212); 25..36 fg Rgb(166, 166, 166); 59..79 fg Rgb(166, 166, 166)
+| ⇗ Running psql -U app notes                               process 31 · running
+  ~ 1..2 fg Rgb(86, 156, 214); 3..10 fg Rgb(212, 212, 212) bold; 10..28 fg Rgb(212, 212, 212); 59..79 fg Rgb(166, 166, 166)
+| ✓ Typed into process 31 and pressed Enter: "select count(*) from notes;"    1s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..8 fg Rgb(212, 212, 212) bold; 8..73 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ✓ Typed into process 31 and pressed Enter                                   1s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..8 fg Rgb(212, 212, 212) bold; 8..42 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ⨯ Used terminal 31                                              couldn't start
+  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
+| ⨯ Used terminal {action, input}                                 couldn't start
+  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..32 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
+| ◦ Build the docs  cargo doc --no-deps           not run · the turn was stopped
+  ~ 1..2 fg Rgb(166, 166, 166); 3..17 fg Rgb(166, 166, 166); 19..38 fg Rgb(166, 166, 166); 49..79 fg Rgb(166, 166, 166)
+|
+| ◦ Stopped. 2 steps were kept: the commands that ran and their output.
+  ~ 1..2 fg Rgb(166, 166, 166); 3..70 fg Rgb(166, 166, 166)
+|
+|   24s · 2 requests · 9 tools · cost unknown, possibly billed · cached 0%
+  ~ 3..32 fg Rgb(117, 117, 117); 32..61 fg Rgb(212, 212, 212); 61..73 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                  total $0.02 │
+  ~ 0..1 fg Rgb(88, 88, 88); 67..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ › Ask anything, or type / for commands                                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..40 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready · agent continues when 1 of 2 processes ends   ◌ 2 running · /ps  │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..57 fg Rgb(166, 166, 166); 60..71 fg Rgb(166, 166, 166); 71..74 fg Rgb(117, 117, 117); 74..77 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)
+== resumed
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(36 blank rows)
+| › Work through the todo list
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..80 bg Rgb(38, 38, 38)
+|
+| ⠶ I'll work through the list.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| ✓ Run the wisp-core tests  cargo test -p wisp-core                exit 0 · 12s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..26 fg Rgb(212, 212, 212); 28..51 fg Rgb(166, 166, 166); 67..79 fg Rgb(166, 166, 166)
+| ✓ Ran cargo fmt --all --check                                      exit 0 · 0s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..6 fg Rgb(212, 212, 212) bold; 6..30 fg Rgb(212, 212, 212); 68..79 fg Rgb(166, 166, 166)
+| ⨯ Lint the workspace  cargo clippy --workspace                   exit 101 · 2s
+  ~ 1..2 fg Rgb(244, 135, 113); 3..21 fg Rgb(212, 212, 212); 23..47 fg Rgb(166, 166, 166); 66..74 fg Rgb(244, 135, 113); 74..79 fg Rgb(166, 166, 166)
+| ◦ Start the dev server  npm run dev     process 27 · lost · before the restart
+  ~ 1..2 fg Rgb(166, 166, 166); 3..23 fg Rgb(212, 212, 212); 25..36 fg Rgb(166, 166, 166); 41..79 fg Rgb(166, 166, 166)
+| ✓ Ran psql -U app notes               process 31 · exit 0 · before the restart
+  ~ 1..2 fg Rgb(137, 209, 133); 3..6 fg Rgb(212, 212, 212) bold; 6..24 fg Rgb(212, 212, 212); 39..79 fg Rgb(166, 166, 166)
+| ✓ Typed into process 31 and pressed Enter: "select count(*) from notes;"    1s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..8 fg Rgb(212, 212, 212) bold; 8..73 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ✓ Typed into process 31 and pressed Enter                                   1s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..8 fg Rgb(212, 212, 212) bold; 8..42 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
+| ⨯ Used terminal 31                                              couldn't start
+  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
+| ⨯ Used terminal {action, input}                                 couldn't start
+  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..32 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
+| ◦ Build the docs  cargo doc --no-deps           not run · the turn was stopped
+  ~ 1..2 fg Rgb(166, 166, 166); 3..17 fg Rgb(166, 166, 166); 19..38 fg Rgb(166, 166, 166); 49..79 fg Rgb(166, 166, 166)
+|
+| ◦ Stopped. 2 steps were kept: the commands that ran and their output.
+  ~ 1..2 fg Rgb(166, 166, 166); 3..70 fg Rgb(166, 166, 166)
+|
+|   24s · 2 requests · 9 tools · cost unknown, possibly billed · cached 0%
+  ~ 3..32 fg Rgb(117, 117, 117); 32..61 fg Rgb(212, 212, 212); 61..73 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                              │
+  ~ 0..1 fg Rgb(88, 88, 88); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ › Ask anything, or type / for commands                                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..40 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready                           Claude API   sonnet-5-5 low · cached 0% │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 39..49 fg Rgb(166, 166, 166); 52..62 fg Rgb(212, 212, 212); 63..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)

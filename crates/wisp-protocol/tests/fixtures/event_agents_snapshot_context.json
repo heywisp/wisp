@@ -1,0 +1,53 @@
+{
+  "type": "agents_snapshot",
+  "request": 5,
+  "agents": [
+    {
+      "path": "/review/planner",
+      "name": "planner",
+      "parent": "/review",
+      "preset": "reviewer",
+      "model": "claude-opus-4-1",
+      "effort": "high",
+      "depth": 2,
+      "state": {
+        "state": "idle",
+        "outcome": "reported"
+      },
+      "activity": {
+        "type": "idle"
+      },
+      "spent_usd": 0.84,
+      "last_report": "Plan written to docs/plans/x.md",
+      "cwd": "~/Projects/Wisp-worktrees/review",
+      "context": {
+        "used": 312000,
+        "window": 1000000,
+        "limit": 400000,
+        "auto_compact": true
+      }
+    },
+    {
+      "path": "/docs",
+      "name": "docs",
+      "preset": "reviewer",
+      "model": "claude-opus-4-1",
+      "effort": "high",
+      "depth": 2,
+      "state": {
+        "state": "idle",
+        "outcome": "reported"
+      },
+      "activity": {
+        "type": "idle"
+      },
+      "spent_usd": 0.84,
+      "last_report": "Plan written to docs/plans/x.md",
+      "cwd": "~/Projects/Wisp-worktrees/review",
+      "context": {
+        "used": 48000,
+        "estimated": true
+      }
+    }
+  ]
+}

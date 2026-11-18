@@ -1,0 +1,7 @@
+{
+  "type": "child",
+  "agent": "/review",
+  "command": {
+    "type": "cancel"
+  }
+}

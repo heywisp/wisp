@@ -1,0 +1,15 @@
+{
+  "type": "todos_updated",
+  "call_id": "toolu_7",
+  "items": [
+    {
+      "text": "Read the plan",
+      "status": "completed"
+    },
+    {
+      "text": "Write the plan",
+      "status": "in_progress",
+      "section": "Next"
+    }
+  ]
+}

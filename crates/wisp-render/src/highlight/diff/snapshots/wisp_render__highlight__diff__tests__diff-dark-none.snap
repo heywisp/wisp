@@ -1,0 +1,182 @@
+---
+source: crates/wisp-render/src/highlight/diff/tests.rs
+expression: out
+---
+--- 120 ---
+   Paired:
+
+   --- a/cache.rs                                                                                                  diff
+   +++ b/cache.rs
+   @@ -1,3 +1,3 @@
+    fn key(req: &Request) -> Key {
+   -    let key = [reversed|hash]([reversed|&]req[reversed|.system], [reversed|1]);
+   +    let key = [reversed|Fingerprint::of](req, [reversed|2])[reversed|?];
+        key
+
+   Unequal:
+
+   @@ -1,2 +1,3 @@                                                                                            diff rust
+   -let total = sum([reversed|a]);
+   -[italic|// gone]
+   +let count = 0;
+   +let total = sum([reversed|b]);
+   +let extra = true;
+
+   Hint:
+
+   @@ -1 +1 @@                                                                                              diff python
+   -def f([reversed|x]): return "[reversed|a]"
+   +def f([reversed|y]): return "[reversed|b]"
+
+   Unknown:
+
+   --- a/notes.unknown                                                                                             diff
+   +++ b/notes.unknown
+   @@ -1 +1 @@
+   -plain [reversed|old] words
+   +plain [reversed|new] words
+
+   Dashes:
+
+   --- a/x.sql                                                                                                     diff
+   +++ b/x.sql
+   @@ -1,3 +1,2 @@
+    select 1;
+   -[italic|-- comment]
+   -[italic|--][reversed|-]
+   +[italic|--][reversed| note]
+--- 80 ---
+   Paired:
+
+   --- a/cache.rs                                                          diff
+   +++ b/cache.rs
+   @@ -1,3 +1,3 @@
+    fn key(req: &Request) -> Key {
+   -    let key = [reversed|hash]([reversed|&]req[reversed|.system], [reversed|1]);
+   +    let key = [reversed|Fingerprint::of](req, [reversed|2])[reversed|?];
+        key
+
+   Unequal:
+
+   @@ -1,2 +1,3 @@                                                    diff rust
+   -let total = sum([reversed|a]);
+   -[italic|// gone]
+   +let count = 0;
+   +let total = sum([reversed|b]);
+   +let extra = true;
+
+   Hint:
+
+   @@ -1 +1 @@                                                      diff python
+   -def f([reversed|x]): return "[reversed|a]"
+   +def f([reversed|y]): return "[reversed|b]"
+
+   Unknown:
+
+   --- a/notes.unknown                                                     diff
+   +++ b/notes.unknown
+   @@ -1 +1 @@
+   -plain [reversed|old] words
+   +plain [reversed|new] words
+
+   Dashes:
+
+   --- a/x.sql                                                             diff
+   +++ b/x.sql
+   @@ -1,3 +1,2 @@
+    select 1;
+   -[italic|-- comment]
+   -[italic|--][reversed|-]
+   +[italic|--][reversed| note]
+--- 24 ---
+   Paired:
+
+   --- a/cache.rs  diff
+   +++ b/cache.rs
+   @@ -1,3 +1,3 @@
+    fn key(req: &Reques
+   t) -> Key {
+   -    let key = [reversed|hash](
+   [reversed|&]req[reversed|.system], [reversed|1]);
+   +    let key = [reversed|Finge]
+   [reversed|rprint::of](req, [reversed|2])[reversed|?];
+        key
+
+   Unequal:
+
+   @@ -1,2 +1,3 @@
+   -let total = sum([reversed|a]);
+   -[italic|// gone]
+   +let count = 0;
+   +let total = sum([reversed|b]);
+   +let extra = true;
+
+   Hint:
+
+   @@ -1 +1 @@
+   -def f([reversed|x]): return "[reversed|a]
+   "
+   +def f([reversed|y]): return "[reversed|b]
+   "
+
+   Unknown:
+
+   --- a/notes.unknown
+   +++ b/notes.unknown
+   @@ -1 +1 @@
+   -plain [reversed|old] words
+   +plain [reversed|new] words
+
+   Dashes:
+
+   --- a/x.sql     diff
+   +++ b/x.sql
+   @@ -1,3 +1,2 @@
+    select 1;
+   -[italic|-- comment]
+   -[italic|--][reversed|-]
+   +[italic|--][reversed| note]
+--- 120, a run over the budget ---
+   Budget:
+
+   @@ -1,9 +1,5 @@                                                                                                 diff
+   -a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a
+    a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a
+    a a a a a a a a a a a a
+   -b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b
+    b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b
+    b b b b b b b b b b b b
+   -c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c
+    c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c
+    c c c c c c c c c c c c
+   -d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d
+    d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d
+    d d d d d d d d d d d d
+   -e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e
+    e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e
+    e e e e e e e e e e e e
+   -f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f
+    f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f
+    f f f f f f f f f f f f
+   -g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g
+    g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g
+    g g g g g g g g g g g g
+   -h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h
+    h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h
+    h h h h h h h h h h h h
+   -i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i
+    i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i
+    i i i i i i i i i i i i
+   +p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p
+    p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p
+    p p p p p p p p p p p p
+   +q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q
+    q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q
+    q q q q q q q q q q q q
+   +r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r
+    r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r
+    r r r r r r r r r r r r
+   +s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s
+    s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s
+    s s s s s s s s s s s s
+   +alpha beta gamma

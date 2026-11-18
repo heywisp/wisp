@@ -1,0 +1,63 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(TABLE, GlyphSet::Unicode)"
+---
+--- 120 ---
+   [b|Name]                             [b|Kind]  [b|Size]
+   [line|───────────────────────────────────────────]
+   cache.rs                         file   412
+   [b|src]                              dir      7
+   [u accent|docs][text.muted| (https://example.com/docs)]  link     1
+--- 80 ---
+   [b|Name]                             [b|Kind]  [b|Size]
+   [line|───────────────────────────────────────────]
+   cache.rs                         file   412
+   [b|src]                              dir      7
+   [u accent|docs][text.muted| (https://example.com/docs)]  link     1
+--- 60 ---
+   [b|Name]                             [b|Kind]  [b|Size]
+   [line|───────────────────────────────────────────]
+   cache.rs                         file   412
+   [b|src]                              dir      7
+   [u accent|docs][text.muted| (https://example.com/docs)]  link     1
+--- 24 ---
+   [text.muted|Name:] cache.rs
+   [text.muted|Kind:] file
+   [text.muted|Size:] 412
+
+   [text.muted|Name:] [b|src]
+   [text.muted|Kind:] dir
+   [text.muted|Size:] 7
+
+   [text.muted|Name:] [u accent|docs]
+     [text.muted|(https://example.c]
+     [text.muted|om/docs)]
+   [text.muted|Kind:] link
+   [text.muted|Size:] 1
+--- 10 ---
+   [text.muted|Name:]
+   cache.
+   rs
+   [text.muted|Kind:]
+   file
+   [text.muted|Size:]
+   412
+
+   [text.muted|Name:]
+   [b|src]
+   [text.muted|Kind:]
+   dir
+   [text.muted|Size:]
+   7
+
+   [text.muted|Name:]
+   [u accent|docs]
+   [text.muted|(https]
+   [text.muted|://exa]
+   [text.muted|mple.c]
+   [text.muted|om/doc]
+   [text.muted|s)]
+   [text.muted|Kind:]
+   link
+   [text.muted|Size:]
+   1

@@ -1,0 +1,46 @@
+[package]
+name = "wisp-tui"
+description = "Wisp's terminal UI: owns the terminal, detects its capabilities and always restores it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+crossterm.workspace = true
+flate2.workspace = true
+jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo"] }
+nix.workspace = true
+ratatui-core.workspace = true
+ratatui-crossterm.workspace = true
+ratatui-textarea.workspace = true
+rustix.workspace = true
+signal-hook.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "signal", "sync", "time"] }
+unicode-segmentation.workspace = true
+vt100.workspace = true
+wisp-client.workspace = true
+wisp-contain.workspace = true
+wisp-media.workspace = true
+wisp-protocol.workspace = true
+wisp-render.workspace = true
+
+[dev-dependencies]
+wispd.workspace = true
+futures.workspace = true
+wisp-diff.workspace = true
+wisp-plugin-api.workspace = true
+wisp-plugin-testkit.workspace = true
+wisp-media = { workspace = true, features = ["testing"] }
+wisp-render = { workspace = true, features = ["testing"] }
+insta.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "time", "macros", "test-util", "net"] }
+rustix = { workspace = true, features = ["pty", "net"] }
+serde_json.workspace = true
+tempfile.workspace = true

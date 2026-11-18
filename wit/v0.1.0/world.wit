@@ -1,0 +1,19 @@
+package wisp:plugin@0.1.0;
+
+world plugin {
+  import session;
+  import workspace;
+  import clock;
+  import settings;
+  import context;
+  import media;
+  import call;
+  import jobs;
+  import todos;
+  import agents;
+  import log;
+  import points;
+  export tools;
+  export commands;
+  export hooks;
+}

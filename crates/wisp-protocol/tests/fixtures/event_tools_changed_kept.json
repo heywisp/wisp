@@ -1,0 +1,11 @@
+{
+  "type": "tools_changed",
+  "added": [
+    "show_diff"
+  ],
+  "removed": [],
+  "via": "inline",
+  "cache": {
+    "type": "kept"
+  }
+}

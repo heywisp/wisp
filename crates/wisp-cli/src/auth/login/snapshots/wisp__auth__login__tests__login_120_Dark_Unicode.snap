@@ -1,0 +1,112 @@
+---
+source: crates/wisp-cli/src/auth/login/tests.rs
+expression: text
+---
+Signed in · Claude subscription · ● claude
+Run wisp to start a chat.
+--
+Signed in · Claude subscription · ● claude
+In a chat, /account switches to it.
+--
+Signed in again · Claude subscription · ● claude-work
+--
+Signed in · ChatGPT subscription · ● chatgpt
+It's saved but can't be used yet; wisp status chatgpt shows why.
+--
+Sign in on Claude's page for claude, then paste the code it shows.
+If the page shows your other Claude account, switch accounts there first.
+--
+Sign in again on Claude's page for ● claude-work, then paste the code it shows.
+If the page shows your other Claude account, switch accounts there first.
+--
+Sign in on ChatGPT's page for chatgpt; wisp carries on by itself.
+--
+tried your browser · link copied
+tried your browser · couldn't copy the link
+no browser here · link sent to your terminal
+no browser here · couldn't copy the link
+--
+  1  Claude                                 Pro or Max subscription
+  2  Sign in again to claude-subscription   sign-in expired
+  3  Add another Claude account
+
+--
+› 1  Claude                                   Pro or Max subscription
+  2  Sign in again to ● claude-subscription   sign-in expired
+  3  Add another Claude account
+enter choose · esc cancel
+--
+  1  Claude                                   Pro or Max subscription
+› 2  Sign in again to ● claude-subscription   sign-in expired
+  3  Add another Claude account
+enter choose · esc cancel
+--
+  1  Claude                                   Pro or Max subscription
+  2  Sign in again to ● claude-subscription   sign-in expired
+  3  Add another Claude account
+enter choose · esc cancel
+--
+Sign in to Claude, ChatGPT, Antigravity or an API key.
+
+Usage: wisp login WHAT
+
+WHAT is one of:
+  claude         a Claude Pro or Max subscription
+  chatgpt        a ChatGPT Plus or Pro subscription
+  antigravity    an Antigravity Gemini subscription
+  key            an API key: Claude, OpenAI, Gemini or a gateway
+  NAME           one of your accounts, to sign in to it again; a new name adds an account with that name
+Leave it out and wisp asks.
+
+For scripts:
+  --name NAME     the new account's name; skips the name question
+  -h, --help      show this help
+
+--
+Show your accounts and what needs you.
+
+Usage: wisp status NAME
+
+NAME is one of your accounts; leave it out to see all of them.
+wisp login status does the same.
+
+  -h, --help      show this help
+
+--
+  1  claude-subscription   Claude subscription · new chats start here
+  2  claude-work           Claude subscription
+  3  chatgpt               ChatGPT subscription
+  4  claude-api            Claude API · from ~/.config/wisp/.env
+  5  all
+
+--
+  1  ● claude-subscription   Claude subscription · new chats start here
+  2  ● claude-work           Claude subscription
+  3  ● chatgpt               ChatGPT subscription
+  4  ● claude-api            Claude API · from ~/.config/wisp/.env
+  5  all
+enter choose · esc cancel
+--
+$ wisp logout all
+Sign out of claude-subscription, claude-work and chatgpt?
+  1  Sign out
+› 2  Keep
+enter choose · esc cancel
+Signed out of ○ claude-subscription, ○ claude-work and ○ chatgpt.
+New chats now start on ● claude-api · API.
+--
+$ wisp logout all
+Sign out of claude-subscription, claude-work and chatgpt?
+  1  Sign out
+› 2  Keep
+enter choose · esc cancel
+Signed out of ○ claude-subscription, ○ claude-work and ○ chatgpt.
+Run wisp login to sign in again.
+--
+$ wisp logout work-api
+Sign out of work-api?
+Its key is deleted from Wisp.
+  1  Sign out
+› 2  Keep
+enter choose · esc cancel
+Signed out · Claude API · ○ work-api

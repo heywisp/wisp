@@ -1,0 +1,23 @@
+{
+  "type": "turn_ended",
+  "outcome": {
+    "status": "cancelled",
+    "usage": null,
+    "cost": {
+      "turn_usd": 0.12,
+      "session_usd": 0.5,
+      "turn_lower_bound": false,
+      "session_lower_bound": false,
+      "agents_usd": 2.25,
+      "agents_lower_bound": true
+    },
+    "committed_steps": 1
+  },
+  "stats": {
+    "started_at": "",
+    "first_byte_ms": null,
+    "duration_ms": 0,
+    "retries": 0,
+    "previous_prompt_tokens": null
+  }
+}

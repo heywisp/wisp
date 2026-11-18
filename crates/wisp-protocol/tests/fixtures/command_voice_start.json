@@ -1,0 +1,8 @@
+{
+  "type": "voice",
+  "command": {
+    "type": "start",
+    "call": "web-1",
+    "format": "pcm16_mono_48k"
+  }
+}

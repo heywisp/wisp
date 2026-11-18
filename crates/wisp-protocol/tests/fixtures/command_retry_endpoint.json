@@ -1,0 +1,6 @@
+{
+  "type": "retry",
+  "turn": 3,
+  "endpoint": "manifest",
+  "request": 8
+}

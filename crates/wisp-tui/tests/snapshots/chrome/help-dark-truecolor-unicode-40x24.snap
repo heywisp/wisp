@@ -1,0 +1,52 @@
+---
+source: crates/wisp-tui/tests/app/help.rs
+assertion_line: 420
+expression: shot
+---
+| Help: commands and keys
+  ~ 1..7 fg Rgb(166, 166, 166); 7..24 fg Rgb(212, 212, 212) bold
+|
+| Commands
+  ~ 1..9 fg Rgb(212, 212, 212) bold
+|   /model [id]
+  ~ 3..9 fg Rgb(212, 212, 212); 9..14 fg Rgb(166, 166, 166)
+|    Switch the model
+  ~ 4..20 fg Rgb(166, 166, 166)
+|   /effort [level]
+  ~ 3..10 fg Rgb(212, 212, 212); 10..18 fg Rgb(166, 166, 166)
+|    Set how hard the model thinks
+  ~ 4..33 fg Rgb(166, 166, 166)
+|   /account [name]
+  ~ 3..11 fg Rgb(212, 212, 212); 11..18 fg Rgb(166, 166, 166)
+|    Switch the chat's account
+  ~ 4..29 fg Rgb(166, 166, 166)
+|   /context [all]
+  ~ 3..11 fg Rgb(212, 212, 212); 11..17 fg Rgb(166, 166, 166)
+|    Show what fills the context
+  ~ 4..31 fg Rgb(166, 166, 166)
+|   /compact [focus]
+  ~ 3..11 fg Rgb(212, 212, 212); 11..19 fg Rgb(166, 166, 166)
+|    Summarize to free up context
+  ~ 4..32 fg Rgb(166, 166, 166)
+|   /rewind, /undo
+  ~ 3..17 fg Rgb(212, 212, 212)
+|    Go back to an earlier message
+  ~ 4..33 fg Rgb(166, 166, 166)
+|   /config [filter]
+  ~ 3..10 fg Rgb(212, 212, 212); 10..19 fg Rgb(166, 166, 166)
+|    View and change settings
+  ~ 4..28 fg Rgb(166, 166, 166)
+|   /ps
+  ~ 3..6 fg Rgb(212, 212, 212)
+|    Show background processes
+  ~ 4..29 fg Rgb(166, 166, 166)
+|   /agents
+  ~ 3..10 fg Rgb(212, 212, 212)
+|    Show agents and their spend
+  ~ 4..31 fg Rgb(166, 166, 166)
+|   /sidebar [open]
+  ~ 3..11 fg Rgb(212, 212, 212); 11..18 fg Rgb(166, 166, 166)
+|    Toggle sidebar, open a page
+  ~ 4..31 fg Rgb(166, 166, 166)
+|   / search · q esc ctrl-o back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..26 fg Rgb(166, 166, 166); 26..31 fg Rgb(117, 117, 117)

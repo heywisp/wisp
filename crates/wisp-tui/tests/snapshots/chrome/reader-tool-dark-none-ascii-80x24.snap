@@ -1,0 +1,31 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| + Ran cargo test -p wisp-core                                      exit 0 - 1s
+  ~ 3..6 bold
+|--------------------------------------------------------------------------------
+|     $ cargo test -p wisp-core
+|     in ~/Projects/Wisp - exit 0 - 1s
+|     Checks the workspace
+|     test 1 ... ok
+|     test 2 ... ok
+|     test 3 ... ok
+|     test 4 ... ok
+|     test 5 ... ok
+|     test 6 ... ok
+|     test 7 ... ok
+|     test 8 ... ok
+|     test 9 ... ok
+|     test 10 ... ok
+|     test 11 ... ok
+|     test 12 ... ok
+|     test 13 ... ok
+|     test 14 ... ok
+|     test 15 ... ok
+|     test 16 ... ok
+|     test 17 ... ok
+|     test 18 ... ok
+|   / search - 1-21/44 - ctrl-o every detail - q esc back

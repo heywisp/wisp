@@ -1,0 +1,30 @@
+id = "mcp"
+version = "0.1.0"
+world = "0.4.0"
+summary = "Tools, prompts and resources from your MCP servers"
+dynamic_tools = "mcp__"
+index = true
+
+[[commands]]
+name = "mcp"
+summary = "List, add, remove or sign in"
+timeout_ms = 90000
+
+[[hooks]]
+name = "list"
+point = "session-start"
+background = true
+timeout_ms = 90000
+
+[[hooks]]
+name = "refresh"
+point = "before-turn"
+in = ["core/state"]
+
+[[hooks]]
+name = "compacted"
+point = "after-compact"
+
+[[hooks]]
+name = "rewound"
+point = "rewound"

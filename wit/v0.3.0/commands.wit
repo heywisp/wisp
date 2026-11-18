@@ -1,0 +1,9 @@
+package wisp:plugin@0.3.0;
+
+interface commands {
+  use wisp:plugin/slot-types@0.2.0.{text-span};
+  record command-row { left: list<text-span>, right: list<text-span> }
+  variant command-line { row(command-row), text(list<text-span>) }
+  variant command-reply { none, note(string), send(string), lines(list<command-line>) }
+  run: async func(name: string, args: string) -> command-reply;
+}

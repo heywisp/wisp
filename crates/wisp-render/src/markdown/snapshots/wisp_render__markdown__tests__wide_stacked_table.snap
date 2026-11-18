@@ -1,0 +1,55 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: at_wide_widths(STACKING_TABLE)
+---
+--- 120 ---
+   [text.muted|Alpha column:] first value here
+   [text.muted|Bravo column:] second value here
+   [text.muted|Charlie column:] third value here
+   [text.muted|Delta column:] fourth value here
+   [text.muted|Echo column:] fifth value here
+   [text.muted|Foxtrot column:] sixth value here
+   [text.muted|Golf column:] seventh value here
+   [text.muted|Hotel column:] eighth value here
+   [text.muted|India column:] ninth value here
+   [text.muted|Juliett column:] tenth value here
+   [text.muted|Kilo column:] eleventh value here
+   [text.muted|Lima column:] twelfth value here
+   [text.muted|Mike column:] thirteenth value
+   [text.muted|November column:] fourteenth value
+   [text.muted|Oscar column:] fifteenth value
+   [text.muted|Papa column:] sixteenth value
+--- 160 ---
+   [text.muted|Alpha column:] first value here
+   [text.muted|Bravo column:] second value here
+   [text.muted|Charlie column:] third value here
+   [text.muted|Delta column:] fourth value here
+   [text.muted|Echo column:] fifth value here
+   [text.muted|Foxtrot column:] sixth value here
+   [text.muted|Golf column:] seventh value here
+   [text.muted|Hotel column:] eighth value here
+   [text.muted|India column:] ninth value here
+   [text.muted|Juliett column:] tenth value here
+   [text.muted|Kilo column:] eleventh value here
+   [text.muted|Lima column:] twelfth value here
+   [text.muted|Mike column:] thirteenth value
+   [text.muted|November column:] fourteenth value
+   [text.muted|Oscar column:] fifteenth value
+   [text.muted|Papa column:] sixteenth value
+--- 200 ---
+   [text.muted|Alpha column:] first value here
+   [text.muted|Bravo column:] second value here
+   [text.muted|Charlie column:] third value here
+   [text.muted|Delta column:] fourth value here
+   [text.muted|Echo column:] fifth value here
+   [text.muted|Foxtrot column:] sixth value here
+   [text.muted|Golf column:] seventh value here
+   [text.muted|Hotel column:] eighth value here
+   [text.muted|India column:] ninth value here
+   [text.muted|Juliett column:] tenth value here
+   [text.muted|Kilo column:] eleventh value here
+   [text.muted|Lima column:] twelfth value here
+   [text.muted|Mike column:] thirteenth value
+   [text.muted|November column:] fourteenth value
+   [text.muted|Oscar column:] fifteenth value
+   [text.muted|Papa column:] sixteenth value

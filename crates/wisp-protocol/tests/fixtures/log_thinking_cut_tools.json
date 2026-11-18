@@ -1,0 +1,12 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "thinking_cut",
+  "from": {
+    "message": 0,
+    "block": 0
+  },
+  "through": 5,
+  "tools_sha256": "9f2c"
+}

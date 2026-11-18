@@ -1,0 +1,23 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== filtered
+| x Ran cargo build --...  exit 101 - 3s
+  ~ 3..6 bold
+| + Showed crates/wisp-core/src/cache.rs
+  ~ 3..9 bold
+|        1 +     let part_1 = fingerprin
+|----------------------------------------
+|   Open
+  ~ 3..7 bold
+| > x Ran cargo build -...  exit 101 - 3s
+  ~ 0..5 inverse; 5..8 bold inverse; 8..40 inverse
+|   + Ran cargo test -p wisp-core ...  1s
+  ~ 5..8 bold
+|+--------------------------------------+
+||                          total $0.01 |
+|+--------------------------------------+
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 28..38 bold
+|+--------------------------------------+

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html {
+  overflow-x: hidden;
+  color-scheme: dark;
+  background: var(--surface);
+  color: var(--text);
+  font: 24px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+
+body * {
+  max-width: 100% !important;
+}
+
+pre {
+  white-space: pre-wrap !important;
+}
+
+canvas, svg, img, video {
+  height: auto !important;
+  max-height: calc(100vh - 48px) !important;
+  object-fit: contain;
+  vertical-align: top;
+}
+
+button {
+  font: inherit;
+}
+</style>
+</head>
+<body>
+<script>
+globalThis.tell = (text) => {
+  parent.postMessage({ tell: String(text) }, "*");
+};
+
+globalThis.sound = async (seconds, build) => {
+  const SOUND_SECONDS = 5;
+  const SOUND_RATE = 48000;
+  const context = new OfflineAudioContext(1, Math.ceil(Math.min(seconds, SOUND_SECONDS) * SOUND_RATE), SOUND_RATE);
+  await build(context);
+  const samples = (await context.startRendering()).getChannelData(0);
+  parent.postMessage({ sound: samples }, "*", [samples.buffer]);
+};
+
+(() => {
+  const MOVED = 5000;
+  const TOUCHED = 60 * 1000;
+  const FLOOR = 0.6;
+  const SETTLE = 1000;
+  const MAX_ERRORS = 5;
+  const MAX_ERROR_CHARS = 200;
+  const PICTURE_BYTES = 49152;
+  const PICTURE_EDGE = 768;
+  const BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+  const still = matchMedia("(prefers-reduced-motion: reduce)");
+  const errors = [];
+  let moved = -Infinity;
+  let reported = -Infinity;
+  let settling = 0;
+  let whole = false;
+  let drawing = false;
+  let reporting;
+
+  function caught(text) {
+    const error = String(text).slice(0, MAX_ERROR_CHARS);
+    if (!drawing && errors.length < MAX_ERRORS && !errors.includes(error)) errors.push(error);
+  }
+
+  function unloaded({ target }) {
+    const name = target.src || target.href;
+    if (typeof name === "string" && name) caught(`couldn't load ${name}`);
+  }
+
+  function fill(into, html) {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    into.replaceChildren(...parsed.head.childNodes, ...parsed.body.childNodes);
+    for (const old of into.querySelectorAll("script")) {
+      const script = document.createElement("script");
+      for (const { name, value } of old.attributes) script.setAttribute(name, value);
+      script.text = old.text;
+      old.replaceWith(script);
+    }
+  }
+
+
+  function fit() {
+    for (const svg of document.querySelectorAll("svg:not([viewBox])")) {
+      const [w, h] = ["width", "height"].map((side) => /^\d+(\.\d+)?(px)?$/.test(svg.getAttribute(side)) && parseFloat(svg.getAttribute(side)));
+      if (w && h) svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    }
+    const page = document.documentElement;
+    document.body.style.zoom = "";
+    const wide = Math.min(1, page.clientWidth / page.scrollWidth);
+    const tall = Math.min(1, page.clientHeight / page.scrollHeight);
+    const zoom = Math.min(wide, Math.max(tall, FLOOR));
+    if (zoom < 1) document.body.style.zoom = zoom;
+  }
+
+  function imported(libraries) {
+    const url = (code) => URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+    const imports = Object.fromEntries(Object.entries(libraries).map(([name, code]) => [name, url(code)]));
+    document.head.append(Object.assign(document.createElement("script"), { type: "importmap", textContent: JSON.stringify({ imports }) }));
+  }
+
+  async function picture() {
+    const page = document.documentElement;
+    const [width, height] = [page.scrollWidth, page.scrollHeight];
+    const pixelRatio = Math.min(1, PICTURE_EDGE / Math.max(width, height));
+    const backgroundColor = getComputedStyle(page).backgroundColor;
+    drawing = true;
+    const drawn = htmlToImage.toCanvas(document.body, { width, height, pixelRatio, backgroundColor, imagePlaceholder: BLANK });
+    const canvas = await drawn.finally(() => setTimeout(() => (drawing = false)));
+    for (let quality = 0.8; quality > 0.1; quality -= 0.2) {
+      const data = canvas.toDataURL("image/jpeg", quality).split(",")[1];
+      if (data.length <= PICTURE_BYTES) return [{ data }];
+    }
+    return [];
+  }
+
+  async function report() {
+    const call = reporting;
+    reporting = undefined;
+    const [width, height] = [document.documentElement.clientWidth, document.documentElement.clientHeight];
+    const zoom = Number(document.body.style.zoom) || 1;
+    const found = { width, height, zoom, errors: errors.splice(0) };
+    const drawn = whole || zoom < 1 || found.errors.length > 0;
+    whole = false;
+    const images = drawn ? await picture().catch(() => []) : [];
+    parent.postMessage({ report: found, images, call }, "*");
+  }
+
+  function shown({ source, data: { html, part, call, theme, libraries } }) {
+    if (source !== parent) return;
+    reporting = call;
+    if (theme) document.head.prepend(Object.assign(document.createElement("style"), { textContent: theme }));
+    if (libraries) imported(libraries);
+    if (part === undefined) {
+      whole = true;
+      fill(document.body, html);
+      fit();
+    } else {
+      const found = document.getElementById(part);
+      const into = found ?? document.body.appendChild(Object.assign(document.createElement("div"), { id: part }));
+      fill(into, html);
+      fit();
+      if (!found && !still.matches) into.animate([{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "none" }], 300);
+      if (performance.now() - moved > MOVED) into.scrollIntoView({ block: "nearest" });
+    }
+    clearTimeout(settling);
+    settling = setTimeout(report, SETTLE);
+    parent.postMessage({ shown: true }, "*");
+  }
+
+  function touch(event) {
+    if (!event.isTrusted) return;
+    moved = performance.now();
+    if (event.type !== "pointerdown" || moved - reported < TOUCHED) return;
+    reported = moved;
+    parent.postMessage({ touched: true }, "*");
+  }
+
+  addEventListener("message", shown);
+  addEventListener("error", ({ message, lineno }) => caught(lineno ? `${message} (line ${lineno})` : message));
+  addEventListener("unhandledrejection", ({ reason }) => caught(reason));
+  addEventListener("error", unloaded, true);
+  addEventListener("securitypolicyviolation", ({ blockedURI }) => blockedURI.includes(":") && caught(`couldn't load ${blockedURI}`));
+  new ResizeObserver(() => requestAnimationFrame(fit)).observe(document.body);
+  addEventListener("pointerdown", touch, true);
+  addEventListener("wheel", touch, { capture: true, passive: true });
+  parent.postMessage({ shown: true }, "*");
+})();
+</script>

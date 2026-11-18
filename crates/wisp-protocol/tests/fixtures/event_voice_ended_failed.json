@@ -1,0 +1,17 @@
+{
+  "type": "voice",
+  "event": {
+    "type": "ended",
+    "call": "web-1",
+    "outcome": {
+      "type": "failed",
+      "kind": "rate_limit",
+      "message": "The voice limit was reached."
+    },
+    "seconds": 0,
+    "cost": {
+      "usd": 0.0,
+      "plan_usd": 0.0
+    }
+  }
+}

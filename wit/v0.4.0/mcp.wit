@@ -1,0 +1,51 @@
+package wisp:plugin@0.4.0;
+
+interface mcp {
+  use wisp:plugin/call@0.1.0.{call-context};
+  use wisp:plugin/types@0.3.0.{tool-run};
+  variant state { stopped, starting, ready, needs-sign-in, needs-key(list<string>), failed(string) }
+  record server { name: string, state: state, tools: u32, listed: bool, off: bool }
+  record tool {
+    name: string,
+    server: string,
+    original: string,
+    description: string,
+    input-schema: string,
+  }
+  record prompt-argument {
+    name: string,
+    required: bool,
+    description: string,
+  }
+  record prompt {
+    name: string,
+    server: string,
+    original: string,
+    description: string,
+    arguments: list<prompt-argument>,
+  }
+  record %resource {
+    name: string,
+    server: string,
+    uri: string,
+    title: string,
+    description: string,
+  }
+  record prompt-message {
+    role: string,
+    text: option<string>,
+  }
+  prompts: func() -> list<prompt>;
+  get-prompt: async func(name: string) -> result<list<prompt-message>, string>;
+  resources: func() -> list<%resource>;
+  read-resource: async func(name: string) -> result<list<option<string>>, string>;
+  servers: func() -> list<server>;
+  tools: func() -> list<tool>;
+  revision: func() -> u64;
+  connect: async func(name: string) -> result<_, string>;
+  call: async func(ctx: borrow<call-context>, name: string, input: string, limit-ms: u64) -> result<tool-run, string>;
+  add: async func(name: string, command: string, args: list<string>) -> result<u32, string>;
+  remove: async func(name: string) -> result<_, string>;
+  sign-in-start: async func(name: string) -> result<option<string>, string>;
+  sign-in-finish: async func(name: string, address: string) -> result<u32, string>;
+}

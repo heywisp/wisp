@@ -1,0 +1,8 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "rebuild_marked",
+  "turn": 4,
+  "reason": "model_switch"
+}

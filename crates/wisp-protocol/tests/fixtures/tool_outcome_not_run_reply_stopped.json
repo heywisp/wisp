@@ -1,0 +1,7 @@
+{
+  "status": "not_run",
+  "reason": {
+    "type": "reply_stopped",
+    "stop_reason": "max_tokens"
+  }
+}

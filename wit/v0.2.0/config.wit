@@ -1,0 +1,17 @@
+package wisp:plugin@0.2.0;
+
+interface config {
+  use wisp:plugin/call@0.1.0.{call-context};
+  record setting-row { name: string, value: string, layer: string, help: string, rule: string }
+  settings: func(filter: option<string>, ctx: borrow<call-context>) -> result<list<setting-row>, string>;
+}
+
+interface accounts {
+  use wisp:plugin/call@0.1.0.{call-context};
+  enum sign-in { working, expired, refreshable, unavailable, expiry-unknown }
+  record limit-window { label: string, used-percent: option<f64>, resets-at: option<s64>, observed-at: s64 }
+  record limits { windows: list<limit-window>, limited: bool, problem: option<string> }
+  record account-row { name: string, kind: option<string>, unavailable: bool, sign-in: option<sign-in>, yours: bool, start: bool, models: list<string>, limits: option<limits> }
+  record account-list { model: string, effort: string, rows: list<account-row> }
+  %list: async func(ctx: borrow<call-context>) -> result<account-list, string>;
+}

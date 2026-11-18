@@ -1,0 +1,17 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 43,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "hook_applied",
+  "hook": "acme/guard",
+  "point": "before-tool",
+  "turn": 3,
+  "step": 2,
+  "call_id": "toolu_7",
+  "input_id": "tui-4",
+  "change": {
+    "type": "text",
+    "before": "fix it",
+    "after": "fix the parser"
+  }
+}

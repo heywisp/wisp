@@ -1,0 +1,7 @@
+{
+  "type": "exited",
+  "exit": {
+    "type": "code",
+    "code": 1
+  }
+}

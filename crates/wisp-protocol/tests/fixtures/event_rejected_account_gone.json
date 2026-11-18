@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "reason": "team was signed out in another window.",
+  "id": "tui-5",
+  "kind": "account_gone"
+}

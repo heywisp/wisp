@@ -1,0 +1,7 @@
+{
+  "type": "feature_state_changed",
+  "endpoint": "env",
+  "model": "claude-opus-5-5",
+  "feature": "per_message_effort",
+  "state": "proven"
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 17,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "process_started",
+  "turn": 2,
+  "id": 4,
+  "call_id": "toolu_04",
+  "reason": "still_running",
+  "tty": false,
+  "stdin": false,
+  "file": "/tmp/wisp-s1/0004-bash.out"
+}

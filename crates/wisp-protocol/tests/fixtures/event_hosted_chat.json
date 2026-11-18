@@ -1,0 +1,14 @@
+{
+  "type": "chats_listed",
+  "request": 1,
+  "chats": [
+    {
+      "id": "abcd-1234",
+      "name": "A kept chat",
+      "topic": "",
+      "active_at": "1h ago",
+      "open_elsewhere": true,
+      "hosted": true
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "action": {
+    "type": "other",
+    "name": "brew"
+  },
+  "verbs": {
+    "doing": "Brewing",
+    "done": "Brewed",
+    "failed": "couldn't brew"
+  },
+  "target": "tea",
+  "output": {
+    "type": "text"
+  }
+}

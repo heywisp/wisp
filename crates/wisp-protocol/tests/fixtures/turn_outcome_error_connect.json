@@ -1,0 +1,16 @@
+{
+  "status": "error",
+  "kind": "network",
+  "message": "could not connect: connection refused",
+  "usage": null,
+  "cost": null,
+  "committed_steps": 0,
+  "detail": {
+    "phase": "connect",
+    "source": "local",
+    "retry": {
+      "type": "transient"
+    },
+    "possibly_billed": false
+  }
+}

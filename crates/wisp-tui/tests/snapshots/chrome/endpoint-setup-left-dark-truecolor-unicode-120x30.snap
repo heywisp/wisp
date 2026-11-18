@@ -1,0 +1,25 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== opened
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+| ? Sign in to start
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..19 fg Rgb(212, 212, 212) bold
+|   claude-api's key is missing from ~/.config/wisp/.env.
+  ~ 3..56 fg Rgb(166, 166, 166)
+|
+| › 1 Claude        Pro or Max subscription
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..42 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 42..120 bg Rgb(4, 57, 94)
+|   2 ChatGPT       Plus or Pro subscription
+  ~ 3..5 fg Rgb(166, 166, 166); 5..43 fg Rgb(212, 212, 212)
+|   3 Antigravity   Gemini subscription
+  ~ 3..5 fg Rgb(166, 166, 166); 5..38 fg Rgb(212, 212, 212)
+|   4 API key       Claude, OpenAI, Gemini or a gateway
+  ~ 3..5 fg Rgb(166, 166, 166); 5..54 fg Rgb(212, 212, 212)
+|
+|   enter choose · esc quit
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..21 fg Rgb(166, 166, 166); 21..26 fg Rgb(117, 117, 117)
+|(19 blank rows)

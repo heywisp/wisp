@@ -1,0 +1,31 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests/hooked.rs
+expression: out
+---
+--- scrollback ---
+[on Rgb(38, 38, 38)| ][Rgb(130, 130, 130) on Rgb(38, 38, 38)|›][on Rgb(38, 38, 38)| ][Rgb(212, 212, 212) on Rgb(38, 38, 38)|say hi][on Rgb(38, 38, 38)|                                                ][Rgb(166, 166, 166) on Rgb(38, 38, 38)|rewritten by aa/polish][on Rgb(38, 38, 38)| ]
+
+ [Rgb(137, 209, 133)|✓] [Rgb(212, 212, 212) bold|Ran][Rgb(212, 212, 212)| make check]                                                   [Rgb(166, 166, 166)|exit 0][Rgb(166, 166, 166)| · ][Rgb(166, 166, 166)|1s]
+     [Rgb(166, 166, 166)|rewritten by aa/guard]
+
+   [Rgb(166, 166, 166)|continued by aa/guard]
+
+[on Rgb(38, 38, 38)| ][Rgb(130, 130, 130) on Rgb(38, 38, 38)|›][on Rgb(38, 38, 38)| ][Rgb(166, 166, 166) on Rgb(38, 38, 38)|block this][on Rgb(38, 38, 38)|                                                                   ]
+[on Rgb(38, 38, 38)|   ][Rgb(166, 166, 166) on Rgb(38, 38, 38)|blocked by testkit/block-input: the message starts with block][on Rgb(38, 38, 38)|                ]
+--- ctrl-o ---
+[on Rgb(38, 38, 38)| ][Rgb(130, 130, 130) on Rgb(38, 38, 38)|›][on Rgb(38, 38, 38)| ][Rgb(212, 212, 212) on Rgb(38, 38, 38)|say hi][on Rgb(38, 38, 38)|                                                                       ]
+[on Rgb(38, 38, 38)|   ][Rgb(166, 166, 166) on Rgb(38, 38, 38)|Say hi, in one short line.][on Rgb(38, 38, 38)|                            ][Rgb(166, 166, 166) on Rgb(38, 38, 38)|rewritten by aa/polish][on Rgb(38, 38, 38)| ]
+
+ [Rgb(137, 209, 133)|✓] [Rgb(212, 212, 212) bold|Ran][Rgb(212, 212, 212)| make check]                                                   [Rgb(166, 166, 166)|exit 0][Rgb(166, 166, 166)| · ][Rgb(166, 166, 166)|1s]
+     [Rgb(166, 166, 166)|rewritten by aa/guard]
+     [Rgb(166, 166, 166)|ok, and checked]
+     [Rgb(117, 117, 117)|$ ][Rgb(166, 166, 166)|make check]
+     [Rgb(166, 166, 166)|in ~/work · exit 0 · 1s]
+     [Rgb(166, 166, 166)|Runs the checks]
+     [Rgb(166, 166, 166)|Output saved to /tmp/wisp-s/0001-shell.out]
+     [Rgb(212, 212, 212)|ok]
+
+   [Rgb(166, 166, 166)|continued by aa/guard]
+
+[on Rgb(38, 38, 38)| ][Rgb(130, 130, 130) on Rgb(38, 38, 38)|›][on Rgb(38, 38, 38)| ][Rgb(166, 166, 166) on Rgb(38, 38, 38)|block this][on Rgb(38, 38, 38)|                                                                   ]
+[on Rgb(38, 38, 38)|   ][Rgb(166, 166, 166) on Rgb(38, 38, 38)|blocked by testkit/block-input: the message starts with block][on Rgb(38, 38, 38)|                ]

@@ -1,0 +1,1 @@
+{"description":"Rename this chat when the user asks you to. The name is the title this chat, or session, has in the user's list of chats; it replaces the name Wisp gave it.","input_schema":{"additionalProperties":false,"properties":{"name":{"description":"The new name: one line, a few words.","type":"string"}},"required":["name"],"type":"object"},"name":"rename_chat"}

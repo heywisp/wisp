@@ -1,0 +1,25 @@
+id = "context"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Tells the model how full its context is"
+settings = ["context.context_note"]
+
+[system]
+text = "A 'Context:' line, when present, gives how much of your context window the conversation fills; at the stated point Wisp replaces older turns with a summary."
+after = ["time"]
+
+[[hooks]]
+name = "fill"
+point = "before-turn"
+in = ["core/notes"]
+after = ["time/sent"]
+switch = "context.context_note"
+
+[[slots]]
+slot = "sidebar"
+name = "window"
+title = "Context"
+after = []
+before = []
+default = "off"
+marks = ["after-response", "after-compact", "rewound", "model-switched", "settings-changed"]

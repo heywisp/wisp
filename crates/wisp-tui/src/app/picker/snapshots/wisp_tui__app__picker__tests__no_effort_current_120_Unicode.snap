@@ -1,0 +1,18 @@
+---
+source: crates/wisp-tui/src/app/picker/tests.rs
+expression: "painted(&p, &f, &t, set, width).join(\"\\n\")"
+---
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Model                                                                    cache rebuild
+   ● claude-subscription       Claude subscription       opus-5-5 xhigh
+   ● claude-work               Claude subscription       opus-5-5 xhigh
+   ● claude-api                Claude API                opus-5-5 xhigh
+   ● chatgpt                   ChatGPT subscription      gpt-6.1-sol xhigh
+   ○ antigravity               Antigravity subscription
+     gemini-3.1-flash-image
+ ›   gemini-4-carbon-medium ✓                                                         now
+     gemini-9-future-exp       cost unknown                                          none
+   ↓ 3 more
+   This chat uses it now
+
+   enter switch · ← accounts · type to filter · esc close

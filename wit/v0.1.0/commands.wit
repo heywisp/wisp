@@ -1,0 +1,6 @@
+package wisp:plugin@0.1.0;
+
+interface commands {
+  variant command-reply { none, note(string), send(string) }
+  run: async func(name: string, args: string) -> command-reply;
+}

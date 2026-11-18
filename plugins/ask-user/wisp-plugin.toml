@@ -1,0 +1,7 @@
+id = "ask-user"
+version = "0.1.0"
+world = "0.1.0"
+summary = "Asks the user multiple-choice questions"
+
+[[tools]]
+name = "ask_user"

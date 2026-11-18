@@ -1,0 +1,9 @@
+{
+  "action": {
+    "type": "input"
+  },
+  "target": "3 · npm run dev",
+  "output": {
+    "type": "text"
+  }
+}

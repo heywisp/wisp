@@ -1,0 +1,25 @@
+---
+source: crates/wisp-tui/tests/app/help.rs
+expression: shot
+---
+|+- Resume -----------------------------+
+  ~ 0..3 fg Rgb(88, 88, 88); 3..9 fg Rgb(212, 212, 212); 9..40 fg Rgb(88, 88, 88)
+|| Filter  type to filter               |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..8 fg Rgb(166, 166, 166); 10..24 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+||   Per-account limits  open elsewhere |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..22 fg Rgb(117, 117, 117); 24..38 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|| > Sign-in MR review       *   2h ago |
+  ~ 0..1 fg Rgb(88, 88, 88); 1..2 bg Rgb(4, 57, 94); 2..3 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 3..4 bg Rgb(4, 57, 94); 4..21 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 21..28 bg Rgb(4, 57, 94); 28..29 fg Rgb(156, 220, 254) bg Rgb(4, 57, 94); 29..31 bg Rgb(4, 57, 94); 31..38 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 38..39 bg Rgb(4, 57, 94); 39..40 fg Rgb(88, 88, 88)
+||   Cache miss on resume    *   5h ago |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..24 fg Rgb(212, 212, 212); 28..29 fg Rgb(177, 128, 215); 31..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+||   Release notes 0.1.0     *  16h ago |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..23 fg Rgb(212, 212, 212); 28..29 fg Rgb(78, 201, 176); 31..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+||   Narrow usage page           1d ago |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..21 fg Rgb(212, 212, 212); 31..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+||   Work out how /model...  *   1d ago |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..26 fg Rgb(212, 212, 212); 28..29 fg Rgb(218, 112, 214); 31..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|  enter resume - esc quit
+  ~ 2..7 fg Rgb(166, 166, 166); 7..17 fg Rgb(117, 117, 117); 17..20 fg Rgb(166, 166, 166); 20..25 fg Rgb(117, 117, 117)
+|(20 blank rows)

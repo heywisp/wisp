@@ -1,0 +1,43 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 1,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "turn_ended",
+  "turn": 1,
+  "outcome": {
+    "status": "error",
+    "kind": "rate_limit",
+    "message": "slow down",
+    "usage": null,
+    "cost": null,
+    "committed_steps": 0,
+    "detail": {
+      "limit_reached": {
+        "key": "subscription-limit",
+        "label": "Subscription limit",
+        "duration_seconds": null,
+        "scope": "all",
+        "used_percent": null,
+        "resets_at": 1800270000,
+        "observed_at": 1800000000,
+        "source": "retry_after"
+      },
+      "phase": "response",
+      "source": "endpoint",
+      "status": 429,
+      "error_type": "rate_limit_error",
+      "retry": {
+        "type": "after",
+        "ms": 270000000
+      },
+      "possibly_billed": false
+    }
+  },
+  "stats": {
+    "started_at": "",
+    "first_byte_ms": null,
+    "duration_ms": 0,
+    "retries": 0,
+    "previous_prompt_tokens": null
+  }
+}

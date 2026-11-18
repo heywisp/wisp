@@ -1,0 +1,82 @@
+---
+source: crates/wisp-tui/src/app/config_screen/tests/edit.rs
+expression: "rows.join(\"\\n\")"
+---
+Agent type: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+Agents per tree: a whole number, 1 to 50, or none
+Agent depth: a whole number, 1 to 5, or none
+Running children: a whole number, 1 to 16, or none
+Running per tree: a whole number, 1 to 50, or none
+Wake when stuck: a whole number, 0 to 1440
+Keep-warm refreshes: a whole number, 0 to 24
+Aliases: needs a list of model IDs
+Sign-in: must be one of api_key, bearer, anthropic_subscription, chatgpt_subscription, antigravity_subscription
+Cache lifetime: must be 5m or 1h
+Claude usage lookup: must be on or off
+Compact at: tokens, or a share such as 60%
+Compact automatically: must be on or off
+Background compaction: must be on or off
+Background start: tokens, 1 or more
+Summary effort: must be one of low, medium, high, xhigh, max
+Context line: must be on or off
+Count with the server: must be on or off
+Compaction strategy: needs default or a plugin id of 2 to 32 characters of a-z, 0-9 and -, starting with a letter
+Your messages kept: tokens, 0 or more
+Context window: tokens, 40,000 or more
+Cache diagnostics: must be on or off
+Ambiguous width: must be one of auto, wide, narrow
+Colour: must be one of auto, truecolor, 256, 16, none
+Copy on select: must be one of auto, on, off
+Full repaint: must be on or off
+Motion: must be one of auto, full, calm, reduced
+Mouse: must be on or off
+Pictures: must be on or off
+Scroll speed: a whole number, 1 to 20
+Sidebar: must be auto or hidden
+Folded sections: must be none or a list of sidebar sections, each <plugin>/<name>
+Pinned sections: must be none or a list of sidebar sections, each <plugin>/<name>
+Theme: must be one of auto, dark, light
+Verbose: must be on or off
+Effort: must be one of low, medium, high, xhigh, max
+Account: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+Extra instructions: must be none or autonomous
+Instructions: must be one of auto, default, none
+Instructions warning: tokens, 0 or more
+Keep main warm: must be on or off
+Key: is a secret
+Key variable: a variable name of letters, digits and _
+Key kept in: must be file or keyring
+Keychain: must be one of auto, on, off
+Session log: must be on or off
+Requests in flight: a whole number, 1 to 64, or none
+Max output: tokens, 1 to 4,294,967,295
+Message threads: must be on or off
+Model: needs a model ID of letters, digits and . _ : @ / -
+Provider compaction: must be on or off
+Native web search: must be on or off
+Plugin: must be on or off
+Plugin hook: must be on or off
+Installed: must be on or off
+Sidebar section: must be on or off
+Start with: must be core, none, or a list of tool names; none must stand alone
+Main preset: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+Cache read price: US dollars
+Input price: US dollars
+Output price: US dollars
+Pricing: must be list or none
+Provider: must be one of anthropic, openai, gemini
+Refusal fallback: must be on or off
+Retry budget: US dollars, or none
+Self-check: must be on or off
+Store ID: must be one of 
+Message time: must be one of local, utc, off
+Tool output kept: a whole number, 1 to 3650, or none
+Tools: must be none or a list of tool names
+Turned off: must be none or a list of names
+URL: is a secret
+URL variable: a variable name of letters, digits and _
+Voice account: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+Voice instructions: needs a file path, relative to config.toml's directory, under ~/ or absolute
+Language: needs a two-letter language code (ISO 639-1), such as en
+Voice: needs a voice's name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+Web search: must be none or a list of one of web_search_20250305, web_search, google_search

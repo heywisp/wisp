@@ -1,0 +1,32 @@
+---
+source: crates/wisp-render/src/chrome/context/tests.rs
+expression: "render(&unknown_window_report(), &cell)"
+---
+  my-model · direct
+  63.1k tokens
+  62.4k measured · 700 since
+
+  Usage by category   estimated (~)
+  ⣿ System prompt              ~312
+  ⣿ Tools (2)                 ~1.6k
+  ⣿ Instructions (2 files)    ~3.4k
+  ⣿ Environment                ~120
+  ⣿ Your messages             ~5.5k
+  ⣿ Replies and thinking      19.3k
+  ⣿ Tool results             ~30.7k
+  ⣿ Attachments (2)           ~2.2k
+  Window unknown for my-model: set context_window under [models."my-model"] in
+  config.toml to enable automatic compaction.
+  ~ this server has no token counter
+
+  Instructions · 2 files · ~3.4k
+  └─ AGENTS.md ~3.1k · docs/style.md ~300
+  Tools · 2 · ~1.6k
+  └─ shell ~1.1k · question ~500
+  Tool results · ~30.7k · largest 2
+  └─ heavy cargo test --workspace ~9.8k (turn 7) · cat src/agent.rs ~6.1k (tur…
+  Attachments · 2 · ~2.2k
+  └─ image 1 ~1.1k (turn 3) · image 2 ~1.1k (turn 5)
+
+  Each step re-reads 62.4k · no prices
+  /context all lists every item

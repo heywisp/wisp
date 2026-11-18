@@ -1,0 +1,21 @@
+package wisp:plugin@0.2.0;
+
+interface history {
+  record said-entry { turn: u64, text: string, seq: option<u64> }
+  record call-entry { turn: u64, tool: string, target: string, status: option<string>, cwd: option<string>, saved: option<string>, attached: list<string>, withdrawn: bool }
+  resource view {
+    said: func() -> list<said-entry>;
+    calls: func() -> list<call-entry>;
+    log-pointer: func() -> option<string>;
+    output-pointer: func() -> option<string>;
+  }
+}
+
+interface strategy {
+  use history.{view};
+  use wisp:plugin/hook-types@0.1.0.{compact-info};
+  record strategy-info { compact: compact-info, epoch: u64, first-turn: u64, last-turn: u64, native: bool, cut-off: option<string>, verbatim-tokens: u64 }
+  instruction: async func(info: strategy-info) -> option<string>;
+  accept: async func(info: strategy-info, summary: string) -> result<_, string>;
+  head: async func(info: strategy-info, view: borrow<view>, summary: option<string>) -> list<string>;
+}

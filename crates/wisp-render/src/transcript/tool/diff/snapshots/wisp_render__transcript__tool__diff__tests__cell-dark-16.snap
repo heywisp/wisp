@@ -1,0 +1,432 @@
+---
+source: crates/wisp-render/src/transcript/tool/diff/tests.rs
+expression: out
+---
+--- one file, 120, before the grammars ---
+ [lightgreen|✓] [bold|Showed] crates/wisp-core/src/cache.rs                                                                           [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  impl Cache {
+     [gray|   2 ]      fn key(req: &Request) -> Key {
+     [gray|   3 ][lightred|-]         let key = hash(&req.system);
+     [gray|   3 ][lightgreen|+]         let key = Fingerprint::of(req)?;
+     [gray|   4 ]          key
+     [gray|   5 ]      }
+     [gray|   6 ]  }
+--- one file, 120, highlighted ---
+ [lightgreen|✓] [bold|Showed] crates/wisp-core/src/cache.rs                                                                           [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  impl Cache {
+     [gray|   2 ]      fn key(req: &Request) -> Key {
+     [gray|   3 ][lightred|-]         let key = [reversed|hash]([reversed|&]req[reversed|.system]);
+     [gray|   3 ][lightgreen|+]         let key = [reversed|Fingerprint::of](req)[reversed|?];
+     [gray|   4 ]          key
+     [gray|   5 ]      }
+     [gray|   6 ]  }
+--- one file, 80, before the grammars ---
+ [lightgreen|✓] [bold|Showed] crates/wisp-core/src/cache.rs                                   [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  impl Cache {
+     [gray|   2 ]      fn key(req: &Request) -> Key {
+     [gray|   3 ][lightred|-]         let key = hash(&req.system);
+     [gray|   3 ][lightgreen|+]         let key = Fingerprint::of(req)?;
+     [gray|   4 ]          key
+     [gray|   5 ]      }
+     [gray|   6 ]  }
+--- one file, 80, highlighted ---
+ [lightgreen|✓] [bold|Showed] crates/wisp-core/src/cache.rs                                   [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  impl Cache {
+     [gray|   2 ]      fn key(req: &Request) -> Key {
+     [gray|   3 ][lightred|-]         let key = [reversed|hash]([reversed|&]req[reversed|.system]);
+     [gray|   3 ][lightgreen|+]         let key = [reversed|Fingerprint::of](req)[reversed|?];
+     [gray|   4 ]          key
+     [gray|   5 ]      }
+     [gray|   6 ]  }
+--- one file, 40, before the grammars ---
+ [lightgreen|✓] [bold|Showed] crates/wisp-core/src/cache.rs
+     [gray|   1 ]  impl Cache {
+     [gray|   2 ]      fn key(req: &Request) -
+            > Key {
+     [gray|   3 ][lightred|-]         let key = hash(&req
+            .system);
+     [gray|   3 ][lightgreen|+]         let key = Fingerpri
+            nt::of(req)?;
+     [gray|   4 ]          key
+     [gray|   5 ]      }
+     [gray|   6 ]  }
+--- one file, 40, highlighted ---
+ [lightgreen|✓] [bold|Showed] crates/wisp-core/src/cache.rs
+     [gray|   1 ]  impl Cache {
+     [gray|   2 ]      fn key(req: &Request) -
+            > Key {
+     [gray|   3 ][lightred|-]         let key = [reversed|hash]([reversed|&]req
+            [reversed|.system]);
+     [gray|   3 ][lightgreen|+]         let key = [reversed|Fingerpri]
+            [reversed|nt::of](req)[reversed|?];
+     [gray|   4 ]          key
+     [gray|   5 ]      }
+     [gray|   6 ]  }
+--- several files with a title, one renamed, 120, before the grammars ---
+ [lightgreen|✓] Rename the cache key                                                                                           [lightgreen|+3] [lightred|−1]
+     [bold|src/key.rs → src/fingerprint.rs]                                                                              [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  fn key(req: &Request) -> Key {
+     [gray|   2 ][lightred|-]     hash(&req.system)
+     [gray|   2 ][lightgreen|+]     Fingerprint::of(req)
+     [gray|   3 ]  }
+     [bold|README.md]                                                                                                    [lightgreen|+2] [lightred|−0]
+     [gray|   1 ]  # Cache
+     [gray|   2 ][lightgreen|+]
+     [gray|   3 ][lightgreen|+] Keys are fingerprints.
+--- several files with a title, one renamed, 120, highlighted ---
+ [lightgreen|✓] Rename the cache key                                                                                           [lightgreen|+3] [lightred|−1]
+     [bold|src/key.rs → src/fingerprint.rs]                                                                              [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  fn key(req: &Request) -> Key {
+     [gray|   2 ][lightred|-]     hash(&req.system)
+     [gray|   2 ][lightgreen|+]     Fingerprint::of(req)
+     [gray|   3 ]  }
+     [bold|README.md]                                                                                                    [lightgreen|+2] [lightred|−0]
+     [gray|   1 ]  # Cache
+     [gray|   2 ][lightgreen|+]
+     [gray|   3 ][lightgreen|+] Keys are fingerprints.
+--- several files with a title, one renamed, 80, before the grammars ---
+ [lightgreen|✓] Rename the cache key                                                   [lightgreen|+3] [lightred|−1]
+     [bold|src/key.rs → src/fingerprint.rs]                                      [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  fn key(req: &Request) -> Key {
+     [gray|   2 ][lightred|-]     hash(&req.system)
+     [gray|   2 ][lightgreen|+]     Fingerprint::of(req)
+     [gray|   3 ]  }
+     [bold|README.md]                                                            [lightgreen|+2] [lightred|−0]
+     [gray|   1 ]  # Cache
+     [gray|   2 ][lightgreen|+]
+     [gray|   3 ][lightgreen|+] Keys are fingerprints.
+--- several files with a title, one renamed, 80, highlighted ---
+ [lightgreen|✓] Rename the cache key                                                   [lightgreen|+3] [lightred|−1]
+     [bold|src/key.rs → src/fingerprint.rs]                                      [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  fn key(req: &Request) -> Key {
+     [gray|   2 ][lightred|-]     hash(&req.system)
+     [gray|   2 ][lightgreen|+]     Fingerprint::of(req)
+     [gray|   3 ]  }
+     [bold|README.md]                                                            [lightgreen|+2] [lightred|−0]
+     [gray|   1 ]  # Cache
+     [gray|   2 ][lightgreen|+]
+     [gray|   3 ][lightgreen|+] Keys are fingerprints.
+--- several files with a title, one renamed, 40, before the grammars ---
+ [lightgreen|✓] Rename the cache key           [lightgreen|+3] [lightred|−1]
+     [bold|src/key.rs → …ingerprint.rs]  [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  fn key(req: &Request) -> Ke
+            y {
+     [gray|   2 ][lightred|-]     hash(&req.system)
+     [gray|   2 ][lightgreen|+]     Fingerprint::of(req)
+     [gray|   3 ]  }
+     [bold|README.md]                    [lightgreen|+2] [lightred|−0]
+     [gray|   1 ]  # Cache
+     [gray|   2 ][lightgreen|+]
+     [gray|   3 ][lightgreen|+] Keys are fingerprints.
+--- several files with a title, one renamed, 40, highlighted ---
+ [lightgreen|✓] Rename the cache key           [lightgreen|+3] [lightred|−1]
+     [bold|src/key.rs → …ingerprint.rs]  [lightgreen|+1] [lightred|−1]
+     [gray|   1 ]  fn key(req: &Request) -> Ke
+            y {
+     [gray|   2 ][lightred|-]     hash(&req.system)
+     [gray|   2 ][lightgreen|+]     Fingerprint::of(req)
+     [gray|   3 ]  }
+     [bold|README.md]                    [lightgreen|+2] [lightred|−0]
+     [gray|   1 ]  # Cache
+     [gray|   2 ][lightgreen|+]
+     [gray|   3 ][lightgreen|+] Keys are fingerprints.
+--- unknown numbers and a removed --- line, 120, before the grammars ---
+ [lightgreen|✓] [bold|Showed] schema.sql                                                                                              [lightgreen|+1] [lightred|−2]
+       select 1;
+     [lightred|-] -- old comment
+     [lightred|-] select 2;
+     [lightgreen|+] select 3;
+--- unknown numbers and a removed --- line, 120, highlighted ---
+ [lightgreen|✓] [bold|Showed] schema.sql                                                                                              [lightgreen|+1] [lightred|−2]
+       select 1;
+     [lightred|-] [italic|-- old comment]
+     [lightred|-] select [reversed|2];
+     [lightgreen|+] select [reversed|3];
+--- unknown numbers and a removed --- line, 80, before the grammars ---
+ [lightgreen|✓] [bold|Showed] schema.sql                                                      [lightgreen|+1] [lightred|−2]
+       select 1;
+     [lightred|-] -- old comment
+     [lightred|-] select 2;
+     [lightgreen|+] select 3;
+--- unknown numbers and a removed --- line, 80, highlighted ---
+ [lightgreen|✓] [bold|Showed] schema.sql                                                      [lightgreen|+1] [lightred|−2]
+       select 1;
+     [lightred|-] [italic|-- old comment]
+     [lightred|-] select [reversed|2];
+     [lightgreen|+] select [reversed|3];
+--- unknown numbers and a removed --- line, 40, before the grammars ---
+ [lightgreen|✓] [bold|Showed] schema.sql              [lightgreen|+1] [lightred|−2]
+       select 1;
+     [lightred|-] -- old comment
+     [lightred|-] select 2;
+     [lightgreen|+] select 3;
+--- unknown numbers and a removed --- line, 40, highlighted ---
+ [lightgreen|✓] [bold|Showed] schema.sql              [lightgreen|+1] [lightred|−2]
+       select 1;
+     [lightred|-] [italic|-- old comment]
+     [lightred|-] select [reversed|2];
+     [lightgreen|+] select [reversed|3];
+--- folded, 120, before the grammars ---
+ [lightgreen|✓] [bold|Showed] big.rs                                                                                                 [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [darkgray|… 20 more lines][darkgray| ▸]
+--- folded, 120, highlighted ---
+ [lightgreen|✓] [bold|Showed] big.rs                                                                                                 [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [darkgray|… 20 more lines][darkgray| ▸]
+--- folded, 120, ctrl-o ---
+ [lightgreen|✓] [bold|Showed] big.rs                                                                                                 [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [gray|  21 ][lightgreen|+] let v21 = 21;
+     [gray|  22 ][lightgreen|+] let v22 = 22;
+     [gray|  23 ][lightgreen|+] let v23 = 23;
+     [gray|  24 ][lightgreen|+] let v24 = 24;
+     [gray|  25 ][lightgreen|+] let v25 = 25;
+     [gray|  26 ][lightgreen|+] let v26 = 26;
+     [gray|  27 ][lightgreen|+] let v27 = 27;
+     [gray|  28 ][lightgreen|+] let v28 = 28;
+     [gray|  29 ][lightgreen|+] let v29 = 29;
+     [gray|  30 ][lightgreen|+] let v30 = 30;
+     [gray|  31 ][lightgreen|+] let v31 = 31;
+     [gray|  32 ][lightgreen|+] let v32 = 32;
+     [gray|  33 ][lightgreen|+] let v33 = 33;
+     [gray|  34 ][lightgreen|+] let v34 = 34;
+     [gray|  35 ][lightgreen|+] let v35 = 35;
+     [gray|  36 ][lightgreen|+] let v36 = 36;
+     [gray|  37 ][lightgreen|+] let v37 = 37;
+     [gray|  38 ][lightgreen|+] let v38 = 38;
+     [gray|  39 ][lightgreen|+] let v39 = 39;
+     [gray|  40 ][lightgreen|+] let v40 = 40;
+--- folded, 80, before the grammars ---
+ [lightgreen|✓] [bold|Showed] big.rs                                                         [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [darkgray|… 20 more lines][darkgray| ▸]
+--- folded, 80, highlighted ---
+ [lightgreen|✓] [bold|Showed] big.rs                                                         [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [darkgray|… 20 more lines][darkgray| ▸]
+--- folded, 80, ctrl-o ---
+ [lightgreen|✓] [bold|Showed] big.rs                                                         [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [gray|  21 ][lightgreen|+] let v21 = 21;
+     [gray|  22 ][lightgreen|+] let v22 = 22;
+     [gray|  23 ][lightgreen|+] let v23 = 23;
+     [gray|  24 ][lightgreen|+] let v24 = 24;
+     [gray|  25 ][lightgreen|+] let v25 = 25;
+     [gray|  26 ][lightgreen|+] let v26 = 26;
+     [gray|  27 ][lightgreen|+] let v27 = 27;
+     [gray|  28 ][lightgreen|+] let v28 = 28;
+     [gray|  29 ][lightgreen|+] let v29 = 29;
+     [gray|  30 ][lightgreen|+] let v30 = 30;
+     [gray|  31 ][lightgreen|+] let v31 = 31;
+     [gray|  32 ][lightgreen|+] let v32 = 32;
+     [gray|  33 ][lightgreen|+] let v33 = 33;
+     [gray|  34 ][lightgreen|+] let v34 = 34;
+     [gray|  35 ][lightgreen|+] let v35 = 35;
+     [gray|  36 ][lightgreen|+] let v36 = 36;
+     [gray|  37 ][lightgreen|+] let v37 = 37;
+     [gray|  38 ][lightgreen|+] let v38 = 38;
+     [gray|  39 ][lightgreen|+] let v39 = 39;
+     [gray|  40 ][lightgreen|+] let v40 = 40;
+--- folded, 40, before the grammars ---
+ [lightgreen|✓] [bold|Showed] big.rs                 [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [darkgray|… 20 more lines][darkgray| ▸]
+--- folded, 40, highlighted ---
+ [lightgreen|✓] [bold|Showed] big.rs                 [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [darkgray|… 20 more lines][darkgray| ▸]
+--- folded, 40, ctrl-o ---
+ [lightgreen|✓] [bold|Showed] big.rs                 [lightgreen|+40] [lightred|−0]
+     [gray|   1 ][lightgreen|+] let v1 = 1;
+     [gray|   2 ][lightgreen|+] let v2 = 2;
+     [gray|   3 ][lightgreen|+] let v3 = 3;
+     [gray|   4 ][lightgreen|+] let v4 = 4;
+     [gray|   5 ][lightgreen|+] let v5 = 5;
+     [gray|   6 ][lightgreen|+] let v6 = 6;
+     [gray|   7 ][lightgreen|+] let v7 = 7;
+     [gray|   8 ][lightgreen|+] let v8 = 8;
+     [gray|   9 ][lightgreen|+] let v9 = 9;
+     [gray|  10 ][lightgreen|+] let v10 = 10;
+     [gray|  11 ][lightgreen|+] let v11 = 11;
+     [gray|  12 ][lightgreen|+] let v12 = 12;
+     [gray|  13 ][lightgreen|+] let v13 = 13;
+     [gray|  14 ][lightgreen|+] let v14 = 14;
+     [gray|  15 ][lightgreen|+] let v15 = 15;
+     [gray|  16 ][lightgreen|+] let v16 = 16;
+     [gray|  17 ][lightgreen|+] let v17 = 17;
+     [gray|  18 ][lightgreen|+] let v18 = 18;
+     [gray|  19 ][lightgreen|+] let v19 = 19;
+     [gray|  20 ][lightgreen|+] let v20 = 20;
+     [gray|  21 ][lightgreen|+] let v21 = 21;
+     [gray|  22 ][lightgreen|+] let v22 = 22;
+     [gray|  23 ][lightgreen|+] let v23 = 23;
+     [gray|  24 ][lightgreen|+] let v24 = 24;
+     [gray|  25 ][lightgreen|+] let v25 = 25;
+     [gray|  26 ][lightgreen|+] let v26 = 26;
+     [gray|  27 ][lightgreen|+] let v27 = 27;
+     [gray|  28 ][lightgreen|+] let v28 = 28;
+     [gray|  29 ][lightgreen|+] let v29 = 29;
+     [gray|  30 ][lightgreen|+] let v30 = 30;
+     [gray|  31 ][lightgreen|+] let v31 = 31;
+     [gray|  32 ][lightgreen|+] let v32 = 32;
+     [gray|  33 ][lightgreen|+] let v33 = 33;
+     [gray|  34 ][lightgreen|+] let v34 = 34;
+     [gray|  35 ][lightgreen|+] let v35 = 35;
+     [gray|  36 ][lightgreen|+] let v36 = 36;
+     [gray|  37 ][lightgreen|+] let v37 = 37;
+     [gray|  38 ][lightgreen|+] let v38 = 38;
+     [gray|  39 ][lightgreen|+] let v39 = 39;
+     [gray|  40 ][lightgreen|+] let v40 = 40;

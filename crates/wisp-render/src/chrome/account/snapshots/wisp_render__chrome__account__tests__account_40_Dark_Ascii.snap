@@ -1,0 +1,282 @@
+---
+source: crates/wisp-render/src/chrome/account/tests.rs
+expression: "sections.join(\"\\n\")"
+---
+Claude subscription - claude-work | claude-work - subscription
+ChatGPT subscription - claude-work | claude-work - subscription
+Antigravity subscription - claude-work | claude-work - subscription
+Claude API - claude-work | claude-work - API
+OpenAI API - claude-work | claude-work - API
+Gemini API - claude-work | claude-work - API
+Gateway - claude-work | claude-work - API
+claude-work - gone
+- Switched to
+  * claude-work - subscription
+  opus-5-5 high - cache rebuild ~$0.41
+- Started on * claude-api - API
+  opus-5-5 high - cache rebuild ~$0.41
+  Moved from your subscription to the
+  API.
+- Continuing on * chatgpt - subscription
+  gpt-6.1-sol
+- Switching to
+  * claude-work - subscription
+  opus-5-5 high - nothing cached yet
+  From your next message.
+- Switched to
+  * a-very-long-account-name-fo... - API
+  sonnet-5-5 high - cache rebuild ~$0.21
+Paste the code from Claude's page first.
+That's only part of the code: use the Copy button on Claude's page.
+That's the code twice. Paste again; the new paste replaces this one.
+That code has spaces or line breaks in it. Paste it again.
+That's longer than any code. Paste it again.
+That code is from an earlier sign-in: paste the one from the newest page.
+Claude didn't accept that code; each works once. enter opens a new page.
+Couldn't reach Claude. enter tries again.
+This sign-in timed out. enter opens a new page.
+Not signed in: this is the same Claude
+account as * claude.
+To sign it in again:
+wisp login --name claude
+Not signed in: this is the same
+ChatGPT account as * chatgpt.
+To sign it in again:
+wisp login --name chatgpt
+Not signed in: this is the same Claude
+account as * claude-work.
+To sign it in again:
+wisp login claude-work
+Not signed in: this is the same Claude
+account as
+* claude-work-account-for-the-team.
+To sign it in again:
+wisp login
+claude-work-account-for-the-team
+Not signed in: this is the same
+Claude account as * claude.
+To sign it in again:
+/login --name claude
+Not signed in: this is the same
+ChatGPT account as * chatgpt.
+To sign it in again:
+/login --name chatgpt
+Not signed in: this is the same
+Claude account as * claude-work.
+To sign it in again:
+/login claude-work
+Not signed in: this is the same
+Claude account as
+* claude-work-account-for-the-team.
+To sign it in again:
+/login
+claude-work-account-for-the-team
+ + Signed out
+   Claude subscription - o claude-work
+   coder didn't move to the API:
+   it stays on o claude-work - gone and
+   can't run.
+ + Signed out of o claude-subscription,
+   o chatgpt and o work-api
+   The old sign-in may still be saved:
+   remove Wisp's unused OAuth profile.
+   work-api's key may still be saved:
+   run wisp account remove work-api to
+   delete it.
+ - Continuing on * claude-api - API
+   opus-5-5 high - cache rebuild ~$0.41
+   Moved from your subscription to the
+   API.
+   New chats start on * claude-api too.
+ - coder switched to * claude-api - API
+   opus-5-5 high - cache rebuild ~$0.41
+   reviewer can't move to Claude yet:
+   it stays on o chatgpt - gone and
+   can't run.
+   scout didn't move to the API:
+   it stays on
+   o claude-subscription - gone and
+   can't run.
+ - Continuing on
+   * claude-subscription - subscription
+   opus-5-5 high - cache rebuild ~$0.41
+   reviewer can't move to Claude yet:
+   it stays on o chatgpt - gone and
+   can't run.
+ - Continuing on * claude-api - API
+   opus-5-5 high - cache rebuild ~$0.41
+   Moved from your subscription to the
+   API.
+ - coder switched to * claude-api - API
+   opus-5-5 high - cache rebuild ~$0.08
+ + Signed out
+   Claude subscription - o claude-sub...
+   New chats now start on
+   * claude-api - API.
+ + Signed out of o claude and o chatgpt
+   Run /login to sign in again.
+ - Continuing on
+   * claude-work - subscription
+   opus-5-5 high - cache rebuild ~$0.41
+   o claude-subscription was signed out
+   in another window.
+ - coder switched to
+   * claude-work - subscription
+   opus-5-5 high - cache rebuild ~$0.08
+ - o claude-work was signed out in
+   another window.
+   coder didn't move to the API:
+   it stays on o claude-work - gone and
+   can't run.
+ - Continuing on
+   * claude-work - subscription
+   opus-5-5 high - cache rebuild ~$0.41
+   o claude-subscription was signed out
+   in another window.
+   coder is working:
+   it stops after this step, then moves
+   to claude-work - subscription.
+ - Continuing on * claude-api - API
+   opus-5-5 high - cache rebuild ~$0.41
+   Moved from your subscription to the
+   API.
+   o claude-subscription and
+   o claude-work were signed out in
+   another window.
+ - Started on * claude-api - API
+   opus-5-5 high
+   Sign in again with
+   /login claude-subscription.
+ - Started on
+   * claude-subscription - subscription
+   opus-5-5 high
+   * work-api: WORK_KEY not set.
+ - Continuing on * claude-api - API
+   opus-5-5 high - cache rebuild ~$0.41
+   Moved from your subscription to the
+   API.
+
+   Not resumed
+     coder
+       * claude-team: sign-in expired
+       /login claude-team
+     scout
+       * claude-work: can't be read now
+   Not resumed
+     coder
+       * claude-team: sign-in expired
+       /login claude-team
+   Not resumed
+     coder
+       * claude-subscription:
+       sign-in expired
+       /login claude-subscription
+     tester
+       * work-api:
+       ANTHROPIC_TEAM_KEY_FOR_REVIEWS
+       not set
+ + Signed out
+   Claude subscription - o claude-work
+ - coder switched to
+   * claude-subscription - subscription
+   opus-5-5 high - cache rebuild ~$0.41
+   Preset coder used claude-work; it now
+   runs on its parent's account.
+ + Signed out
+   Claude subscription - o claude-work
+   coder didn't move to the API:
+   it stays on o claude-work - gone and
+   can't run.
+   Preset coder used claude-work; new
+   agents from it won't start on the
+   API. Sign in again with
+   /login claude-work.
+Change ANTHROPIC_API_KEY in <home>/.config/wisp/.env.
+Change ANTHROPIC_API_KEY in your shell.
+claude-api's key comes from <home>/.config/wisp/.env: remove ANTHROPIC_API_KEY there to sign out of claude-api.
+claude-api's key comes from your shell: remove ANTHROPIC_API_KEY from your shell profile to sign out of claude-api.
+this chat - new chats start here - from ~/.config/wisp/.env - coder uses it
+this chat - new chats start here - coder uses it
+New chats now start on * claude-api.
+New chats start on * claude-api too.
+New chats now start on
+* claude-api - API.
+New chats start on * claude-api too.
+coder can't move to Claude yet:
+it stays on o claude-work - gone and can't run.
+coder didn't move to the API:
+it stays on o claude-work - gone and can't run.
+coder not resumed: claude-team: sign-in expired; run wisp login claude-team.
+scout not resumed: claude-work: can't be read now.
+Sign out of 4 accounts?
+o claude-subscription
+- o claude-work - o chatgpt
+- o work-api (key deleted)
+
+Moving to * claude-api - API
+                    cache rebuild
+  this chat                ~$0.41
+  coder                    ~$0.08
+Staying behind
+  reviewer   can't move to Claude
+
+Preset coder used claude-work; new
+agents from it won't start on the
+API.
+Sign out of 4 accounts?
+o claude-subscription
+- o claude-work - o chatgpt
+- o work-api (key deleted)
+Sign out of 4 accounts?
+o claude-subscription
+- o claude-work - o chatgpt
+- o work-api (key deleted)
+
+Moving to * claude-api - API
+                    cache rebuild
+  this chat                ~$0.41
+  coder                    ~$0.08
+  scout                         -
+Staying behind
+  reviewer   can't move to Claude
+Sign out of 4 accounts?
+o claude-subscription
+- o claude-work - o chatgpt
+- o work-api (key deleted)
+
+Moving to * claude-api - API
+           cache rebuild
+  this chat       ~$0.41
+  coder           ~$0.08
+Staying behind
+  code-reviewer
+    can't move to Claude
+Sign out of * work-api?
+Its key is deleted from Wisp.
+
+Moving to
+* claude-subscription - subscription
+   cache rebuild
+  coder   ~$0.08
+Sign out of * work-api?
+Its key is deleted from Wisp.
+Preset coder used work-api; it now
+runs on its parent's account.
+Sign out of * claude and * chatgpt?
+reviewer can't move to Claude yet:
+Earlier reasoning won't carry over, and coder and scout stay behind.
+This chat and coder move from your subscription to the API.
+Earlier reasoning won't carry over, and coder stays behind.
+This chat moves from your subscription to the API.
+Earlier reasoning won't carry over.
+there's no account called work; yours are claude-work and chatgpt.
+No account is set up.
+work-api's key may still be saved: run wisp account remove work-api to delete it.
+Its key is deleted from Wisp.
+This chat uses it. Where should it go?
+Where should this chat go?
+Sign out of which account?
+Nothing was signed out.
+Starts on claude-subscription
+covered by your subscription
+Starts on claude-api, on the API

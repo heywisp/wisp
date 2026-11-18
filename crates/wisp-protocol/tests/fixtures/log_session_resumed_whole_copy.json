@@ -1,0 +1,36 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "session_resumed",
+  "wisp_version": "0.1.0",
+  "endpoint": "https://api.anthropic.com",
+  "endpoint_name": "env",
+  "system_prompt_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+  "tools": [
+    "bash"
+  ],
+  "tools_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "system_prompt": "You are Jarvis, resumed.",
+  "system_base_sha256": "3434343434343434343434343434343434343434343434343434343434343434",
+  "tool_definitions": [
+    {
+      "description": "Run a shell command.",
+      "input_schema": {
+        "properties": {
+          "command": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "bash"
+    }
+  ],
+  "tool_context": {
+    "platform": "unix",
+    "capabilities": [
+      "shell"
+    ]
+  }
+}

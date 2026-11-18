@@ -1,0 +1,55 @@
+---
+source: crates/wisp-render/src/chrome/tests.rs
+expression: "out.join(\"\\n\")"
+---
+120:  ⢎⠶⡰  Ready                               ● claude-subscription · subscription   opus-5-5 high · 159k/850k · cached 92%
+120:  ⠎⠶⡰  Lantern-lighting… 1m 05s · ↓ ≈1.9k tokens   esc to stop      ● claude-subscription · subscription   opus-5-5 high
+100:  ⢎⠶⡰  Ready           ● claude-subscription · subscription   opus-5-5 high · 159k/850k · cached 92%
+100:  ⠎⠶⡰  Lantern-lighting… 1m 05s   esc to stop   ● claude-subscription · subscription   opus-5-5 high
+80:  ⢎⠶⡰  Ready    ● claude-subscription · subscription   opus-5-5 high · 159k/850k
+80:  ⠎⠶⡰  Lantern-lighting…   esc to stop      ● claude-subscription · subscription
+40:  ⢎⠶⡰   ● claude-subscri… · subscription
+40:  ⠎⠶⡰  Lantern-lighting…   esc to stop
+120:  ⢎⠶⡰  Ready                          ● claude-subscription · subscription   → ● claude-work · subscription next message
+120:  ⠎⠶⡰  Lantern-lighting… 1m 05s   esc to stop      ● claude-subscription · subscription   → ● claude-work · subscription
+100:  ⢎⠶⡰  Ready      ● claude-subscription · subscription   → ● claude-work · subscription next message
+100:  ⠎⠶⡰  Lantern-lighting… 1m 05s · ↓ ≈1.9k tokens   esc to stop        → ● claude-work · subscription
+80:  ⢎⠶⡰      ● claude-subscription · subscription   → ● claude-work · subscription
+80:  ⠎⠶⡰  Lantern-lighting… 1m 05s   esc to stop     → ● claude-work · subscription
+40:  ⢎⠶⡰     → ● claude-work · subscription
+40:  ⠎⠶⡰  Lantern-lighting…   esc to stop
+120:  ⢎⠶⡰  Ready                                    ● claude-subscription · subscription   → ● claude-api · API next message
+120:  ⠎⠶⡰  Lantern-lighting… 1m 05s   esc to stop   ● claude-subscription · subscription   → ● claude-api · API next message
+100:  ⢎⠶⡰  Ready                ● claude-subscription · subscription   → ● claude-api · API next message
+100:  ⠎⠶⡰  Lantern-lighting…   esc to stop   ● claude-subscription · subscription   → ● claude-api · API
+80:  ⢎⠶⡰  Ready         ● claude-subscription · subscription   → ● claude-api · API
+80:  ⠎⠶⡰  Lantern-lighting… 1m 05s   esc to stop               → ● claude-api · API
+40:  ⢎⠶⡰  Ready        → ● claude-api · API
+40:  ⠎⠶⡰  Lantern-lighting…   esc to stop
+120:  (*)  Ready                               * claude-subscription - subscription   opus-5-5 high - 159k/850k - cached 92%
+120:  (\)  Lantern-lighting... 1m 05s - v ~1.9k tokens   esc to stop    * claude-subscription - subscription   opus-5-5 high
+100:  (*)  Ready           * claude-subscription - subscription   opus-5-5 high - 159k/850k - cached 92%
+100:  (\)  Lantern-lighting... 1m 05s   esc to stop      * claude-subscription - subscription   opus-5-5
+80:  (*)  Ready    * claude-subscription - subscription   opus-5-5 high - 159k/850k
+80:  (\)  Lantern-lighting...   esc to stop    * claude-subscription - subscription
+40:  (*)   * claude-subsc... - subscription
+40:  (\)  Lantern-lighting...   esc to stop
+120:  (*)  Ready                         * claude-subscription - subscription   -> * claude-work - subscription next message
+120:  (\)  Lantern-lighting... 1m 05s   esc to stop   * claude-subscription - subscription   -> * claude-work - subscription
+100:  (*)  Ready     * claude-subscription - subscription   -> * claude-work - subscription next message
+100:  (\)  Lantern-lighting... 1m 05s - v ~1.9k tokens   esc to stop     -> * claude-work - subscription
+80:  (*)     * claude-subscription - subscription   -> * claude-work - subscription
+80:  (\)  Lantern-lighting...   esc to stop         -> * claude-work - subscription
+40:  (*)    -> * claude-work - subscription
+40:  (\)  Lantern-lighting...   esc to stop
+120:  (*)  Ready                                   * claude-subscription - subscription   -> * claude-api - API next message
+120:  (\)  Lantern-lighting... 1m 05s   esc to stop             * claude-subscription - subscription   -> * claude-api - API
+100:  (*)  Ready               * claude-subscription - subscription   -> * claude-api - API next message
+100:  (\)  Lantern-lighting... 1m 05s - v ~1.9k tokens   esc to stop               -> * claude-api - API
+80:  (*)  Ready        * claude-subscription - subscription   -> * claude-api - API
+80:  (\)  Lantern-lighting... 1m 05s   esc to stop            -> * claude-api - API
+40:  (*)  Ready       -> * claude-api - API
+40:  (\)  Lantern-lighting...   esc to stop
+80 warning:  ⢎⠶⡰  Ready             ● claude-subscription · subscription   !! week 96% used
+70 warning:  ⢎⠶⡰  Ready   ● claude-subscription · subscription   !! week 96% used
+70 no warning:  ⢎⠶⡰  Ready           ● claude-subscription · subscription   opus-5-5

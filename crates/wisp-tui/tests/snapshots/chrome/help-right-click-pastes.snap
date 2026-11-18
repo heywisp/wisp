@@ -1,0 +1,5 @@
+---
+source: crates/wisp-tui/tests/app/help.rs
+expression: shot
+---
+   right-click             Copy the selection; paste when nothing is selected

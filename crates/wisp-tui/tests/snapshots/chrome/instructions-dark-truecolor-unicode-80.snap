@@ -1,0 +1,70 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== notes
+|╭─────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|│    ⡐⠈ ⠁⠁     wisp                                                     0.1.0 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..10 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..5 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 11..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                 │
+  ~ 0..1 fg Rgb(88, 88, 88); 5..7 fg Rgb(130, 130, 130); 8..11 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+|│              ~/Projects/Wisp · Claude API                                   │
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+|│                                                                             │
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|╰─────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(14 blank rows)
+| › Make cache misses name their cause
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..37 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 37..80 bg Rgb(38, 38, 38)
+|
+| ╎ Thought for 1 s
+  ~ 1..2 fg Rgb(117, 117, 117); 3..18 fg Rgb(146, 164, 178)
+| ╎ Placeholder one-line thought of a past turn.
+  ~ 1..2 fg Rgb(117, 117, 117); 3..47 fg Rgb(146, 164, 178) italic
+|
+| ⠶ Misses now say which part of the prefix changed: the system prompt, the
+  ~ 1..2 fg Rgb(86, 156, 214)
+|   tools or the messages. The prefix-stability test covers each case.
+|
+|   ∙ the system prompt
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the tool list
+  ~ 3..4 fg Rgb(166, 166, 166)
+|   ∙ the messages
+  ~ 3..4 fg Rgb(166, 166, 166)
+|
+|   2s · $0.014 · cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|
+| ∙ instructions updated · ~/Projects/Wisp/AGENTS.md,
+  ~ 1..2 fg Rgb(117, 117, 117); 3..52 fg Rgb(166, 166, 166)
+|   ~/Projects/Wisp/docs/caching.md
+  ~ 3..34 fg Rgb(166, 166, 166)
+|
+| ∙ instructions updated · ~/Projects/Wisp/docs/caching.md
+  ~ 1..2 fg Rgb(117, 117, 117); 3..57 fg Rgb(166, 166, 166)
+|
+| ∙ instructions switched · ~/.config/wisp/AGENTS.md
+  ~ 1..2 fg Rgb(117, 117, 117); 3..51 fg Rgb(166, 166, 166)
+|╭──────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│                                                                 total $0.014 │
+  ~ 0..1 fg Rgb(88, 88, 88); 66..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ › Ask anything, or type / for commands                                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..40 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..80 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡰  Ready                          Claude API   sonnet-5-5 low · cached 92% │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 38..48 fg Rgb(166, 166, 166); 51..61 fg Rgb(212, 212, 212); 62..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)

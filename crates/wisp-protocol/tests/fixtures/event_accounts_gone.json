@@ -1,0 +1,29 @@
+{
+  "type": "accounts_gone",
+  "names": [
+    "team"
+  ],
+  "moved": [
+    {
+      "agent": "coder",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "rebuild_usd": 0.08
+    }
+  ],
+  "stay": [
+    {
+      "agent": "late",
+      "busy": true
+    }
+  ],
+  "ways": [
+    {
+      "chat": "env",
+      "follow": [
+        "late"
+      ],
+      "charges": true
+    }
+  ]
+}

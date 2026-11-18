@@ -1,0 +1,20 @@
+{
+  "status": "error",
+  "kind": "rate_limit",
+  "message": "Too many concurrent requests",
+  "usage": null,
+  "cost": null,
+  "committed_steps": 2,
+  "detail": {
+    "phase": "response",
+    "source": "endpoint",
+    "status": 429,
+    "error_type": "rate_limit_error",
+    "retry": {
+      "type": "transient"
+    },
+    "possibly_billed": false
+  },
+  "attempts": 25,
+  "gave_up": "busy_window"
+}

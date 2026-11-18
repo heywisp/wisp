@@ -1,0 +1,37 @@
+{
+  "type": "session_snapshot",
+  "answers": 9,
+  "view": {
+    "events": [],
+    "returned": [
+      {
+        "id": "tui-7",
+        "text": "later",
+        "images": [],
+        "missing": 0
+      }
+    ],
+    "input_ids": [],
+    "started": null,
+    "retried_on": {}
+  },
+  "now": {
+    "endpoint": "work",
+    "model": "model",
+    "effort": "low",
+    "cache_ttl": "one_hour",
+    "next": {
+      "endpoint": null,
+      "model": "next",
+      "effort": null,
+      "cache_ttl": null
+    },
+    "endpoints": []
+  },
+  "state": [
+    {
+      "type": "agents_snapshot",
+      "agents": []
+    }
+  ]
+}

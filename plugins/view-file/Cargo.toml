@@ -1,0 +1,26 @@
+[package]
+name = "wisp-plugin-view-file"
+description = "The view_file tool as a bundled Wisp plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+infer.workspace = true
+serde_json.workspace = true
+wisp-media.workspace = true
+wisp-plugin-api.workspace = true
+wisp-tool-text.workspace = true
+
+[dev-dependencies]
+futures = { workspace = true, features = ["executor"] }
+image.workspace = true
+rustix = { workspace = true, features = ["fs"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util", "sync"] }
+wisp-plugin-testkit.workspace = true

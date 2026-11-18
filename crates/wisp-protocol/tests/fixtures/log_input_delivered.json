@@ -1,0 +1,12 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 7,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "input_delivered",
+  "turn": 1,
+  "step": 2,
+  "ids": [
+    "tui-3",
+    "tui-4"
+  ]
+}

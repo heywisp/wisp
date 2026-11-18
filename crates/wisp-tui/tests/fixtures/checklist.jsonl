@@ -1,0 +1,19 @@
+{"type":"turn_started","turn":1}
+{"type":"step_started","step":1}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"Here is my plan."}
+{"type":"block_stopped","index":0}
+{"type":"block_started","index":1,"kind":{"type":"tool_use","name":"write_todos","writing":"a checklist"}}
+{"type":"block_stopped","index":1}
+{"type":"tool_call_requested","step":1,"block":1,"call_id":"toolu_todos_01","tool":"write_todos","input":{"todos":[{"text":"Read the plan","status":"completed"},{"text":"Write the parser","status":"in_progress"},{"text":"Draw the list in the tool row","status":"pending"},{"text":"Keep the old renderer","status":"cancelled"},{"text":"Run the checks","status":"completed"}]},"display":{"action":{"type":"other","name":"write_todos"},"target":"2 of 5 completed","output":{"type":"none"}}}
+{"type":"step_ended","step":1,"usage":{"input_tokens":900,"output_tokens":120,"cache_read_input_tokens":0,"cache_creation_input_tokens":2400,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2400},"cost_usd":0.0121,"lower_bound":false}
+{"type":"tool_call_started","call_id":"toolu_todos_01","cwd":""}
+{"type":"tool_call_finished","call_id":"toolu_todos_01","outcome":{"status":"completed","is_error":false,"exit":null},"output":{"tail":"","bytes":0,"lines":0,"file":null,"file_problem":null,"inlined":true},"facts":[],"state":null,"duration_ms":1,"result":"Todos updated: 2 of 5 completed. In progress: \"Write the parser\"."}
+{"type":"todos_updated","call_id":"toolu_todos_01","items":[{"text":"Read the plan","status":"completed"},{"text":"Write the parser","status":"in_progress"},{"text":"Draw the list in the tool row","status":"pending"},{"text":"Keep the old renderer","status":"cancelled"},{"text":"Run the checks","status":"completed"}]}
+{"type":"step_started","step":2}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"Starting on the parser."}
+{"type":"block_stopped","index":0}
+{"type":"step_ended","step":2,"usage":{"input_tokens":900,"output_tokens":120,"cache_read_input_tokens":0,"cache_creation_input_tokens":2400,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2400},"cost_usd":0.0041,"lower_bound":false}
+{"type":"spend_changed","total":{"usd":0.0162,"plan_usd":0.0}}
+{"type":"turn_ended","outcome":{"status":"completed","stop_reason":"end_turn","model":"claude-sonnet-5-5","usage":{"input_tokens":900,"output_tokens":120,"cache_read_input_tokens":0,"cache_creation_input_tokens":2400,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2400},"cost":{"turn_usd":0.0162,"session_usd":0.0162,"turn_lower_bound":false,"session_lower_bound":false},"committed":true,"steps":2,"tool_calls":1},"stats":{"started_at":"2026-10-27T09:00:00Z","first_byte_ms":700,"duration_ms":2100,"retries":0,"previous_prompt_tokens":null}}

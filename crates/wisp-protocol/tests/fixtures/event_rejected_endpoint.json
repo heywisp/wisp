@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "reason": "set up an endpoint first",
+  "kind": "endpoint",
+  "request": 14
+}

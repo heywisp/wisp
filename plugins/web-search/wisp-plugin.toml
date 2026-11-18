@@ -1,0 +1,11 @@
+id = "web-search"
+version = "0.1.0"
+world = "0.4.0"
+summary = "Provider web search, where the account and model have it"
+
+[[tools]]
+name = "web_search"
+native = "web_search"
+
+[capabilities]
+requested = ["model"]

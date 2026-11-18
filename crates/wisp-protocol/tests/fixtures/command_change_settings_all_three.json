@@ -1,0 +1,33 @@
+{
+  "type": "change_settings",
+  "request": 6,
+  "changes": [
+    {
+      "target": {
+        "name": "effort"
+      },
+      "value": {
+        "kind": "text",
+        "text": "high"
+      }
+    },
+    {
+      "target": {
+        "name": "endpoint"
+      },
+      "value": {
+        "kind": "text",
+        "text": "direct"
+      }
+    },
+    {
+      "target": {
+        "name": "model"
+      },
+      "value": {
+        "kind": "text",
+        "text": "claude-sonnet-5-5"
+      }
+    }
+  ]
+}

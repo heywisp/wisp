@@ -1,0 +1,21 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 13,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "search_ended",
+  "turn": 2,
+  "step": 1,
+  "attempt": 0,
+  "call_id": "srvtoolu_01",
+  "outcome": {
+    "status": "done",
+    "type": "results",
+    "hits": [
+      {
+        "title": "ripgrep - crates.io",
+        "url": "https://crates.io/crates/ripgrep",
+        "page_age": "April 30, 2026"
+      }
+    ]
+  }
+}

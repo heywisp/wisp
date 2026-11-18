@@ -1,0 +1,14 @@
+preset = "brain"
+tools = ["show_page"]
+
+[agents.presets.brain]
+description = "Teaches learners aged 13 and up, by voice, through the voice's hand-offs"
+instructions = "BRAIN.md"
+effort = "low"
+
+[instructions]
+source = "none"
+
+[voice]
+instructions = "VOICE.md"
+language = "en"

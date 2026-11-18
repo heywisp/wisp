@@ -1,0 +1,6 @@
+{
+  "type": "attach_requested",
+  "call_id": "toolu_07",
+  "id": 5,
+  "reason": "sudo password for apt install"
+}

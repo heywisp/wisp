@@ -1,0 +1,17 @@
+{
+  "type": "spend_changed",
+  "total": {
+    "usd": 16.4,
+    "plan_usd": 4.1,
+    "lower_bound": true
+  },
+  "accounts": {
+    "claude-main": {
+      "usd": 4.1,
+      "plan_usd": 4.1
+    },
+    "old": {
+      "usd": 12.3
+    }
+  }
+}

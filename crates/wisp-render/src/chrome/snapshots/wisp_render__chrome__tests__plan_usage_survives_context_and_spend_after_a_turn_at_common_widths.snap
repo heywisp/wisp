@@ -1,0 +1,8 @@
+---
+source: crates/wisp-render/src/chrome/tests.rs
+expression: "rows.join(\"\\n\")"
+---
+80:  ⢎⠶⡰  Ready    ChatGPT subscription   gpt-6-astra low · week 43% used · 5k/850k
+100:  ⢎⠶⡰  Ready           ChatGPT subscription   gpt-6-astra low · week 43% used · 5k/850k · cached 92%
+106:  ⢎⠶⡰  Ready        ChatGPT subscription   gpt-6-astra low · week 43% used · /usage · 5k/850k · cached 92%
+120:  ⢎⠶⡰  Ready                      ChatGPT subscription   gpt-6-astra low · week 43% used · /usage · 5k/850k · cached 92%

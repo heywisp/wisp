@@ -1,0 +1,8 @@
+id = "page"
+version = "0.1.0"
+world = "0.3.0"
+summary = "Shows a web page on the learning app's board"
+
+[[tools]]
+name = "show_page"
+default = "off"

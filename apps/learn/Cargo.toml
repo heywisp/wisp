@@ -1,0 +1,40 @@
+[package]
+name = "learn"
+description = "The learning app: the flow's settings, the start through wisp-start and the page"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "learn"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+learn-web.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+toml = { workspace = true, features = ["serde", "display"] }
+wisp-client.workspace = true
+wisp-core = { workspace = true, features = ["os-keyring"] }
+wisp-protocol.workspace = true
+wisp-render.workspace = true
+wisp-start.workspace = true
+
+[features]
+default = ["wasm"]
+wasm = ["wisp-start/wasm"]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+futures.workspace = true
+rustix = { workspace = true, features = ["process", "net"] }
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "time"] }
+tokio-tungstenite.workspace = true
+wisp-plugin-page.workspace = true
+wisp-tool-text.workspace = true

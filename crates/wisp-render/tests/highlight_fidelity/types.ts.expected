@@ -1,0 +1,6 @@
+syn.control:6 -:1 syn.control:4 -:3 syn.variable:4 -:3 syn.control:4 -:1 syn.string:10 -:1
+syn.control:6 -:1 syn.keyword:9 -:1 syn.type:4 -:1 syn.type:1 -:3 syn.type:7 -:4 syn.variable:4 -:2 syn.type:1 -:2 syn.variable:6 -:3 syn.type:6 -:2
+syn.control:6 -:1 syn.keyword:5 -:1 syn.function:4 -:2 syn.type:4 -:3 syn.keyword:5 -:4 syn.variable:6 -:2 syn.variable:5 -:4 syn.keyword:2 -:2
+-:2 syn.keyword:5 -:1 syn.variable:3 -:3 syn.control:5 -:1 syn.function:5 -:1 syn.string:6 -:2 syn.variable:6 -:1 syn.variable:2 -:1 syn.string:3 -:2 syn.function:18 -:1 syn.string:5 -:2 syn.string:1 -:2
+-:2 syn.control:6 -:10 syn.control:5 -:1 syn.variable:3 -:1 syn.function:4 -:4 syn.control:2 -:1 syn.type:4 -:1 syn.type:6 -:11 syn.number:3 -:3
+-:2

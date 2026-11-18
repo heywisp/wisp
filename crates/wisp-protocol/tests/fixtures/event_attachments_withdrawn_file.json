@@ -1,0 +1,14 @@
+{
+  "type": "attachments_withdrawn",
+  "step": 2,
+  "items": [
+    {
+      "call_id": "toolu_09",
+      "ordinal": 0,
+      "kind": "file",
+      "label": "docs/spec.pdf",
+      "reason": "The PDF is password protected.",
+      "note": "[docs/spec.pdf (application/pdf) couldn't be processed: The PDF is password protected. Convert or cut it with bash into something you can read, then view or read that.]"
+    }
+  ]
+}

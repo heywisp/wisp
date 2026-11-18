@@ -1,0 +1,8 @@
+---
+source: crates/wisp-render/src/footer/tests.rs
+expression: out
+---
+completed: + end_turn - 2.1s (first token 0.8s) - in 4 - out 475 - reused 21.9k (100%) - +45 cached 1h - $0.014 - opus-5-5
+max tokens, not kept: - max_tokens - 2.1s (first token 0.8s) - in 4 - out 475 - reused 21.9k (100%) - +45 cached 1h - $0.014+ - opus-5-5 - not kept in history
+cancelled: x cancelled - 1m 15s - 2 retries - in 4 - out 475 - reused 21.9k (100%) - +45 cached 1h - $0.0031+ - dropped from history
+failed: x failed - 1m 15s - 2 retries - in 4 - out 475 - reused 21.9k (100%) - +45 cached 1h - $0.0042+ - dropped from history

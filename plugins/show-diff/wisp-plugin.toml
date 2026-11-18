@@ -1,0 +1,10 @@
+id = "show-diff"
+version = "0.1.0"
+world = "0.3.0"
+summary = "Shows the user code or a change, changing nothing"
+
+[[tools]]
+name = "show_diff"
+
+[[tools]]
+name = "show_code"

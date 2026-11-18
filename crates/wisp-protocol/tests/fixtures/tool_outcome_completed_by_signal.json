@@ -1,0 +1,8 @@
+{
+  "status": "completed",
+  "is_error": true,
+  "exit": {
+    "type": "signal",
+    "signal": 9
+  }
+}

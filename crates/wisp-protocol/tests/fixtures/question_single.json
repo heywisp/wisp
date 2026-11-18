@@ -1,0 +1,15 @@
+{
+  "header": "Database",
+  "question": "Which database should the service use?",
+  "options": [
+    {
+      "label": "PostgreSQL (Recommended)",
+      "description": "Relational; the billing service already runs it."
+    },
+    {
+      "label": "SQLite",
+      "description": ""
+    }
+  ],
+  "multi_select": false
+}

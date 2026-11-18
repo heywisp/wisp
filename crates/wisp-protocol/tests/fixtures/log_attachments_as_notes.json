@@ -1,0 +1,8 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 11,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "attachments_as_notes",
+  "endpoint_name": "gw",
+  "model": "text-model"
+}

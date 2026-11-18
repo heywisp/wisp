@@ -1,0 +1,9 @@
+{
+  "type": "command_done",
+  "answers": 7,
+  "outcome": {
+    "type": "refused",
+    "kind": "too_many",
+    "hint": "32 messages are already waiting. Send this after the turn."
+  }
+}

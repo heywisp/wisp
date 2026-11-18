@@ -1,0 +1,36 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== compact
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..40 bg Rgb(38, 38, 38)
+|
+| ⢠ Asking Database, Features, Infr…  0s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(212, 212, 212); 37..39 fg Rgb(166, 166, 166)
+| ? Database · Which database should the
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..11 fg Rgb(212, 212, 212) bold; 11..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+|   notes service use?
+  ~ 3..21 fg Rgb(212, 212, 212)
+| › 1 PostgreSQL (Recommended)   ‹ 1/4 ›
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..29 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 29..32 bg Rgb(4, 57, 94); 32..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|   enter next · 1–4 choose
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..26 fg Rgb(117, 117, 117)
+| ⢎⠶⡱  Waiting · 0s   esc to stop
+  ~ 1..2 fg Rgb(185, 185, 185); 2..3 fg Rgb(72, 124, 168); 3..4 fg Rgb(185, 185, 185); 6..18 fg Rgb(212, 212, 212); 21..24 fg Rgb(166, 166, 166); 24..32 fg Rgb(117, 117, 117)
+== second option
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..40 bg Rgb(38, 38, 38)
+|
+| ⣀ Asking Database, Features, Infr…  0s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(212, 212, 212); 37..39 fg Rgb(166, 166, 166)
+| ? Database · Which database should the
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..11 fg Rgb(212, 212, 212) bold; 11..14 fg Rgb(166, 166, 166); 14..39 fg Rgb(212, 212, 212)
+|   notes service use?
+  ~ 3..21 fg Rgb(212, 212, 212)
+| › 2 SQLite                     ‹ 2/4 ›
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..11 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 11..32 bg Rgb(4, 57, 94); 32..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|   enter next · 1–4 choose
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..26 fg Rgb(117, 117, 117)
+| ⢎⠶⡱  Waiting · 0s   esc to stop
+  ~ 1..2 fg Rgb(185, 185, 185); 2..3 fg Rgb(72, 124, 168); 3..4 fg Rgb(185, 185, 185); 6..18 fg Rgb(212, 212, 212); 21..24 fg Rgb(166, 166, 166); 24..32 fg Rgb(117, 117, 117)

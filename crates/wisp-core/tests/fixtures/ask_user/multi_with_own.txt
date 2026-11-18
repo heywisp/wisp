@@ -1,0 +1,8 @@
+The user answered:
+
+1. [Features] Which features should ship first?
+   - Auth
+   - Export
+   In their own words: Webhooks for new notes
+
+Read the answers in the user's own words carefully: they may ask for something else, or ask you not to go on. Follow what they say.

@@ -1,0 +1,11 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 30,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "agent_reported",
+  "turn": 1,
+  "agent": "/review/planner",
+  "outcome": "reported",
+  "report": "Planned: docs/plans/x.md",
+  "duration_ms": 1500
+}

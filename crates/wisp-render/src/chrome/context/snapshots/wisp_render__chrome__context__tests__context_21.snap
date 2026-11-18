@@ -1,0 +1,48 @@
+---
+source: crates/wisp-render/src/chrome/context/tests.rs
+expression: "render(&mid_session(), &view_at(21, GlyphSet::Unicode, false))"
+---
+  claude-opus-5-5 ·…
+  63.1k / 850k toke…
+  62.4k measured · …
+
+  Usage by category
+  estimated (~)
+  ⣿ System p…   ~312
+  ⣿ Tools (2)  ~1.6k
+  ⣿ Instruct…  ~3.4k
+  ⣿ Environm…   ~120
+  ⣿ Your mes…  ~5.5k
+  ⣿ Replies …  19.3k
+  ⣿ Tool res… ~30.7k
+  ⣿ Attachme…  ~2.2k
+  ⣀ Free bef…  ~787k
+  ⡪ Reserve …   150k
+    Would compact at
+    850k (window −
+    reserve)
+    automatic
+    compaction is
+    off
+    window 1M
+    (shipped)
+  ~ this server has
+  no token counter
+
+  Instructions · 2 …
+  └─ AGENTS.md ~3.1…
+  Tools · 2 · ~1.6k
+  └─ shell ~1.1k · …
+  Tool results · ~3…
+  └─ heavy cargo te…
+  Attachments · 2 ·…
+  └─ image 1 ~1.1k …
+
+  Each step re-reads
+  62.4k: $0.0125 ·
+  compacting now
+  ~$0.137, then
+  ~$0.114 to write
+  the new head
+  /context all lists
+  every item

@@ -1,0 +1,49 @@
+---
+source: crates/wisp-tui/tests/app/settings_screen.rs
+expression: shot
+---
+| ⢎⠶⡰ wisp   Settings                               opus-5-5 · high · Claude API
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 12..20 fg Rgb(212, 212, 212); 51..79 fg Rgb(166, 166, 166)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+|   Model               claude-opus-5-5
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|   Effort              high                                           this chat
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212); 70..79 fg Rgb(166, 166, 166)
+|   Account             manifest
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|   Web search          on
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|   Tools               1 of 2
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|   Compact at          850,000 of 1,000,000
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|   Theme               dark
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|
+| Often used
+  ~ 1..11 fg Rgb(212, 212, 212) bold
+|   Your messages kept                 6,000
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+| › Mouse               off
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..21 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 21..23 bg Rgb(4, 57, 94); 23..68 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 68..80 bg Rgb(4, 57, 94)
+|   Message time        utc
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|
+|   Plugins             all on
+  ~ 3..21 fg Rgb(212, 212, 212); 23..68 fg Rgb(212, 212, 212)
+|   More settings…
+  ~ 3..68 fg Rgb(212, 212, 212)
+|(7 blank rows)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+| Mouse: use the mouse for scrolling and selecting
+  ~ 1..8 fg Rgb(166, 166, 166); 8..49 fg Rgb(212, 212, 212) bold
+| Wisp's own: on
+  ~ 1..15 fg Rgb(212, 212, 212)
+| enter turn on
+  ~ 1..6 fg Rgb(166, 166, 166); 6..14 fg Rgb(117, 117, 117)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+| ⢎⠶⡰  Settings   / filter · ? details · esc back
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..14 fg Rgb(212, 212, 212); 17..18 fg Rgb(166, 166, 166); 18..28 fg Rgb(117, 117, 117); 28..29 fg Rgb(166, 166, 166); 29..40 fg Rgb(117, 117, 117); 40..43 fg Rgb(166, 166, 166); 43..48 fg Rgb(117, 117, 117)

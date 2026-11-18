@@ -1,0 +1,16 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 24,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "cache_miss",
+  "turn": 9,
+  "previous_prompt_tokens": 269209,
+  "cache_read_input_tokens": 13316,
+  "cache_creation_input_tokens": 117295,
+  "diagnostics": null,
+  "cause": {
+    "type": "injected_thinking",
+    "first_path": "messages.148.content.0",
+    "count": 2
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "type": "exited",
+  "exit": {
+    "type": "signal",
+    "signal": 15
+  }
+}

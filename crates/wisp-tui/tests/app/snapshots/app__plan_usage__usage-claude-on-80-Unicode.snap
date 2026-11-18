@@ -1,0 +1,34 @@
+---
+source: crates/wisp-tui/tests/app/plan_usage.rs
+expression: text
+---
+╭─────────────────────────────────────────────────────────────────────────────╮
+│                                                                             │
+│    ⡐⠈ ⠁⠁     wisp                                                     0.0.0 │
+│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+│    ⠡⢀ ⡀⡀⠌    test-model low                                                 │
+│              ~/project · Claude API                                         │
+│                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────╯
+  enter send · ctrl-j new line · /help · /account switch account
+
+ Usage
+────────────────────────────────────────────────────────────────────────────────
+› Claude API · ● claude-api   this chat
+    Spent                        $0.00
+
+  Claude subscription · ● claude
+    Weekly   ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    37%   resets 19:00
+    API equivalent              ~$0.00
+
+  Claude subscription · ● claude-work
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀    82%   resets 19:00
+    API equivalent              ~$0.00
+────────────────────────────────────────────────────────────────────────────────
+  This chat                      $0.00 API · ~$0.00 subscriptions
+ enter change key · r refresh · esc close
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ ⢎⠶⡰  Ready                                       Claude API   test-model low │
+╰──────────────────────────────────────────────────────────────────────────────╯

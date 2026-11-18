@@ -1,0 +1,5 @@
+{
+  "type": "rejected",
+  "reason": "process 3 has already ended",
+  "kind": "process_ended"
+}

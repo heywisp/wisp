@@ -1,0 +1,8 @@
+package wisp:plugin@0.3.0;
+
+interface agent-states {
+  use wisp:plugin/slot-types@0.2.0.{node-state};
+  use wisp:plugin/agents@0.1.0.{warm-row};
+  record shown-state { path: string, state: node-state, keep-warm: option<warm-row> }
+  states: func() -> list<shown-state>;
+}

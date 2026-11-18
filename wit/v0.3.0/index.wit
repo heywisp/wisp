@@ -1,0 +1,15 @@
+package wisp:plugin@0.3.0;
+
+interface index {
+  enum kind { tool, skill, document }
+  record entry { kind: kind, name: string, summary: string, text: string }
+  entries: func() -> list<entry>;
+  open: async func(name: string) -> result<string, string>;
+  changed: func();
+}
+
+interface index-source {
+  use index.{entry};
+  entries: async func() -> list<entry>;
+  open-entry: async func(name: string) -> result<string, string>;
+}

@@ -1,0 +1,17 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests/todos.rs
+expression: "text(&t.rows(&r(80), Detail::Full))"
+---
+ ✓ Used write_todos 2 of 5 completed                                         0s
+     2 of 5 completed
+     in ~/work · done · 0s
+     ◦ Draw the list in the tool row
+     Done
+       ✓ Read the plan
+       − Keep the old renderer
+     Things to check before the merge request opens
+       ◌ Write the parser and its validation table
+       ✓ Run the checks
+
+   18s · 2 requests · 1 tool · cost unknown
+   ✓ end_turn · 18.0s · in 0 · out 0 · cost unknown · sonnet-5-5

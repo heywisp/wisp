@@ -1,0 +1,11 @@
+{
+  "type": "compaction_failed",
+  "trigger": "auto",
+  "engine": "native",
+  "kind": {
+    "error": "overloaded"
+  },
+  "message": "overloaded",
+  "turn": 4,
+  "requested_by": "aa/ask"
+}

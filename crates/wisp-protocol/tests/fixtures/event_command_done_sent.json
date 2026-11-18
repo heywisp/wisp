@@ -1,0 +1,8 @@
+{
+  "type": "command_done",
+  "answers": 7,
+  "outcome": {
+    "type": "sent",
+    "input": "wisp-command-2"
+  }
+}

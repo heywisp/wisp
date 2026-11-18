@@ -1,0 +1,11 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 12,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "search_started",
+  "turn": 2,
+  "step": 1,
+  "attempt": 0,
+  "call_id": "srvtoolu_01",
+  "query": "rust ripgrep crates"
+}

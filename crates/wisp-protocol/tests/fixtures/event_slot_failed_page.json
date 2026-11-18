@@ -1,0 +1,10 @@
+{
+  "type": "slot_failed",
+  "section": "agent-viz/topology",
+  "view": "page",
+  "failure": {
+    "type": "timed_out"
+  },
+  "parked": true,
+  "restarted": true
+}

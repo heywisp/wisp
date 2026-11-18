@@ -1,0 +1,50 @@
+---
+source: crates/wisp-render/src/chrome/summary/tests.rs
+expression: out
+---
+== one stopped agent
+| ⡐⠈ ⠁⠁     wisp · Bye for now.
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 11..15 Text bold; 15..18 TextFaint; 18..30 Text
+|⠰  ⢾⡷  ⠆   That was 2 h 14 min, total ~$44.06.
+  ~ 0..1 OrbRing; 3..4 Accent; 4..5 Accent; 7..8 OrbRing; 11..20 TextMuted; 20..30 Text; 30..39 TextMuted; 39..45 Text; 45..46 TextMuted
+| ⠡⢀ ⡀⡀⠌    Continue your agent with:
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 6..7 OrbRing; 11..36 TextMuted
+|wisp --resume 01a18e69-13bd
+  ~ 0..27 Accent
+|
+  ~ 
+|Process 1 keeps running: npm run dev
+  ~ 0..25 TextMuted; 25..36 Text
+|  stop it   kill -- -4321
+  ~ 0..12 TextMuted; 12..25 Accent
+|  output    /tmp/wisp-01a18e69-13bd-7c2e-9d4f-3a5b6c7d8e9f/0001-job.log
+  ~ 0..12 TextMuted; 12..71 Accent
+|Process 3 may still be running: python3 -m http.server 8000
+  ~ 0..32 TextMuted; 32..59 Text
+|  check it  ps -p 4400
+  ~ 0..12 TextMuted; 12..22 Accent
+== two stopped agents
+| ⡐⠈ ⠁⠁     wisp · Bye for now.
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 11..15 Text bold; 15..18 TextFaint; 18..30 Text
+|⠰  ⢾⡷  ⠆   That was 2 h 14 min, total ~$44.06.
+  ~ 0..1 OrbRing; 3..4 Accent; 4..5 Accent; 7..8 OrbRing; 11..20 TextMuted; 20..30 Text; 30..39 TextMuted; 39..45 Text; 45..46 TextMuted
+| ⠡⢀ ⡀⡀⠌    Continue your 2 agents with:
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 6..7 OrbRing; 11..39 TextMuted
+|wisp --resume 01a18e69-13bd
+  ~ 0..27 Accent
+== all API
+| ⡐⠈ ⠁⠁     wisp · Bye for now.
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 11..15 Text bold; 15..18 TextFaint; 18..30 Text
+|⠰  ⢾⡷  ⠆   That was 12 min, total $0.31.
+  ~ 0..1 OrbRing; 3..4 Accent; 4..5 Accent; 7..8 OrbRing; 11..20 TextMuted; 20..26 Text; 26..34 TextMuted; 34..39 Text; 39..40 TextMuted
+| ⠡⢀ ⡀⡀⠌    Come back any time with:
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 6..7 OrbRing; 11..35 TextMuted
+|wisp --resume 01a18e69-13bd
+  ~ 0..27 Accent
+== no log
+| ⡐⠈ ⠁⠁     wisp · Bye for now.
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 11..15 Text bold; 15..18 TextFaint; 18..30 Text
+|⠰  ⢾⡷  ⠆   That was 2 h 14 min, total $0.31.
+  ~ 0..1 OrbRing; 3..4 Accent; 4..5 Accent; 7..8 OrbRing; 11..20 TextMuted; 20..30 Text; 30..38 TextMuted; 38..43 Text; 43..44 TextMuted
+| ⠡⢀ ⡀⡀⠌    Your agent isn't saved.
+  ~ 1..2 OrbRing; 2..3 OrbRing; 4..5 OrbRing; 5..6 OrbRing; 6..7 OrbRing; 11..34 TextMuted

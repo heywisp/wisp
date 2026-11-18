@@ -1,0 +1,14 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 3,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "process_ended",
+  "id": 3,
+  "end": {
+    "type": "lost",
+    "reason": "stopped_at_resume"
+  },
+  "bytes": 2048,
+  "lines": 40,
+  "duration_ms": 0
+}

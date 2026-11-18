@@ -1,0 +1,13 @@
+{
+  "action": {
+    "type": "show"
+  },
+  "target": "A later view",
+  "output": {
+    "type": "none"
+  },
+  "view": {
+    "type": "side_by_side",
+    "columns": 2
+  }
+}

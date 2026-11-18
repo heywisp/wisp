@@ -1,0 +1,5 @@
+syn.control:6 -:2 syn.type:9 -:2 syn.number:3 syn.keyword:2 -:3
+-:26 syn.string:7 -:18 syn.type:7 -:2 syn.number:1 syn.keyword:2 -:17
+-:1
+-:8 syn.type:8 -:2 syn.function:4 -:1 syn.number:3 syn.keyword:3 -:3 syn.number:1 syn.keyword:2 -:4
+-:14 syn.type:7 -:2 syn.string:7 -:2 syn.type:10 -:12 syn.number:2 syn.keyword:1 -:13 syn.keyword:10 -:3

@@ -1,0 +1,27 @@
+{"type":"turn_started","turn":1}
+{"type":"step_started","step":1}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"I'll start the dev server and a Python shell in the background."}
+{"type":"block_stopped","index":0}
+{"type":"block_started","index":1,"kind":{"type":"tool_use","name":"shell"}}
+{"type":"block_stopped","index":1}
+{"type":"tool_call_requested","step":1,"block":1,"call_id":"toolu_dev_01","tool":"shell","input":{"command":"npm run dev","run_in_background":true,"description":"Preview site"},"display":{"action":{"type":"run"},"target":"npm run dev","output":{"type":"text"},"title":"Preview site"}}
+{"type":"block_started","index":2,"kind":{"type":"tool_use","name":"shell"}}
+{"type":"block_stopped","index":2}
+{"type":"tool_call_requested","step":1,"block":2,"call_id":"toolu_py_01","tool":"shell","input":{"command":"python3 -i","tty":true,"run_in_background":true,"description":"Python shell"},"display":{"action":{"type":"run"},"target":"python3 -i","output":{"type":"text"},"title":"Python shell"}}
+{"type":"step_ended","step":1,"usage":{"input_tokens":812,"output_tokens":61,"cache_read_input_tokens":0,"cache_creation_input_tokens":2048,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2048},"cost_usd":0.0104,"lower_bound":false}
+{"type":"tool_call_started","call_id":"toolu_dev_01","cwd":"~/demo"}
+{"type":"process_started","id":3,"call_id":"toolu_dev_01","target":"npm run dev","tty":false,"stdin":true,"file":"/tmp/wisp-demo/0003-process.out","reason":"started"}
+{"type":"process_output","id":3,"text":"> demo@1.0.0 dev\n> vite\n","skipped":0}
+{"type":"tool_call_finished","call_id":"toolu_dev_01","outcome":{"status":"backgrounded","reason":"started"},"output":{"tail":"> demo@1.0.0 dev\n> vite\n","bytes":24,"lines":2,"file":"/tmp/wisp-demo/0003-process.out","file_problem":null,"inlined":true},"facts":[{"type":"process","id":3}],"state":null,"duration_ms":1500,"process":3}
+{"type":"tool_call_started","call_id":"toolu_py_01","cwd":"~/demo"}
+{"type":"process_started","id":5,"call_id":"toolu_py_01","target":"python3 -i","tty":true,"stdin":true,"size":{"cols":40,"rows":6},"reason":"started"}
+{"type":"process_output","id":5,"text":"Python 3.12.3\r\n>>> ","skipped":0}
+{"type":"tool_call_finished","call_id":"toolu_py_01","outcome":{"status":"backgrounded","reason":"started"},"output":{"tail":"Python 3.12.3\n>>> ","bytes":19,"lines":1,"file":null,"file_problem":null,"inlined":true},"facts":[{"type":"process","id":5}],"state":null,"duration_ms":1500,"process":5}
+{"type":"step_started","step":2}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"Both are running."}
+{"type":"block_stopped","index":0}
+{"type":"process_output","id":3,"text":"\n  VITE v5.4.0  ready in 312 ms\n\n  ➜  Local:   http://localhost:5173/\n","skipped":0}
+{"type":"step_ended","step":2,"usage":{"input_tokens":30,"output_tokens":9,"cache_read_input_tokens":2048,"cache_creation_input_tokens":420,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":420},"cost_usd":0.0021,"lower_bound":false}
+{"type":"turn_ended","outcome":{"status":"completed","stop_reason":"end_turn","model":"claude-sonnet-5-5","usage":{"input_tokens":842,"output_tokens":70,"cache_read_input_tokens":2048,"cache_creation_input_tokens":2468,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2468},"cost":null,"committed":true,"steps":2,"tool_calls":2},"stats":{"started_at":"2026-10-23T09:00:00Z","first_byte_ms":700,"duration_ms":4200,"retries":0,"previous_prompt_tokens":null}}

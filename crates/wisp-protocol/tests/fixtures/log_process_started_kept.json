@@ -1,0 +1,19 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 16,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "process_started",
+  "turn": 2,
+  "id": 3,
+  "call_id": "toolu_03",
+  "reason": "started",
+  "tty": false,
+  "stdin": false,
+  "file": "/tmp/wisp-s1/0012-bash.out",
+  "pid": 4321,
+  "sid": 4321,
+  "start_ticks": 9120334,
+  "boot_id": "8f1e5c7a-2d4b-4e1f-9a3c-6b7d8e9f0a1b",
+  "keeps_running": true,
+  "log": "/tmp/wisp-s1/0012-bash.log"
+}

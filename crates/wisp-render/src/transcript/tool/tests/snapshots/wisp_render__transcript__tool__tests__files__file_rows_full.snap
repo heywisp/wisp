@@ -1,0 +1,53 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests/files.rs
+expression: "text(&files_turn().rows(&r, Detail::Full))"
+---
+ ✓ Read screenshots/home.png                    image/png · 1.6 MB · ≈3k tokens
+     screenshots/home.png
+     in ~/p · done · 0s
+     ~/p/screenshots/home.png: image/png, 1.6 MB, attached as is (about 2,960
+     tokens, the server's estimate).
+     Saved copy: /data/wisp/attachments/3f2a9c.png
+ ✓ Read docs/spec.pdf                                  application/pdf · 912 KB
+     docs/spec.pdf
+     in ~/p · done · 0s
+     ~/p/docs/spec.pdf: application/pdf, 912 KB, attached as is.
+ ✓ Read build.log                     text · 2,000 of 9,412 lines · ≈17k tokens
+     build.log
+     in ~/p · done · 0s
+     ~/p/build.log: text, 9,412 lines (1.2 MB); lines 1–2,000 below (about
+     16,800 tokens).
+     Output saved to /tmp/wisp-s/0003-look.out
+     Only the last part of the output is shown here.
+     line 1999
+     line 2000
+ ⨯ Read song.mp3                                                  couldn't read
+     song.mp3
+     in ~/p · song.mp3 is audio/mpeg, which this server can't carry (it takes
+     application/pdf, image/gif, image/jpeg, image/png, image/webp). Convert it
+     to one of those or to text, or inspect it another way (file, xxd,
+     strings).
+ ⨯ Read shots/a.png                                             couldn't attach
+     shots/a.png
+     in ~/p · couldn't attach
+     ~/p/shots/a.png: image/png, 1.6 MB, attached as is (about 2,960 tokens,
+     the server's estimate).
+     Withdrawn with 1 other attachment when the API refused the step: Could not
+     process image
+ ⨯ Read shots/b.png                                             couldn't attach
+     shots/b.png
+     in ~/p · couldn't attach
+     ~/p/shots/b.png: image/png, 1.6 MB, attached as is (about 2,960 tokens,
+     the server's estimate).
+     Withdrawn with 1 other attachment when the API refused the step: Could not
+     process image
+ ⨯ Read docs/old.pdf                                            couldn't attach
+     docs/old.pdf
+     in ~/p · couldn't attach
+     ~/p/docs/old.pdf: application/pdf, 912 KB, attached as is.
+     Couldn't attach: Could not process image
+
+   18s · 4 requests · 7 tools · cost unknown
+   ✓ end_turn · 18.0s · in 0 · out 0 · cost unknown · sonnet-5-5
+   re-send of step 3 without the attachments
+   re-send of step 4 without the attachments

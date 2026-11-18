@@ -1,0 +1,11 @@
+---
+source: crates/wisp-tui/src/app/subscription_login/tests.rs
+assertion_line: 585
+expression: "screen(&wizard, width, glyphs)"
+---
+ ? Sign in
+   claude is taken.
+
+ › Name for this account:
+
+   enter sign in · ctrl-u clear · esc cancel

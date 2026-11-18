@@ -1,0 +1,7 @@
+package wisp:plugin@0.3.0;
+
+interface agent-rename {
+  use wisp:plugin/call@0.1.0.{call-context};
+  record renamed { %from: string, to: string }
+  rename-agent: func(name: string, new-name: string, ctx: borrow<call-context>) -> result<renamed, string>;
+}

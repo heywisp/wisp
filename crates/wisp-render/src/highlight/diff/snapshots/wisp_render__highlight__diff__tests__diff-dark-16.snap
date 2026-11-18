@@ -1,0 +1,182 @@
+---
+source: crates/wisp-render/src/highlight/diff/tests.rs
+expression: out
+---
+--- 120 ---
+   Paired:
+
+   [gray|--- a/cache.rs]                                                                                                  [darkgray|diff]
+   [gray|+++ b/cache.rs]
+   [gray|@@ -1,3 +1,3 @@]
+    fn key(req: &Request) -> Key {
+   [lightred|-]    let key = [reversed|hash]([reversed|&]req[reversed|.system], [reversed|1]);
+   [lightgreen|+]    let key = [reversed|Fingerprint::of](req, [reversed|2])[reversed|?];
+        key
+
+   Unequal:
+
+   [gray|@@ -1,2 +1,3 @@]                                                                                            [darkgray|diff rust]
+   [lightred|-]let total = sum([reversed|a]);
+   [lightred|-][italic|// gone]
+   [lightgreen|+]let count = 0;
+   [lightgreen|+]let total = sum([reversed|b]);
+   [lightgreen|+]let extra = true;
+
+   Hint:
+
+   [gray|@@ -1 +1 @@]                                                                                              [darkgray|diff python]
+   [lightred|-]def f([reversed|x]): return "[reversed|a]"
+   [lightgreen|+]def f([reversed|y]): return "[reversed|b]"
+
+   Unknown:
+
+   [gray|--- a/notes.unknown]                                                                                             [darkgray|diff]
+   [gray|+++ b/notes.unknown]
+   [gray|@@ -1 +1 @@]
+   [lightred|-]plain [reversed|old] words
+   [lightgreen|+]plain [reversed|new] words
+
+   Dashes:
+
+   [gray|--- a/x.sql]                                                                                                     [darkgray|diff]
+   [gray|+++ b/x.sql]
+   [gray|@@ -1,3 +1,2 @@]
+    select 1;
+   [lightred|-][italic|-- comment]
+   [lightred|-][italic|--][reversed|-]
+   [lightgreen|+][italic|--][reversed| note]
+--- 80 ---
+   Paired:
+
+   [gray|--- a/cache.rs]                                                          [darkgray|diff]
+   [gray|+++ b/cache.rs]
+   [gray|@@ -1,3 +1,3 @@]
+    fn key(req: &Request) -> Key {
+   [lightred|-]    let key = [reversed|hash]([reversed|&]req[reversed|.system], [reversed|1]);
+   [lightgreen|+]    let key = [reversed|Fingerprint::of](req, [reversed|2])[reversed|?];
+        key
+
+   Unequal:
+
+   [gray|@@ -1,2 +1,3 @@]                                                    [darkgray|diff rust]
+   [lightred|-]let total = sum([reversed|a]);
+   [lightred|-][italic|// gone]
+   [lightgreen|+]let count = 0;
+   [lightgreen|+]let total = sum([reversed|b]);
+   [lightgreen|+]let extra = true;
+
+   Hint:
+
+   [gray|@@ -1 +1 @@]                                                      [darkgray|diff python]
+   [lightred|-]def f([reversed|x]): return "[reversed|a]"
+   [lightgreen|+]def f([reversed|y]): return "[reversed|b]"
+
+   Unknown:
+
+   [gray|--- a/notes.unknown]                                                     [darkgray|diff]
+   [gray|+++ b/notes.unknown]
+   [gray|@@ -1 +1 @@]
+   [lightred|-]plain [reversed|old] words
+   [lightgreen|+]plain [reversed|new] words
+
+   Dashes:
+
+   [gray|--- a/x.sql]                                                             [darkgray|diff]
+   [gray|+++ b/x.sql]
+   [gray|@@ -1,3 +1,2 @@]
+    select 1;
+   [lightred|-][italic|-- comment]
+   [lightred|-][italic|--][reversed|-]
+   [lightgreen|+][italic|--][reversed| note]
+--- 24 ---
+   Paired:
+
+   [gray|--- a/cache.rs]  [darkgray|diff]
+   [gray|+++ b/cache.rs]
+   [gray|@@ -1,3 +1,3 @@]
+    fn key(req: &Reques
+   t) -> Key {
+   [lightred|-]    let key = [reversed|hash](
+   [reversed|&]req[reversed|.system], [reversed|1]);
+   [lightgreen|+]    let key = [reversed|Finge]
+   [reversed|rprint::of](req, [reversed|2])[reversed|?];
+        key
+
+   Unequal:
+
+   [gray|@@ -1,2 +1,3 @@]
+   [lightred|-]let total = sum([reversed|a]);
+   [lightred|-][italic|// gone]
+   [lightgreen|+]let count = 0;
+   [lightgreen|+]let total = sum([reversed|b]);
+   [lightgreen|+]let extra = true;
+
+   Hint:
+
+   [gray|@@ -1 +1 @@]
+   [lightred|-]def f([reversed|x]): return "[reversed|a]
+   "
+   [lightgreen|+]def f([reversed|y]): return "[reversed|b]
+   "
+
+   Unknown:
+
+   [gray|--- a/notes.unknown]
+   [gray|+++ b/notes.unknown]
+   [gray|@@ -1 +1 @@]
+   [lightred|-]plain [reversed|old] words
+   [lightgreen|+]plain [reversed|new] words
+
+   Dashes:
+
+   [gray|--- a/x.sql]     [darkgray|diff]
+   [gray|+++ b/x.sql]
+   [gray|@@ -1,3 +1,2 @@]
+    select 1;
+   [lightred|-][italic|-- comment]
+   [lightred|-][italic|--][reversed|-]
+   [lightgreen|+][italic|--][reversed| note]
+--- 120, a run over the budget ---
+   Budget:
+
+   [gray|@@ -1,9 +1,5 @@]                                                                                                 [darkgray|diff]
+   [lightred|-]a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a
+    a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a
+    a a a a a a a a a a a a
+   [lightred|-]b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b
+    b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b
+    b b b b b b b b b b b b
+   [lightred|-]c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c
+    c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c
+    c c c c c c c c c c c c
+   [lightred|-]d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d
+    d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d
+    d d d d d d d d d d d d
+   [lightred|-]e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e
+    e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e
+    e e e e e e e e e e e e
+   [lightred|-]f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f
+    f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f
+    f f f f f f f f f f f f
+   [lightred|-]g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g
+    g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g
+    g g g g g g g g g g g g
+   [lightred|-]h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h
+    h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h
+    h h h h h h h h h h h h
+   [lightred|-]i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i
+    i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i
+    i i i i i i i i i i i i
+   [lightgreen|+]p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p
+    p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p
+    p p p p p p p p p p p p
+   [lightgreen|+]q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q
+    q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q
+    q q q q q q q q q q q q
+   [lightgreen|+]r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r
+    r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r
+    r r r r r r r r r r r r
+   [lightgreen|+]s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s
+    s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s
+    s s s s s s s s s s s s
+   [lightgreen|+]alpha beta gamma

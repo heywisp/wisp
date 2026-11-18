@@ -1,0 +1,45 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 4,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "turn_started",
+  "turn": 2,
+  "text": "and now",
+  "effort_marker": {
+    "level": "low",
+    "rendered": true
+  },
+  "tool_message": [
+    {
+      "type": "tool_removal",
+      "tool": {
+        "type": "tool_reference",
+        "name": "view_file"
+      }
+    },
+    {
+      "type": "tool_addition",
+      "tool": {
+        "type": "tool_reference",
+        "name": "bash"
+      }
+    },
+    {
+      "type": "tool_addition",
+      "tool": {
+        "type": "tool_definition",
+        "definition": {
+          "description": "Show the user a diff.",
+          "input_schema": {
+            "type": "object"
+          },
+          "name": "show_diff"
+        }
+      }
+    },
+    {
+      "type": "text",
+      "text": "You can show the user a change as a diff with the show_diff tool."
+    }
+  ]
+}

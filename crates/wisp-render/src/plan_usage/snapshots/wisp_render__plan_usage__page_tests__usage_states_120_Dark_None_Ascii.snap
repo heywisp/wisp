@@ -1,0 +1,204 @@
+---
+source: crates/wisp-render/src/plan_usage/tests.rs
+expression: "sections.join(\"\\n\\n\")"
+---
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   ..............................     0%   resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "..............................":Style::new() | "  0%":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   ####################........   74.99%   resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "####################":Style::new() | "........":Style::new() | "74.99%":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   ######################........    75%   resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "######################":Style::new().bold() | "........":Style::new() | " 75%":Style::new().bold() | "resets 19:00, in 2 h 14 min":Style::new().bold()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   #########################...   89.99%   resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "#########################":Style::new().bold() | "...":Style::new() | "89.99%":Style::new().bold() | "resets 19:00, in 2 h 14 min":Style::new().bold()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   ###########################...    90%   resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "###########################":Style::new() | "...":Style::new() | " 90%":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   ############################..    95%   resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "############################":Style::new() | "..":Style::new() | " 95%":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   ###########################.   99.99%   resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "###########################":Style::new() | ".":Style::new() | "99.99%":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * fictional-é-界界-long-account
+    Weekly   ##############################   100%   limit reached, resets 19:00, in 2 h 14 min
+    API equivalent                        ~$0.0001
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "fictional-e\u{301}-界界-long-account":Style::new()
+"Weekly":Style::new() | "##############################":Style::new() | "100%":Style::new() | "limit reached, resets 19:00, in 2 h 14 min":Style::new()
+"    API equivalent":Style::new() | "~$0.0001":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    checking...
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"checking...":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    checking...
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"checking...":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    usage unavailable
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"usage unavailable":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    checking...
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"checking...":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    usage unavailable                                 enter sign in again
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"usage unavailable":Style::new() | "enter sign in again":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    checking...
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"checking...":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * unknown   this chat
+    checking...
+    Unknown                                 unknown   resets 19:00, in 2 h 14 min
+    Spent                                   ~$0.25+ - mixed billing - split unavailable
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "unknown":Style::new() | "this chat":Style::new()
+"checking...":Style::new()
+"Unknown":Style::new() | "unknown":Style::new() | "resets 19:00, in 2 h 14 min":Style::new()
+"    Spent":Style::new() | "~$0.25+":Style::new() | " - mixed billing - split unavailable":Style::new()
+
+
+  ChatGPT subscription - * reset-due
+    Model    reset since
+    Spent                                   $2.00+
+    API equivalent                         ~$1.00+
+Styles:
+"ChatGPT subscription - ":Style::new() | "* ":Style::new() | "reset-due":Style::new()
+"Model ":Style::new() | "reset since":Style::new()
+"    Spent":Style::new() | "$2.00+":Style::new()
+"    API equivalent":Style::new() | "~$1.00+":Style::new()
+
+
+ Usage
+------------------------------------------------------------------------------------------------------------------------
+  No configured accounts
+------------------------------------------------------------------------------------------------------------------------
+  This chat                                  $0.00 API - ~$0.00 subscriptions
+ r refresh - esc close
+Styles:
+"Usage":Style::new()
+"------------------------------------------------------------------------------------------------------------------------":Style::new()
+"No configured accounts":Style::new()
+"------------------------------------------------------------------------------------------------------------------------":Style::new()
+"  This chat":Style::new() | "$0.00":Style::new() | " API":Style::new() | " - ":Style::new() | "~$0.00 subscriptions":Style::new()
+"r":Style::new() | " refresh":Style::new() | " - ":Style::new() | "esc":Style::new() | " close":Style::new()

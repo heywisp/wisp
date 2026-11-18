@@ -1,0 +1,15 @@
+{
+  "type": "citations",
+  "step": 2,
+  "attempt": 0,
+  "index": 2,
+  "sources": [
+    {
+      "url": "https://crates.io/crates/ripgrep",
+      "title": "ripgrep - crates.io"
+    },
+    {
+      "url": "https://github.com/BurntSushi/ripgrep"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "message_committed",
+  "turn": 3,
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_09",
+        "content": [
+          {
+            "type": "text",
+            "text": "docs/spec.pdf: application/pdf"
+          },
+          {
+            "type": "media",
+            "source": {
+              "type": "blob",
+              "media_type": "application/pdf",
+              "sha256": "0707070707070707070707070707070707070707070707070707070707070707",
+              "bytes": 9
+            }
+          }
+        ],
+        "is_error": false
+      },
+      {
+        "type": "image",
+        "source": {
+          "type": "base64",
+          "media_type": "image/png",
+          "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+        }
+      },
+      {
+        "type": "text",
+        "text": "and this"
+      }
+    ]
+  }
+}

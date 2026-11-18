@@ -1,0 +1,35 @@
+{
+  "type": "command_done",
+  "answers": 7,
+  "outcome": {
+    "type": "lines",
+    "lines": [
+      {
+        "type": "row",
+        "left": [
+          {
+            "type": "text",
+            "text": "Skills",
+            "bold": true
+          }
+        ],
+        "right": [
+          {
+            "type": "text",
+            "text": "1"
+          }
+        ]
+      },
+      {
+        "type": "text",
+        "spans": [
+          {
+            "type": "text",
+            "text": "  A project guide",
+            "tone": "muted"
+          }
+        ]
+      }
+    ]
+  }
+}

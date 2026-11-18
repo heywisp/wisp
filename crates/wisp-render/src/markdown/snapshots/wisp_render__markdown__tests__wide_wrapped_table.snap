@@ -1,0 +1,27 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: at_wide_widths(WRAPPING_TABLE)
+---
+--- 120 ---
+   [b|Approach]                                [b|Unit reversed]                                                        [b|Example]
+   [line|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────]
+   Reverse the characters   Each grapheme, so combined marks and emoji    "héllo" becomes "olléh" once the clusters are
+                                            stay whole                                                    kept together
+   Reverse the words        Each whitespace-separated word, keeping the         "one two three" becomes "three two one"
+                                letters of each word in their order
+   Reverse the lines       Each line of the input, which suits logs read                     the last line prints first
+                             from the newest entry back to the oldest
+--- 160 ---
+   [b|Approach]                                             [b|Unit reversed]                                                                                   [b|Example]
+   [line|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────]
+   Reverse the characters           Each grapheme, so combined marks and emoji stay whole           "héllo" becomes "olléh" once the clusters are kept together
+   Reverse the words         Each whitespace-separated word, keeping the letters of each word in                        "one two three" becomes "three two one"
+                                                         their order
+   Reverse the lines         Each line of the input, which suits logs read from the newest entry                                     the last line prints first
+                                                     back to the oldest
+--- 200 ---
+   [b|Approach]                                                    [b|Unit reversed]                                                                                           [b|Example]
+   [line|───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────]
+   Reverse the characters                  Each grapheme, so combined marks and emoji stay whole                   "héllo" becomes "olléh" once the clusters are kept together
+   Reverse the words          Each whitespace-separated word, keeping the letters of each word in their order                          "one two three" becomes "three two one"
+   Reverse the lines       Each line of the input, which suits logs read from the newest entry back to the oldest                                   the last line prints first

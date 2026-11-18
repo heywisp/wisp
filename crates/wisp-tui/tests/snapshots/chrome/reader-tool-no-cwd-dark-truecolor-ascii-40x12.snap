@@ -1,0 +1,30 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| + Ran cargo test -p wisp-core       1s
+  ~ 1..2 fg Rgb(137, 209, 133); 3..6 fg Rgb(212, 212, 212) bold; 6..30 fg Rgb(212, 212, 212); 37..39 fg Rgb(166, 166, 166)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|     $ cargo test -p wisp-core
+  ~ 5..7 fg Rgb(117, 117, 117); 7..30 fg Rgb(166, 166, 166)
+|     exit 0 - 1s
+  ~ 5..16 fg Rgb(166, 166, 166)
+|     Checks the workspace
+  ~ 5..25 fg Rgb(166, 166, 166)
+|     test 1 ... ok
+  ~ 5..18 fg Rgb(212, 212, 212)
+|     test 2 ... ok
+  ~ 5..18 fg Rgb(212, 212, 212)
+|     test 3 ... ok
+  ~ 5..18 fg Rgb(212, 212, 212)
+|     test 4 ... ok
+  ~ 5..18 fg Rgb(212, 212, 212)
+|     test 5 ... ok
+  ~ 5..18 fg Rgb(212, 212, 212)
+|     test 6 ... ok
+  ~ 5..18 fg Rgb(212, 212, 212)
+|   / search - 1-9/44 - q esc back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..20 fg Rgb(166, 166, 166); 20..23 fg Rgb(117, 117, 117); 23..28 fg Rgb(166, 166, 166); 28..33 fg Rgb(117, 117, 117)

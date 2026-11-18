@@ -1,0 +1,110 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: out
+---
+=== max tokens ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+   [text.faint|18s · ][text|cut off at the output limit][text.faint| · $0.014 · cached 92%]
+=== not kept ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+   [text.faint|18s · ][text|stopped for a tool call][text.faint| · $0.014 · cached 92% · ][text|not kept in history]
+=== cancelled ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+ [text.muted|◦] [text.muted|Stopped. Nothing from this turn was kept.]
+
+   [text.faint|18s · ][text|cost unknown, possibly billed]
+=== cancelled lower bound ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+ [text.muted|◦] [text.muted|Stopped. Nothing from this turn was kept.]
+
+   [text.faint|18s · $0.0031+ · cached 92%]
+=== failed ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+ [error|⨯] [error|The connection to Anthropic failed.][text| Nothing from this turn was kept.]
+   [text.muted|request failed after sending; not retried, since it may already be billed:]
+   [text.muted|connection reset]
+
+   [text.faint|18s · ][text|cost unknown, possibly billed]
+=== failed mid-stream ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+ [error|⨯] [error|Anthropic had a server error.][text| 18 steps were kept: the commands that ran and]
+   [text|their output.]
+   [text.muted|HTTP 200 · api_error · request req_011CTurn18 · mid-stream]
+   [text.muted|Upstream provider stream was interrupted.]
+
+   [text.faint|18s · $1.20+]
+=== model not found ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+ [error|⨯] [error|Anthropic could not find the model nova-7.][text| /model lists what this account]
+   [text|offers. Nothing from this turn was kept.]
+   [text.muted|HTTP 404 · not_found_error · before the reply]
+   [text.muted|model: nova-7]
+
+   [text.faint|18s · ][text|cost unknown, possibly billed]
+=== failed to connect ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+ [error|⨯] [error|The connection to Anthropic failed.][text| Nothing from this turn was kept.]
+   [text.muted|before sending]
+   [text.muted|could not connect: connection refused]
+
+   [text.faint|18s · ][text|cost unknown, possibly billed]
+=== unpriced ===
+[on surface| ][user on surface|›][on surface| ][text on surface|Hi]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Hmm.]
+
+ [accent|⠶] Hello.
+
+   [text.faint|18s · cost unknown]
+=== same account ===
+ [error|⨯] [error|Not signed in: this is the same Claude account as ][mark.2|● ][error|claude-work.]
+   [text.muted|To sign it in again: /login claude-work]

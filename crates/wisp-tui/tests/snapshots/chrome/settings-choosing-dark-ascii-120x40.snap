@@ -1,0 +1,43 @@
+---
+source: crates/wisp-tui/tests/app/settings_screen.rs
+expression: shot
+---
+| (*) wisp   Settings                                                                       opus-5-5 - high - Claude API
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 12..20 fg Rgb(212, 212, 212); 91..119 fg Rgb(166, 166, 166)
+|------------------------------------------------------------------------------------------------------------------------
+  ~ 0..120 fg Rgb(88, 88, 88)
+| Advanced
+  ~ 1..9 fg Rgb(212, 212, 212) bold
+| > Cache lifetime         1h
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..24 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 24..26 bg Rgb(4, 57, 94); 26..108 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 108..120 bg Rgb(4, 57, 94)
+|   Cache diagnostics      off
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Refusal fallback       on
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Message threads        on
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Retry budget           none
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Count with the server  on
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Session log            on
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Keychain               auto
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Tool output kept          7
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|   Claude usage lookup    on
+  ~ 3..24 fg Rgb(212, 212, 212); 26..108 fg Rgb(212, 212, 212)
+|(20 blank rows)
+|------------------------------------------------------------------------------------------------------------------------
+  ~ 0..120 fg Rgb(88, 88, 88)
+| Cache lifetime: how long the conversation's prompt-cache entry lives: 1h for interactive use, 5m for continuous loops
+  ~ 1..17 fg Rgb(166, 166, 166); 17..118 fg Rgb(212, 212, 212) bold
+| Choose         > 5m    1h
+  ~ 1..16 fg Rgb(166, 166, 166); 16..17 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 17..20 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) bold; 22..26 fg Rgb(166, 166, 166)
+|
+|
+|------------------------------------------------------------------------------------------------------------------------
+  ~ 0..120 fg Rgb(88, 88, 88)
+| (*)  Settings   esc cancel - <- -> choose - enter save
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..14 fg Rgb(212, 212, 212); 17..20 fg Rgb(166, 166, 166); 20..30 fg Rgb(117, 117, 117); 30..35 fg Rgb(166, 166, 166); 35..45 fg Rgb(117, 117, 117); 45..50 fg Rgb(166, 166, 166); 50..55 fg Rgb(117, 117, 117)

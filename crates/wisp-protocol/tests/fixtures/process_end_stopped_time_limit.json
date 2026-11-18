@@ -1,0 +1,7 @@
+{
+  "type": "stopped",
+  "by": {
+    "type": "time_limit",
+    "after_ms": 600000
+  }
+}

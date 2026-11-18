@@ -1,0 +1,14 @@
+{
+  "type": "save_endpoint",
+  "request": 11,
+  "endpoint": {
+    "name": "manifest",
+    "provider": "anthropic",
+    "auth": "bearer",
+    "url": "https://gw.example.com/v1",
+    "store": "auto",
+    "default": false
+  },
+  "key": "sk-test-not-a-real-key",
+  "check": true
+}

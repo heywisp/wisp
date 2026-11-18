@@ -1,0 +1,31 @@
+{
+  "type": "slot_content",
+  "section": "agent-viz/topology",
+  "view": "page",
+  "content": {
+    "blocks": [
+      {
+        "type": "topology",
+        "root": "this chat",
+        "nodes": [
+          {
+            "key": "/agent-viz",
+            "state": "working"
+          },
+          {
+            "key": "/agent-viz/coder",
+            "parent": "/agent-viz",
+            "state": "done"
+          }
+        ],
+        "flows": [
+          {
+            "from": "/agent-viz/coder",
+            "at_ms": 1767225600000
+          }
+        ],
+        "counted": "agents"
+      }
+    ]
+  }
+}

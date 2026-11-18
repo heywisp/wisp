@@ -1,0 +1,6 @@
+{
+  "type": "send",
+  "id": "tui-1",
+  "text": "hello",
+  "mode": "steer"
+}

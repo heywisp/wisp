@@ -1,0 +1,357 @@
+---
+source: crates/wisp-render/src/chrome/sidebar/tests.rs
+expression: "every_block_drawn(Theme::new(Mode::Dark, Depth::Ansi16), GlyphSet::Unicode)"
+---
+== 41 columns
+|╭───────────────────────────────────────╮
+    "╭───────────────────────────────────────╮" DarkGray
+|│ Blocks                2 items · $1.24 │
+    "│" DarkGray
+    "Blocks" - BOLD
+    "2 items · " Gray
+    "$1.24" Gray
+    "│" DarkGray
+|├───────────────────────────────────────┤
+    "├───────────────────────────────────────┤" DarkGray
+|│ Plain bold accent ok error muted      │
+    "│" DarkGray
+    "Plain " -
+    "bold" - BOLD
+    " accent" LightBlue
+    " ok" LightGreen
+    " error" LightRed
+    " muted" Gray
+    "│" DarkGray
+|│ only faint words                      │
+    "│" DarkGray
+    "only faint words" Gray
+    "│" DarkGray
+|│ model                            opus │
+    "│" DarkGray
+    "model" Gray
+    "opus" -
+    "│" DarkGray
+|│ spent                           $0.42 │
+    "│" DarkGray
+    "spent" Gray
+    "$0.42" -
+    "│" DarkGray
+|│ a key long enough to be …  value kept │
+    "│" DarkGray
+    "a key long enough to be " Gray
+    "…" Gray
+    "value kept" Gray
+    "│" DarkGray
+|│ ∙ a first item long enough to wrap    │
+    "│" DarkGray
+    "∙" Gray
+    "a first item long enough to wrap" -
+    "│" DarkGray
+|│   onto a second row                   │
+    "│" DarkGray
+    "onto a second row" -
+    "│" DarkGray
+|│ ∙ second                              │
+    "│" DarkGray
+    "∙" Gray
+    "second" Gray
+    "│" DarkGray
+|│ fill  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀  64%  64k/100k │
+    "│" DarkGray
+    "fill" -
+    "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿" -
+    "⣀⣀⣀⣀⣀⣀" DarkGray
+    "64%" -
+    "64k/100k" Gray
+    "│" DarkGray
+|│ turns  ⢀⣠⣤⣶⣶⣿⣤  13 turns              │
+    "│" DarkGray
+    "turns" -
+    "⢀⣠⣤⣶⣶⣿⣤" LightBlue
+    "13 turns" Gray
+    "│" DarkGray
+|│ ● main                         1m 15s │
+    "│" DarkGray
+    "●" LightBlue
+    "main" LightBlue BOLD
+    "1m 15s" Gray
+    "│" DarkGray
+|│ ├─○ coder                        held │
+    "│" DarkGray
+    "├─" DarkGray
+    "○" Gray
+    "coder" -
+    "held" Gray
+    "│" DarkGray
+|│ ├─■ reviewer                  stopped │
+    "│" DarkGray
+    "├─" DarkGray
+    "■" DarkGray
+    "reviewer" -
+    "stopped" Gray
+    "│" DarkGray
+|│ ├─✓ researcher                   done │
+    "│" DarkGray
+    "├─" DarkGray
+    "✓" LightGreen
+    "researcher" -
+    "done" Gray
+    "│" DarkGray
+|│ ├─⨯ designer                   failed │
+    "│" DarkGray
+    "├─" DarkGray
+    "⨯" LightRed
+    "designer" -
+    "failed" LightRed
+    "│" DarkGray
+|│ └─● helper                    running │
+    "│" DarkGray
+    "└─" DarkGray
+    "●" LightBlue
+    "helper" -
+    "running" Gray
+    "│" DarkGray
+|├───────────────────────────────────────┤
+    "├───────────────────────────────────────┤" DarkGray
+|│ ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀         90% │
+    "│" DarkGray
+    "⣿⣿⣿" Gray
+    "⣿⣿⣿⣿⣿" LightCyan
+    "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿" LightBlue
+    "⣿⣿" LightMagenta
+    "⣿⣿⣿" Gray
+    "⣀⣀" DarkGray
+    " 90%" - BOLD
+    "│" DarkGray
+|│ ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀             │
+    "│" DarkGray
+    "⣿⣿" Gray
+    "⣿⣿⣿⣿⣿" LightCyan
+    "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿" LightBlue
+    "⣿⣿⣿" LightMagenta
+    "⣿⣿" Gray
+    "⣀⣀⣀" DarkGray
+    "│" DarkGray
+|├───────────────────────────────────────┤
+    "├───────────────────────────────────────┤" DarkGray
+|│ ⣿ system                          10k │
+    "│" DarkGray
+    "⣿" Gray
+    "system" Gray
+    "10k" -
+    "│" DarkGray
+|│ ⣿ tools                           20k │
+    "│" DarkGray
+    "⣿" LightCyan
+    "tools" Gray
+    "20k" -
+    "│" DarkGray
+|│ ⣿ chat                            40k │
+    "│" DarkGray
+    "⣿" LightBlue
+    "chat" Gray
+    "40k" -
+    "│" DarkGray
+|│ ⣿ skills                          10k │
+    "│" DarkGray
+    "⣿" LightMagenta
+    "skills" Gray
+    "10k" -
+    "│" DarkGray
+|│ ⣀ free                            10k │
+    "│" DarkGray
+    "⣀" DarkGray
+    "free" Gray
+    "10k" -
+    "│" DarkGray
+|├───────────────────────────────────────┤
+    "├───────────────────────────────────────┤" DarkGray
+|│ cached                             0% │
+    "│" DarkGray
+    "cached" Gray
+    "0%" -
+    "│" DarkGray
+|├───────────────────────────────────────┤
+    "├───────────────────────────────────────┤" DarkGray
+|│ needs a newer Wisp                    │
+    "│" DarkGray
+    "needs a newer Wisp" Gray
+    "│" DarkGray
+|├───────────────────────────────────────╯
+    "├───────────────────────────────────────╯" DarkGray
+== 51 columns
+|╭─────────────────────────────────────────────────╮
+    "╭─────────────────────────────────────────────────╮" DarkGray
+|│ Blocks                          2 items · $1.24 │
+    "│" DarkGray
+    "Blocks" - BOLD
+    "2 items · " Gray
+    "$1.24" Gray
+    "│" DarkGray
+|├─────────────────────────────────────────────────┤
+    "├─────────────────────────────────────────────────┤" DarkGray
+|│ Plain bold accent ok error muted                │
+    "│" DarkGray
+    "Plain " -
+    "bold" - BOLD
+    " accent" LightBlue
+    " ok" LightGreen
+    " error" LightRed
+    " muted" Gray
+    "│" DarkGray
+|│ only faint words                                │
+    "│" DarkGray
+    "only faint words" Gray
+    "│" DarkGray
+|│ model                                      opus │
+    "│" DarkGray
+    "model" Gray
+    "opus" -
+    "│" DarkGray
+|│ spent                                     $0.42 │
+    "│" DarkGray
+    "spent" Gray
+    "$0.42" -
+    "│" DarkGray
+|│ a key long enough to be cut first    value kept │
+    "│" DarkGray
+    "a key long enough to be cut first" Gray
+    "value kept" Gray
+    "│" DarkGray
+|│ ∙ a first item long enough to wrap onto a       │
+    "│" DarkGray
+    "∙" Gray
+    "a first item long enough to wrap onto a" -
+    "│" DarkGray
+|│   second row                                    │
+    "│" DarkGray
+    "second row" -
+    "│" DarkGray
+|│ ∙ second                                        │
+    "│" DarkGray
+    "∙" Gray
+    "second" Gray
+    "│" DarkGray
+|│ fill  ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀  64%  64k/100k │
+    "│" DarkGray
+    "fill" -
+    "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿" -
+    "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀" DarkGray
+    "64%" -
+    "64k/100k" Gray
+    "│" DarkGray
+|│ turns  ⢀⣠⣤⣶⣶⣿⣤  13 turns                        │
+    "│" DarkGray
+    "turns" -
+    "⢀⣠⣤⣶⣶⣿⣤" LightBlue
+    "13 turns" Gray
+    "│" DarkGray
+|│ ● main                                   1m 15s │
+    "│" DarkGray
+    "●" LightBlue
+    "main" LightBlue BOLD
+    "1m 15s" Gray
+    "│" DarkGray
+|│ ├─○ coder                                  held │
+    "│" DarkGray
+    "├─" DarkGray
+    "○" Gray
+    "coder" -
+    "held" Gray
+    "│" DarkGray
+|│ ├─■ reviewer                            stopped │
+    "│" DarkGray
+    "├─" DarkGray
+    "■" DarkGray
+    "reviewer" -
+    "stopped" Gray
+    "│" DarkGray
+|│ ├─✓ researcher                             done │
+    "│" DarkGray
+    "├─" DarkGray
+    "✓" LightGreen
+    "researcher" -
+    "done" Gray
+    "│" DarkGray
+|│ ├─⨯ designer                             failed │
+    "│" DarkGray
+    "├─" DarkGray
+    "⨯" LightRed
+    "designer" -
+    "failed" LightRed
+    "│" DarkGray
+|│ └─● helper                              running │
+    "│" DarkGray
+    "└─" DarkGray
+    "●" LightBlue
+    "helper" -
+    "running" Gray
+    "│" DarkGray
+|├─────────────────────────────────────────────────┤
+    "├─────────────────────────────────────────────────┤" DarkGray
+|│ ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀                   90% │
+    "│" DarkGray
+    "⣿⣿⣿" Gray
+    "⣿⣿⣿⣿⣿" LightCyan
+    "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿" LightBlue
+    "⣿⣿" LightMagenta
+    "⣿⣿⣿" Gray
+    "⣀⣀" DarkGray
+    " 90%" - BOLD
+    "│" DarkGray
+|│ ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀                       │
+    "│" DarkGray
+    "⣿⣿" Gray
+    "⣿⣿⣿⣿⣿" LightCyan
+    "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿" LightBlue
+    "⣿⣿⣿" LightMagenta
+    "⣿⣿" Gray
+    "⣀⣀⣀" DarkGray
+    "│" DarkGray
+|├─────────────────────────────────────────────────┤
+    "├─────────────────────────────────────────────────┤" DarkGray
+|│ ⣿ system                                    10k │
+    "│" DarkGray
+    "⣿" Gray
+    "system" Gray
+    "10k" -
+    "│" DarkGray
+|│ ⣿ tools                                     20k │
+    "│" DarkGray
+    "⣿" LightCyan
+    "tools" Gray
+    "20k" -
+    "│" DarkGray
+|│ ⣿ chat                                      40k │
+    "│" DarkGray
+    "⣿" LightBlue
+    "chat" Gray
+    "40k" -
+    "│" DarkGray
+|│ ⣿ skills                                    10k │
+    "│" DarkGray
+    "⣿" LightMagenta
+    "skills" Gray
+    "10k" -
+    "│" DarkGray
+|│ ⣀ free                                      10k │
+    "│" DarkGray
+    "⣀" DarkGray
+    "free" Gray
+    "10k" -
+    "│" DarkGray
+|├─────────────────────────────────────────────────┤
+    "├─────────────────────────────────────────────────┤" DarkGray
+|│ cached                                       0% │
+    "│" DarkGray
+    "cached" Gray
+    "0%" -
+    "│" DarkGray
+|├─────────────────────────────────────────────────┤
+    "├─────────────────────────────────────────────────┤" DarkGray
+|│ needs a newer Wisp                              │
+    "│" DarkGray
+    "needs a newer Wisp" Gray
+    "│" DarkGray
+|├─────────────────────────────────────────────────╯
+    "├─────────────────────────────────────────────────╯" DarkGray

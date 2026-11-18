@@ -1,0 +1,8 @@
+{
+  "type": "input_accepted",
+  "opening": true,
+  "id": "tui-1",
+  "mode": "steer",
+  "text": "a direct opening",
+  "held": false
+}

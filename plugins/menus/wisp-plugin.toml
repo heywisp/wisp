@@ -1,0 +1,10 @@
+id = "menus"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Lets the model read what /config, /account and /usage show"
+
+[[tools]]
+name = "list_settings"
+
+[[tools]]
+name = "list_accounts"

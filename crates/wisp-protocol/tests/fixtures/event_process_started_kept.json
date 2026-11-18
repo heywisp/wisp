@@ -1,0 +1,13 @@
+{
+  "type": "process_started",
+  "id": 3,
+  "call_id": "toolu_03",
+  "target": "python3 app.py",
+  "tty": false,
+  "stdin": false,
+  "file": "/tmp/wisp-s1/0012-bash.out",
+  "reason": "started",
+  "keeps_running": true,
+  "pid": 4321,
+  "log": "/tmp/wisp-s1/0012-bash.log"
+}

@@ -1,0 +1,21 @@
+{
+  "type": "attachments_withdrawn",
+  "step": 2,
+  "items": [
+    {
+      "ordinal": 0,
+      "kind": "image",
+      "label": "#2",
+      "reason": "Could not process image",
+      "note": "[image #2 couldn't be processed: Could not process image]"
+    },
+    {
+      "call_id": "toolu_01",
+      "ordinal": 1,
+      "kind": "image",
+      "label": "#1",
+      "reason": "Could not process image",
+      "note": "[image #1 couldn't be processed: Could not process image]"
+    }
+  ]
+}

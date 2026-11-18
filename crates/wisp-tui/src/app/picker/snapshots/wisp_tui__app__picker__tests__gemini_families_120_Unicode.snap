@@ -1,0 +1,14 @@
+---
+source: crates/wisp-tui/src/app/picker/tests.rs
+expression: "painted(&p, &f, &t, set, width).join(\"\\n\")"
+---
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Model                                                cache rebuild
+   ● antigravity              Antigravity subscription
+ ›   gemini-4-carbon ✓        medium                              now
+     gemini-4-argon                                            ~$0.16
+     gemini-3.8-flash                                          ~$0.16
+     gemini-3.8-flash-tiered                                   ~$0.16
+   + Sign in to another account…
+   This chat uses it now
+   enter switch · ← accounts · type to filter · esc close

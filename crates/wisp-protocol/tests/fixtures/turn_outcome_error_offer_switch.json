@@ -1,0 +1,14 @@
+{
+  "status": "error",
+  "kind": "thinking_binding",
+  "message": "Invalid signature in thinking block",
+  "usage": null,
+  "cost": null,
+  "committed_steps": 0,
+  "offer": {
+    "retry": false,
+    "switch": true,
+    "focus": "switch",
+    "suggest": "env"
+  }
+}

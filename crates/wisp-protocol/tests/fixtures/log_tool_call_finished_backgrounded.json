@@ -1,0 +1,30 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 12,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "tool_call_finished",
+  "turn": 2,
+  "call_id": "toolu_08",
+  "outcome": {
+    "status": "backgrounded",
+    "reason": "started"
+  },
+  "output": {
+    "tail": "",
+    "bytes": 0,
+    "lines": 0,
+    "file": null,
+    "file_problem": null,
+    "inlined": false
+  },
+  "facts": [
+    {
+      "type": "process",
+      "id": 3
+    }
+  ],
+  "state": null,
+  "duration_ms": 1004,
+  "result": "Process 3 is running in the background: npm run dev\nNo output yet.",
+  "process": 3
+}

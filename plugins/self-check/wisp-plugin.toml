@@ -1,0 +1,16 @@
+id = "self-check"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Asks the model to check its work before a turn ends"
+settings = ["self_check.before_end"]
+
+[[hooks]]
+name = "worked"
+point = "after-response"
+switch = "self_check.before_end"
+
+[[hooks]]
+name = "review"
+point = "before-end"
+timeout_ms = 2000
+switch = "self_check.before_end"

@@ -1,0 +1,13 @@
+{
+  "turn_plan_usd": 4.1,
+  "session_plan_usd": 8.2,
+  "agents_plan_usd": 12.3,
+  "agents_billing": "mixed",
+  "turn_billing": "mixed",
+  "session_billing": "mixed",
+  "turn_usd": 16.4,
+  "session_usd": 32.8,
+  "turn_lower_bound": false,
+  "session_lower_bound": true,
+  "agents_usd": 49.2
+}

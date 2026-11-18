@@ -1,0 +1,6 @@
+{
+  "type": "hello",
+  "data": {
+    "daemon": 1
+  }
+}

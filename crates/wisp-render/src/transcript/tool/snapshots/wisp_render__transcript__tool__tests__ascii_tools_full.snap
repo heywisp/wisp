@@ -1,0 +1,29 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests.rs
+expression: full
+---
+ x Ran cargo build \ (+1 line)                                  exit 2 - 1m 01s
+     $ cargo build \
+       --release
+     in ~/work - exit 2 - 1m 01s
+     Runs the checks
+     Output saved to /tmp/wisp-s/0001-shell.out
+     error: one
+     error: two
+ - Ran make check                                           timed out - 10m 00s
+     $ make check
+     in ~/work - timed out after 10m 00s
+     Runs the checks
+     Output saved to /tmp/wisp-s/0001-shell.out
+     waiting
+ + Ran ./gen.sh                                                     exit 0 - 1s
+     $ ./gen.sh
+     in ~/work - exit 0 - 1s
+     Runs the checks
+     Output saved to /tmp/wisp-s/0001-shell.out
+     Loading the output file...
+     tail 1
+     tail 2
+
+   18s - 1 request - 3 tools - cost unknown
+   + end_turn - 18.0s - in 0 - out 0 - cost unknown - sonnet-5-5

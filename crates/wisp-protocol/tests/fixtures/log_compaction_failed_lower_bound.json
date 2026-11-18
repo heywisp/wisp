@@ -1,0 +1,13 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 22,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "compaction_failed",
+  "trigger": "manual",
+  "engine": "native",
+  "kind": {
+    "error": "server"
+  },
+  "message": "The stream broke.",
+  "lower_bound": true
+}

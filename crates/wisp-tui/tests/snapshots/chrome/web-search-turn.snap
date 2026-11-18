@@ -1,0 +1,28 @@
+---
+source: crates/wisp-tui/tests/app/pickers.rs
+expression: shot
+---
+│              ~/project · Claude API                                                             │
+│                                                                                                 │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────╯
+  enter send · ctrl-j new line · /help · /model switch model
+
+ › find ripgrep
+
+ ⠶ Let me look that up.
+
+ ✓ Searched "rust ripgrep crates" · 1 result
+
+ ⠶ ripgrep is published as a crate[1].
+
+   Sources
+   [1] ripgrep on crates.io · https://crates.io/crates/ripgrep
+
+   2s · cost unknown · cached 0%
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ › Ask anything, or type / for commands                                                           │
+├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ⢎⠶⡰  Ready                                  Claude API   opus-5-5 medium · cached 0% · 260 tok/s │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

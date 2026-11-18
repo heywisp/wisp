@@ -1,0 +1,26 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| ✓ Showed crates/wisp-core/src/cache.rs
+  ~ 1..2 fg Idx(10); 3..9 bold
+|────────────────────────────────────────
+  ~ 0..40 fg Idx(8)
+|        1 +     let part_1 = fingerprin
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|            t.segment(1);
+|        2 +     let part_2 = fingerprin
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|            t.segment(2);
+|        3 +     let part_3 = fingerprin
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|            t.segment(3);
+|        4 +     let part_4 = fingerprin
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|            t.segment(4);
+|        5 +     let part_5 = fingerprin
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|   / search · 1-9/80 · q esc back
+  ~ 3..4 fg Idx(7); 4..14 fg Idx(8); 14..20 fg Idx(7); 20..23 fg Idx(8); 23..28 fg Idx(7); 28..33 fg Idx(8)

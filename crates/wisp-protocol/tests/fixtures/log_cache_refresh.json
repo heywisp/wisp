@@ -1,0 +1,20 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 27,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "cache_refresh",
+  "turn": 9,
+  "outcome": "read",
+  "detail": "refusal",
+  "started_at": "2026-10-23T12:55:00Z",
+  "count": 2,
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 80,
+    "cache_read_input_tokens": 9000,
+    "cache_creation_input_tokens": 300,
+    "cache_creation_5m_input_tokens": 0,
+    "cache_creation_1h_input_tokens": 300
+  },
+  "cost_usd": 0.0045
+}

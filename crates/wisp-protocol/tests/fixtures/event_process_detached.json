@@ -1,0 +1,10 @@
+{
+  "type": "process_detached",
+  "id": 5,
+  "size": {
+    "cols": 80,
+    "rows": 24
+  },
+  "reason": "user",
+  "typed": true
+}

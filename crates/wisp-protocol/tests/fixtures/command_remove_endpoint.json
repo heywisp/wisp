@@ -1,0 +1,6 @@
+{
+  "type": "remove_endpoint",
+  "request": 23,
+  "name": "direct",
+  "keep_key": true
+}

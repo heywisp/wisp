@@ -1,0 +1,4 @@
+id = "gemini"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Your Antigravity subscription and Gemini API accounts"

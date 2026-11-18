@@ -1,0 +1,15 @@
+{
+  "schema_version": 28,
+  "seq": 8,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "wake_held",
+  "turn": 3,
+  "sources": [
+    {
+      "type": "mail",
+      "mail": "m3",
+      "from": "/review/planner"
+    }
+  ],
+  "reason": "concurrency"
+}

@@ -1,0 +1,13 @@
+{
+  "type": "restart",
+  "state": "getting_ready",
+  "open": [
+    {
+      "agent": "/",
+      "what": "reply",
+      "target": "",
+      "running_ms": 1250,
+      "opening": true
+    }
+  ]
+}

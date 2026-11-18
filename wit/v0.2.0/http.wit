@@ -1,0 +1,11 @@
+package wisp:plugin@0.2.0;
+
+interface http {
+  record request { method: string, url: string, headers: list<tuple<string, string>>, body: option<list<u8>>, timeout-ms: option<u64> }
+  resource body {
+    read: async func(max: u32) -> result<option<list<u8>>, string>;
+  }
+  record response { status: u16, headers: list<tuple<string, string>>, body: body }
+  variant http-error { not-allowed(string), timed-out, cancelled, failed(string) }
+  fetch: async func(req: request) -> result<response, http-error>;
+}

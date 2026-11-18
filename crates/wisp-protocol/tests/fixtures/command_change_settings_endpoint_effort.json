@@ -1,0 +1,24 @@
+{
+  "type": "change_settings",
+  "request": 5,
+  "changes": [
+    {
+      "target": {
+        "name": "effort"
+      },
+      "value": {
+        "kind": "text",
+        "text": "low"
+      }
+    },
+    {
+      "target": {
+        "name": "endpoint"
+      },
+      "value": {
+        "kind": "text",
+        "text": "manifest"
+      }
+    }
+  ]
+}

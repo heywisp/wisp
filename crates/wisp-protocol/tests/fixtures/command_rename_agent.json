@@ -1,0 +1,6 @@
+{
+  "type": "rename_agent",
+  "request": 11,
+  "agent": "/review/planner",
+  "name": "fixer"
+}

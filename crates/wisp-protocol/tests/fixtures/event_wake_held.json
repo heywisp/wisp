@@ -1,0 +1,15 @@
+{
+  "type": "wake_held",
+  "sources": [
+    {
+      "type": "mail",
+      "mail": "m3",
+      "from": "/review/planner"
+    },
+    {
+      "type": "process",
+      "id": 2
+    }
+  ],
+  "reason": "stopped"
+}

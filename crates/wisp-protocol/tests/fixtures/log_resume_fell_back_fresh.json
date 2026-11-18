@@ -1,0 +1,18 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 13,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "resume_fell_back",
+  "kept_through": null,
+  "dropped_through": 12,
+  "last_turn": null,
+  "turns_seen": 2,
+  "processes_seen": 0,
+  "spent_usd": 0.0,
+  "damage": [
+    {
+      "kind": "no_start",
+      "seq": 0
+    }
+  ]
+}

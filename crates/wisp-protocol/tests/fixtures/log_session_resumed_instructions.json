@@ -1,0 +1,22 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 41,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "session_resumed",
+  "wisp_version": "0.1.0",
+  "endpoint": "https://api.anthropic.com",
+  "endpoint_name": "env",
+  "system_prompt_sha256": "abababababababababababababababababababababababababababababababab",
+  "tools": [
+    "bash"
+  ],
+  "tools_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "instructions_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+  "instructions_source": "default",
+  "instructions": "<instructions>\nAnswer briefly.\n</instructions>",
+  "instructions_extra": "autonomous",
+  "cwd": "~/Projects/Wisp",
+  "returned": [
+    "tui-6"
+  ]
+}

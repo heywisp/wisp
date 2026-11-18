@@ -1,0 +1,5 @@
+{
+  "type": "rejected",
+  "reason": "process 3 is not a terminal",
+  "kind": "not_a_terminal"
+}

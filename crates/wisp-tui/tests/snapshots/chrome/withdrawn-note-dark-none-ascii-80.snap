@@ -1,0 +1,32 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== withdrawn
+|+-----------------------------------------------------------------------------+
+||                                                                             |
+||    .-''  .   wisp                                                     0.1.0 |
+  ~ 15..19 bold
+||   :  **  :   Your own AI. With a computer of its own.                       |
+  ~ 28..55 bold
+||    '-..-'    sonnet-5-5 low                                                 |
+||              ~/Projects/Wisp - Claude API                                   |
+||                                                                             |
+|+-----------------------------------------------------------------------------+
+|  enter send - ctrl-j new line - /help - /model switch model
+|(28 blank rows)
+| > What does this screenshot show?
+| - image #1 couldn't be processed: Could not process image
+|
+| * The image didn't reach me; describe it and I'll help.
+|
+|   2s - $0.004 - cached 92%
+|+------------------------------------------------------------------------------+
+||                                                                 total $0.004 |
+|+------------------------------------------------------------------------------+
+|| > Ask anything, or type / for commands                                       |
+  ~ 4..5 inverse
+|+------------------------------------------------------------------------------+
+|| (*)  Ready                          Claude API   sonnet-5-5 low - cached 92% |
+  ~ 51..61 bold
+|+------------------------------------------------------------------------------+

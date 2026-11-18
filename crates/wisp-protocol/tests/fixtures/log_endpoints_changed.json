@@ -1,0 +1,47 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 11,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "endpoints_changed",
+  "turn": null,
+  "endpoints": [
+    {
+      "name": "direct",
+      "provider": "anthropic",
+      "credential": "api_key",
+      "official": true,
+      "host": "api.anthropic.com",
+      "priced": true,
+      "default": true,
+      "mark": 2
+    },
+    {
+      "name": "manifest",
+      "provider": "anthropic",
+      "credential": "auth_token",
+      "official": false,
+      "host": "gw.example.com",
+      "priced": true,
+      "default": false
+    },
+    {
+      "name": "chatgpt",
+      "provider": "openai",
+      "credential": "chatgpt_subscription",
+      "official": true,
+      "priced": true,
+      "default": false,
+      "models": [
+        {
+          "id": "gpt-6.1-sol",
+          "listed": 0
+        },
+        {
+          "id": "gpt-reserve"
+        }
+      ],
+      "complete": true,
+      "default_model": "gpt-6.1-sol"
+    }
+  ]
+}

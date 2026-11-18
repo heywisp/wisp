@@ -1,0 +1,15 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 6,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "settings_changed",
+  "model": "claude-haiku-5-5",
+  "effort": "low",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "native_search_refused"
+  },
+  "endpoint_name": "direct",
+  "endpoint": "https://api.anthropic.com",
+  "credential_source": "environment"
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 12,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "endpoint_edited",
+  "turn": 3,
+  "name": "manifest",
+  "changed": [
+    "key",
+    "store"
+  ],
+  "store": "file",
+  "check": {
+    "outcome": "skipped"
+  }
+}

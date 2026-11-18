@@ -1,0 +1,9 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 41,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "agent_ended",
+  "turn": 4,
+  "agent": "/review/planner",
+  "spent_usd": 0.84
+}

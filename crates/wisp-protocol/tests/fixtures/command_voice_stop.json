@@ -1,0 +1,7 @@
+{
+  "type": "voice",
+  "command": {
+    "type": "stop",
+    "call": "web-1"
+  }
+}

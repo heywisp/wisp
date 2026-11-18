@@ -1,0 +1,40 @@
+{
+  "type": "question_asked",
+  "call_id": "toolu_7",
+  "questions": [
+    {
+      "header": "Database",
+      "question": "Which database should the service use?",
+      "options": [
+        {
+          "label": "PostgreSQL (Recommended)",
+          "description": "Relational; the billing service already runs it."
+        },
+        {
+          "label": "SQLite",
+          "description": ""
+        }
+      ],
+      "multi_select": false
+    },
+    {
+      "header": "Features",
+      "question": "Which features should ship first?",
+      "options": [
+        {
+          "label": "Auth",
+          "description": "Email and passkeys."
+        },
+        {
+          "label": "Search",
+          "description": "Full-text over notes."
+        },
+        {
+          "label": "Export",
+          "description": "CSV and JSON."
+        }
+      ],
+      "multi_select": true
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "type": "rewind_points",
+  "answers": 6,
+  "points": [
+    {
+      "point": {
+        "type": "turn",
+        "turn": 1
+      },
+      "label": "first",
+      "at": "2026-10-25T12:00:00Z",
+      "inputs_preview": [
+        "first"
+      ],
+      "quote": {
+        "prefix_tokens": 12000,
+        "warm": {
+          "type": "prefix_changed"
+        },
+        "read_micros": 6000,
+        "rewrite_micros": 120000
+      },
+      "compaction": {
+        "turn": 3,
+        "compacts_first": false
+      },
+      "processes": [
+        2
+      ]
+    },
+    {
+      "point": {
+        "type": "turn",
+        "turn": 2
+      },
+      "label": "second",
+      "at": "2026-10-25T12:01:00Z",
+      "quote": {
+        "prefix_tokens": 12000,
+        "warm": {
+          "type": "other_effort",
+          "effort": "high"
+        },
+        "read_micros": 6000,
+        "rewrite_micros": 120000
+      }
+    }
+  ]
+}

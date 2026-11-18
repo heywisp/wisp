@@ -1,0 +1,104 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: out
+---
+=== 40 Unicode ===
+[on surface| ][user on surface|›][on surface| ][text on surface|A longer message from the user that]
+[on surface|   ][text on surface|has to wrap at narrow widths]
+
+ [text.faint|╎] [thinking|Thought for 1 s][text.faint| ▸]
+ [text.faint|╎] [i thinking|Placeholder line two of the thought,]
+ [text.faint|╎] [i thinking|long enough to wrap at the narrower]
+ [text.faint|╎] [i thinking|widths.]
+
+ [accent|⠶] Misses now say which part of the
+   prefix changed: the system prompt,
+   the tools or the messages.
+
+   [text.muted|∙] one
+   [text.muted|∙] two
+
+   fn main() {}                    [text.faint|rust]
+
+   The prefix-stability test covers
+   each case.
+
+   [text.faint|18s · $0.014 · cached 92%]
+=== 60 Ascii ===
+[on surface| ][user on surface|>][on surface| ][text on surface|A longer message from the user that has to wrap at]
+[on surface|   ][text on surface|narrow widths]
+
+ [text.faint|:] [thinking|Thought for 1 s]
+ [text.faint|:] [i thinking|Placeholder line one of the thought, short.]
+ [text.faint|:] [i thinking|Placeholder line two of the thought, long enough to wrap]
+ [text.faint|:] [i thinking|at the narrower widths.]
+
+ [accent|*] Misses now say which part of the prefix changed: the
+   system prompt, the tools or the messages.
+
+   [text.muted|-] one
+   [text.muted|-] two
+
+   fn main() {}                                        [text.faint|rust]
+
+   The prefix-stability test covers each case.
+
+   [text.faint|18s - $0.014 - cached 92%]
+=== 6 Unicode ===
+[text on surface|A]
+[text on surface|longer]
+[text on surface|messag]
+[text on surface|e from]
+[text on surface|the]
+[text on surface|user]
+[text on surface|that]
+[text on surface|has to]
+[text on surface|wrap]
+[text on surface|at]
+[text on surface|narrow]
+[text on surface|widths]
+
+[thinking|Tho][thinking|…][text.faint| ▸]
+[i thinking|er]
+[i thinking|widths]
+[i thinking|.]
+
+Misses
+now
+say
+which
+part
+of the
+prefix
+change
+d: the
+system
+prompt
+, the
+tools
+or the
+messag
+es.
+
+[text.muted|∙]
+one
+[text.muted|∙]
+two
+
+fn mai
+n() {}
+
+The
+prefix
+-stabi
+lity
+test
+covers
+each
+case.
+
+[text.faint|18s ·]
+[text.faint|$0.014]
+[text.faint|·]
+[text.faint|cached]
+[text.faint|92%]

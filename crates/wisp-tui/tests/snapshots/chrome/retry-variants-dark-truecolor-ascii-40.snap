@@ -1,0 +1,136 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== limit waiting
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * example - subscription
+  ~ 3..5 fg Rgb(41, 184, 219); 5..12 fg Rgb(137, 209, 133); 12..15 fg Rgb(117, 117, 117); 15..27 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(22 blank rows)
+| > Read the cache code
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..22 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 22..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   1s - $0.014 - cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|
+| > Continue the change
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..22 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 22..40 bg Rgb(38, 38, 38)
+|
+|   Anthropic is rate limiting these
+  ~ 3..35 fg Rgb(166, 166, 166)
+|   requests (HTTP 429: Anthropic
+  ~ 3..32 fg Rgb(166, 166, 166)
+|   subscription request failed (rate
+  ~ 3..36 fg Rgb(166, 166, 166)
+|   limited)).
+  ~ 3..13 fg Rgb(166, 166, 166)
+|   Retrying step 1 (attempt 1) in 2 h.
+  ~ 3..38 fg Rgb(166, 166, 166)
+|   esc stops waiting; then retry or
+  ~ 3..35 fg Rgb(166, 166, 166)
+|   switch account.
+  ~ 3..18 fg Rgb(166, 166, 166)
+|
+|(-)
+  ~ 0..1 fg Rgb(208, 208, 208); 1..2 fg Rgb(72, 124, 168); 2..3 fg Rgb(208, 208, 208)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                        total $0.014+ |
+  ~ 0..1 fg Rgb(88, 88, 88); 25..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| > Ask anything                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (-)  Retrying in 2 h   esc to stop   |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(208, 208, 208); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(208, 208, 208); 7..22 fg Rgb(166, 166, 166); 25..28 fg Rgb(166, 166, 166); 28..36 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+== limit offered
+| (*) wisp 0.1.0
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..15 fg Rgb(166, 166, 166)
+|   * example - subscription
+  ~ 3..5 fg Rgb(41, 184, 219); 5..12 fg Rgb(137, 209, 133); 12..15 fg Rgb(117, 117, 117); 15..27 fg Rgb(137, 209, 133)
+|   sonnet-5-5 low - ~/Projects/Wisp
+  ~ 3..35 fg Rgb(166, 166, 166)
+|  enter send - /account switch account
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..23 fg Rgb(212, 212, 212); 23..38 fg Rgb(166, 166, 166)
+|(8 blank rows)
+| > Read the cache code
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..22 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 22..40 bg Rgb(38, 38, 38)
+|
+| * Reading the cache code first.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   1s - $0.014 - cached 92%
+  ~ 3..27 fg Rgb(117, 117, 117)
+|
+| > Continue the change
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..22 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 22..40 bg Rgb(38, 38, 38)
+|
+|   Anthropic is rate limiting these
+  ~ 3..35 fg Rgb(166, 166, 166)
+|   requests (HTTP 429: Anthropic
+  ~ 3..32 fg Rgb(166, 166, 166)
+|   subscription request failed (rate
+  ~ 3..36 fg Rgb(166, 166, 166)
+|   limited)).
+  ~ 3..13 fg Rgb(166, 166, 166)
+|   Retrying step 1 (attempt 1) in 2 h.
+  ~ 3..38 fg Rgb(166, 166, 166)
+|   esc stops waiting; then retry or
+  ~ 3..35 fg Rgb(166, 166, 166)
+|   switch account.
+  ~ 3..18 fg Rgb(166, 166, 166)
+|
+| x example is rate limited - retry
+  ~ 1..2 fg Rgb(244, 135, 113); 3..34 fg Rgb(244, 135, 113)
+|   after Fri 30 Oct 09:00 +00:00
+  ~ 3..32 fg Rgb(244, 135, 113)
+|   Fable weekly 100% used - resets Sun
+  ~ 3..38 fg Rgb(212, 212, 212)
+|   1 Nov 15:10 +00:00
+  ~ 3..21 fg Rgb(212, 212, 212)
+|   Nothing from this turn was kept.
+  ~ 3..35 fg Rgb(212, 212, 212)
+|   Wisp retries by itself then.
+  ~ 3..31 fg Rgb(212, 212, 212)
+|
+|   Retry
+  ~ 3..8 fg Rgb(212, 212, 212)
+|   sends your message again - cache
+  ~ 3..35 fg Rgb(166, 166, 166)
+|   warm ~$0.002
+  ~ 3..15 fg Rgb(166, 166, 166)
+| > Switch account
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..17 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 17..40 bg Rgb(4, 57, 94)
+|   pick one, then retry - cache rebuild
+  ~ 0..3 bg Rgb(4, 57, 94); 3..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|   enter choose - esc dismiss
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..21 fg Rgb(166, 166, 166); 21..29 fg Rgb(117, 117, 117)
+|
+|   2s - cost unknown, possibly billed
+  ~ 3..8 fg Rgb(117, 117, 117); 8..37 fg Rgb(212, 212, 212)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+||                         total $0.014 |
+  ~ 0..1 fg Rgb(88, 88, 88); 26..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| > Ask anything                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(117, 117, 117); 4..16 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)
+|| (*)         * example - subscription |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(137, 137, 137); 3..4 fg Rgb(85, 154, 211); 4..5 fg Rgb(137, 137, 137); 14..16 fg Rgb(41, 184, 219); 16..23 fg Rgb(137, 209, 133); 23..26 fg Rgb(117, 117, 117); 26..38 fg Rgb(137, 209, 133); 39..40 fg Rgb(88, 88, 88)
+|+--------------------------------------+
+  ~ 0..40 fg Rgb(88, 88, 88)

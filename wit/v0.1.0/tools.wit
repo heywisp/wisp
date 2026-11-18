@@ -1,0 +1,40 @@
+package wisp:plugin@0.1.0;
+
+interface tools {
+  use types.{display, tool-run};
+  use call.{call-context};
+  enum effect { read-only, idempotent-keyed, local-txn, non-idempotent }
+  enum purpose { run, show }
+  flags tags { reversible, irreversible, external-message, reads-untrusted, network }
+  record timeouts { default-ms: u64, max-ms: option<u64> }
+  record tool-meta {
+    effect: effect,
+    tags: tags,
+    parallel-safe: bool,
+    timeouts: timeouts,
+    saves-output: bool,
+    needs-workspace: bool,
+    ends-reply: bool,
+    asks-user: bool,
+    reports-jobs: bool,
+    writing: option<string>,
+    purpose: purpose,
+  }
+  record client-tool { description: string, input-schema: string, meta: tool-meta }
+  variant tool-kind { client(client-tool), native(string) }
+  record tool-def { name: string, kind: tool-kind, system-line: option<string>, context-line: option<string> }
+  record build-context { platform: string, capabilities: list<string> }
+  resource prepared {
+    display: func() -> display;
+  }
+  variant doctor-cell { text(string), bytes(option<u64>) }
+  record doctor-row { key: string, cells: list<doctor-cell> }
+  describe: async func(ctx: build-context) -> list<tool-def>;
+  doctor: async func(ctx: build-context) -> list<doctor-row>;
+  prepare: async func(tool: string, input: string) -> result<prepared, string>;
+  rejected-display: async func(tool: string, input: string) -> option<display>;
+  time-limit-ms: async func(tool: string, input: string) -> option<u64>;
+  movable: async func(tool: string, input: string) -> bool;
+  interrupted-result: async func(tool: string, input: string) -> option<string>;
+  run: async func(call: prepared, ctx: borrow<call-context>) -> tool-run;
+}

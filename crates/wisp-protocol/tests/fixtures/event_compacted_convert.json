@@ -1,0 +1,14 @@
+{
+  "type": "compacted",
+  "trigger": "convert",
+  "engine": "wisp",
+  "before": 9000,
+  "after": 7900,
+  "partial": true,
+  "converted": true,
+  "cache_effect": {
+    "type": "rebuilt",
+    "reason": "compaction"
+  },
+  "turn": 6
+}

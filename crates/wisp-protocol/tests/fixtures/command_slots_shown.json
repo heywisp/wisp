@@ -1,0 +1,10 @@
+{
+  "type": "slots_shown",
+  "sections": [
+    "agent-viz/topology",
+    "context/window"
+  ],
+  "pages": [
+    "agent-viz/topology"
+  ]
+}

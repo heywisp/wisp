@@ -1,0 +1,4 @@
+{
+  "type": "failed",
+  "message": "setsid: no --ctty"
+}

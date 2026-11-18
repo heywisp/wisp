@@ -1,0 +1,10 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 11,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "tool_call_started",
+  "turn": 2,
+  "call_id": "toolu_08",
+  "cwd": "~/Projects/Wisp",
+  "movable": true
+}

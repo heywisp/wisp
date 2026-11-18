@@ -1,0 +1,59 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(HEADINGS, GlyphSet::Unicode)"
+---
+--- 120 ---
+   [b|One]
+
+   Body under one.
+
+   [b|Two]
+
+   [b text.muted|Three]
+
+   [b text.muted|Four with ][b i text.muted|emphasis]
+--- 80 ---
+   [b|One]
+
+   Body under one.
+
+   [b|Two]
+
+   [b text.muted|Three]
+
+   [b text.muted|Four with ][b i text.muted|emphasis]
+--- 60 ---
+   [b|One]
+
+   Body under one.
+
+   [b|Two]
+
+   [b text.muted|Three]
+
+   [b text.muted|Four with ][b i text.muted|emphasis]
+--- 24 ---
+   [b|One]
+
+   Body under one.
+
+   [b|Two]
+
+   [b text.muted|Three]
+
+   [b text.muted|Four with ][b i text.muted|emphasis]
+--- 10 ---
+   [b|One]
+
+   Body
+   under
+   one.
+
+   [b|Two]
+
+   [b text.muted|Three]
+
+   [b text.muted|Four]
+   [b text.muted|with]
+   [b i text.muted|emphas]
+   [b i text.muted|is]

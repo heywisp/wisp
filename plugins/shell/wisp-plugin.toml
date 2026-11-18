@@ -1,0 +1,22 @@
+id = "shell"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Runs shell commands without asking, and their processes"
+
+[[tools]]
+name = "bash"
+provides = ["shell"]
+platforms = ["unix"]
+
+[[tools]]
+name = "process"
+follows = "bash"
+platforms = ["unix"]
+
+[[hooks]]
+name = "processes"
+point = "before-turn"
+in = ["core/news"]
+retry = "replay"
+job_news = true
+continues = "core/processes"

@@ -1,0 +1,17 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 2,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "process_ended",
+  "id": 4,
+  "end": {
+    "type": "exited",
+    "exit": {
+      "type": "code",
+      "code": 1
+    }
+  },
+  "bytes": 98765,
+  "lines": 1248,
+  "duration_ms": 72000
+}

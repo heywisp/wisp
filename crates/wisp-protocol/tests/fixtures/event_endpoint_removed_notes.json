@@ -1,0 +1,11 @@
+{
+  "type": "endpoint_removed",
+  "answers": 23,
+  "name": "direct",
+  "kept_item": true,
+  "default_cleared": true,
+  "notes": [
+    "note: credentials.json is in ~/dotfiles/wisp, inside the git repository at ~/dotfiles; keep it out of commits with a .gitignore line",
+    "This config.toml now keeps its own copy of its keys (they were written by ~/.config/wisp/config.toml)."
+  ]
+}

@@ -1,0 +1,36 @@
+---
+source: crates/wisp-tui/tests/app/settings_screen.rs
+expression: shot
+---
+| ⢎⠶⡰ wisp   Settings    opus-5-5 · high
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 12..20 fg Rgb(212, 212, 212); 24..39 fg Rgb(166, 166, 166)
+|──────────────────────────────────── ▴ ─
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Effort      high
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Account     work
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Web search  on
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Tools       all on
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Compact at  850,000 of 1,000,000
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Theme       dark
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+| Often used
+  ~ 1..11 fg Rgb(212, 212, 212) bold
+| › Idle after                     5
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..13 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 13..15 bg Rgb(4, 57, 94); 15..39 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|──────────────────────────────────── ▾ ─
+  ~ 0..40 fg Rgb(88, 88, 88)
+| Idle after: minutes without a key pre…
+  ~ 1..13 fg Rgb(166, 166, 166); 13..39 fg Rgb(212, 212, 212) bold
+| cache rebuild nothing cached yet
+  ~ 1..33 fg Rgb(212, 212, 212)
+| enter edit · d back to 10
+  ~ 1..6 fg Rgb(166, 166, 166); 6..14 fg Rgb(117, 117, 117); 14..15 fg Rgb(166, 166, 166); 15..26 fg Rgb(117, 117, 117)
+|────────────────────────────────────────
+  ~ 0..40 fg Rgb(88, 88, 88)
+| ⢎⠶⡰  Settings   / filter · esc back
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..14 fg Rgb(212, 212, 212); 17..18 fg Rgb(166, 166, 166); 18..28 fg Rgb(117, 117, 117); 28..31 fg Rgb(166, 166, 166); 31..36 fg Rgb(117, 117, 117)

@@ -1,0 +1,77 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== picker
+| + Showed crates/wisp-core/src/cache.rs                                                                          +40 -0
+  ~ 1..2 fg Idx(10); 3..9 bold; 113..116 fg Idx(10); 117..119 fg Idx(9)
+|        1 +     let part_1 = fingerprint.segment(1);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        2 +     let part_2 = fingerprint.segment(2);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        3 +     let part_3 = fingerprint.segment(3);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        4 +     let part_4 = fingerprint.segment(4);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        5 +     let part_5 = fingerprint.segment(5);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        6 +     let part_6 = fingerprint.segment(6);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        7 +     let part_7 = fingerprint.segment(7);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        8 +     let part_8 = fingerprint.segment(8);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        9 +     let part_9 = fingerprint.segment(9);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       10 +     let part_10 = fingerprint.segment(10);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       11 +     let part_11 = fingerprint.segment(11);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       12 +     let part_12 = fingerprint.segment(12);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       13 +     let part_13 = fingerprint.segment(13);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       14 +     let part_14 = fingerprint.segment(14);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       15 +     let part_15 = fingerprint.segment(15);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       16 +     let part_16 = fingerprint.segment(16);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       17 +     let part_17 = fingerprint.segment(17);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       18 +     let part_18 = fingerprint.segment(18);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       19 +     let part_19 = fingerprint.segment(19);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       20 +     let part_20 = fingerprint.segment(20);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|     ... 20 more lines >
+  ~ 5..24 fg Idx(8)
+|
+|------------------------------------------------------------------------------------------------------------------------
+  ~ 0..120 fg Idx(8)
+|   Open
+  ~ 3..7 bold
+|   Full transcript    every cell in full
+  ~ 22..40 fg Idx(7)
+| > + Showed crates/wisp-core/src/cache.rs                                                                         +40 -0
+  ~ 0..1 inverse; 1..2 fg Idx(12) inverse; 2..3 inverse; 3..4 fg Idx(10) inverse; 4..5 inverse; 5..11 bold inverse; 11..114 inverse; 114..117 fg Idx(10) inverse; 117..118 inverse; 118..120 fg Idx(9) inverse
+|   x Ran cargo build --release                                                                             exit 101 - 3s
+  ~ 3..4 fg Idx(9); 5..8 bold; 107..115 fg Idx(9); 115..120 fg Idx(7)
+|   + Ran cargo test -p wisp-core --all-features                                                              exit 0 - 1s
+  ~ 3..4 fg Idx(10); 5..8 bold; 109..120 fg Idx(7)
+|   : Thought for 4 s  Placeholder 9.
+  ~ 3..4 fg Idx(8); 5..20 fg Idx(7); 22..36 fg Idx(7) italic
+|   enter open - type to filter - ctrl-o transcript - esc close
+  ~ 3..8 fg Idx(7); 8..16 fg Idx(8); 16..20 fg Idx(7); 20..33 fg Idx(8); 33..39 fg Idx(7); 39..53 fg Idx(8); 53..56 fg Idx(7); 56..62 fg Idx(8)
+|+----------------------------------------------------------------------------------------------------------------------+
+  ~ 0..120 fg Idx(8)
+||                                                                                                          total $0.01 |
+  ~ 0..1 fg Idx(8); 107..118 fg Idx(7); 119..120 fg Idx(8)
+|+----------------------------------------------------------------------------------------------------------------------+
+  ~ 0..120 fg Idx(8)
+|| (*)  Ready                                                                  Claude API   sonnet-5-5 low - cached 92% |
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(8); 3..4 fg Idx(12); 4..5 fg Idx(8); 7..12 fg Idx(7); 78..88 fg Idx(7); 102..118 fg Idx(7); 119..120 fg Idx(8)
+|+----------------------------------------------------------------------------------------------------------------------+
+  ~ 0..120 fg Idx(8)

@@ -1,0 +1,19 @@
+{
+  "status": "error",
+  "kind": "rate_limit",
+  "message": "slow down",
+  "usage": null,
+  "cost": null,
+  "committed_steps": 0,
+  "detail": {
+    "phase": "response",
+    "source": "endpoint",
+    "status": 429,
+    "error_type": "rate_limit_error",
+    "retry": {
+      "type": "after",
+      "ms": 2000
+    },
+    "possibly_billed": false
+  }
+}

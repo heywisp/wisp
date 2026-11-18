@@ -1,0 +1,18 @@
+{"type":"turn_started","turn":1}
+{"type":"step_started","step":1}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"Hello back."}
+{"type":"block_stopped","index":0}
+{"type":"step_ended","step":1,"usage":{"input_tokens":30,"output_tokens":12,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":0},"cost_usd":0.001,"lower_bound":false}
+{"type":"spend_changed","total":{"usd":0.0145,"plan_usd":0.0}}
+{"type":"turn_ended","outcome":{"status":"completed","stop_reason":"end_turn","model":"claude-sonnet-5-5","usage":{"input_tokens":842,"output_tokens":63,"cache_read_input_tokens":2048,"cache_creation_input_tokens":2908,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2908},"cost":{"turn_usd":0.0145,"session_usd":0.0145,"turn_lower_bound":false,"session_lower_bound":false},"committed":true,"steps":1,"tool_calls":0},"stats":{"started_at":"2026-10-23T09:00:00Z","first_byte_ms":700,"duration_ms":2400,"retries":0,"previous_prompt_tokens":null}}
+{"type":"turn_started","turn":2}
+{"type":"step_started","step":1}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"Again, hello."}
+{"type":"block_stopped","index":0}
+{"type":"step_ended","step":1,"usage":{"input_tokens":30,"output_tokens":12,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":0},"cost_usd":0.001,"lower_bound":false}
+{"type":"spend_changed","total":{"usd":0.0145,"plan_usd":0.0}}
+{"type":"turn_ended","outcome":{"status":"completed","stop_reason":"end_turn","model":"claude-sonnet-5-5","usage":{"input_tokens":842,"output_tokens":63,"cache_read_input_tokens":2048,"cache_creation_input_tokens":2908,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2908},"cost":{"turn_usd":0.0145,"session_usd":0.0145,"turn_lower_bound":false,"session_lower_bound":false},"committed":true,"steps":1,"tool_calls":0},"stats":{"started_at":"2026-10-23T09:00:00Z","first_byte_ms":700,"duration_ms":2400,"retries":0,"previous_prompt_tokens":null}}
+{"type":"rewind_points","answers":0,"points":[{"point":{"type":"turn","turn":1},"label":"hello","at":"2026-10-23T09:00:00Z","inputs_preview":["hello"],"quote":{"prefix_tokens":2048,"warm":{"type":"warm"},"read_micros":600,"rewrite_micros":7700}},{"point":{"type":"turn","turn":2},"label":"again","at":"2026-10-23T09:01:00Z","inputs_preview":["again"],"quote":{"prefix_tokens":2048,"warm":{"type":"warm"},"read_micros":600,"rewrite_micros":7700}}]}
+{"type":"rewound","answers":0,"point":{"type":"turn","turn":2},"reason":"user","dropped":{"turns":[2],"messages":2},"returned":[{"id":"tui-2","text":"again"}],"cache":{"type":"kept"}}

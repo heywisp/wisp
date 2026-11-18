@@ -1,0 +1,9 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "window_lowered",
+  "endpoint": "manifest",
+  "model": "claude-opus-5-5",
+  "tokens": 200000
+}

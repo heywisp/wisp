@@ -1,0 +1,39 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 14,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "context_compacted",
+  "turn": 3,
+  "epoch": 1,
+  "trigger": "background",
+  "engine": "native",
+  "before": 90000,
+  "after": 7400,
+  "from": 6,
+  "head": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "opaque",
+        "provider": "anthropic",
+        "raw": {
+          "content": "So far: the parser.",
+          "type": "compaction"
+        }
+      }
+    ]
+  },
+  "block": {
+    "content": "So far: the parser.",
+    "type": "compaction"
+  },
+  "duration_ms": 0,
+  "placement": "leading",
+  "cut": 4,
+  "additions": [
+    {
+      "type": "text",
+      "text": "<compacted_context epoch=\"1\" turns=\"1–2\">\n<user_messages>\nThe user's recent messages, word for word, newest first:\nTurn 2: and the tests\nTurn 1: fix the parser\n</user_messages>\n</compacted_context>\n"
+    }
+  ]
+}

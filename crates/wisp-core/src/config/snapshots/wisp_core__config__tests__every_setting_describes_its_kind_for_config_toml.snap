@@ -1,0 +1,82 @@
+---
+source: crates/wisp-core/src/config/tests.rs
+expression: "rows.join(\"\\n\")"
+---
+agent: a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+agents.max_agents: a whole number from 1 to 50, or "none"
+agents.max_depth: a whole number from 1 to 5, or "none"
+agents.max_running: a whole number from 1 to 16, or "none"
+agents.max_tree_running: a whole number from 1 to 50, or "none"
+agents.wake_when_stuck: a whole number from 0 to 1440
+agents.warm_refreshes: a whole number from 0 to 24
+aliases: a list of model IDs
+auth: "api_key", "bearer", "anthropic_subscription", "chatgpt_subscription" or "antigravity_subscription"
+cache_ttl: "5m" or "1h"
+claude_usage: true or false
+compact_at: a number of tokens (400000) or a share of the window ("85%")
+context.auto_compact: true or false
+context.background_compaction: true or false
+context.background_tokens: a token count, such as 8000 or "8k"
+context.compact_effort: "low", "medium", "high", "xhigh" or "max"
+context.context_note: true or false
+context.count_tokens: true or false
+context.strategy: "default" or a plugin's id
+context.verbatim_user_tokens: a token count, such as 8000 or "8k"
+context_window: a token count, such as 8000 or "8k"
+debug_cache: true or false
+display.ambiguous: "auto", "wide" or "narrow"
+display.color: "auto", "truecolor", "256", "16" or "none"
+display.copy_on_select: "auto", "on" or "off"
+display.full_repaint: true or false
+display.motion: "auto", "full", "calm" or "reduced"
+display.mouse: true or false
+display.pictures: true or false
+display.scroll_speed: a whole number from 1 to 20
+display.sidebar: "auto" or "hidden"
+display.sidebar_folded: a list of sidebar sections ("<plugin>/<name>"), or [] for none
+display.sidebar_pinned: a list of sidebar sections ("<plugin>/<name>"), or [] for none
+display.theme: "auto", "dark" or "light"
+display.verbose: true or false
+effort: "low", "medium", "high", "xhigh" or "max"
+endpoint: a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+instructions.extra: "none" or "autonomous"
+instructions.source: "auto", "default" or "none"
+instructions.warn_tokens: a token count, such as 8000 or "8k"
+keep_warm: true or false
+key: kept out of config.toml
+key_env: a variable name (letters, digits and _)
+key_store: "file" or "keyring"
+keychain: "auto", "on" or "off"
+log: true or false
+max_in_flight: a whole number from 1 to 64, or "none"
+max_output: a token count, such as 8000 or "8k"
+message_threads: true or false
+model: a model ID (letters, digits and . _ : @ / -)
+native_compaction: true or false
+native_web_search: true or false
+plugins.<id>.enabled: true or false
+plugins.<id>.hooks.<hook>: true or false
+plugins.<id>.installed: true or false
+plugins.<id>.slots.<name>: true or false
+preload: a list of tool names, core for Wisp's tools, or none for search and use
+preset: a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+price_cache_read: a number of US dollars, such as 0.5
+price_input: a number of US dollars, such as 0.5
+price_output: a number of US dollars, such as 0.5
+pricing: "list" or "none"
+provider: "anthropic", "openai" or "gemini"
+refusal_fallback: true or false
+retry.budget_usd: a number of US dollars, such as 0.5, or "none"
+self_check.before_end: true or false
+store_id: a value Wisp writes
+time: "local", "utc" or "off"
+tool_output.max_age_days: a whole number from 1 to 3650, or "none"
+tools: a list of tool names, or [] for none
+turned_off: a list of names, or [] for none
+url: kept out of config.toml
+url_env: a variable name (letters, digits and _)
+voice.endpoint: a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+voice.instructions: a file path, relative to config.toml's directory, under ~/ or absolute
+voice.language: a two-letter language code (ISO 639-1), such as en
+voice.voice: a voice's name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+web_search: a list of "web_search_20250305", "web_search" or "google_search", or [] for none

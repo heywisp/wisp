@@ -1,0 +1,15 @@
+{
+  "type": "change_settings",
+  "request": 4,
+  "changes": [
+    {
+      "target": {
+        "name": "endpoint"
+      },
+      "value": {
+        "kind": "text",
+        "text": "direct"
+      }
+    }
+  ]
+}

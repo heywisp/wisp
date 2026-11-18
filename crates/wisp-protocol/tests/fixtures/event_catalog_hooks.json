@@ -1,0 +1,75 @@
+{
+  "type": "catalog_changed",
+  "catalog": {
+    "plugins": [
+      {
+        "id": "context",
+        "version": "0.1.0",
+        "summary": "Tells the model how full its context is",
+        "source": {
+          "type": "bundled"
+        },
+        "installed": true,
+        "enabled": true,
+        "tools": [],
+        "commands": [],
+        "hooks": [
+          {
+            "hook": "context/fill",
+            "point": "before-turn",
+            "on": true,
+            "order": 1,
+            "switch": "context.context_note"
+          },
+          {
+            "hook": "context/late",
+            "point": "before-turn",
+            "on": false,
+            "order": 3,
+            "disabled": {
+              "type": "left_out"
+            }
+          }
+        ],
+        "slots": [
+          {
+            "name": "context/trend",
+            "slot": "sidebar",
+            "title": "Trend",
+            "default_on": true,
+            "order": 1,
+            "disabled": {
+              "type": "cycle",
+              "cycle": [
+                "context/trend",
+                "agent-viz/topology"
+              ]
+            }
+          },
+          {
+            "name": "context/window",
+            "slot": "sidebar",
+            "title": "Context",
+            "default_on": false,
+            "order": 0
+          }
+        ],
+        "settings": [
+          "context.context_note",
+          {
+            "name": "minutes",
+            "label": "Minutes",
+            "help": "Minutes before away.",
+            "kind": {
+              "type": "int",
+              "min": 1,
+              "max": 60,
+              "default": 10
+            }
+          }
+        ],
+        "problems": []
+      }
+    ]
+  }
+}

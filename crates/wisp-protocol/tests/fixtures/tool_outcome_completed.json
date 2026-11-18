@@ -1,0 +1,8 @@
+{
+  "status": "completed",
+  "is_error": true,
+  "exit": {
+    "type": "code",
+    "code": 101
+  }
+}

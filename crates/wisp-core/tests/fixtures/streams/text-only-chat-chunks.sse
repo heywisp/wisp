@@ -1,0 +1,6 @@
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"[gateway M500] Something went wrong on our side. "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Please try again."},"finish_reason":"stop"}]}
+
+data: [DONE]
+

@@ -1,0 +1,7 @@
+{
+  "type": "hello",
+  "data": {
+    "contract": 1,
+    "build": 7
+  }
+}

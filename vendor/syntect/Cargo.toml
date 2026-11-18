@@ -1,0 +1,21 @@
+[package]
+name = "syntect"
+description = "Wisp's guarded fork of syntect's parser: Sublime Text grammars on fancy-regex, with per-line budgets"
+version = "5.3.0"
+license = "MIT"
+repository = "https://github.com/trishume/syntect"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+bincode.workspace = true
+fancy-regex.workspace = true
+flate2.workspace = true
+fnv.workspace = true
+regex-syntax.workspace = true
+serde.workspace = true
+thiserror.workspace = true

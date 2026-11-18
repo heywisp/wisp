@@ -1,0 +1,158 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(LISTS, GlyphSet::Unicode)"
+---
+--- 120 ---
+   [text.muted|∙] first item that is long enough to wrap onto a second row when the measure is narrow
+   [text.muted|∙] second
+     [text.muted|∙] nested one
+     [text.muted|∙] nested two
+       [text.muted|1.] deep ordered
+       [text.muted|2.] deep again
+   [text.muted|∙] third
+
+   [text.muted|8.] eight
+   [text.muted|9.] nine
+   [text.muted|10.] ten
+
+   [text.muted|∙] loose one
+
+   [text.muted|∙] loose two
+
+     with a second paragraph
+
+   [text.muted|∙] [ ] a task
+   [text.muted|∙] [x] done task
+--- 80 ---
+   [text.muted|∙] first item that is long enough to wrap onto a second row when the measure
+     is narrow
+   [text.muted|∙] second
+     [text.muted|∙] nested one
+     [text.muted|∙] nested two
+       [text.muted|1.] deep ordered
+       [text.muted|2.] deep again
+   [text.muted|∙] third
+
+   [text.muted|8.] eight
+   [text.muted|9.] nine
+   [text.muted|10.] ten
+
+   [text.muted|∙] loose one
+
+   [text.muted|∙] loose two
+
+     with a second paragraph
+
+   [text.muted|∙] [ ] a task
+   [text.muted|∙] [x] done task
+--- 60 ---
+   [text.muted|∙] first item that is long enough to wrap onto a second
+     row when the measure is narrow
+   [text.muted|∙] second
+     [text.muted|∙] nested one
+     [text.muted|∙] nested two
+       [text.muted|1.] deep ordered
+       [text.muted|2.] deep again
+   [text.muted|∙] third
+
+   [text.muted|8.] eight
+   [text.muted|9.] nine
+   [text.muted|10.] ten
+
+   [text.muted|∙] loose one
+
+   [text.muted|∙] loose two
+
+     with a second paragraph
+
+   [text.muted|∙] [ ] a task
+   [text.muted|∙] [x] done task
+--- 24 ---
+   [text.muted|∙] first item that is
+     long enough to
+     wrap onto a second
+     row when the
+     measure is narrow
+   [text.muted|∙] second
+     [text.muted|∙] nested one
+     [text.muted|∙] nested two
+       [text.muted|1.] deep ordered
+       [text.muted|2.] deep again
+   [text.muted|∙] third
+
+   [text.muted|8.] eight
+   [text.muted|9.] nine
+   [text.muted|10.] ten
+
+   [text.muted|∙] loose one
+
+   [text.muted|∙] loose two
+
+     with a second
+     paragraph
+
+   [text.muted|∙] [ ] a task
+   [text.muted|∙] [x] done task
+--- 10 ---
+   [text.muted|∙]
+   first
+   item
+   that
+   is
+   long
+   enough
+   to
+   wrap
+   onto a
+   second
+   row
+   when
+   the
+   measur
+   e is
+   narrow
+   [text.muted|∙]
+   second
+   [text.muted|∙]
+   nested
+   one
+   [text.muted|∙]
+   nested
+   two
+   [text.muted|1.]
+   deep
+   ordere
+   d
+   [text.muted|2.]
+   deep
+   again
+   [text.muted|∙]
+   third
+
+   [text.muted|8.]
+   eight
+   [text.muted|9.]
+   nine
+   [text.muted|10.]
+   ten
+
+   [text.muted|∙]
+   loose
+   one
+
+   [text.muted|∙]
+   loose
+   two
+
+   with a
+   second
+   paragr
+   aph
+
+   [text.muted|∙]
+   [ ] a
+   task
+   [text.muted|∙]
+   [x]
+   done
+   task

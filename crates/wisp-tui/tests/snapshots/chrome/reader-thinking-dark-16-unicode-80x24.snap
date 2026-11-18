@@ -1,0 +1,31 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| ╎ Thought for 4 s
+  ~ 1..2 fg Idx(8); 3..18 fg Idx(7)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Idx(8)
+| ╎ Placeholder thought line one, wrapped narrowly.
+  ~ 1..2 fg Idx(8); 3..50 fg Idx(7) italic
+| ╎ Placeholder thought line two, longer than the first.
+  ~ 1..2 fg Idx(8); 3..55 fg Idx(7) italic
+| ╎ Placeholder thought, 3rd.
+  ~ 1..2 fg Idx(8); 3..28 fg Idx(7) italic
+| ╎ Placeholder thought line 4, middling.
+  ~ 1..2 fg Idx(8); 3..40 fg Idx(7) italic
+| ╎ Placeholder thought line five, medium.
+  ~ 1..2 fg Idx(8); 3..41 fg Idx(7) italic
+| ╎ Placeholder thought line six, rather long.
+  ~ 1..2 fg Idx(8); 3..45 fg Idx(7) italic
+| ╎ Placeholder thought seven.
+  ~ 1..2 fg Idx(8); 3..29 fg Idx(7) italic
+| ╎ Placeholder 8th.
+  ~ 1..2 fg Idx(8); 3..19 fg Idx(7) italic
+| ╎ Placeholder 9.
+  ~ 1..2 fg Idx(8); 3..17 fg Idx(7) italic
+|(12 blank rows)
+|   / search · 1-9/9 · ctrl-o every detail · q esc back
+  ~ 3..4 fg Idx(7); 4..14 fg Idx(8); 14..19 fg Idx(7); 19..22 fg Idx(8); 22..28 fg Idx(7); 28..44 fg Idx(8); 44..49 fg Idx(7); 49..54 fg Idx(8)

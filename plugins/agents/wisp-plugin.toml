@@ -1,0 +1,35 @@
+id = "agents"
+version = "0.1.0"
+world = "0.3.0"
+summary = "Named child agents that report back and message each other"
+
+[[tools]]
+name = "list_agents"
+follows = "spawn_agent"
+
+[[tools]]
+name = "rename_agent"
+follows = "spawn_agent"
+
+[[tools]]
+name = "report"
+follows = "spawn_agent"
+default = "off"
+
+[[tools]]
+name = "send_message"
+follows = "spawn_agent"
+
+[[tools]]
+name = "spawn_agent"
+
+[[tools]]
+name = "stop_agent"
+follows = "spawn_agent"
+
+[[prompt_sections]]
+name = "kept-warm"
+place = "lead"
+in = ["core/notes"]
+after = ["time/sent", "context/fill", "idle/note"]
+before = []

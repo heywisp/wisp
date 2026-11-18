@@ -1,0 +1,36 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 6,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "turn_ended",
+  "turn": 1,
+  "outcome": {
+    "status": "completed",
+    "stop_reason": "end_turn",
+    "model": "claude-opus-5-5",
+    "usage": {
+      "input_tokens": 1200,
+      "output_tokens": 80,
+      "cache_read_input_tokens": 9000,
+      "cache_creation_input_tokens": 300,
+      "cache_creation_5m_input_tokens": 0,
+      "cache_creation_1h_input_tokens": 300
+    },
+    "cost": {
+      "turn_usd": 0.0125,
+      "session_usd": 0.5,
+      "turn_lower_bound": false,
+      "session_lower_bound": true
+    },
+    "committed": true,
+    "steps": 3,
+    "tool_calls": 4
+  },
+  "stats": {
+    "started_at": "2026-10-23T12:00:00Z",
+    "first_byte_ms": 900,
+    "duration_ms": 14000,
+    "retries": 0,
+    "previous_prompt_tokens": 10200
+  }
+}

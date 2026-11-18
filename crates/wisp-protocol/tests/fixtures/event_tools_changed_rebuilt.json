@@ -1,0 +1,12 @@
+{
+  "type": "tools_changed",
+  "added": [],
+  "removed": [
+    "bash"
+  ],
+  "via": "rebuild",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "compaction"
+  }
+}

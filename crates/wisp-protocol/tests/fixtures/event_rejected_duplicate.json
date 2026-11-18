@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "reason": "message tui-4 was already sent",
+  "id": "tui-4",
+  "kind": "duplicate"
+}

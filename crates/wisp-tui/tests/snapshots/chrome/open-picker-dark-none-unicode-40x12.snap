@@ -1,0 +1,21 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== picker
+| ✓ Showed crates/wisp-core/src/cache.rs
+  ~ 3..9 bold
+|        1 +     let part_1 = fingerprin
+|            t.segment(1);
+|────────────────────────────────────────
+|   Open  2 of 5
+  ~ 3..7 bold
+|   Full transcript    every cell in full
+| › ✓ Showed crates/wisp-core/src/cache.…
+  ~ 0..5 inverse; 5..11 bold inverse; 11..40 inverse
+|╭──────────────────────────────────────╮
+|│                          total $0.01 │
+|├──────────────────────────────────────┤
+|│ ⢎⠶⡰  Ready   Claude API   sonnet-5-5 │
+  ~ 28..38 bold
+|╰──────────────────────────────────────╯

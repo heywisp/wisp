@@ -1,0 +1,10 @@
+{
+  "action": {
+    "type": "signal",
+    "kind": "interrupt"
+  },
+  "target": "3 · npm run dev",
+  "output": {
+    "type": "text"
+  }
+}

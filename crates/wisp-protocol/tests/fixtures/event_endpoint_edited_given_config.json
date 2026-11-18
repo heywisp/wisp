@@ -1,0 +1,18 @@
+{
+  "type": "endpoint_edited",
+  "answers": 21,
+  "name": "manifest",
+  "changed": [
+    "auth",
+    "url",
+    "key",
+    "store"
+  ],
+  "store": "file",
+  "check": {
+    "outcome": "ok"
+  },
+  "notes": [
+    "note: credentials.json beside the file given with --config is inside a git repository; keep it out of commits with a .gitignore line"
+  ]
+}

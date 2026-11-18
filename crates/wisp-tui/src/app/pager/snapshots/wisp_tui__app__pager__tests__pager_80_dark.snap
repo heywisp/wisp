@@ -1,0 +1,35 @@
+---
+source: crates/wisp-tui/src/app/pager/tests.rs
+assertion_line: 180
+expression: show(&view)
+---
+
+   [Rgb(166, 166, 166) NONE|anthropic is overloaded.]
+   [Rgb(166, 166, 166) NONE|Retrying step 1 (1 of 5) in 2 s.]
+
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) NONE|Thinking][Rgb(166, 166, 166) NONE| · 0s]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 1 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 2 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 3 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 4 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 5 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 6 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 7 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 8 of the reasoning about the cache prefix.]
+ [Rgb(117, 117, 117) NONE|╎] [Rgb(146, 164, 178) ITALIC|Step 9 of the reasoning about the cache prefix.]
+
+ [Rgb(86, 156, 214) NONE|⠶][Reset NONE| Misses now say which part of the prefix changed: the system prompt, the]
+[Reset NONE|   tools or the messages.]
+
+   [Rgb(86, 156, 214) NONE|fn] [Rgb(220, 220, 170) NONE|main][Reset NONE|() {                                                             ][Rgb(117, 117, 117) NONE|rust]
+       [Rgb(86, 156, 214) NONE|let][Reset NONE| answer = ][Rgb(181, 206, 168) NONE|42][Reset NONE|;]
+[Reset NONE|   }]
+
+[Reset NONE|   The prefix-stability test covers each case.]
+
+   [Rgb(117, 117, 117) NONE|18s · $0.014 · ][Rgb(212, 212, 212) NONE|cache miss]
+   [Rgb(166, 166, 166) NONE|✓ end_turn · 18.0s (first token 0.8s) · in 40 · out 475 · reused 9.2k (100%)]
+   [Rgb(166, 166, 166) NONE|· +760 cached 1h · $0.014 · opus-5-5]
+   [Rgb(166, 166, 166) NONE|retry 1 of step 1 after 2000 ms: overloaded]
+   [Rgb(166, 166, 166) NONE|cache miss: reused 0 of the previous 9k prompt tokens, wrote 10k]
+   [Rgb(166, 166, 166) NONE|/][Rgb(117, 117, 117) NONE| search · ][Rgb(166, 166, 166) NONE|2-30/30][Rgb(117, 117, 117) NONE| · ][Rgb(166, 166, 166) NONE|[][Rgb(117, 117, 117) NONE| to scrollback · ][Rgb(166, 166, 166) NONE|q esc ctrl-o][Rgb(117, 117, 117) NONE| back]

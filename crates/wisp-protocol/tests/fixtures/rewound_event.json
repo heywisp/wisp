@@ -1,0 +1,37 @@
+{
+  "type": "rewound",
+  "answers": 7,
+  "point": {
+    "type": "turn",
+    "turn": 2
+  },
+  "reason": "user",
+  "dropped": {
+    "turns": [
+      2,
+      3
+    ],
+    "messages": 4
+  },
+  "returned": [
+    {
+      "id": "tui-2",
+      "text": "second",
+      "images": [
+        {
+          "data": "aW1hZ2U="
+        }
+      ],
+      "missing": [
+        {
+          "ordinal": 2,
+          "sha256": "abababababababababababababababababababababababababababababababab"
+        }
+      ]
+    }
+  ],
+  "cache": {
+    "type": "rebuilt",
+    "reason": "rewind"
+  }
+}

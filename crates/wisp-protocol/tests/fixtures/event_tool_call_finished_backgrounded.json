@@ -1,0 +1,26 @@
+{
+  "type": "tool_call_finished",
+  "call_id": "toolu_08",
+  "outcome": {
+    "status": "backgrounded",
+    "reason": "moved_by_user"
+  },
+  "output": {
+    "tail": "  VITE v6.3.0  ready in 412 ms\n",
+    "bytes": 64,
+    "lines": 3,
+    "file": "/tmp/wisp-s1/0012-bash.out",
+    "file_problem": null,
+    "inlined": true
+  },
+  "facts": [
+    {
+      "type": "process",
+      "id": 3
+    }
+  ],
+  "state": null,
+  "duration_ms": 4200,
+  "process": 3,
+  "notes": []
+}

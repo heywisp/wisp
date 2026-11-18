@@ -1,0 +1,34 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: text(&rows)
+---
+ > /mcp
+
+   MCP servers                                                            tools
+   github  running                                                           41
+   files   starts on use                                                     12
+   linear  needs sign-in                                                      -
+   sentry  failed                                                             -
+           it couldn't start: npx isn't installed
+
+   sign in: /mcp sign-in linear
+
+ > /mcp add linear https://mcp.example.invalid/mcp
+
+   linear added - sign in with /mcp sign-in linear
+
+ > /mcp sign-in linear
+
+   plugin mcp: sign in to linear at mcp.example.invalid
+   https://mcp.example.invalid/authorize?CANARY-placeholder
+   tried your browser
+
+   If the browser ends on a page that can't load, copy that page's address and
+   type:
+   /mcp sign-in linear <address>
+
+ > /mcp sign-in linear http://127.0.0.1:8123/oauth-callback?placeholder
+
+   plugin mcp: linear signed in - 23 tools
+
+   plugin mcp: linear not signed in: sign-in was declined

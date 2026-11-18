@@ -1,0 +1,17 @@
+package wisp:plugin@0.3.0;
+
+interface slot-types {
+  use wisp:plugin/context@0.1.0.{fill};
+  use wisp:plugin/slot-types@0.2.0.{tone, node-state, text-span, elapsed-span, usd-span, span, row, gauge, spark, node, slot-view};
+  record topology-node { key: string, parent: option<string>, state: node-state }
+  record flow { %from: option<string>, to: option<string>, at-ms: u64 }
+  enum noun { agents }
+  record topology { root: option<string>, nodes: list<topology-node>, flows: list<flow>, counted: option<noun> }
+  variant block { line(list<span>), rows(list<row>), gauge(gauge), spark(spark), %list(list<list<span>>), tree(list<node>), next-column, fill(fill), topology(topology) }
+  record content { note: list<span>, blocks: list<block> }
+}
+
+interface slot-render {
+  use slot-types.{content, slot-view};
+  render-slot: async func(name: string, view: slot-view) -> result<content, string>;
+}

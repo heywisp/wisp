@@ -1,0 +1,65 @@
+[package]
+name = "wisp-cli"
+description = "The `wisp` command-line client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "wisp"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+futures.workspace = true
+jiff.workspace = true
+rustix = { workspace = true, features = ["stdio"] }
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "sync", "io-std", "io-util", "process", "time", "net"] }
+wisp-client.workspace = true
+wisp-core = { workspace = true, features = ["os-keyring"] }
+wisp-plugins.workspace = true
+wisp-protocol.workspace = true
+wisp-render.workspace = true
+wisp-start.workspace = true
+wisp-tool-text.workspace = true
+wisp-tui.workspace = true
+wisp-wasm-host = { workspace = true, optional = true }
+wispd.workspace = true
+
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+tikv-jemallocator.workspace = true
+
+[features]
+default = ["wasm"]
+wasm = ["dep:wisp-wasm-host", "wisp-start/wasm"]
+
+[dev-dependencies]
+dhat.workspace = true
+ratatui-core.workspace = true
+wisp-core = { workspace = true, features = ["os-keyring", "test-support"] }
+wisp-plugin-agent-viz.workspace = true
+wisp-plugin-api.workspace = true
+wisp-plugin-ask-user.workspace = true
+wisp-plugin-testkit.workspace = true
+wisp-plugins = { workspace = true, features = ["testkit"] }
+image.workspace = true
+insta.workspace = true
+wisp-media.workspace = true
+wisp-render = { workspace = true, features = ["testing"] }
+wisp-start = { workspace = true, features = ["test-support"] }
+reqwest.workspace = true
+rustix = { workspace = true, features = ["pty", "net"] }
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util", "time", "test-util"] }
+vt100.workspace = true
+wisp-wasm-guests.workspace = true
+tokio-tungstenite.workspace = true
+
+[lints]
+workspace = true

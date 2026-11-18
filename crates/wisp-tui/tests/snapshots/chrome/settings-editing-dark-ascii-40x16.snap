@@ -1,0 +1,36 @@
+---
+source: crates/wisp-tui/tests/app/settings_screen.rs
+expression: shot
+---
+| (*) wisp   Settings    opus-5-5 - high
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 12..20 fg Rgb(212, 212, 212); 24..39 fg Rgb(166, 166, 166)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|   Model       claude-opus-5-5
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Effort      high
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Account     manifest
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Tools       none on
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+| > Compact at  850,000 of 1,000,000
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..13 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 13..15 bg Rgb(4, 57, 94); 15..39 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|   Theme       dark
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|   Plugins     none on
+  ~ 3..13 fg Rgb(212, 212, 212); 15..39 fg Rgb(212, 212, 212)
+|------------------------------------ v -
+  ~ 0..40 fg Rgb(88, 88, 88)
+| Compact at: when the chat is shortened
+  ~ 1..13 fg Rgb(166, 166, 166); 13..39 fg Rgb(212, 212, 212) bold
+| New value      95%
+  ~ 1..16 fg Rgb(166, 166, 166); 16..39 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94)
+| For (tab)      > all models  1 of 2
+  ~ 1..16 fg Rgb(166, 166, 166); 16..17 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 17..28 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) bold; 28..36 fg Rgb(166, 166, 166)
+|                850,000 of 1,000,000
+  ~ 16..36 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+| (*)  Settings   esc cancel
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..14 fg Rgb(212, 212, 212); 17..20 fg Rgb(166, 166, 166); 20..27 fg Rgb(117, 117, 117)

@@ -1,0 +1,22 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: "scene(\"Make cache misses name their cause\",\n&turn_events(ANSWER, THOUGHT, completed(StopReason::EndTurn, true)))"
+---
+[on surface| ][user on surface|›][on surface| ][text on surface|Make cache misses name their cause]
+
+ [text.faint|╎] [thinking|Thought for 1 s]
+ [text.faint|╎] [i thinking|Placeholder line one of the thought, short.]
+ [text.faint|╎] [i thinking|Placeholder line two of the thought, long enough to wrap at the narrower]
+ [text.faint|╎] [i thinking|widths.]
+
+ [accent|⠶] Misses now say which part of the prefix changed: the system prompt, the
+   tools or the messages.
+
+   [text.muted|∙] one
+   [text.muted|∙] two
+
+   fn main() {}                                                            [text.faint|rust]
+
+   The prefix-stability test covers each case.
+
+   [text.faint|18s · $0.014 · cached 92%]

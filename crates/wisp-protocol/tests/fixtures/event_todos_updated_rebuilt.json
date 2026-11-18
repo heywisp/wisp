@@ -1,0 +1,9 @@
+{
+  "type": "todos_updated",
+  "items": [
+    {
+      "text": "Read the plan",
+      "status": "pending"
+    }
+  ]
+}

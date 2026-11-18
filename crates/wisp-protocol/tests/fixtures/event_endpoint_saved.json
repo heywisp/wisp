@@ -1,0 +1,12 @@
+{
+  "type": "endpoint_saved",
+  "answers": 11,
+  "name": "manifest",
+  "store": "keyring",
+  "check": {
+    "outcome": "ok"
+  },
+  "notes": [
+    "credentials.json is inside the git repository at ~/dotfiles"
+  ]
+}

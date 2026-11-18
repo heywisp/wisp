@@ -1,0 +1,64 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests/files.rs
+expression: out
+---
+=== Unicode 80 ===
+ ✓ Read screenshots/home.png                    image/png · 1.6 MB · ≈3k tokens
+ ✓ Read docs/spec.pdf                                  application/pdf · 912 KB
+ ✓ Read build.log                     text · 2,000 of 9,412 lines · ≈17k tokens
+ ⨯ Read song.mp3                                                  couldn't read
+ ⨯ Read shots/a.png                                             couldn't attach
+ ⨯ Read shots/b.png                                             couldn't attach
+ ⨯ Read docs/old.pdf                                            couldn't attach
+
+   18s · 4 requests · 7 tools · cost unknown
+=== Unicode 120 ===
+ ✓ Read screenshots/home.png                                                            image/png · 1.6 MB · ≈3k tokens
+ ✓ Read docs/spec.pdf                                                                          application/pdf · 912 KB
+ ✓ Read build.log                                                             text · 2,000 of 9,412 lines · ≈17k tokens
+ ⨯ Read song.mp3                                                                                          couldn't read
+ ⨯ Read shots/a.png                                                                                     couldn't attach
+ ⨯ Read shots/b.png                                                                                     couldn't attach
+ ⨯ Read docs/old.pdf                                                                                    couldn't attach
+
+   18s · 4 requests · 7 tools · cost unknown
+=== AmbiguousWide 80 ===
+ ✓ Read screenshots/home.png                    image/png ∙ 1.6 MB ∙ ~3k tokens
+ ✓ Read docs/spec.pdf                                  application/pdf ∙ 912 KB
+ ✓ Read build.log                     text ∙ 2,000 of 9,412 lines ∙ ~17k tokens
+ ⨯ Read song.mp3                                                  couldn't read
+ ⨯ Read shots/a.png                                             couldn't attach
+ ⨯ Read shots/b.png                                             couldn't attach
+ ⨯ Read docs/old.pdf                                            couldn't attach
+
+   18s ∙ 4 requests ∙ 7 tools ∙ cost unknown
+=== AmbiguousWide 120 ===
+ ✓ Read screenshots/home.png                                                            image/png ∙ 1.6 MB ∙ ~3k tokens
+ ✓ Read docs/spec.pdf                                                                          application/pdf ∙ 912 KB
+ ✓ Read build.log                                                             text ∙ 2,000 of 9,412 lines ∙ ~17k tokens
+ ⨯ Read song.mp3                                                                                          couldn't read
+ ⨯ Read shots/a.png                                                                                     couldn't attach
+ ⨯ Read shots/b.png                                                                                     couldn't attach
+ ⨯ Read docs/old.pdf                                                                                    couldn't attach
+
+   18s ∙ 4 requests ∙ 7 tools ∙ cost unknown
+=== Ascii 80 ===
+ + Read screenshots/home.png                    image/png - 1.6 MB - ~3k tokens
+ + Read docs/spec.pdf                                  application/pdf - 912 KB
+ + Read build.log                     text - 2,000 of 9,412 lines - ~17k tokens
+ x Read song.mp3                                                  couldn't read
+ x Read shots/a.png                                             couldn't attach
+ x Read shots/b.png                                             couldn't attach
+ x Read docs/old.pdf                                            couldn't attach
+
+   18s - 4 requests - 7 tools - cost unknown
+=== Ascii 120 ===
+ + Read screenshots/home.png                                                            image/png - 1.6 MB - ~3k tokens
+ + Read docs/spec.pdf                                                                          application/pdf - 912 KB
+ + Read build.log                                                             text - 2,000 of 9,412 lines - ~17k tokens
+ x Read song.mp3                                                                                          couldn't read
+ x Read shots/a.png                                                                                     couldn't attach
+ x Read shots/b.png                                                                                     couldn't attach
+ x Read docs/old.pdf                                                                                    couldn't attach
+
+   18s - 4 requests - 7 tools - cost unknown

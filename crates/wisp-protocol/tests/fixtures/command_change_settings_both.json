@@ -1,0 +1,24 @@
+{
+  "type": "change_settings",
+  "request": 3,
+  "changes": [
+    {
+      "target": {
+        "name": "effort"
+      },
+      "value": {
+        "kind": "text",
+        "text": "low"
+      }
+    },
+    {
+      "target": {
+        "name": "model"
+      },
+      "value": {
+        "kind": "text",
+        "text": "claude-haiku-5-5"
+      }
+    }
+  ]
+}

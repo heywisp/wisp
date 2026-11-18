@@ -1,0 +1,10 @@
+{
+  "type": "endpoint_removed",
+  "answers": 23,
+  "name": "direct",
+  "kept_item": true,
+  "default_cleared": true,
+  "notes": [
+    "note: credentials.json beside the file given with --config is inside a git repository; keep it out of commits with a .gitignore line"
+  ]
+}

@@ -1,0 +1,440 @@
+---
+source: crates/wisp-render/src/plan_usage/tests.rs
+expression: "sections.join(\"\\n\\n\")"
+---
+FULL
+ Usage
+────────────────────────────────────────────────────────────────────────────────
+› Claude subscription · ● claude-subscription   this chat
+    5-hour   ⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    42%   resets 19:00
+    Weekly   ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    18%   resets Fri
+    API equivalent             ~$41.20
+    Today, all chats          ~$120.00
+    30 days, all chats       ~$2400.00
+
+  Claude subscription · ● claude-work
+    5-hour   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀    87%   resets 19:00
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀    93%   resets Wed
+    API equivalent              ~$3.10
+
+  ChatGPT Pro · ● chatgpt
+    5-hour   ⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    12%   resets 19:00
+    Weekly   ⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    31%   resets Wed
+    API equivalent             ~$12.40
+
+  Claude API · ● claude-api
+    Spent                        $2.86
+    Today, all chats             $9.00
+    30 days, all chats         $150.00
+
+  All chats · Spent
+    Today                        $9.00
+    Yesterday                   $12.00
+    Thu                          $5.00
+    Wed                          $0.00
+    Tue                         $20.00
+    Mon                          $8.00
+    Sun                          $6.00
+
+  All chats · API equivalent
+    Today                     ~$120.00
+    Yesterday                 ~$310.00
+    Thu                       ~$280.00
+    Wed                       ~$250.00
+    Tue                       ~$400.00
+    Mon                       ~$330.00
+    Sun                        ~$90.00
+────────────────────────────────────────────────────────────────────────────────
+  This chat                      $2.86 API ·   ~$56.70 subscriptions
+  All chats, today               $9.00 API ·  ~$120.00 subscriptions
+  All chats, 30 days           $150.00 API · ~$2400.00 subscriptions
+ r refresh · esc close
+Styles:
+"Usage":Style::new().fg(Color::Rgb(212, 212, 212))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"›":Style::new().fg(Color::Rgb(86, 156, 214)).bg(Color::Rgb(4, 57, 94)) | "Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "● ":Style::new().fg(Color::Rgb(156, 220, 254)).bg(Color::Rgb(4, 57, 94)) | "claude-subscription":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"5-hour":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | " 42%":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | " 18%":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "resets Fri":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "~$41.20":Style::new().fg(Color::Rgb(137, 209, 133)).bg(Color::Rgb(4, 57, 94))
+"    Today, all chats":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "~$120.00":Style::new().fg(Color::Rgb(137, 209, 133)).bg(Color::Rgb(4, 57, 94))
+"    30 days, all chats":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "~$2400.00":Style::new().fg(Color::Rgb(137, 209, 133)).bg(Color::Rgb(4, 57, 94))
+
+"Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(218, 112, 214)) | "claude-work":Style::new().fg(Color::Rgb(212, 212, 212))
+"5-hour":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 87%":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "resets 19:00":Style::new().fg(Color::Rgb(212, 212, 212)).bold()
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 93%":Style::new().fg(Color::Rgb(244, 135, 113)) | "resets Wed":Style::new().fg(Color::Rgb(244, 135, 113))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$3.10":Style::new().fg(Color::Rgb(137, 209, 133))
+
+"ChatGPT Pro · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(78, 201, 176)) | "chatgpt":Style::new().fg(Color::Rgb(212, 212, 212))
+"5-hour":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 12%":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 31%":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets Wed":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$12.40":Style::new().fg(Color::Rgb(137, 209, 133))
+
+"Claude API · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(177, 128, 215)) | "claude-api":Style::new().fg(Color::Rgb(212, 212, 212))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Today, all chats":Style::new().fg(Color::Rgb(212, 212, 212)) | "$9.00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    30 days, all chats":Style::new().fg(Color::Rgb(212, 212, 212)) | "$150.00":Style::new().fg(Color::Rgb(166, 166, 166))
+
+"All chats · Spent":Style::new().fg(Color::Rgb(212, 212, 212))
+"    Today":Style::new().fg(Color::Rgb(212, 212, 212)) | "$9.00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Yesterday":Style::new().fg(Color::Rgb(212, 212, 212)) | "$12.00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Thu":Style::new().fg(Color::Rgb(212, 212, 212)) | "$5.00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Wed":Style::new().fg(Color::Rgb(212, 212, 212)) | "$0.00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Tue":Style::new().fg(Color::Rgb(212, 212, 212)) | "$20.00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Mon":Style::new().fg(Color::Rgb(212, 212, 212)) | "$8.00":Style::new().fg(Color::Rgb(166, 166, 166))
+"    Sun":Style::new().fg(Color::Rgb(212, 212, 212)) | "$6.00":Style::new().fg(Color::Rgb(166, 166, 166))
+
+"All chats · API equivalent":Style::new().fg(Color::Rgb(212, 212, 212))
+"    Today":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$120.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Yesterday":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$310.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Thu":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$280.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Wed":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$250.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Tue":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$400.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Mon":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$330.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Sun":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$90.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"  This chat":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "  ~$56.70 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, today":Style::new().fg(Color::Rgb(212, 212, 212)) | "$9.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | " ~$120.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, 30 days":Style::new().fg(Color::Rgb(212, 212, 212)) | "$150.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "~$2400.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"r":Style::new().fg(Color::Rgb(166, 166, 166)) | " refresh":Style::new().fg(Color::Rgb(117, 117, 117)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "esc":Style::new().fg(Color::Rgb(166, 166, 166)) | " close":Style::new().fg(Color::Rgb(117, 117, 117))
+
+
+VIEWPORT 24 SCROLL 0
+ Usage
+────────────────────────────────────────────────────────────────────────────────
+› Claude subscription · ● claude-subscription   this chat
+    5-hour   ⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    42%   resets 19:00
+    Weekly   ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    18%   resets Fri
+    API equivalent             ~$41.20
+    Today, all chats          ~$120.00
+    30 days, all chats       ~$2400.00
+
+  Claude subscription · ● claude-work
+    5-hour   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀    87%   resets 19:00
+    Weekly   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀    93%   resets Wed
+    API equivalent              ~$3.10
+
+  ChatGPT Pro · ● chatgpt
+    5-hour   ⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    12%   resets 19:00
+    Weekly   ⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    31%   resets Wed
+    API equivalent             ~$12.40
+
+────────────────────────────────────────────────────────────────────────────────
+  This chat                      $2.86 API ·   ~$56.70 subscriptions
+  All chats, today               $9.00 API ·  ~$120.00 subscriptions
+  All chats, 30 days           $150.00 API · ~$2400.00 subscriptions
+ r refresh · esc close
+Styles:
+"Usage":Style::new().fg(Color::Rgb(212, 212, 212))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"›":Style::new().fg(Color::Rgb(86, 156, 214)).bg(Color::Rgb(4, 57, 94)) | "Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "● ":Style::new().fg(Color::Rgb(156, 220, 254)).bg(Color::Rgb(4, 57, 94)) | "claude-subscription":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"5-hour":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | " 42%":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | " 18%":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "resets Fri":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "~$41.20":Style::new().fg(Color::Rgb(137, 209, 133)).bg(Color::Rgb(4, 57, 94))
+"    Today, all chats":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "~$120.00":Style::new().fg(Color::Rgb(137, 209, 133)).bg(Color::Rgb(4, 57, 94))
+"    30 days, all chats":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "~$2400.00":Style::new().fg(Color::Rgb(137, 209, 133)).bg(Color::Rgb(4, 57, 94))
+
+"Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(218, 112, 214)) | "claude-work":Style::new().fg(Color::Rgb(212, 212, 212))
+"5-hour":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 87%":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "resets 19:00":Style::new().fg(Color::Rgb(212, 212, 212)).bold()
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 93%":Style::new().fg(Color::Rgb(244, 135, 113)) | "resets Wed":Style::new().fg(Color::Rgb(244, 135, 113))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$3.10":Style::new().fg(Color::Rgb(137, 209, 133))
+
+"ChatGPT Pro · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(78, 201, 176)) | "chatgpt":Style::new().fg(Color::Rgb(212, 212, 212))
+"5-hour":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 12%":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166))
+"Weekly":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 31%":Style::new().fg(Color::Rgb(166, 166, 166)) | "resets Wed":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$12.40":Style::new().fg(Color::Rgb(137, 209, 133))
+
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"  This chat":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "  ~$56.70 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, today":Style::new().fg(Color::Rgb(212, 212, 212)) | "$9.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | " ~$120.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, 30 days":Style::new().fg(Color::Rgb(212, 212, 212)) | "$150.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "~$2400.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"r":Style::new().fg(Color::Rgb(166, 166, 166)) | " refresh":Style::new().fg(Color::Rgb(117, 117, 117)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "esc":Style::new().fg(Color::Rgb(166, 166, 166)) | " close":Style::new().fg(Color::Rgb(117, 117, 117))
+
+
+VIEWPORT 12 SCROLL 999
+ Usage
+────────────────────────────────────────────────────────────────────────────────
+    Thu                       ~$280.00
+    Wed                       ~$250.00
+    Tue                       ~$400.00
+    Mon                       ~$330.00
+    Sun                        ~$90.00
+────────────────────────────────────────────────────────────────────────────────
+  This chat                      $2.86 API ·   ~$56.70 subscriptions
+  All chats, today               $9.00 API ·  ~$120.00 subscriptions
+  All chats, 30 days           $150.00 API · ~$2400.00 subscriptions
+ r refresh · esc close
+Styles:
+"Usage":Style::new().fg(Color::Rgb(212, 212, 212))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"    Thu":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$280.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Wed":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$250.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Tue":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$400.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Mon":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$330.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"    Sun":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$90.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"  This chat":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "  ~$56.70 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, today":Style::new().fg(Color::Rgb(212, 212, 212)) | "$9.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | " ~$120.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, 30 days":Style::new().fg(Color::Rgb(212, 212, 212)) | "$150.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "~$2400.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"r":Style::new().fg(Color::Rgb(166, 166, 166)) | " refresh":Style::new().fg(Color::Rgb(117, 117, 117)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "esc":Style::new().fg(Color::Rgb(166, 166, 166)) | " close":Style::new().fg(Color::Rgb(117, 117, 117))
+
+
+VIEWPORT 6 SCROLL 999
+ Usage
+  This chat                      $2.86 API ·   ~$56.70 subscriptions
+  All chats, today               $9.00 API ·  ~$120.00 subscriptions
+  All chats, 30 days           $150.00 API · ~$2400.00 subscriptions
+ r refresh · esc close
+Styles:
+"Usage":Style::new().fg(Color::Rgb(212, 212, 212))
+"  This chat":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "  ~$56.70 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, today":Style::new().fg(Color::Rgb(212, 212, 212)) | "$9.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | " ~$120.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"  All chats, 30 days":Style::new().fg(Color::Rgb(212, 212, 212)) | "$150.00":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "~$2400.00 subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"r":Style::new().fg(Color::Rgb(166, 166, 166)) | " refresh":Style::new().fg(Color::Rgb(117, 117, 117)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "esc":Style::new().fg(Color::Rgb(166, 166, 166)) | " close":Style::new().fg(Color::Rgb(117, 117, 117))
+
+
+STATES
+ Usage
+────────────────────────────────────────────────────────────────────────────────
+› Claude subscription · ● claude-checking   this chat
+    checking…
+    5-hour   ⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    42%   resets 19:00
+    Weekly   ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    18%   resets Fri
+    API equivalent              ~$0.00
+
+  Claude subscription · ● claude-reached
+    5-hour   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿   100%   limit reached, resets 19:00
+    API equivalent              ~$1.25
+
+  Claude subscription · ● claude-old
+    5-hour   ⣿⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    42%   2 h ago
+    API equivalent              ~$0.40
+
+  ChatGPT subscription · ● chatgpt-away
+    usage unavailable right now          r try again
+    API equivalent              ~$0.18
+
+  Claude subscription · ● claude-expired
+    sign-in expired                      enter sign in again
+    API equivalent              ~$0.00
+────────────────────────────────────────────────────────────────────────────────
+  This chat                     ~$1.83 subscriptions
+ r refresh · esc close
+Styles:
+"Usage":Style::new().fg(Color::Rgb(212, 212, 212))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"›":Style::new().fg(Color::Rgb(86, 156, 214)).bg(Color::Rgb(4, 57, 94)) | "Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "● ":Style::new().fg(Color::Rgb(41, 184, 219)).bg(Color::Rgb(4, 57, 94)) | "claude-checking":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "this chat":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"checking…":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"5-hour":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | " 42%":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "resets 19:00":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"Weekly":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | " 18%":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94)) | "resets Fri":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "~$0.00":Style::new().fg(Color::Rgb(137, 209, 133)).bg(Color::Rgb(4, 57, 94))
+
+"Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(41, 184, 219)) | "claude-reached":Style::new().fg(Color::Rgb(212, 212, 212))
+"5-hour":Style::new().fg(Color::Rgb(212, 212, 212)) | "⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "100%":Style::new().fg(Color::Rgb(244, 135, 113)) | "limit reached, resets 19:00":Style::new().fg(Color::Rgb(244, 135, 113))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$1.25":Style::new().fg(Color::Rgb(137, 209, 133))
+
+"Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(41, 184, 219)) | "claude-old":Style::new().fg(Color::Rgb(212, 212, 212))
+"5-hour":Style::new().fg(Color::Rgb(166, 166, 166)) | "⣿⣿⣿⣿⣿⣿⣿":Style::new().fg(Color::Rgb(166, 166, 166)) | "⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | " 42%":Style::new().fg(Color::Rgb(166, 166, 166)) | "2 h ago":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.40":Style::new().fg(Color::Rgb(137, 209, 133))
+
+"ChatGPT subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(41, 184, 219)) | "chatgpt-away":Style::new().fg(Color::Rgb(212, 212, 212))
+"usage unavailable right now":Style::new().fg(Color::Rgb(212, 212, 212)) | "r try again":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.18":Style::new().fg(Color::Rgb(137, 209, 133))
+
+"Claude subscription · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(41, 184, 219)) | "claude-expired":Style::new().fg(Color::Rgb(212, 212, 212))
+"sign-in expired":Style::new().fg(Color::Rgb(212, 212, 212)) | "enter sign in again":Style::new().fg(Color::Rgb(166, 166, 166))
+"    API equivalent":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$0.00":Style::new().fg(Color::Rgb(137, 209, 133))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"  This chat":Style::new().fg(Color::Rgb(212, 212, 212)) | "~$1.83":Style::new().fg(Color::Rgb(137, 209, 133)) | " subscriptions":Style::new().fg(Color::Rgb(137, 209, 133))
+"r":Style::new().fg(Color::Rgb(166, 166, 166)) | " refresh":Style::new().fg(Color::Rgb(117, 117, 117)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "esc":Style::new().fg(Color::Rgb(166, 166, 166)) | " close":Style::new().fg(Color::Rgb(117, 117, 117))
+
+
+REFUSED
+ Usage
+────────────────────────────────────────────────────────────────────────────────
+  Claude API · ● claude-api
+    Key refused: change ANTHROPIC_API_KEY in ~/.config/wisp/.env
+    Spent                        $2.86
+
+  Claude API · ● shell-api
+    Key refused: change ANTHROPIC_API_KEY in your shell
+    Spent                        $2.86
+
+› Claude API · ● work-api
+    Key refused
+    Spent                        $2.86
+────────────────────────────────────────────────────────────────────────────────
+  This chat                      $8.58 API
+ enter change key · r refresh · esc close
+Styles:
+"Usage":Style::new().fg(Color::Rgb(212, 212, 212))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"Claude API · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(177, 128, 215)) | "claude-api":Style::new().fg(Color::Rgb(212, 212, 212))
+"Key refused: change ANTHROPIC_API_KEY in ~/.config/wisp/.env":Style::new().fg(Color::Rgb(244, 135, 113))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166))
+
+"Claude API · ":Style::new().fg(Color::Rgb(212, 212, 212)) | "● ":Style::new().fg(Color::Rgb(41, 184, 219)) | "shell-api":Style::new().fg(Color::Rgb(212, 212, 212))
+"Key refused: change ANTHROPIC_API_KEY in your shell":Style::new().fg(Color::Rgb(244, 135, 113))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166))
+
+"›":Style::new().fg(Color::Rgb(86, 156, 214)).bg(Color::Rgb(4, 57, 94)) | "Claude API · ":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "● ":Style::new().fg(Color::Rgb(220, 220, 170)).bg(Color::Rgb(4, 57, 94)) | "work-api":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94))
+"Key refused":Style::new().fg(Color::Rgb(244, 135, 113)).bg(Color::Rgb(4, 57, 94))
+"    Spent":Style::new().fg(Color::Rgb(212, 212, 212)).bg(Color::Rgb(4, 57, 94)) | "$2.86":Style::new().fg(Color::Rgb(166, 166, 166)).bg(Color::Rgb(4, 57, 94))
+"────────────────────────────────────────────────────────────────────────────────":Style::new().fg(Color::Rgb(88, 88, 88))
+"  This chat":Style::new().fg(Color::Rgb(212, 212, 212)) | "$8.58":Style::new().fg(Color::Rgb(166, 166, 166)) | " API":Style::new().fg(Color::Rgb(166, 166, 166))
+"enter":Style::new().fg(Color::Rgb(166, 166, 166)) | " change key":Style::new().fg(Color::Rgb(117, 117, 117)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "r":Style::new().fg(Color::Rgb(166, 166, 166)) | " refresh":Style::new().fg(Color::Rgb(117, 117, 117)) | " · ":Style::new().fg(Color::Rgb(117, 117, 117)) | "esc":Style::new().fg(Color::Rgb(166, 166, 166)) | " close":Style::new().fg(Color::Rgb(117, 117, 117))
+
+
+NOTICE
+ ! claude-work · 5-hour 87% used · resets in 2h 14m · Tue 19:00
+   /usage claude-work
+Styles:
+" ! ":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "claude-work · 5-hour 87% used · resets in 2h 14m · Tue 19:00":Style::new().fg(Color::Rgb(212, 212, 212)).bold()
+"/usage claude-work":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+REFUSAL
+ ! Limit reached · claude-work · 5-hour
+   resets in 2h 14m · Tue 19:00 · /usage claude-work
+Styles:
+" ! ":Style::new().fg(Color::Rgb(244, 135, 113)) | "Limit reached · claude-work · 5-hour":Style::new().fg(Color::Rgb(244, 135, 113))
+"resets in 2h 14m · Tue 19:00 · /usage claude-work":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI two-window Show ROOM 60
+!! week ⣿⣿⣿⣀ 93% used · 5h 87% used · /usage
+Styles:
+"!! week ":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | "93% used":Style::new().fg(Color::Rgb(244, 135, 113)) | " · ":Style::new() | "5h ":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "87% used":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | " · /usage":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI two-window Show ROOM 40
+!! week 93% used · 5h 87% used · /usage
+Styles:
+"!! week ":Style::new().fg(Color::Rgb(244, 135, 113)) | "93% used":Style::new().fg(Color::Rgb(244, 135, 113)) | " · ":Style::new() | "5h ":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "87% used":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | " · /usage":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI two-window Show ROOM 20
+!! week 93% used
+Styles:
+"!! week ":Style::new().fg(Color::Rgb(244, 135, 113)) | "93% used":Style::new().fg(Color::Rgb(244, 135, 113))
+
+
+MINI two-window Show ROOM 8
+
+Styles:
+
+
+MINI two-window PageOpen ROOM 60
+!! week ⣿⣿⣿⣀ 93% used · 5h 87% used
+Styles:
+"!! week ":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | "93% used":Style::new().fg(Color::Rgb(244, 135, 113)) | " · ":Style::new() | "5h ":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "87% used":Style::new().fg(Color::Rgb(212, 212, 212)).bold()
+
+
+MINI two-window PageOpen ROOM 40
+!! week ⣿⣿⣿⣀ 93% used · 5h 87% used
+Styles:
+"!! week ":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣿⣿⣿":Style::new().fg(Color::Rgb(244, 135, 113)) | "⣀":Style::new().fg(Color::Rgb(117, 117, 117)) | "93% used":Style::new().fg(Color::Rgb(244, 135, 113)) | " · ":Style::new() | "5h ":Style::new().fg(Color::Rgb(212, 212, 212)).bold() | "87% used":Style::new().fg(Color::Rgb(212, 212, 212)).bold()
+
+
+MINI two-window PageOpen ROOM 20
+!! week 93% used
+Styles:
+"!! week ":Style::new().fg(Color::Rgb(244, 135, 113)) | "93% used":Style::new().fg(Color::Rgb(244, 135, 113))
+
+
+MINI two-window PageOpen ROOM 8
+!!
+Styles:
+"!!":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI stale Show ROOM 60
+stale 5h 42% used · /usage
+Styles:
+"stale 5h ":Style::new().fg(Color::Rgb(166, 166, 166)) | "42% used":Style::new().fg(Color::Rgb(166, 166, 166)) | " · /usage":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI stale Show ROOM 40
+stale 5h 42% used · /usage
+Styles:
+"stale 5h ":Style::new().fg(Color::Rgb(166, 166, 166)) | "42% used":Style::new().fg(Color::Rgb(166, 166, 166)) | " · /usage":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI stale Show ROOM 20
+stale 5h 42% used
+Styles:
+"stale 5h ":Style::new().fg(Color::Rgb(166, 166, 166)) | "42% used":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI stale Show ROOM 8
+
+Styles:
+
+
+MINI stale PageOpen ROOM 60
+stale 5h 42% used
+Styles:
+"stale 5h ":Style::new().fg(Color::Rgb(166, 166, 166)) | "42% used":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI stale PageOpen ROOM 40
+stale 5h 42% used
+Styles:
+"stale 5h ":Style::new().fg(Color::Rgb(166, 166, 166)) | "42% used":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI stale PageOpen ROOM 20
+stale 5h 42% used
+Styles:
+"stale 5h ":Style::new().fg(Color::Rgb(166, 166, 166)) | "42% used":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI stale PageOpen ROOM 8
+stale
+Styles:
+"stale":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI unavailable Show ROOM 60
+unavailable /usage
+Styles:
+"unavailable /usage":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI unavailable Show ROOM 40
+unavailable /usage
+Styles:
+"unavailable /usage":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI unavailable Show ROOM 20
+unavailable /usage
+Styles:
+"unavailable /usage":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI unavailable Show ROOM 8
+
+Styles:
+
+
+MINI unavailable PageOpen ROOM 60
+unavailable
+Styles:
+"unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI unavailable PageOpen ROOM 40
+unavailable
+Styles:
+"unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI unavailable PageOpen ROOM 20
+unavailable
+Styles:
+"unavailable":Style::new().fg(Color::Rgb(166, 166, 166))
+
+
+MINI unavailable PageOpen ROOM 8
+
+Styles:

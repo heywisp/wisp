@@ -1,0 +1,44 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 1,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "instructions_loaded",
+  "turn": null,
+  "chosen": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "imports": [
+    {
+      "scope": "project",
+      "name": "docs/style.md",
+      "display_path": "~/Projects/Wisp/docs/style.md",
+      "bytes": 9035,
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "imported_by": "AGENTS.md"
+    }
+  ],
+  "candidates": [
+    {
+      "scope": "project",
+      "display_path": "~/Projects/Wisp/AGENTS.md",
+      "bytes": 9035,
+      "mtime": 1792756800000000000,
+      "sha256": "abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "scope": "default",
+      "display_path": "~/.config/wisp/AGENTS.md"
+    }
+  ],
+  "diagnostics": [
+    {
+      "source": "~/Projects/Wisp/docs/gone.md",
+      "kind": "import_missing",
+      "message": "~/Projects/Wisp/docs/gone.md, imported by AGENTS.md, doesn't exist; the import was skipped."
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+id = "openai"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Your ChatGPT subscription and OpenAI API accounts"

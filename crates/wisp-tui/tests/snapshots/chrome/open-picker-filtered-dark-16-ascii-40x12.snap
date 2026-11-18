@@ -1,0 +1,29 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== filtered
+| x Ran cargo build --...  exit 101 - 3s
+  ~ 1..2 fg Idx(9); 3..6 bold; 26..34 fg Idx(9); 34..39 fg Idx(7)
+| + Showed crates/wisp-core/src/cache.rs
+  ~ 1..2 fg Idx(10); 3..9 bold
+|        1 +     let part_1 = fingerprin
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|----------------------------------------
+  ~ 0..40 fg Idx(8)
+|   Open
+  ~ 3..7 bold
+| > x Ran cargo build -...  exit 101 - 3s
+  ~ 0..1 inverse; 1..2 fg Idx(12) inverse; 2..3 inverse; 3..4 fg Idx(9) inverse; 4..5 inverse; 5..8 bold inverse; 8..27 inverse; 27..35 fg Idx(9) inverse; 35..40 fg Idx(7) inverse
+|   + Ran cargo test -p wisp-core ...  1s
+  ~ 3..4 fg Idx(10); 5..8 bold; 38..40 fg Idx(7)
+|+--------------------------------------+
+  ~ 0..40 fg Idx(8)
+||                          total $0.01 |
+  ~ 0..1 fg Idx(8); 27..38 fg Idx(7); 39..40 fg Idx(8)
+|+--------------------------------------+
+  ~ 0..40 fg Idx(8)
+|| (*)  Ready   Claude API   sonnet-5-5 |
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(8); 3..4 fg Idx(12); 4..5 fg Idx(8); 7..12 fg Idx(7); 15..25 fg Idx(7); 39..40 fg Idx(8)
+|+--------------------------------------+
+  ~ 0..40 fg Idx(8)

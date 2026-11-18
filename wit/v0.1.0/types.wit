@@ -1,0 +1,94 @@
+package wisp:plugin@0.1.0;
+
+interface types {
+  enum signal-kind { interrupt, kill }
+  enum background-reason { started, quiet, moved-by-user, still-running }
+  enum level { debug, info, warn, error }
+
+  variant action {
+    run, read, write, edit, search, fetch, input, wait, attach, show,
+    signal(signal-kind),
+    other(string),
+  }
+  record verbs { doing: string, done: string, failed: string }
+  variant output-kind { text, code(string), diff, none }
+
+  record diff-file {
+    path: option<string>,
+    old-path: option<string>,
+    language: option<string>,
+    hunks: string,
+    added: u64,
+    removed: u64,
+  }
+  record diff-view { title: option<string>, files: list<diff-file> }
+  enum named-key {
+    enter, tab, space, esc, backspace, delete,
+    up, down, left, right, home, end, page-up, page-down,
+  }
+  variant key { named(named-key), function(u8), ctrl(char), eof }
+  enum read-kind { new, tail, lines, search, screen }
+  record process-view {
+    id: option<u32>,
+    text: option<string>,
+    keys: list<key>,
+    signal: option<signal-kind>,
+    read: option<read-kind>,
+    pattern: option<string>,
+  }
+  variant view { diff(diff-view), process(process-view) }
+
+  record display {
+    action: action,
+    verbs: option<verbs>,
+    target: string,
+    output: output-kind,
+    view: option<view>,
+    title: option<string>,
+  }
+
+  record matches { n: u64, files: u64 }
+  record diffstat { added: u64, removed: u64 }
+  record part { sent: u64, total: u64, more-than: bool }
+  variant fact {
+    exit(s32), lines(u64), bytes(u64), matches(matches), diffstat(diffstat),
+    process(u32), media(string), part(part), tokens(u64),
+  }
+
+  variant exit-status { code(s32), signal(s32) }
+  record completed { is-error: bool, exit: option<exit-status> }
+  record failure { message: string, before-start: bool }
+  variant outcome {
+    completed(completed),
+    timed-out(u64),
+    cancelled,
+    invalid-input(string),
+    failed(failure),
+    backgrounded(background-reason),
+  }
+
+  record attachment { media-type: string, bytes: list<u8> }
+  record typed { echoed: bool, unsent: bool, signalled: bool }
+  record tool-run {
+    outcome: outcome,
+    facts: list<fact>,
+    cwd: option<string>,
+    trailer: option<string>,
+    %result: option<string>,
+    attachments: list<attachment>,
+    typed: option<typed>,
+  }
+
+  record question-option { label: string, description: string }
+  record question { header: string, question: string, options: list<question-option>, multi-select: bool }
+  record answer { chosen: list<u32>, %own: option<string> }
+  variant ask-reply {
+    answered(list<answer>),
+    attached(bool),
+    declined,
+    process-ended(bool),
+    message-instead,
+    unavailable,
+    stopped,
+  }
+}

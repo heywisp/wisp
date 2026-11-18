@@ -1,0 +1,52 @@
+{
+  "type": "tool_call_finished",
+  "call_id": "toolu_1",
+  "outcome": {
+    "status": "completed",
+    "is_error": false,
+    "exit": {
+      "type": "code",
+      "code": 0
+    }
+  },
+  "output": {
+    "tail": "test result: ok\n",
+    "bytes": 40000,
+    "lines": 812,
+    "file": "/tmp/wisp-s1/0003-bash.out",
+    "file_problem": null,
+    "inlined": false
+  },
+  "facts": [
+    {
+      "type": "exit",
+      "code": 0
+    },
+    {
+      "type": "lines",
+      "n": 812
+    },
+    {
+      "type": "bytes",
+      "n": 40000
+    },
+    {
+      "type": "matches",
+      "n": 3,
+      "files": 2
+    },
+    {
+      "type": "diffstat",
+      "added": 10,
+      "removed": 4
+    }
+  ],
+  "state": {
+    "type": "cwd",
+    "path": "~/Projects/Wisp/crates"
+  },
+  "duration_ms": 5321,
+  "notes": [
+    "Working directory not tracked: the shell exited"
+  ]
+}

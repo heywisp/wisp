@@ -1,0 +1,15 @@
+[package]
+name = "wisp-index"
+description = "Pure keyword ranking of Wisp's tools, skills and documents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wisp-plugin-api.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,32 @@
+{
+  "type": "instructions_changed",
+  "turn": 3,
+  "epoch": 1,
+  "retry_of": 2,
+  "ahead": true,
+  "from": null,
+  "to": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "changed": [
+    {
+      "display_path": "~/Projects/Wisp/AGENTS.md",
+      "new_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+    }
+  ],
+  "chosen": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "imports": [],
+  "candidates": [],
+  "sent": false,
+  "diagnostics": []
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 28,
+  "seq": 9,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "agent_refused",
+  "turn": 3,
+  "by": "/review",
+  "action": "spawn",
+  "reason": "the depth limit is 2"
+}

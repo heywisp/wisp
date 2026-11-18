@@ -1,0 +1,58 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== answering
+|╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..100 fg Idx(8)
+|│                                                                                                  │
+  ~ 0..1 fg Idx(8); 99..100 fg Idx(8)
+|│    ⡐⠈ ⠁⠁     wisp                                                                          0.1.0 │
+  ~ 0..1 fg Idx(8); 5..7 fg Idx(8); 8..10 fg Idx(8); 15..19 bold; 93..98 fg Idx(8); 99..100 fg Idx(8)
+|│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                                            │
+  ~ 0..1 fg Idx(8); 4..5 fg Idx(8); 7..9 fg Idx(12); 11..12 fg Idx(8); 15..28 fg Idx(7); 28..55 bold; 99..100 fg Idx(8)
+|│    ⠡⢀ ⡀⡀⠌    sonnet-5-5 low                                                                      │
+  ~ 0..1 fg Idx(8); 5..7 fg Idx(8); 8..11 fg Idx(8); 99..100 fg Idx(8)
+|│              ~/Projects/Wisp · Claude API                                                        │
+  ~ 0..1 fg Idx(8); 15..43 fg Idx(7); 99..100 fg Idx(8)
+|│                                                                                                  │
+  ~ 0..1 fg Idx(8); 99..100 fg Idx(8)
+|╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..100 fg Idx(8)
+|  enter send · ctrl-j new line · /help · /model switch model
+  ~ 7..15 fg Idx(7); 21..33 fg Idx(7); 38..41 fg Idx(7); 47..60 fg Idx(7)
+|(22 blank rows)
+| › Make cache misses name their cause
+  ~ 1..2 fg Idx(8)
+|
+| ╎ Thought for 4 s ▸
+  ~ 1..2 fg Idx(8); 3..18 fg Idx(7); 18..20 fg Idx(8)
+| ╎ Placeholder thought seven.
+  ~ 1..2 fg Idx(8); 3..29 fg Idx(7) italic
+| ╎ Placeholder 8th.
+  ~ 1..2 fg Idx(8); 3..19 fg Idx(7) italic
+| ╎ Placeholder 9.
+  ~ 1..2 fg Idx(8); 3..17 fg Idx(7) italic
+|
+| ⠶ I'll start with how request prefixes are built:
+  ~ 1..2 fg Idx(12)
+|
+|   let key = Fingerprint::of(req)?;                                                                                rust
+  ~ 115..119 fg Idx(8)
+|
+|   Misses now say which part of the prefix changed: the system prompt, the tools or the ⠶
+  ~ 87..89 fg Idx(12)
+|╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  ~ 0..120 fg Idx(8)
+|│                                                                                                                      │
+  ~ 0..1 fg Idx(8); 119..120 fg Idx(8)
+|├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..120 fg Idx(8)
+|│ › Ask anything, or type / for commands                                                                               │
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(12); 4..5 fg Idx(8) inverse; 5..40 fg Idx(8); 119..120 fg Idx(8)
+|├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  ~ 0..120 fg Idx(8)
+|│ ⢎⠶⡰  Kindling… 4s · ↓ ≈45 tokens · esc to stop                                           Claude API   sonnet-5-5 low │
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(8); 3..4 fg Idx(12); 4..5 fg Idx(8); 16..48 fg Idx(7); 91..101 fg Idx(7); 115..118 fg Idx(7); 119..120 fg Idx(8)
+|╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..120 fg Idx(8)

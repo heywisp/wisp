@@ -1,0 +1,30 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: out
+---
+--- overflow after a rejected request ---
+   [Rgb(166, 166, 166)|Blocked by aa/gate: not ^[[2Jnow]
+
+ [Rgb(244, 135, 113)|⨯] [Rgb(244, 135, 113)|Anthropic said the conversation is too long for the model.][Rgb(212, 212, 212)| /compact]
+   [Rgb(212, 212, 212)|summarises it so your next message fits. Nothing from this turn was kept.]
+   [Rgb(166, 166, 166)|prompt is too long: 250000 tokens > 200000 maximum]
+
+   [Rgb(117, 117, 117)|0.9s · ][Rgb(212, 212, 212)|cost unknown, possibly billed]
+--- overflow after a cut-off reply or before a turn ---
+   [Rgb(166, 166, 166)|Blocked by aa/gate: not ^[[2Jnow]
+
+   [Rgb(117, 117, 117)|0.9s · $0.014 · cached 92%]
+--- settled switch going ahead ---
+   [Rgb(166, 166, 166)|Blocked by aa/gate: not ^[[2Jnow]
+
+   [Rgb(117, 117, 117)|0.9s · $0.014 · cached 92%]
+--- settled switch withdrawn ---
+   [Rgb(166, 166, 166)|Blocked by aa/gate: not ^[[2Jnow]
+--- held automatic ---
+   [Rgb(166, 166, 166)|Blocked by aa/gate: not ^[[2Jnow]
+
+   [Rgb(117, 117, 117)|0.9s · $0.014 · cached 92%]
+--- retry rerun ---
+   [Rgb(166, 166, 166)|Blocked by aa/gate: not ^[[2Jnow]
+
+   [Rgb(117, 117, 117)|0.9s · $0.014 · cached 92%]

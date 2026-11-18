@@ -1,0 +1,8 @@
+{
+  "type": "keep_warm_changed",
+  "agent": "/review/planner",
+  "keep_warm": {
+    "refreshes": 2,
+    "limit": 8
+  }
+}

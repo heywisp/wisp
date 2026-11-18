@@ -1,0 +1,74 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: out
+---
+subscription Unicode 40
+   14s · 2 requests · 7 tools · ~$0.129
+   · cached 99%
+subscription Unicode 80
+   14s · 2 requests · 7 tools · ~$0.129 · cached 99%
+subscription Unicode 120
+   14s · 2 requests · 7 tools · ~$0.129 · cached 99%
+subscription Ascii 40
+   14s - 2 requests - 7 tools - ~$0.129
+   - cached 99%
+subscription Ascii 80
+   14s - 2 requests - 7 tools - ~$0.129 - cached 99%
+subscription Ascii 120
+   14s - 2 requests - 7 tools - ~$0.129 - cached 99%
+api Unicode 40
+   14s · 2 requests · 7 tools · $0.129
+   · cached 99%
+api Unicode 80
+   14s · 2 requests · 7 tools · $0.129 · cached 99%
+api Unicode 120
+   14s · 2 requests · 7 tools · $0.129 · cached 99%
+api Ascii 40
+   14s - 2 requests - 7 tools - $0.129
+   - cached 99%
+api Ascii 80
+   14s - 2 requests - 7 tools - $0.129 - cached 99%
+api Ascii 120
+   14s - 2 requests - 7 tools - $0.129 - cached 99%
+lower bound Unicode 40
+   14s · 2 requests · 7 tools ·
+   ~$0.129+ · cached 99%
+lower bound Unicode 80
+   14s · 2 requests · 7 tools · ~$0.129+ · cached 99%
+lower bound Unicode 120
+   14s · 2 requests · 7 tools · ~$0.129+ · cached 99%
+lower bound Ascii 40
+   14s - 2 requests - 7 tools -
+   ~$0.129+ - cached 99%
+lower bound Ascii 80
+   14s - 2 requests - 7 tools - ~$0.129+ - cached 99%
+lower bound Ascii 120
+   14s - 2 requests - 7 tools - ~$0.129+ - cached 99%
+mixed Unicode 40
+   14s · 2 requests · 7 tools · $0.099
+   · ~$0.03 subscriptions · cached 99%
+mixed Unicode 80
+   14s · 2 requests · 7 tools · $0.099 · ~$0.03 subscriptions · cached 99%
+mixed Unicode 120
+   14s · 2 requests · 7 tools · $0.099 · ~$0.03 subscriptions · cached 99%
+mixed Ascii 40
+   14s - 2 requests - 7 tools - $0.099
+   - ~$0.03 subscriptions - cached 99%
+mixed Ascii 80
+   14s - 2 requests - 7 tools - $0.099 - ~$0.03 subscriptions - cached 99%
+mixed Ascii 120
+   14s - 2 requests - 7 tools - $0.099 - ~$0.03 subscriptions - cached 99%
+mixed lower bound Unicode 40
+   14s · 2 requests · 7 tools · $0.099+
+   · ~$0.03 subscriptions · cached 99%
+mixed lower bound Unicode 80
+   14s · 2 requests · 7 tools · $0.099+ · ~$0.03 subscriptions · cached 99%
+mixed lower bound Unicode 120
+   14s · 2 requests · 7 tools · $0.099+ · ~$0.03 subscriptions · cached 99%
+mixed lower bound Ascii 40
+   14s - 2 requests - 7 tools - $0.099+
+   - ~$0.03 subscriptions - cached 99%
+mixed lower bound Ascii 80
+   14s - 2 requests - 7 tools - $0.099+ - ~$0.03 subscriptions - cached 99%
+mixed lower bound Ascii 120
+   14s - 2 requests - 7 tools - $0.099+ - ~$0.03 subscriptions - cached 99%

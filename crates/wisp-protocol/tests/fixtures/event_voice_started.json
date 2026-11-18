@@ -1,0 +1,7 @@
+{
+  "type": "voice",
+  "event": {
+    "type": "started",
+    "call": "web-1"
+  }
+}

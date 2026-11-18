@@ -1,0 +1,15 @@
+{
+  "type": "endpoint_edited",
+  "answers": 21,
+  "name": "manifest",
+  "changed": [
+    "auth",
+    "url",
+    "key",
+    "store"
+  ],
+  "store": "file",
+  "check": {
+    "outcome": "ok"
+  }
+}

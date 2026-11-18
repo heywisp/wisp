@@ -1,0 +1,7 @@
+{
+  "type": "feature_state_changed",
+  "endpoint": "manifest",
+  "model": "claude-sonnet-5-5",
+  "feature": "binding_controls",
+  "state": "fallen_back"
+}

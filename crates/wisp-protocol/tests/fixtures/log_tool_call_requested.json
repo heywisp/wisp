@@ -1,0 +1,24 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 3,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "tool_call_requested",
+  "turn": 1,
+  "step": 1,
+  "block": 0,
+  "call_id": "toolu_1",
+  "tool": "bash",
+  "input": {
+    "command": "cargo test",
+    "timeout_ms": 120000
+  },
+  "display": {
+    "action": {
+      "type": "run"
+    },
+    "target": "cargo test",
+    "output": {
+      "type": "text"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "type": "hook_applied",
+  "hook": "acme/guard",
+  "point": "before-tool",
+  "turn": 3,
+  "step": 2,
+  "call_id": "toolu_7",
+  "change": {
+    "type": "input",
+    "before": {
+      "command": "rm -rf build"
+    },
+    "after": {
+      "command": "rm -rf ./build"
+    }
+  }
+}

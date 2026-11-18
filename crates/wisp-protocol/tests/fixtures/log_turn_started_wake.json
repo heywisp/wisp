@@ -1,0 +1,21 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 10,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "turn_started",
+  "turn": 4,
+  "origin": "process_exit",
+  "lead": [
+    {
+      "by": "time/sent",
+      "text": "Sent: Sunday 2026-10-25 12:00 UTC\n"
+    },
+    {
+      "by": "shell/processes",
+      "text": "<processes>\nProcess 3 (npm run dev) exited with code 1.\n</processes>\n",
+      "replay": true
+    }
+  ],
+  "model": "claude-opus-5-5",
+  "endpoint_name": "env"
+}

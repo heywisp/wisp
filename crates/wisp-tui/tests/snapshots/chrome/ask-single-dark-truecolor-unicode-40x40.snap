@@ -1,0 +1,120 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== one
+| ⢎⠶⡰ wisp 0.1.0 · claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort · Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(11 blank rows)
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..40 bg Rgb(38, 38, 38)
+|
+| ⢠ Asking Database                   0s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..18 fg Rgb(212, 212, 212); 37..39 fg Rgb(166, 166, 166)
+| ? Database             question 1 of 1
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..11 fg Rgb(212, 212, 212) bold; 24..39 fg Rgb(166, 166, 166)
+|   Which database should the notes
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   service use?
+  ~ 3..15 fg Rgb(212, 212, 212)
+|
+| › 1 PostgreSQL (Recommended)
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..29 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 29..40 bg Rgb(4, 57, 94)
+|     Relational; the billing service
+  ~ 0..5 bg Rgb(4, 57, 94); 5..36 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 36..40 bg Rgb(4, 57, 94)
+|     already runs it, so backups,
+  ~ 0..5 bg Rgb(4, 57, 94); 5..33 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 33..40 bg Rgb(4, 57, 94)
+|     monitoring and the on-call runbook
+  ~ 0..5 bg Rgb(4, 57, 94); 5..39 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 39..40 bg Rgb(4, 57, 94)
+|     carry over without new work.
+  ~ 0..5 bg Rgb(4, 57, 94); 5..33 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 33..40 bg Rgb(4, 57, 94)
+|   2 SQLite
+  ~ 3..5 fg Rgb(166, 166, 166); 5..11 fg Rgb(212, 212, 212)
+|     One file, no server; fine for a
+  ~ 5..36 fg Rgb(166, 166, 166)
+|     single writer.
+  ~ 5..19 fg Rgb(166, 166, 166)
+|   3 DynamoDB
+  ~ 3..5 fg Rgb(166, 166, 166); 5..13 fg Rgb(212, 212, 212)
+|     Managed, but ties the service to
+  ~ 5..37 fg Rgb(166, 166, 166)
+|     AWS.
+  ~ 5..9 fg Rgb(166, 166, 166)
+|   4 Type your own answer
+  ~ 3..5 fg Rgb(166, 166, 166); 5..25 fg Rgb(117, 117, 117)
+|
+|   enter send · 1–4 choose
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..26 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│                        total $0.004+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 25..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡱  Waiting · 0s   esc to stop      │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 7..19 fg Rgb(212, 212, 212); 22..25 fg Rgb(166, 166, 166); 25..33 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Rgb(88, 88, 88)
+== typing
+| ⢎⠶⡰ wisp 0.1.0 · claude-sonnet-5-5
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 9..35 fg Rgb(166, 166, 166)
+|   low effort · Claude API
+  ~ 3..26 fg Rgb(166, 166, 166)
+|  enter send · /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..34 fg Rgb(166, 166, 166)
+|(10 blank rows)
+| › Scaffold the notes service
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..29 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 29..40 bg Rgb(38, 38, 38)
+|
+| ⣀ Asking Database                   0s
+  ~ 1..2 fg Rgb(86, 156, 214); 3..9 fg Rgb(212, 212, 212) bold; 9..18 fg Rgb(212, 212, 212); 37..39 fg Rgb(166, 166, 166)
+| ? Database             question 1 of 1
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..11 fg Rgb(212, 212, 212) bold; 24..39 fg Rgb(166, 166, 166)
+|   Which database should the notes
+  ~ 3..34 fg Rgb(212, 212, 212)
+|   service use?
+  ~ 3..15 fg Rgb(212, 212, 212)
+|
+|   1 PostgreSQL (Recommended)
+  ~ 3..5 fg Rgb(166, 166, 166); 5..29 fg Rgb(212, 212, 212)
+|     Relational; the billing service
+  ~ 5..36 fg Rgb(166, 166, 166)
+|     already runs it, so backups,
+  ~ 5..33 fg Rgb(166, 166, 166)
+|     monitoring and the on-call runbook
+  ~ 5..39 fg Rgb(166, 166, 166)
+|     carry over without new work.
+  ~ 5..33 fg Rgb(166, 166, 166)
+|   2 SQLite
+  ~ 3..5 fg Rgb(166, 166, 166); 5..11 fg Rgb(212, 212, 212)
+|     One file, no server; fine for a
+  ~ 5..36 fg Rgb(166, 166, 166)
+|     single writer.
+  ~ 5..19 fg Rgb(166, 166, 166)
+|   3 DynamoDB
+  ~ 3..5 fg Rgb(166, 166, 166); 5..13 fg Rgb(212, 212, 212)
+|     Managed, but ties the service to
+  ~ 5..37 fg Rgb(166, 166, 166)
+|     AWS.
+  ~ 5..9 fg Rgb(166, 166, 166)
+| › 4 Your own: MySQL, because the team
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..38 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 38..40 bg Rgb(4, 57, 94)
+|               knows it
+  ~ 0..15 bg Rgb(4, 57, 94); 15..23 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 23..24 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) inverse; 24..40 bg Rgb(4, 57, 94)
+|
+|   enter send · ctrl-j new line
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..22 fg Rgb(166, 166, 166); 22..31 fg Rgb(117, 117, 117)
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│                        total $0.004+ │
+  ~ 0..1 fg Rgb(88, 88, 88); 25..38 fg Rgb(166, 166, 166); 39..40 fg Rgb(88, 88, 88)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Rgb(88, 88, 88)
+|│ ⢎⠶⡱  Waiting · 0s   esc to stop      │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(185, 185, 185); 3..4 fg Rgb(72, 124, 168); 4..5 fg Rgb(185, 185, 185); 7..19 fg Rgb(212, 212, 212); 22..25 fg Rgb(166, 166, 166); 25..33 fg Rgb(117, 117, 117); 39..40 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Rgb(88, 88, 88)

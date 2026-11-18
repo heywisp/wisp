@@ -1,0 +1,25 @@
+---
+source: crates/wisp-tui/tests/app/help.rs
+expression: shot
+---
+|╭─ Resume ─────────────────────────────────────────────────────────────────────╮
+  ~ 0..3 fg Rgb(88, 88, 88); 3..9 fg Rgb(212, 212, 212); 9..80 fg Rgb(88, 88, 88)
+|│ Filter  type to filter                                                       │
+  ~ 0..1 fg Rgb(88, 88, 88); 2..8 fg Rgb(166, 166, 166); 10..24 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|│   Per-account limits                                          open elsewhere │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..22 fg Rgb(117, 117, 117); 64..78 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|│ ▌ Sign-in MR review                         ● opus-5-5 · 2 agents     2h ago │
+  ~ 0..1 fg Rgb(88, 88, 88); 1..2 bg Rgb(4, 57, 94); 2..3 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 3..4 bg Rgb(4, 57, 94); 4..21 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 21..46 bg Rgb(4, 57, 94); 46..48 fg Rgb(156, 220, 254) bg Rgb(4, 57, 94); 48..67 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 67..71 bg Rgb(4, 57, 94); 71..78 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 78..79 bg Rgb(4, 57, 94); 79..80 fg Rgb(88, 88, 88)
+|│   Cache miss on resume                      ● sonnet-5-5              5h ago │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..24 fg Rgb(212, 212, 212); 46..48 fg Rgb(177, 128, 215); 48..58 fg Rgb(166, 166, 166); 71..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|│   Release notes 0.1.0                       ● gpt-6.1-sol            16h ago │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..23 fg Rgb(212, 212, 212); 46..48 fg Rgb(78, 201, 176); 48..59 fg Rgb(166, 166, 166); 71..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|│   Narrow usage page                           opus-5-5                1d ago │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..21 fg Rgb(212, 212, 212); 46..56 fg Rgb(166, 166, 166); 71..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|│   Work out how /model groups models under…  ● opus-5-5                1d ago │
+  ~ 0..1 fg Rgb(88, 88, 88); 4..44 fg Rgb(212, 212, 212); 46..48 fg Rgb(218, 112, 214); 48..56 fg Rgb(166, 166, 166); 71..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|╰──────────────────────────────────────────────────────────────────────────────╯
+  ~ 0..80 fg Rgb(88, 88, 88)
+|  enter resume · esc quit
+  ~ 2..7 fg Rgb(166, 166, 166); 7..17 fg Rgb(117, 117, 117); 17..20 fg Rgb(166, 166, 166); 20..25 fg Rgb(117, 117, 117)
+|(20 blank rows)

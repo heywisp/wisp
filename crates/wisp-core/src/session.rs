@@ -1,0 +1,1760 @@
+use std::borrow::Borrow;
+use std::collections::BTreeMap;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
+
+use base64::Engine;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use wisp_protocol::log::{
+    BlobSource, DamageKind, ImageRef, LOG_SCHEMA_VERSION, LogEvent, LogRecord, RebuildError,
+    Rebuilt,
+};
+use wisp_protocol::{BlobRef, ImageType, MediaSource, Mime, valid_id};
+
+mod redaction;
+
+use crate::runtime::in_parallel;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Stamp {
+    pub len: u64,
+    pub modified: Duration,
+}
+
+impl Stamp {
+    pub fn of(metadata: &fs::Metadata) -> Option<Self> {
+        Some(Self {
+            len: metadata.len(),
+            modified: metadata
+                .modified()
+                .ok()?
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .ok()?,
+        })
+    }
+}
+
+pub type LogReader = Box<dyn FnOnce() -> io::Result<Vec<LogRecord>> + Send>;
+
+pub trait SessionStore: Send {
+    fn append(&mut self, session: &str, record: &LogRecord) -> io::Result<()>;
+    fn sync(&mut self, session: &str) -> io::Result<()>;
+    fn append_spend(&mut self, _day: jiff::civil::Date, _line: &str) -> io::Result<()> {
+        Ok(())
+    }
+    fn list(&self) -> io::Result<Vec<String>>;
+    fn read(&self, session: &str) -> io::Result<Vec<LogRecord>>;
+    fn reader(&self, _session: &str, _before: u64) -> Option<LogReader> {
+        None
+    }
+    fn put_blob(&mut self, sha256: &str, media_type: &Mime, bytes: &[u8]) -> io::Result<()>;
+    fn get_blob(&self, sha256: &str, media_type: &Mime) -> io::Result<Blob>;
+    fn location(&self, _session: &str) -> Option<PathBuf> {
+        None
+    }
+    fn blob_path(&self, _sha256: &str, _media_type: &Mime) -> Option<PathBuf> {
+        None
+    }
+
+    fn write_dropped(
+        &mut self,
+        _session: &str,
+        _seq: u64,
+        _text: &str,
+    ) -> io::Result<Option<PathBuf>> {
+        Ok(None)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Blob {
+    pub media_type: Mime,
+    pub bytes: Vec<u8>,
+}
+
+pub const MAX_BLOB_BYTES: u64 = wisp_media::MAX_IMAGE_BASE64 as u64;
+
+const MAX_EXTENSION: usize = 8;
+
+pub fn blob_extension(media_type: &Mime) -> Option<&str> {
+    let sub = media_type.subtype();
+    (sub.len() <= MAX_EXTENSION && sub.chars().all(|c| c.is_ascii_alphanumeric())).then_some(sub)
+}
+
+pub fn blob_name(sha256: &str, media_type: &Mime) -> String {
+    match blob_extension(media_type) {
+        Some(extension) => format!("{sha256}.{extension}"),
+        None => sha256.to_owned(),
+    }
+}
+
+fn legacy_image(media_type: &Mime) -> Option<ImageType> {
+    [ImageType::Png, ImageType::Jpeg]
+        .into_iter()
+        .find(|t| t.as_str() == media_type.as_str())
+}
+
+fn valid_sha256(sha256: &str) -> bool {
+    sha256.len() == 64
+        && sha256
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+}
+
+fn invalid_hash() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, "invalid attachment hash")
+}
+
+fn check_blob(sha256: &str, bytes: &[u8]) -> io::Result<()> {
+    if !valid_sha256(sha256) {
+        return Err(invalid_hash());
+    }
+    if sha256_bytes_hex(bytes) != sha256 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("the file doesn't match its hash {sha256}"),
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FolderUsage {
+    pub files: u64,
+    pub bytes: u64,
+}
+
+pub fn images_usage(dir: &Path) -> io::Result<Option<FolderUsage>> {
+    let meta = match fs::symlink_metadata(dir) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    if meta.file_type().is_symlink() {
+        return Err(io::Error::other("is a symlink"));
+    }
+    if !meta.is_dir() {
+        return Err(io::Error::other("not a folder"));
+    }
+    let mut usage = FolderUsage::default();
+    for entry in fs::read_dir(dir)? {
+        let meta = entry?.metadata()?;
+        if meta.is_file() {
+            usage.files += 1;
+            usage.bytes = usage.bytes.saturating_add(meta.len());
+        }
+    }
+    Ok(Some(usage))
+}
+
+struct StoreBlobs<'s> {
+    store: &'s dyn SessionStore,
+    transient: Option<String>,
+}
+
+impl<'s> StoreBlobs<'s> {
+    fn new(store: &'s dyn SessionStore) -> Self {
+        Self {
+            store,
+            transient: None,
+        }
+    }
+
+    fn load(&mut self, wanted: &BlobRef) -> Result<String, String> {
+        read_blob(self.store, wanted).map_err(|e| {
+            if e.raw_os_error().is_some() && e.kind() != io::ErrorKind::NotFound {
+                self.transient = Some(e.kind().to_string());
+            }
+            e.to_string()
+        })
+    }
+}
+
+impl BlobSource for StoreBlobs<'_> {
+    fn image(&mut self, image: &ImageRef) -> Result<String, String> {
+        let blob = BlobRef {
+            media_type: image.media_type.into(),
+            sha256: image.sha256.clone(),
+            bytes: image.bytes,
+        };
+        self.load(&blob)
+    }
+
+    fn media(&mut self, blob: &BlobRef) -> Result<String, String> {
+        self.load(blob)
+    }
+
+    fn sha256(&mut self, base64: &str) -> Result<String, String> {
+        Ok(base64_sha256(base64))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unrebuilt {
+    pub error: RebuildError,
+    pub transient: Option<String>,
+}
+
+pub fn rebuild_checked<R: Borrow<LogRecord>>(
+    store: &dyn SessionStore,
+    records: &[R],
+    start: Option<usize>,
+) -> Result<Option<Rebuilt>, Unrebuilt> {
+    let mut blobs = StoreBlobs::new(store);
+    let records = records.iter().map(Borrow::<LogRecord>::borrow);
+    let rebuilt = match start {
+        Some(start) => wisp_protocol::log::rebuild_log_from(records, start, &mut blobs),
+        None => wisp_protocol::log::rebuild_log_with(records, &mut blobs).map(Some),
+    };
+    rebuilt.map_err(|error| Unrebuilt {
+        error,
+        transient: blobs.transient.take(),
+    })
+}
+
+pub fn base64_sha256(base64: &str) -> String {
+    match wisp_media::decode_base64(base64) {
+        Ok(bytes) => sha256_bytes_hex(&bytes),
+        Err(_) => sha256_bytes_hex(base64.as_bytes()),
+    }
+}
+
+pub fn blob_ref(source: &MediaSource) -> Option<BlobRef> {
+    base64_ref(source.media_type(), source.data())
+}
+
+pub(crate) fn base64_ref(media_type: &Mime, data: &str) -> Option<BlobRef> {
+    let bytes = wisp_media::decode_base64(data).ok()?;
+    Some(BlobRef {
+        media_type: media_type.clone(),
+        sha256: sha256_bytes_hex(&bytes),
+        bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+    })
+}
+
+pub fn rebuild<'a>(
+    store: &dyn SessionStore,
+    events: impl IntoIterator<Item = &'a LogEvent>,
+) -> Result<Rebuilt, RebuildError> {
+    wisp_protocol::log::rebuild_history_with(events, StoreBlobs::new(store))
+}
+
+fn load_blob(store: &dyn SessionStore, wanted: &BlobRef) -> Result<String, String> {
+    StoreBlobs::new(store).load(wanted)
+}
+
+pub(crate) fn read_blob(store: &dyn SessionStore, wanted: &BlobRef) -> io::Result<String> {
+    let blob = store.get_blob(&wanted.sha256, &wanted.media_type)?;
+    let len = u64::try_from(blob.bytes.len()).unwrap_or(u64::MAX);
+    if len != wanted.bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "the file holds {len} bytes, but the log says {}",
+                wanted.bytes
+            ),
+        ));
+    }
+    Ok(wisp_media::encode_base64(&blob.bytes))
+}
+
+pub fn new_session_id() -> String {
+    uuid::Uuid::now_v7().to_string()
+}
+
+pub fn now_rfc3339() -> String {
+    rfc3339(jiff::Timestamp::now())
+}
+
+pub fn rfc3339(at: jiff::Timestamp) -> String {
+    at.strftime("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+}
+
+pub fn sha256_hex(text: &str) -> String {
+    sha256_bytes_hex(text.as_bytes())
+}
+
+pub fn sha256_bytes_hex(bytes: &[u8]) -> String {
+    wisp_plugin_api::hex::encode(&Sha256::digest(bytes))
+}
+
+pub fn sha256_json_hex(value: &impl serde::Serialize) -> Option<String> {
+    let mut hasher = HashWriter(Sha256::new());
+    serde_json::to_writer(&mut hasher, value).ok()?;
+    let digest = wisp_plugin_api::hex::encode(&hasher.0.finalize());
+    #[cfg(test)]
+    tests::matches_the_buffered_digest(value, &digest);
+    Some(digest)
+}
+
+struct HashWriter(Sha256);
+
+impl Write for HashWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.update(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn invalid_id() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        wisp_protocol::INVALID_SESSION_ID,
+    )
+}
+
+pub(crate) fn known_type(kind: &str) -> bool {
+    !matches!(
+        serde_json::from_value(serde_json::json!({ "type": kind })),
+        Ok(LogEvent::Unknown)
+    )
+}
+
+fn corrupt(line: usize, why: impl std::fmt::Display) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, format!("line {line}: {why}"))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parsed {
+    pub records: Vec<LogRecord>,
+    pub lines: u64,
+    pub newer: u64,
+}
+
+pub fn parse_jsonl(bytes: impl AsRef<[u8]>) -> io::Result<Vec<LogRecord>> {
+    parse_counted(bytes.as_ref()).map(|parsed| parsed.records)
+}
+
+pub fn parse_counted(bytes: &[u8]) -> io::Result<Parsed> {
+    let lines: Vec<(usize, &[u8])> = complete_lines(bytes).collect();
+    let mut records = Vec::new();
+    let mut newer_lines = 0;
+    for (i, &(n, line)) in lines.iter().enumerate() {
+        let next_seq = u64::try_from(i).unwrap_or(u64::MAX);
+        let read = read_line(line).map_err(|e| corrupt(n, e))?;
+        if read.seq != Some(next_seq) {
+            return Err(corrupt(
+                n,
+                format!("expected seq {next_seq}, found {:?}", read.seq),
+            ));
+        }
+        newer_lines += u64::from(read.newer);
+        match read.kept {
+            Kept::Record(record) => records.push(*record),
+            Kept::Skip => {}
+            Kept::Invalid(why) => return Err(corrupt(n, why)),
+        }
+    }
+    Ok(Parsed {
+        records,
+        lines: u64::try_from(lines.len()).unwrap_or(u64::MAX),
+        newer: newer_lines,
+    })
+}
+
+fn complete_lines(bytes: &[u8]) -> impl Iterator<Item = (usize, &[u8])> {
+    let complete = match bytes.iter().rposition(|b| *b == b'\n') {
+        Some(end) => &bytes[..end],
+        None => &[][..],
+    };
+    complete
+        .split(|b| *b == b'\n')
+        .enumerate()
+        .filter(|(_, l)| !l.iter().all(u8::is_ascii_whitespace))
+        .map(|(index, line)| (index + 1, line))
+}
+
+fn envelope(value: &serde_json::Value) -> (Option<u64>, Option<u64>, Option<&str>) {
+    let number = |key| value.get(key).and_then(serde_json::Value::as_u64);
+    let kind = value.get("type").and_then(serde_json::Value::as_str);
+    (number("seq"), number("schema_version"), kind)
+}
+
+pub(crate) fn newer(version: u64) -> bool {
+    version > u64::from(LOG_SCHEMA_VERSION)
+}
+
+fn unknown_kind(kind: Option<&str>) -> bool {
+    kind.is_some_and(|k| !known_type(k))
+}
+
+struct LineRead {
+    seq: Option<u64>,
+    newer: bool,
+    kept: Kept,
+}
+
+enum Kept {
+    Record(Box<LogRecord>),
+    Skip,
+    Invalid(String),
+}
+
+fn read_line(line: &[u8]) -> Result<LineRead, String> {
+    let text = std::str::from_utf8(line).map_err(|e| e.to_string())?;
+    if let Ok(record) = serde_json::from_str::<LogRecord>(text)
+        && !matches!(record.event, LogEvent::Unknown)
+    {
+        let seq = Some(record.seq);
+        let is_newer = newer(u64::from(record.schema_version));
+        let kept = if is_newer {
+            Kept::Skip
+        } else {
+            Kept::Record(Box::new(record))
+        };
+        return Ok(LineRead {
+            seq,
+            newer: is_newer,
+            kept,
+        });
+    }
+    let value: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
+    let (seq, version, kind) = envelope(&value);
+    let is_newer = version.is_some_and(newer);
+    let kept = if is_newer || unknown_kind(kind) {
+        Kept::Skip
+    } else {
+        match serde_json::from_value::<LogRecord>(value) {
+            Ok(record) if matches!(record.event, LogEvent::Unknown) => {
+                Kept::Invalid("a record type given as a number".to_owned())
+            }
+            Ok(record) => Kept::Record(Box::new(record)),
+            Err(e) => Kept::Invalid(e.to_string()),
+        }
+    };
+    Ok(LineRead {
+        seq,
+        newer: is_newer,
+        kept,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Line {
+    Record(Box<LogRecord>),
+    Misplaced(Box<LogRecord>),
+    Damaged(DamageKind),
+    Skipped,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Lines {
+    pub lines: Vec<Line>,
+    pub newer: u64,
+}
+
+pub fn read_lines(bytes: &[u8]) -> Lines {
+    read_lines_where(bytes, |_| true)
+}
+
+pub fn read_lines_where(bytes: &[u8], keep: impl Fn(&str) -> bool) -> Lines {
+    let mut lines = Vec::new();
+    let mut newer_lines = 0;
+    for (_, line) in complete_lines(bytes) {
+        let (line, newer) = read_one(lines.len(), line, &keep);
+        newer_lines += u64::from(newer);
+        lines.push(line);
+    }
+    Lines {
+        lines,
+        newer: newer_lines,
+    }
+}
+
+fn read_one(index: usize, line: &[u8], keep: impl Fn(&str) -> bool) -> (Line, bool) {
+    if head_kind(line).is_some_and(|kind| !keep(kind)) {
+        return (Line::Skipped, false);
+    }
+    let index = u64::try_from(index).unwrap_or(u64::MAX);
+    let Ok(read) = read_line(line) else {
+        return (Line::Damaged(DamageKind::Unreadable), false);
+    };
+    let line = match (read.seq == Some(index), read.kept) {
+        _ if read.newer => Line::Skipped,
+        (false, Kept::Record(record)) => Line::Misplaced(record),
+        (false, _) => Line::Damaged(DamageKind::OutOfOrder),
+        (true, Kept::Record(record)) => Line::Record(record),
+        (true, Kept::Skip) => Line::Skipped,
+        (true, Kept::Invalid(_)) => Line::Damaged(DamageKind::InvalidRecord),
+    };
+    (line, read.newer)
+}
+
+const PARSE_CHUNK: usize = 4096;
+
+pub(crate) fn read_lines_parallel(bytes: &[u8]) -> Lines {
+    read_lines_in(bytes, if cfg!(test) { 2 } else { PARSE_CHUNK })
+}
+
+fn read_lines_in(bytes: &[u8], chunk: usize) -> Lines {
+    let all: Vec<&[u8]> = complete_lines(bytes).map(|(_, line)| line).collect();
+    let starts: Vec<usize> = (0..all.len()).step_by(chunk).collect();
+    let mut newer = 0;
+    let lines = in_parallel(&starts, |&first| {
+        (first..all.len().min(first + chunk))
+            .map(|index| read_one(index, all[index], |_| true))
+            .collect::<Vec<_>>()
+    })
+    .into_iter()
+    .flatten()
+    .map(|(line, was_newer)| {
+        newer += u64::from(was_newer);
+        line
+    })
+    .collect();
+    Lines { lines, newer }
+}
+
+pub(crate) fn reread(records: &[LogRecord]) -> io::Result<Vec<Line>> {
+    let text = records
+        .iter()
+        .map(jsonl_line)
+        .collect::<io::Result<String>>()?;
+    read_lines_parallel(text.as_bytes())
+        .lines
+        .into_iter()
+        .map(|line| match line {
+            Line::Record(_) => Ok(line),
+            other => Err(io::Error::other(format!(
+                "not a plain log record: {other:?}"
+            ))),
+        })
+        .collect()
+}
+
+fn head_kind(line: &[u8]) -> Option<&str> {
+    let rest = line.strip_prefix(br#"{"schema_version":"#)?;
+    let (version, rest) = digits(rest)?;
+    if newer(version) {
+        return None;
+    }
+    let (_, rest) = digits(rest.strip_prefix(br#","seq":"#)?)?;
+    let rest = rest.strip_prefix(br#","at":""#)?;
+    let at_end = rest.iter().position(|b| *b == b'"')?;
+    let rest = rest[at_end..].strip_prefix(br#"","type":""#)?;
+    let kind_end = rest.iter().position(|b| *b == b'"')?;
+    std::str::from_utf8(&rest[..kind_end]).ok()
+}
+
+fn digits(bytes: &[u8]) -> Option<(u64, &[u8])> {
+    let end = bytes
+        .iter()
+        .position(|b| !b.is_ascii_digit())
+        .unwrap_or(bytes.len());
+    let number = std::str::from_utf8(&bytes[..end]).ok()?.parse().ok()?;
+    Some((number, &bytes[end..]))
+}
+
+pub fn jsonl_line(record: &LogRecord) -> io::Result<String> {
+    wisp_protocol::jsonl::line(record).map_err(io::Error::other)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LogLock {
+    Held,
+    Unsupported(String),
+}
+
+pub fn lock_state(result: Result<(), fs::TryLockError>, session: &str) -> io::Result<LogLock> {
+    match result {
+        Ok(()) => Ok(LogLock::Held),
+        Err(fs::TryLockError::WouldBlock) => Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            format!("session {} is open in another Wisp", short_id(session)),
+        )),
+        Err(fs::TryLockError::Error(e)) => Ok(LogLock::Unsupported(e.to_string())),
+    }
+}
+
+pub(crate) fn claim_log(dir: &Path, session: &str) -> Option<File> {
+    let file = open_read_nofollow(&log_path(dir, session)).ok()?;
+    crate::file_lock::try_lock(&file).ok()?;
+    Some(file)
+}
+
+const IMAGES: &str = "images";
+const ATTACHMENTS: &str = "attachments";
+const MAX_PENDING_SPEND: usize = 64 * 1024;
+const SPEND_LOCK_RETRIES: u32 = 10;
+
+pub fn beside(sessions: &Path, name: &str) -> PathBuf {
+    sessions
+        .parent()
+        .map_or_else(|| sessions.join(name), |p| p.join(name))
+}
+
+fn log_path(dir: &Path, session: &str) -> PathBuf {
+    dir.join(format!("{session}.jsonl"))
+}
+
+#[derive(Debug)]
+pub struct JsonlStore {
+    dir: PathBuf,
+    attachments: PathBuf,
+    images: PathBuf,
+    home: Option<PathBuf>,
+    open: Option<OpenLog>,
+    spend_open: Option<(jiff::civil::Date, File)>,
+    pending_spend: BTreeMap<jiff::civil::Date, String>,
+}
+
+impl JsonlStore {
+    pub fn default_dir(xdg_data_home: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+        Self::app_dir("wisp", xdg_data_home, home)
+    }
+
+    pub fn app_dir(
+        app: &str,
+        xdg_data_home: Option<PathBuf>,
+        home: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        let data = xdg_data_home
+            .filter(|p| p.is_absolute())
+            .or_else(|| home.map(|h| h.join(".local").join("share")))?;
+        Some(data.join(app).join("sessions"))
+    }
+
+    pub fn default_images_dir(
+        xdg_data_home: Option<PathBuf>,
+        home: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        Self::default_dir(xdg_data_home, home).map(|d| beside(&d, IMAGES))
+    }
+
+    pub fn default_attachments_dir(
+        xdg_data_home: Option<PathBuf>,
+        home: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        Self::default_dir(xdg_data_home, home).map(|d| beside(&d, ATTACHMENTS))
+    }
+
+    pub fn default_usage_dir(
+        xdg_data_home: Option<PathBuf>,
+        home: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        Self::default_dir(xdg_data_home, home).map(|d| beside(&d, "usage"))
+    }
+
+    pub fn default_models_dir(
+        xdg_data_home: Option<PathBuf>,
+        home: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        Self::default_dir(xdg_data_home, home).map(|d| beside(&d, "models"))
+    }
+
+    pub fn default_plugin_data_dir(
+        xdg_data_home: Option<PathBuf>,
+        home: Option<PathBuf>,
+    ) -> Option<PathBuf> {
+        Self::default_dir(xdg_data_home, home).map(|d| beside(&d, "plugin-data"))
+    }
+
+    pub fn open(dir: impl Into<PathBuf>) -> io::Result<Self> {
+        let dir = dir.into();
+        create_private_dir(&dir)?;
+        Ok(Self {
+            attachments: beside(&dir, ATTACHMENTS),
+            images: beside(&dir, IMAGES),
+            home: crate::workspace::home(),
+            dir,
+            open: None,
+            spend_open: None,
+            pending_spend: BTreeMap::new(),
+        })
+    }
+
+    #[must_use]
+    pub fn with_home(mut self, home: Option<PathBuf>) -> Self {
+        self.home = home;
+        self
+    }
+
+    fn shown(&self, path: &Path) -> String {
+        crate::workspace::shorten_path(path, self.home.as_deref())
+    }
+
+    #[must_use]
+    pub fn with_images_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.images = dir.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_attachments_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.attachments = dir.into();
+        self
+    }
+
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    pub fn images_dir(&self) -> &Path {
+        &self.images
+    }
+
+    pub fn attachments_dir(&self) -> &Path {
+        &self.attachments
+    }
+
+    pub fn attachment_path(&self, sha256: &str, media_type: &Mime) -> PathBuf {
+        self.attachments.join(blob_name(sha256, media_type))
+    }
+
+    pub fn legacy_image_path(&self, sha256: &str, media_type: ImageType) -> PathBuf {
+        self.images
+            .join(format!("{sha256}.{}", media_type.extension()))
+    }
+
+    pub fn path(&self, session: &str) -> PathBuf {
+        log_path(&self.dir, session)
+    }
+
+    fn read_path(&self, session: &str) -> io::Result<PathBuf> {
+        if !valid_id(session) {
+            return Err(invalid_id());
+        }
+        Ok(self.path(session))
+    }
+
+    fn open_read(&self, session: &str) -> io::Result<File> {
+        open_regular(&self.read_path(session)?, "the log")
+    }
+
+    pub fn stamp(&self, session: &str) -> Option<Stamp> {
+        Stamp::of(&self.open_read(session).ok()?.metadata().ok()?)
+    }
+
+    pub fn read_bytes(&self, session: &str) -> io::Result<Vec<u8>> {
+        let mut file = self.open_read(session)?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    pub fn open_session(&mut self, session: &str) -> io::Result<LogLock> {
+        if let Some(open) = self.open.as_ref().filter(|o| o.session == session) {
+            return Ok(open.log.lock.clone());
+        }
+        if !valid_id(session) {
+            return Err(invalid_id());
+        }
+        let log = LockedFile::take(open_private(&self.path(session))?, session)?;
+        let lock = log.lock.clone();
+        self.open = Some(OpenLog {
+            session: session.to_owned(),
+            log,
+            cut: None,
+        });
+        Ok(lock)
+    }
+
+    fn pending_spend_bytes(&self) -> usize {
+        self.pending_spend.values().map(String::len).sum()
+    }
+
+    fn flush_spend(&mut self) -> io::Result<()> {
+        let mut first_error = None;
+        for (&day, lines) in &mut self.pending_spend {
+            let result = (|| {
+                if !self.spend_open.as_ref().is_some_and(|(open_day, file)| {
+                    *open_day == day && unlinked(file).is_ok_and(|gone| !gone)
+                }) {
+                    self.spend_open = None;
+                    let folder = crate::spend::folder(&self.dir);
+                    refuse_link(&folder, self.home.as_deref())?;
+                    create_private_dir(&folder)?;
+                    self.spend_open =
+                        Some((day, open_private(&crate::spend::file(&self.dir, day))?));
+                }
+                let Some((_, file)) = &mut self.spend_open else {
+                    return Err(io::Error::other("spend file not open"));
+                };
+                append_spend_batch(file, lines)
+            })();
+            if let Err(error) = result {
+                self.spend_open = None;
+                first_error.get_or_insert(error);
+            }
+        }
+        self.pending_spend.retain(|_, lines| !lines.is_empty());
+        first_error.map_or(Ok(()), Err)
+    }
+
+    fn file(&mut self, session: &str) -> io::Result<&mut File> {
+        self.open_session(session)?;
+        let Some(open) = &mut self.open else {
+            return Err(io::Error::other("session file not open"));
+        };
+        if let Some(len) = open.cut {
+            open.log.file.set_len(len)?;
+            open.log.file.sync_data()?;
+            open.cut = None;
+        }
+        Ok(&mut open.log.file)
+    }
+}
+
+#[derive(Debug)]
+struct OpenLog {
+    session: String,
+    log: LockedFile,
+    cut: Option<u64>,
+}
+
+#[derive(Debug)]
+struct LockedFile {
+    file: File,
+    lock: LogLock,
+}
+
+impl LockedFile {
+    fn take(file: File, session: &str) -> io::Result<LockedFile> {
+        let lock = lock_state(crate::file_lock::try_lock(&file), session)?;
+        Ok(LockedFile { file, lock })
+    }
+}
+
+impl Drop for LockedFile {
+    fn drop(&mut self) {
+        if self.lock == LogLock::Held {
+            let _ = self.file.unlock();
+        }
+    }
+}
+
+fn append_options(create: bool) -> OpenOptions {
+    let mut o = OpenOptions::new();
+    o.read(true).append(true);
+    if create {
+        o.create_new(true);
+    }
+    #[cfg(unix)]
+    {
+        use rustix::fs::OFlags;
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+        let flags = if create {
+            OFlags::NOFOLLOW
+        } else {
+            OFlags::NOFOLLOW | OFlags::NONBLOCK
+        };
+        o.custom_flags(flags.bits().cast_signed());
+    }
+    o
+}
+
+fn open_private(path: &Path) -> io::Result<File> {
+    match append_options(true).open(path) {
+        Ok(file) => Ok(file),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => open_existing(path),
+        Err(e) => Err(e),
+    }
+}
+
+fn open_existing(path: &Path) -> io::Result<File> {
+    let file = append_options(false).open(path)?;
+    check_existing(&file, "session log")?;
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn check_existing(file: &File, what: &str) -> io::Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let meta = file.metadata()?;
+    if !meta.is_file() {
+        return Err(io::Error::other(format!("{what} is not a regular file")));
+    }
+    if meta.uid() != rustix::process::geteuid().as_raw() {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{what} is owned by another user"),
+        ));
+    }
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn check_existing(file: &File, what: &str) -> io::Result<()> {
+    if file.metadata()?.is_file() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!("{what} is not a regular file")))
+    }
+}
+
+#[cfg(unix)]
+fn unlinked(file: &File) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+    Ok(file.metadata()?.nlink() == 0)
+}
+
+#[cfg(not(unix))]
+fn unlinked(_file: &File) -> io::Result<bool> {
+    Ok(false)
+}
+
+fn lock_spend(file: &File) -> io::Result<LogLock> {
+    let mut retries = 0;
+    loop {
+        let result = crate::file_lock::try_lock(file);
+        if matches!(result, Err(fs::TryLockError::WouldBlock)) && retries < SPEND_LOCK_RETRIES {
+            retries += 1;
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        } else {
+            return lock_state(result, "spend");
+        }
+    }
+}
+
+fn write_counted(writer: &mut impl Write, bytes: &[u8], written: &mut usize) -> io::Result<()> {
+    while *written < bytes.len() {
+        match writer.write(&bytes[*written..]) {
+            Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+            Ok(n) => *written += n,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+fn retain_unwritten(lines: &mut String, written: usize) {
+    let mut complete = 0;
+    for line in lines.split_inclusive('\n') {
+        if complete + line.len() > written.saturating_add(1) {
+            break;
+        }
+        complete += line.len();
+    }
+    lines.drain(..complete);
+}
+
+fn append_spend_batch(file: &mut File, lines: &mut String) -> io::Result<()> {
+    let held = lock_spend(file)? == LogLock::Held;
+    let result = (|| {
+        let len = file.metadata()?.len();
+        let mut last = *b"\n";
+        if len > 0 {
+            file.seek(SeekFrom::Start(len - 1))?;
+            file.read_exact(&mut last)?;
+        }
+        let prefix = usize::from(last[0] != b'\n');
+        let batch = format!("{}{lines}", if prefix == 0 { "" } else { "\n" });
+        let mut written = 0;
+        if let Err(error) = write_counted(file, batch.as_bytes(), &mut written) {
+            if !held || file.set_len(len).is_err() {
+                retain_unwritten(lines, written.saturating_sub(prefix));
+            }
+            return Err(error);
+        }
+        lines.clear();
+        Ok(())
+    })();
+    let unlocked = if held { file.unlock() } else { Ok(()) };
+    result.and(unlocked)
+}
+
+pub(crate) fn open_regular(path: &Path, what: &str) -> io::Result<File> {
+    let file = open_read_nofollow(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::other(format!("{what} is not a regular file")));
+    }
+    Ok(file)
+}
+
+fn open_read_nofollow(path: &Path) -> io::Result<File> {
+    let mut o = OpenOptions::new();
+    o.read(true);
+    #[cfg(unix)]
+    {
+        use rustix::fs::OFlags;
+        use std::os::unix::fs::OpenOptionsExt;
+        o.custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed());
+    }
+    o.open(path)
+}
+
+fn refuse_link(path: &Path, home: Option<&Path>) -> io::Result<()> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if meta.file_type().is_symlink() {
+        return Err(io::Error::other(format!(
+            "{} is a symlink; Wisp won't write through it",
+            crate::workspace::shorten_path(path, home)
+        )));
+    }
+    Ok(())
+}
+
+fn read_capped(file: File) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    file.take(MAX_BLOB_BYTES + 1).read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_BLOB_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the file is larger than any attachment Wisp sends",
+        ));
+    }
+    Ok(bytes)
+}
+
+fn private_blob_dir(dir: &Path, home: Option<&Path>) -> io::Result<()> {
+    refuse_link(dir, home)?;
+    create_private_dir(dir)?;
+    let meta = fs::symlink_metadata(dir)?;
+    if !meta.is_dir() {
+        return Err(io::Error::other(format!(
+            "{} is not a directory",
+            crate::workspace::shorten_path(dir, home)
+        )));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.uid() != rustix::process::geteuid().as_raw() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "the attachments folder is owned by another user",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn existing_blob_verifies(path: &Path, sha256: &str, home: Option<&Path>) -> io::Result<bool> {
+    refuse_link(path, home)?;
+    let file = match open_read_nofollow(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    check_existing(&file, "attachment file")?;
+    let bytes = match read_capped(file) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == io::ErrorKind::InvalidData => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    Ok(sha256_bytes_hex(&bytes) == sha256)
+}
+
+pub fn create_private_dir(dir: &Path) -> io::Result<()> {
+    crate::secrets::create_folder(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+fn read_records(path: &Path, before: u64) -> io::Result<Vec<LogRecord>> {
+    let bytes = fs::read(path)?;
+    let end = if before == u64::MAX {
+        bytes.len()
+    } else {
+        let lines = complete_lines(&bytes)
+            .take(usize::try_from(before).unwrap_or(usize::MAX))
+            .last()
+            .map_or(0, |(number, _)| number);
+        bytes
+            .split_inclusive(|byte| *byte == b'\n')
+            .take(lines)
+            .map(<[u8]>::len)
+            .sum()
+    };
+    parse_jsonl(&bytes[..end])
+}
+
+impl SessionStore for JsonlStore {
+    fn append_spend(&mut self, day: jiff::civil::Date, line: &str) -> io::Result<()> {
+        if line.len() > MAX_PENDING_SPEND {
+            return Err(io::Error::other("spend line exceeds 64 KiB"));
+        }
+        if self.pending_spend_bytes() + line.len() > MAX_PENDING_SPEND {
+            let _ = self.flush_spend();
+            if self.pending_spend_bytes() + line.len() > MAX_PENDING_SPEND {
+                return Err(io::Error::other("spend retry buffer is full"));
+            }
+        }
+        self.pending_spend.entry(day).or_default().push_str(line);
+        self.flush_spend()
+    }
+
+    fn location(&self, session: &str) -> Option<PathBuf> {
+        Some(self.path(session))
+    }
+
+    fn write_dropped(
+        &mut self,
+        session: &str,
+        seq: u64,
+        text: &str,
+    ) -> io::Result<Option<PathBuf>> {
+        if !valid_id(session) {
+            return Err(invalid_id());
+        }
+        let path = self.dir.join(format!("{session}.dropped-{seq}.md"));
+        let mut o = OpenOptions::new();
+        o.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use rustix::fs::OFlags;
+            use std::os::unix::fs::OpenOptionsExt;
+            o.mode(0o600);
+            o.custom_flags(OFlags::NOFOLLOW.bits().cast_signed());
+        }
+        match o.open(&path) {
+            Ok(mut file) => {
+                file.write_all(text.as_bytes())?;
+                file.sync_all()?;
+                Ok(Some(path))
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                check_existing(&open_read_nofollow(&path)?, "dropped messages file")?;
+                Ok(Some(path))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn append(&mut self, session: &str, record: &LogRecord) -> io::Result<()> {
+        let line = jsonl_line(record)?;
+        let file = self.file(session)?;
+        file.write_all(line.as_bytes())?;
+        file.flush()
+    }
+
+    fn sync(&mut self, session: &str) -> io::Result<()> {
+        let _ = self.flush_spend();
+        if let Some((_, file)) = &self.spend_open {
+            let _ = file.sync_data();
+        }
+        self.file(session)?.sync_data()
+    }
+
+    fn list(&self) -> io::Result<Vec<String>> {
+        let mut ids: Vec<String> = fs::read_dir(&self.dir)?
+            .filter_map(Result::ok)
+            .filter_map(|e| {
+                let name = e.file_name().into_string().ok()?;
+                let id = name.strip_suffix(".jsonl")?;
+                valid_id(id).then(|| id.to_owned())
+            })
+            .collect();
+        ids.sort();
+        Ok(ids)
+    }
+
+    fn read(&self, session: &str) -> io::Result<Vec<LogRecord>> {
+        read_records(&self.read_path(session)?, u64::MAX)
+    }
+
+    fn reader(&self, session: &str, before: u64) -> Option<LogReader> {
+        let path = self.read_path(session);
+        Some(Box::new(move || read_records(&path?, before)))
+    }
+
+    fn put_blob(&mut self, sha256: &str, media_type: &Mime, bytes: &[u8]) -> io::Result<()> {
+        check_blob(sha256, bytes)?;
+        let home = self.home.as_deref();
+        private_blob_dir(&self.attachments, home)?;
+        let path = self.attachment_path(sha256, media_type);
+        if existing_blob_verifies(&path, sha256, home)? {
+            return Ok(());
+        }
+        crate::secrets::replace_atomic(&path, bytes, 0o600, || refuse_link(&path, home))
+    }
+
+    fn get_blob(&self, sha256: &str, media_type: &Mime) -> io::Result<Blob> {
+        if !valid_sha256(sha256) {
+            return Err(invalid_hash());
+        }
+        let current = self.attachment_path(sha256, media_type);
+        let legacy = legacy_image(media_type).map(|t| self.legacy_image_path(sha256, t));
+        for path in std::iter::once(&current).chain(legacy.as_ref()) {
+            let file = match open_regular(path, &self.shown(path)) {
+                Ok(file) => file,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+                Err(e) => return Err(e),
+            };
+            let bytes = read_capped(file)?;
+            check_blob(sha256, &bytes)?;
+            return Ok(Blob {
+                media_type: media_type.clone(),
+                bytes,
+            });
+        }
+        let name = blob_name(sha256, media_type);
+        Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            match legacy {
+                Some(old) => format!(
+                    "no file named {name} in {} or {}",
+                    self.shown(&self.attachments),
+                    self.shown(&old)
+                ),
+                None => format!("no file named {name} in {}", self.shown(&self.attachments)),
+            },
+        ))
+    }
+
+    fn blob_path(&self, sha256: &str, media_type: &Mime) -> Option<PathBuf> {
+        Some(self.attachment_path(sha256, media_type))
+    }
+}
+
+type Blobs = BTreeMap<String, Blob>;
+
+#[derive(Debug, Clone, Default)]
+pub struct MemoryStore {
+    sessions: Arc<Mutex<BTreeMap<String, Vec<LogRecord>>>>,
+    blobs: Arc<Mutex<Blobs>>,
+    fail_writes: bool,
+    spend: Arc<Mutex<Vec<String>>>,
+}
+
+impl MemoryStore {
+    #[cfg(test)]
+    pub(crate) fn sharing_blobs(&self) -> Self {
+        Self {
+            sessions: Arc::default(),
+            blobs: Arc::clone(&self.blobs),
+            fail_writes: false,
+            spend: Arc::clone(&self.spend),
+        }
+    }
+
+    pub fn failing() -> Self {
+        Self {
+            fail_writes: true,
+            ..Self::default()
+        }
+    }
+
+    fn lock(&self) -> io::Result<std::sync::MutexGuard<'_, BTreeMap<String, Vec<LogRecord>>>> {
+        self.sessions
+            .lock()
+            .map_err(|_| io::Error::other("store lock poisoned"))
+    }
+
+    fn lock_blobs(&self) -> io::Result<std::sync::MutexGuard<'_, Blobs>> {
+        self.blobs
+            .lock()
+            .map_err(|_| io::Error::other("store lock poisoned"))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit(&self, session: &str, edit: impl FnOnce(&mut Vec<LogRecord>)) {
+        if let Ok(mut sessions) = self.lock()
+            && let Some(records) = sessions.get_mut(session)
+        {
+            edit(records);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn remove(&self, session: &str) {
+        if let Ok(mut sessions) = self.lock() {
+            sessions.remove(session);
+        }
+    }
+
+    pub fn spend_lines(&self) -> Vec<String> {
+        self.spend
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn blob_names(&self) -> io::Result<Vec<String>> {
+        Ok(self
+            .lock_blobs()?
+            .iter()
+            .map(|(sha, blob)| blob_name(sha, &blob.media_type))
+            .collect())
+    }
+
+    pub fn replace_blob(&self, sha256: &str, blob: Blob) -> io::Result<()> {
+        self.lock_blobs()?.insert(sha256.to_owned(), blob);
+        Ok(())
+    }
+
+    pub fn remove_blob(&self, sha256: &str) -> io::Result<()> {
+        self.lock_blobs()?.remove(sha256);
+        Ok(())
+    }
+}
+
+impl SessionStore for MemoryStore {
+    fn append_spend(&mut self, _day: jiff::civil::Date, line: &str) -> io::Result<()> {
+        if self.fail_writes {
+            return Err(io::Error::other("disk full"));
+        }
+        self.spend
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(line.to_owned());
+        Ok(())
+    }
+
+    fn append(&mut self, session: &str, record: &LogRecord) -> io::Result<()> {
+        if self.fail_writes {
+            return Err(io::Error::other("disk full"));
+        }
+        self.lock()?
+            .entry(session.to_owned())
+            .or_default()
+            .push(record.clone());
+        Ok(())
+    }
+
+    fn sync(&mut self, _session: &str) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn list(&self) -> io::Result<Vec<String>> {
+        Ok(self.lock()?.keys().cloned().collect())
+    }
+
+    fn read(&self, session: &str) -> io::Result<Vec<LogRecord>> {
+        self.lock()?
+            .get(session)
+            .cloned()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such session"))
+    }
+
+    fn put_blob(&mut self, sha256: &str, media_type: &Mime, bytes: &[u8]) -> io::Result<()> {
+        if self.fail_writes {
+            return Err(io::Error::other("disk full"));
+        }
+        check_blob(sha256, bytes)?;
+        let mut blobs = self.lock_blobs()?;
+        let reusable = blobs
+            .get(sha256)
+            .is_some_and(|b| b.media_type == *media_type && check_blob(sha256, &b.bytes).is_ok());
+        if !reusable {
+            blobs.insert(
+                sha256.to_owned(),
+                Blob {
+                    media_type: media_type.clone(),
+                    bytes: bytes.to_vec(),
+                },
+            );
+        }
+        Ok(())
+    }
+
+    fn get_blob(&self, sha256: &str, _media_type: &Mime) -> io::Result<Blob> {
+        let blob = self.lock_blobs()?.get(sha256).cloned().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotFound, format!("no attachment {sha256}"))
+        })?;
+        check_blob(sha256, &blob.bytes)?;
+        Ok(blob)
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Redactions(Vec<Redaction>);
+
+#[derive(Default)]
+pub(crate) struct MaskTail {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) covered: usize,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct Redaction {
+    value: String,
+    mask: bool,
+}
+
+fn process_secrets() -> &'static std::sync::Mutex<Redactions> {
+    static SECRETS: std::sync::OnceLock<std::sync::Mutex<Redactions>> = std::sync::OnceLock::new();
+    SECRETS.get_or_init(std::sync::Mutex::default)
+}
+
+pub fn register(redactions: &Redactions) {
+    let mut secrets = process_secrets()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *secrets = secrets.union([redactions]);
+}
+
+pub fn register_secrets(items: impl IntoIterator<Item = String>) {
+    register(&Redactions::new(items));
+}
+
+pub fn held() -> Redactions {
+    process_secrets()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+pub(crate) fn without_registered_secrets(text: &str) -> String {
+    held().scrub(text)
+}
+
+pub(crate) fn maskable(value: &str) -> bool {
+    value.chars().count() >= wisp_protocol::KEY_SHAPED_MIN
+}
+
+pub const REDACTED: &str = "[redacted]";
+
+pub(crate) const MIN_REDACTION_CHARS: usize = 3;
+
+fn base64_forms(value: &str) -> [String; 3] {
+    [0, 1, 2].map(|leading| {
+        let mut bytes = vec![0; leading];
+        bytes.extend_from_slice(value.as_bytes());
+        bytes.truncate(bytes.len() / 3 * 3);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        encoded[[0, 2, 3][leading]..].to_owned()
+    })
+}
+
+fn redacted_text(text: &str, bytes: Option<Vec<u8>>) -> String {
+    bytes.map_or_else(
+        || text.to_owned(),
+        |bytes| String::from_utf8_lossy(&bytes).into_owned(),
+    )
+}
+
+impl Redactions {
+    pub fn new(items: impl IntoIterator<Item = String>) -> Self {
+        Self::entries(items, maskable)
+    }
+
+    pub(crate) fn typed(items: impl IntoIterator<Item = String>) -> Self {
+        Self::entries(items, |_| true)
+    }
+
+    pub fn log_only(items: impl IntoIterator<Item = String>) -> Self {
+        Self::entries(items, |_| false)
+    }
+
+    fn entries(items: impl IntoIterator<Item = String>, mask: impl Fn(&str) -> bool) -> Self {
+        Self::sorted(
+            items
+                .into_iter()
+                .filter(|s| {
+                    s.chars()
+                        .filter(|c| !c.is_whitespace())
+                        .take(MIN_REDACTION_CHARS)
+                        .count()
+                        == MIN_REDACTION_CHARS
+                })
+                .flat_map(|s| {
+                    let mask = mask(&s);
+                    let debug = format!("{s:?}");
+                    let extra = debug
+                        .strip_prefix('"')
+                        .and_then(|d| d.strip_suffix('"'))
+                        .filter(|escaped| *escaped != s)
+                        .map(str::to_owned);
+                    let encoded = (mask && maskable(&s)).then(|| base64_forms(&s));
+                    std::iter::once(s)
+                        .chain(extra)
+                        .chain(encoded.into_iter().flatten())
+                        .map(move |value| Redaction { value, mask })
+                }),
+        )
+    }
+
+    fn sorted(items: impl Iterator<Item = Redaction>) -> Self {
+        let mut items: Vec<_> = items.collect();
+        items.sort_by(|a, b| {
+            b.value
+                .len()
+                .cmp(&a.value.len())
+                .then_with(|| a.value.cmp(&b.value))
+                .then_with(|| b.mask.cmp(&a.mask))
+        });
+        items.dedup_by(|a, b| a.value == b.value);
+        Self(items)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[must_use]
+    pub fn union<'a>(&self, others: impl IntoIterator<Item = &'a Redactions>) -> Redactions {
+        let items = others
+            .into_iter()
+            .flat_map(|r| r.0.iter())
+            .chain(self.0.iter())
+            .cloned();
+        Redactions::sorted(items)
+    }
+
+    fn replaced(
+        &self,
+        bytes: &[u8],
+        masked_only: bool,
+        pending: bool,
+        covered: usize,
+    ) -> (Option<Vec<u8>>, usize, usize) {
+        let entries: Vec<_> = self
+            .0
+            .iter()
+            .filter(|entry| !masked_only || entry.mask)
+            .map(|entry| entry.value.as_bytes())
+            .collect();
+        let Some(longest) = entries.first() else {
+            return (
+                (covered > 0).then(|| bytes[covered..].to_vec()),
+                bytes.len(),
+                0,
+            );
+        };
+        let mut starts = [false; 256];
+        for value in &entries {
+            starts[usize::from(value[0])] = true;
+        }
+        let mut runs: Vec<std::ops::Range<usize>> = Vec::new();
+        if covered > 0 {
+            runs.push(0..covered);
+        }
+        let mut boundary = bytes.len();
+        for at in 0..bytes.len() {
+            if !starts[usize::from(bytes[at])] {
+                continue;
+            }
+            let rest = &bytes[at..];
+            if pending
+                && rest.len() < longest.len()
+                && entries
+                    .iter()
+                    .any(|value| value.len() > rest.len() && value.starts_with(rest))
+            {
+                boundary = boundary.min(at);
+            }
+            if let Some(value) = entries.iter().find(|value| rest.starts_with(value)) {
+                let end = at + value.len();
+                if let Some(run) = runs.last_mut()
+                    && at <= run.end
+                {
+                    run.end = run.end.max(end);
+                } else {
+                    runs.push(at..end);
+                }
+            }
+        }
+        if pending
+            && let Some(run) = runs
+                .iter()
+                .find(|run| run.start <= boundary && boundary <= run.end)
+        {
+            boundary = run.start;
+        }
+        let mut next_covered = covered.saturating_sub(boundary);
+        if pending
+            && bytes.len() - boundary > longest.len().saturating_mul(2)
+            && let Some(run) = runs.iter().find(|run| run.start == boundary)
+        {
+            let keep = (longest.len() - 1).min(run.end - run.start);
+            boundary = run.end - keep;
+            next_covered = keep;
+        }
+        let mut out: Option<Vec<u8>> = None;
+        let mut copied = 0;
+        for run in runs.iter().take_while(|run| run.start < boundary) {
+            let out = out.get_or_insert_with(|| Vec::with_capacity(boundary));
+            out.extend_from_slice(&bytes[copied..run.start]);
+            if run.end > covered {
+                out.extend_from_slice(REDACTED.as_bytes());
+            }
+            copied = run.end.min(boundary);
+        }
+        if let Some(out) = &mut out {
+            out.extend_from_slice(&bytes[copied..boundary]);
+        }
+        (out, boundary, next_covered)
+    }
+
+    pub fn scrub(&self, text: &str) -> String {
+        redacted_text(text, self.replaced(text.as_bytes(), false, false, 0).0)
+    }
+
+    pub fn mask(&self, text: &str) -> String {
+        redacted_text(text, self.mask_bytes(text.as_bytes()))
+    }
+
+    pub(crate) fn mask_bytes(&self, bytes: &[u8]) -> Option<Vec<u8>> {
+        self.replaced(bytes, true, false, 0).0
+    }
+
+    fn stream(&self, bytes: &[u8], pending: &mut MaskTail, last: bool) -> (Vec<u8>, bool) {
+        let mut input = std::mem::take(&mut pending.bytes);
+        input.extend_from_slice(bytes);
+        let (replaced, boundary, covered) = self.replaced(&input, true, !last, pending.covered);
+        let masked = replaced.is_some();
+        pending.bytes = input.split_off(boundary);
+        pending.covered = covered;
+        (replaced.unwrap_or(input), masked)
+    }
+
+    pub(crate) fn mask_chunk(&self, bytes: &[u8], pending: &mut MaskTail) -> (Vec<u8>, bool) {
+        self.stream(bytes, pending, false)
+    }
+
+    pub(crate) fn release(&self, pending: &mut MaskTail) -> (Vec<u8>, bool) {
+        self.stream(&[], pending, true)
+    }
+
+    pub(crate) fn scrub_value(&self, value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(s) => *s = self.scrub(s),
+            serde_json::Value::Array(items) => items.iter_mut().for_each(|v| self.scrub_value(v)),
+            serde_json::Value::Object(map) => map.values_mut().for_each(|v| self.scrub_value(v)),
+            _ => {}
+        }
+    }
+
+    fn scrub_event(&self, event: LogEvent) -> LogEvent {
+        redaction::scrub(self, event)
+    }
+}
+
+impl std::fmt::Debug for Redactions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Redactions({} items)", self.0.len())
+    }
+}
+
+pub struct SessionLog {
+    store: Box<dyn SessionStore>,
+    id: String,
+    seq: u64,
+    failed: bool,
+}
+
+impl SessionLog {
+    pub fn new(store: Box<dyn SessionStore>, id: impl Into<String>) -> Self {
+        Self::continuing(store, id, 0)
+    }
+
+    pub fn continuing(store: Box<dyn SessionStore>, id: impl Into<String>, seq: u64) -> Self {
+        Self {
+            store,
+            id: id.into(),
+            seq,
+            failed: false,
+        }
+    }
+
+    pub fn media(&self, blob: &BlobRef) -> Result<String, String> {
+        load_blob(self.store.as_ref(), blob)
+    }
+
+    pub fn store(&self) -> &dyn SessionStore {
+        self.store.as_ref()
+    }
+
+    pub fn write_dropped(&mut self, seq: u64, text: &str) -> io::Result<Option<PathBuf>> {
+        self.store.write_dropped(&self.id, seq, text)
+    }
+
+    pub fn image(&self, image: &ImageRef) -> Result<String, String> {
+        StoreBlobs::new(self.store.as_ref()).image(image)
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn next_seq(&self) -> u64 {
+        self.seq
+    }
+
+    pub fn location(&self) -> Option<PathBuf> {
+        self.store.location(&self.id)
+    }
+
+    pub fn spend(&mut self, day: jiff::civil::Date, mut record: crate::spend::Record) -> bool {
+        let redactions = held();
+        record.account = redactions.scrub(&record.account);
+        record.model = redactions.scrub(&record.model);
+        crate::spend::line(&record)
+            .and_then(|line| self.store.append_spend(day, &line))
+            .is_ok()
+    }
+
+    pub fn record(&mut self, event: LogEvent) -> Option<String> {
+        if self.failed {
+            return None;
+        }
+        let event = held().scrub_event(event);
+        let record = LogRecord {
+            schema_version: LOG_SCHEMA_VERSION,
+            seq: self.seq,
+            at: now_rfc3339(),
+            event,
+        };
+        self.seq += 1;
+        let result = self.store.append(&self.id, &record);
+        self.fail(result)
+    }
+
+    pub fn sync(&mut self) -> Option<String> {
+        if self.failed {
+            return None;
+        }
+        let result = self.store.sync(&self.id);
+        self.fail(result)
+    }
+
+    pub fn put_blob(&mut self, sha256: &str, media_type: &Mime, bytes: &[u8]) -> Option<String> {
+        if self.failed {
+            return None;
+        }
+        let e = self.store.put_blob(sha256, media_type, bytes).err()?;
+        self.failed = true;
+        Some(format!(
+            "attachment could not be saved ({e}); logging is off for this session"
+        ))
+    }
+
+    pub fn saved_path(&self, sha256: &str, media_type: &Mime) -> Option<String> {
+        if self.failed {
+            return None;
+        }
+        self.store
+            .blob_path(sha256, media_type)
+            .map(|path| path.display().to_string())
+    }
+
+    pub fn is_on(&self) -> bool {
+        !self.failed
+    }
+
+    fn fail(&mut self, result: io::Result<()>) -> Option<String> {
+        let e = result.err()?;
+        self.failed = true;
+        Some(format!(
+            "session log write failed ({e}); logging is off for this session"
+        ))
+    }
+}
+
+pub(crate) mod mirror;
+mod reopen;
+
+pub use reopen::{Reopened, ResumeLock};
+pub use wisp_protocol::short_id;
+
+#[cfg(test)]
+mod tests;

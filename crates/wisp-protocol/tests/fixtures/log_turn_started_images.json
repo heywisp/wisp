@@ -1,0 +1,25 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 5,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "turn_started",
+  "turn": 2,
+  "text": "what is this?",
+  "model": "claude-opus-5-5",
+  "images": [
+    {
+      "sha256": "0101010101010101010101010101010101010101010101010101010101010101",
+      "media_type": "image/png",
+      "bytes": 123456,
+      "width": 1456,
+      "height": 819
+    },
+    {
+      "sha256": "0202020202020202020202020202020202020202020202020202020202020202",
+      "media_type": "image/png",
+      "bytes": 123456,
+      "width": 1456,
+      "height": 819
+    }
+  ]
+}

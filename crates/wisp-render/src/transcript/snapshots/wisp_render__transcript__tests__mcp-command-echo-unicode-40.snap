@@ -1,0 +1,36 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: shown
+---
+ › /mcp add github npx -y
+   @modelcontextprotocol/server-github
+
+   github added · 41 tools
+
+ › /mcp add files npx -y
+   @modelcontextprotocol/server-filesys
+   tem "~/My Documents"
+
+   files added · 12 tools
+
+ › /mcp add sentry npx -y
+   @sentry/mcp-server
+
+   sentry not added: npx isn't
+   installed
+
+ › /mcp add notes npx -y notes-server
+   --token CANA******0011
+
+   notes not added: a key can't be
+   saved here; when an agent adds the
+   server with the key's name in keys,
+   Wisp asks the user for it
+
+ › /mcp remove github
+
+   github removed
+
+ › /skills
+
+   Skills

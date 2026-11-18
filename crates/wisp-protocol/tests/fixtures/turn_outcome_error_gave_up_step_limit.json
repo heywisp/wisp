@@ -1,0 +1,33 @@
+{
+  "status": "error",
+  "kind": "server",
+  "message": "Upstream provider stream was interrupted.",
+  "usage": {
+    "input_tokens": 1200,
+    "output_tokens": 80,
+    "cache_read_input_tokens": 9000,
+    "cache_creation_input_tokens": 300,
+    "cache_creation_5m_input_tokens": 0,
+    "cache_creation_1h_input_tokens": 300
+  },
+  "cost": {
+    "turn_usd": 0.0125,
+    "session_usd": 0.5,
+    "turn_lower_bound": false,
+    "session_lower_bound": true
+  },
+  "committed_steps": 18,
+  "detail": {
+    "phase": "stream",
+    "source": "endpoint",
+    "status": 200,
+    "error_type": "api_error",
+    "request_id": "req_011CTurn18",
+    "retry": {
+      "type": "transient"
+    },
+    "possibly_billed": true
+  },
+  "attempts": 6,
+  "gave_up": "step_limit"
+}

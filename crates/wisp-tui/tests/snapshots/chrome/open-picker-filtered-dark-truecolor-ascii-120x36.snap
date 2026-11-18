@@ -1,0 +1,77 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== filtered
+| x Ran cargo build --release                                                                              exit 101 - 3s
+  ~ 1..2 fg Rgb(244, 135, 113); 3..6 fg Rgb(212, 212, 212) bold; 6..28 fg Rgb(212, 212, 212); 106..114 fg Rgb(244, 135, 113); 114..119 fg Rgb(166, 166, 166)
+| + Showed crates/wisp-core/src/cache.rs                                                                          +40 -0
+  ~ 1..2 fg Rgb(137, 209, 133); 3..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(212, 212, 212); 113..116 fg Rgb(137, 209, 133); 117..119 fg Rgb(244, 135, 113)
+|        1 +     let part_1 = fingerprint.segment(1);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        2 +     let part_2 = fingerprint.segment(2);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        3 +     let part_3 = fingerprint.segment(3);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        4 +     let part_4 = fingerprint.segment(4);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        5 +     let part_5 = fingerprint.segment(5);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        6 +     let part_6 = fingerprint.segment(6);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        7 +     let part_7 = fingerprint.segment(7);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        8 +     let part_8 = fingerprint.segment(8);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        9 +     let part_9 = fingerprint.segment(9);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       10 +     let part_10 = fingerprint.segment(10);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       11 +     let part_11 = fingerprint.segment(11);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       12 +     let part_12 = fingerprint.segment(12);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       13 +     let part_13 = fingerprint.segment(13);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       14 +     let part_14 = fingerprint.segment(14);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       15 +     let part_15 = fingerprint.segment(15);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       16 +     let part_16 = fingerprint.segment(16);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       17 +     let part_17 = fingerprint.segment(17);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       18 +     let part_18 = fingerprint.segment(18);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       19 +     let part_19 = fingerprint.segment(19);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       20 +     let part_20 = fingerprint.segment(20);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|     ... 20 more lines >
+  ~ 5..24 fg Rgb(117, 117, 117)
+|
+|   2s - 1 request - 3 tools - $0.01 - cached 92%
+  ~ 3..48 fg Rgb(117, 117, 117)
+|------------------------------------------------------------------------------------------------------------------------
+  ~ 0..120 fg Rgb(88, 88, 88)
+|   Open
+  ~ 3..7 fg Rgb(212, 212, 212) bold
+| > x Ran cargo build --release                                                                             exit 101 - 3s
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..4 fg Rgb(244, 135, 113) bg Rgb(4, 57, 94); 4..5 bg Rgb(4, 57, 94); 5..8 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) bold; 8..30 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 30..107 bg Rgb(4, 57, 94); 107..115 fg Rgb(244, 135, 113) bg Rgb(4, 57, 94); 115..120 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94)
+|   + Ran cargo test -p wisp-core --all-features                                                              exit 0 - 1s
+  ~ 3..4 fg Rgb(137, 209, 133); 5..8 fg Rgb(212, 212, 212) bold; 8..47 fg Rgb(212, 212, 212); 109..120 fg Rgb(166, 166, 166)
+|   matching "ran cargo" (backspace edit, esc close)
+  ~ 3..51 fg Rgb(117, 117, 117)
+|   enter open - type to filter - ctrl-o transcript - esc close
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..20 fg Rgb(166, 166, 166); 20..33 fg Rgb(117, 117, 117); 33..39 fg Rgb(166, 166, 166); 39..53 fg Rgb(117, 117, 117); 53..56 fg Rgb(166, 166, 166); 56..62 fg Rgb(117, 117, 117)
+|+----------------------------------------------------------------------------------------------------------------------+
+  ~ 0..120 fg Rgb(88, 88, 88)
+||                                                                                                          total $0.01 |
+  ~ 0..1 fg Rgb(88, 88, 88); 107..118 fg Rgb(166, 166, 166); 119..120 fg Rgb(88, 88, 88)
+|+----------------------------------------------------------------------------------------------------------------------+
+  ~ 0..120 fg Rgb(88, 88, 88)
+|| (*)  Ready                                                                  Claude API   sonnet-5-5 low - cached 92% |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 78..88 fg Rgb(166, 166, 166); 91..101 fg Rgb(212, 212, 212); 102..118 fg Rgb(166, 166, 166); 119..120 fg Rgb(88, 88, 88)
+|+----------------------------------------------------------------------------------------------------------------------+
+  ~ 0..120 fg Rgb(88, 88, 88)

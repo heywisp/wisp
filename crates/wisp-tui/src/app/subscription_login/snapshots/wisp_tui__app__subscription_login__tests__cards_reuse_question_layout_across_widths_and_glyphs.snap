@@ -1,0 +1,2387 @@
+---
+source: crates/wisp-tui/src/app/subscription_login/tests.rs
+expression: "shots.join(\"\\n\\n\")"
+---
+Ascii 40 provider
+ ? Sign in
+
+ > 1 Claude
+   2 ChatGPT
+   3 Antigravity
+   4 API key
+
+   enter choose - esc cancel
+
+gone
+ ? Sign in
+   o claude was signed out in another
+   window. Your message waits until
+   this chat has an account.
+
+ > 1 Claude
+   2 ChatGPT
+   3 Antigravity
+   4 API key
+
+   enter choose - esc cancel
+
+name
+ ? Sign in
+
+ > Name for this account: claude
+
+   enter sign in - esc cancel
+
+same account
+ x Not signed in: this is the same
+   Claude account as * claude-work.
+   To sign it in again:
+   /login claude-work
+   enter close
+
+not working first
+ ? Sign in to Claude
+
+ > 1 Sign in again to * claude-work
+   2 Sign in again to * claude
+   3 Add another Claude account
+
+   enter choose - esc cancel
+
+sign-out which
+ ? Sign out of which account?
+
+   1 * claude-subscription
+   2 * claude-work
+   3 * chatgpt
+   4 * claude-api
+
+   up/down move - esc cancel
+
+sign-out which, after a down
+ ? Sign out of which account?
+
+ > 1 * claude-subscription
+   2 * claude-work
+   3 * chatgpt
+   4 * claude-api
+
+   enter choose - esc cancel
+
+sign-out a stored key
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out a stored key, with a preset
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+   Preset coder used work-api; it now
+   runs on its parent's account.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out nothing left
+ ? Sign out of * claude?
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out nothing left
+ ? Sign out of * claude and * chatgpt?
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, nothing left
+ ? Sign out of 4 accounts?
+   o claude-subscription
+   - o claude-work - o chatgpt
+   - o work-api (key deleted)
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all
+ ? Sign out of 4 accounts?
+   o claude-subscription
+   - o claude-work - o chatgpt
+   - o work-api (key deleted)
+
+   Moving to * claude-api - API
+                       cache rebuild
+     this chat                ~$0.41
+     coder                    ~$0.08
+   Staying behind
+     reviewer   can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, with a preset
+ ? Sign out of 4 accounts?
+   o claude-subscription
+   - o claude-work - o chatgpt
+   - o work-api (key deleted)
+
+   Moving to * claude-api - API
+                       cache rebuild
+     this chat                ~$0.41
+     coder                    ~$0.08
+   Staying behind
+     reviewer   can't move to Claude
+
+   Preset coder used claude-work; new
+   agents from it won't start on the
+   API.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, scout unpriced
+ ? Sign out of 4 accounts?
+   o claude-subscription
+   - o claude-work - o chatgpt
+   - o work-api (key deleted)
+
+   Moving to * claude-api - API
+                       cache rebuild
+     this chat                ~$0.41
+     coder                    ~$0.08
+     scout                         -
+   Staying behind
+     reviewer   can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, a long name
+ ? Sign out of 4 accounts?
+   o claude-subscription
+   - o claude-work - o chatgpt
+   - o work-api (key deleted)
+
+   Moving to * claude-api - API
+              cache rebuild
+     this chat       ~$0.41
+     coder           ~$0.08
+   Staying behind
+     code-reviewer
+       can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out a stored key, coder moving
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+
+   Moving to
+   * claude-subscription - subscription
+      cache rebuild
+     coder   ~$0.08
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out where, typed
+ ? Sign out of * claude-subscription?
+   This chat uses it. Where should it
+   go?
+
+   1 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+   2 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your
+     subscription to the API.
+
+   up/down move - esc cancel
+
+sign-out where, after sign out
+ ? Where should this chat go?
+
+   1 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+   2 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your
+     subscription to the API.
+
+   up/down move - esc cancel
+
+sign-out where, chosen
+ ? Where should this chat go?
+
+   1 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+ > 2 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your
+     subscription to the API.
+
+   enter sign out - esc cancel
+
+sign-out gone elsewhere
+ ? o claude-subscription was signed out
+   in another window
+   o claude-work was signed out too.
+   Your message wasn't sent. Where
+   should this chat go?
+
+ > 1 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over.
+   2 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter choose - esc cancel
+
+sign-out gone elsewhere, on the API
+ ? o claude-subscription was signed out
+   in another window
+   o claude-work was signed out too.
+   Your message wasn't sent. Where
+   should this chat go?
+
+   1 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over.
+ > 2 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter use the API - esc cancel
+
+where T§3b
+ ? Where should this chat continue?
+   It ran on o chatgpt.
+   Earlier reasoning won't carry over,
+   and reviewer stays behind.
+
+ > 1 * claude-subscription
+     subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   2 * claude-work
+     subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   3 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter choose - esc quit
+
+where provider going off
+ ? Where should this chat go?
+   gemini is going off.
+   Earlier reasoning won't carry over,
+   and worker stays behind.
+
+ > 1 * claude-subscription
+     subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   2 * claude-work
+     subscription - opus-5-5 high
+     cache rebuild ~$0.41
+
+   enter choose - esc cancel
+
+where T§3c, from the picker
+ ? Where should this chat continue?
+   It ran on o claude-subscription.
+
+ > 1 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+   2 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your
+     subscription to the API.
+
+   enter choose - esc back
+
+where T§3c, on the API
+ ? Where should this chat continue?
+   It ran on o claude-subscription.
+
+   1 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+ > 2 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your
+     subscription to the API.
+
+   enter use the API - esc back
+
+where T§2a
+ ? * claude-subscription's sign-in
+   expired
+   Where should this chat start?
+
+ > 1 Sign in again
+   2 * claude-work
+     subscription - opus-5-5 high
+   3 * chatgpt
+     subscription - gpt-6.1-sol high
+   4 * claude-api
+     API - opus-5-5 high
+     This chat moves from your
+     subscription to the API.
+
+   enter choose - esc quit
+
+where T§2a, on the API
+ ? * claude-subscription's sign-in
+   expired
+   Where should this chat start?
+
+   1 Sign in again
+   2 * claude-work
+     subscription - opus-5-5 high
+   3 * chatgpt
+     subscription - gpt-6.1-sol high
+ > 4 * claude-api
+     API - opus-5-5 high
+     This chat moves from your
+     subscription to the API.
+
+   enter use the API - esc quit
+
+where T§2b, asks first
+ ? * claude-token's key is missing
+   Where should this chat start?
+   This chat moves from your
+   subscription to the API.
+
+   1 * claude-api
+     API - opus-5-5 high
+   2 * work-api
+     API - opus-5-5 high
+
+   up/down move - esc quit
+
+where T§3e
+ ? * claude-subscription's sign-in
+   expired
+   This chat ran on it.
+
+ > 1 Sign in again
+   2 * claude-work
+     subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   3 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over.
+   4 * claude-api
+     API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter choose - esc quit
+
+Ascii 80 provider
+ ? Sign in
+
+ > 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose - esc cancel
+
+gone
+ ? Sign in
+   o claude was signed out in another window. Your message waits until this
+   chat has an account.
+
+ > 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose - esc cancel
+
+name
+ ? Sign in
+
+ > Name for this account: claude
+
+   enter sign in - ctrl-u clear - esc cancel
+
+same account
+ x Not signed in: this is the same Claude account as * claude-work.
+   To sign it in again: /login claude-work
+   enter close
+
+not working first
+ ? Sign in to Claude
+
+ > 1 Sign in again to * claude-work
+   2 Sign in again to * claude
+   3 Add another Claude account
+
+   enter choose - esc cancel
+
+sign-out which
+ ? Sign out of which account?
+
+   1 * claude-subscription   Claude subscription - this chat
+   2 * claude-work           Claude subscription - coder uses it
+   3 * chatgpt               ChatGPT subscription - reviewer uses it
+   4 * claude-api            Claude API - from ~/.config/wisp/.env
+
+   up/down move - esc cancel
+
+sign-out which, after a down
+ ? Sign out of which account?
+
+ > 1 * claude-subscription   Claude subscription - this chat
+   2 * claude-work           Claude subscription - coder uses it
+   3 * chatgpt               ChatGPT subscription - reviewer uses it
+   4 * claude-api            Claude API - from ~/.config/wisp/.env
+
+   enter choose - esc cancel
+
+sign-out a stored key
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out a stored key, with a preset
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+   Preset coder used work-api; it now runs on its parent's account.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out nothing left
+ ? Sign out of * claude?
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out nothing left
+ ? Sign out of * claude and * chatgpt?
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, nothing left
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, with a preset
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   Preset coder used claude-work; new agents from it won't start on the API.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, scout unpriced
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+     scout                                    -
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, a long name
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     code-reviewer         can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out a stored key, coder moving
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+
+   Moving to * claude-subscription - subscription   cache rebuild
+     coder                                                 ~$0.08
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out where, typed
+ ? Sign out of * claude-subscription?
+   This chat uses it. Where should it go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   up/down move - esc cancel
+
+sign-out where, after sign out
+ ? Where should this chat go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   up/down move - esc cancel
+
+sign-out where, chosen
+ ? Where should this chat go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ > 2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   enter sign out - up/down move - esc cancel
+
+sign-out gone elsewhere
+ ? o claude-subscription was signed out in another window
+   o claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+ > 1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose - esc cancel
+
+sign-out gone elsewhere, on the API
+ ? o claude-subscription was signed out in another window
+   o claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+ > 2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter use the API - up/down move - esc cancel
+
+where T§3b
+ ? Where should this chat continue?
+   It ran on o chatgpt.
+   Earlier reasoning won't carry over, and reviewer stays behind.
+
+ > 1 * claude-subscription
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   3 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose - esc quit
+
+where provider going off
+ ? Where should this chat go?
+   gemini is going off.
+   Earlier reasoning won't carry over, and worker stays behind.
+
+ > 1 * claude-subscription
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+
+   enter choose - esc cancel
+
+where T§3c, from the picker
+ ? Where should this chat continue?
+   It ran on o claude-subscription.
+
+ > 1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter choose - esc back
+
+where T§3c, on the API
+ ? Where should this chat continue?
+   It ran on o claude-subscription.
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ > 2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter use the API - up/down move - esc back
+
+where T§2a
+ ? * claude-subscription's sign-in expired
+   Where should this chat start?
+
+ > 1 Sign in again to * claude-subscription
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+   3 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+   4 * claude-api
+     Claude API - opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter choose - esc quit
+
+where T§2a, on the API
+ ? * claude-subscription's sign-in expired
+   Where should this chat start?
+
+   1 Sign in again to * claude-subscription
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+   3 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+ > 4 * claude-api
+     Claude API - opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter use the API - up/down move - esc quit
+
+where T§2b, asks first
+ ? * claude-token's key is missing
+   Where should this chat start?
+   This chat moves from your subscription to the API.
+
+   1 * claude-api
+     Claude API - opus-5-5 high
+   2 * work-api
+     Claude API - opus-5-5 high
+
+   up/down move - esc quit
+
+where T§3e
+ ? * claude-subscription's sign-in expired
+   This chat ran on it.
+
+ > 1 Sign in again to * claude-subscription
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   3 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   4 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose - esc quit
+
+Ascii 120 provider
+ ? Sign in
+
+ > 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose - esc cancel
+
+gone
+ ? Sign in
+   o claude was signed out in another window. Your message waits until this chat has an account.
+
+ > 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose - esc cancel
+
+name
+ ? Sign in
+
+ > Name for this account: claude
+
+   enter sign in - ctrl-u clear - esc cancel
+
+same account
+ x Not signed in: this is the same Claude account as * claude-work.
+   To sign it in again: /login claude-work
+   enter close
+
+not working first
+ ? Sign in to Claude
+
+ > 1 Sign in again to * claude-work
+   2 Sign in again to * claude
+   3 Add another Claude account
+
+   enter choose - esc cancel
+
+sign-out which
+ ? Sign out of which account?
+
+   1 * claude-subscription   Claude subscription - this chat - new chats start here
+   2 * claude-work           Claude subscription - coder uses it
+   3 * chatgpt               ChatGPT subscription - reviewer uses it
+   4 * claude-api            Claude API - from ~/.config/wisp/.env - scout uses it
+
+   up/down move - esc cancel
+
+sign-out which, after a down
+ ? Sign out of which account?
+
+ > 1 * claude-subscription   Claude subscription - this chat - new chats start here
+   2 * claude-work           Claude subscription - coder uses it
+   3 * chatgpt               ChatGPT subscription - reviewer uses it
+   4 * claude-api            Claude API - from ~/.config/wisp/.env - scout uses it
+
+   enter choose - esc cancel
+
+sign-out a stored key
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out a stored key, with a preset
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+   Preset coder used work-api; it now runs on its parent's account.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out nothing left
+ ? Sign out of * claude?
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out nothing left
+ ? Sign out of * claude and * chatgpt?
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, nothing left
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, with a preset
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   Preset coder used claude-work; new agents from it won't start on the API.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, scout unpriced
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+     scout                                    -
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out all, a long name
+ ? Sign out of 4 accounts?
+   o claude-subscription - o claude-work - o chatgpt - o work-api (key deleted)
+
+   Moving to * claude-api - API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     code-reviewer         can't move to Claude
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out a stored key, coder moving
+ ? Sign out of * work-api?
+   Its key is deleted from Wisp.
+
+   Moving to * claude-subscription - subscription   cache rebuild
+     coder                                                 ~$0.08
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
+sign-out where, typed
+ ? Sign out of * claude-subscription?
+   This chat uses it. Where should it go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   up/down move - esc cancel
+
+sign-out where, after sign out
+ ? Where should this chat go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   up/down move - esc cancel
+
+sign-out where, chosen
+ ? Where should this chat go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ > 2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   enter sign out - up/down move - esc cancel
+
+sign-out gone elsewhere
+ ? o claude-subscription was signed out in another window
+   o claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+ > 1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose - esc cancel
+
+sign-out gone elsewhere, on the API
+ ? o claude-subscription was signed out in another window
+   o claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+ > 2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter use the API - up/down move - esc cancel
+
+where T§3b
+ ? Where should this chat continue?
+   It ran on o chatgpt.
+   Earlier reasoning won't carry over, and reviewer stays behind.
+
+ > 1 * claude-subscription
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   3 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose - esc quit
+
+where provider going off
+ ? Where should this chat go?
+   gemini is going off.
+   Earlier reasoning won't carry over, and worker stays behind.
+
+ > 1 * claude-subscription
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+
+   enter choose - esc cancel
+
+where T§3c, from the picker
+ ? Where should this chat continue?
+   It ran on o claude-subscription.
+
+ > 1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter choose - esc back
+
+where T§3c, on the API
+ ? Where should this chat continue?
+   It ran on o claude-subscription.
+
+   1 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ > 2 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter use the API - up/down move - esc back
+
+where T§2a
+ ? * claude-subscription's sign-in expired
+   Where should this chat start?
+
+ > 1 Sign in again to * claude-subscription
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+   3 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+   4 * claude-api
+     Claude API - opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter choose - esc quit
+
+where T§2a, on the API
+ ? * claude-subscription's sign-in expired
+   Where should this chat start?
+
+   1 Sign in again to * claude-subscription
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+   3 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+ > 4 * claude-api
+     Claude API - opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter use the API - up/down move - esc quit
+
+where T§2b, asks first
+ ? * claude-token's key is missing
+   Where should this chat start?
+   This chat moves from your subscription to the API.
+
+   1 * claude-api
+     Claude API - opus-5-5 high
+   2 * work-api
+     Claude API - opus-5-5 high
+
+   up/down move - esc quit
+
+where T§3e
+ ? * claude-subscription's sign-in expired
+   This chat ran on it.
+
+ > 1 Sign in again to * claude-subscription
+   2 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.41
+   3 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   4 * claude-api
+     Claude API - opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose - esc quit
+
+Unicode 40 provider
+ ? Sign in
+
+ › 1 Claude
+   2 ChatGPT
+   3 Antigravity
+   4 API key
+
+   enter choose · esc cancel
+
+gone
+ ? Sign in
+   ○ claude was signed out in another
+   window. Your message waits until
+   this chat has an account.
+
+ › 1 Claude
+   2 ChatGPT
+   3 Antigravity
+   4 API key
+
+   enter choose · esc cancel
+
+name
+ ? Sign in
+
+ › Name for this account: claude
+
+   enter sign in · esc cancel
+
+same account
+ ⨯ Not signed in: this is the same
+   Claude account as ● claude-work.
+   To sign it in again:
+   /login claude-work
+   enter close
+
+not working first
+ ? Sign in to Claude
+
+ › 1 Sign in again to ● claude-work
+   2 Sign in again to ● claude
+   3 Add another Claude account
+
+   enter choose · esc cancel
+
+sign-out which
+ ? Sign out of which account?
+
+   1 ● claude-subscription
+   2 ● claude-work
+   3 ● chatgpt
+   4 ● claude-api
+
+   ↑↓ move · esc cancel
+
+sign-out which, after a down
+ ? Sign out of which account?
+
+ › 1 ● claude-subscription
+   2 ● claude-work
+   3 ● chatgpt
+   4 ● claude-api
+
+   enter choose · esc cancel
+
+sign-out a stored key
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out a stored key, with a preset
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+   Preset coder used work-api; it now
+   runs on its parent's account.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out nothing left
+ ? Sign out of ● claude?
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out nothing left
+ ? Sign out of ● claude and ● chatgpt?
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, nothing left
+ ? Sign out of 4 accounts?
+   ○ claude-subscription
+   · ○ claude-work · ○ chatgpt
+   · ○ work-api (key deleted)
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all
+ ? Sign out of 4 accounts?
+   ○ claude-subscription
+   · ○ claude-work · ○ chatgpt
+   · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API
+                       cache rebuild
+     this chat                ~$0.41
+     coder                    ~$0.08
+   Staying behind
+     reviewer   can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, with a preset
+ ? Sign out of 4 accounts?
+   ○ claude-subscription
+   · ○ claude-work · ○ chatgpt
+   · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API
+                       cache rebuild
+     this chat                ~$0.41
+     coder                    ~$0.08
+   Staying behind
+     reviewer   can't move to Claude
+
+   Preset coder used claude-work; new
+   agents from it won't start on the
+   API.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, scout unpriced
+ ? Sign out of 4 accounts?
+   ○ claude-subscription
+   · ○ claude-work · ○ chatgpt
+   · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API
+                       cache rebuild
+     this chat                ~$0.41
+     coder                    ~$0.08
+     scout                         —
+   Staying behind
+     reviewer   can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, a long name
+ ? Sign out of 4 accounts?
+   ○ claude-subscription
+   · ○ claude-work · ○ chatgpt
+   · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API
+              cache rebuild
+     this chat       ~$0.41
+     coder           ~$0.08
+   Staying behind
+     code-reviewer
+       can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out a stored key, coder moving
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+
+   Moving to
+   ● claude-subscription · subscription
+      cache rebuild
+     coder   ~$0.08
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out where, typed
+ ? Sign out of ● claude-subscription?
+   This chat uses it. Where should it
+   go?
+
+   1 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+   2 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your
+     subscription to the API.
+
+   ↑↓ move · esc cancel
+
+sign-out where, after sign out
+ ? Where should this chat go?
+
+   1 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+   2 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your
+     subscription to the API.
+
+   ↑↓ move · esc cancel
+
+sign-out where, chosen
+ ? Where should this chat go?
+
+   1 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+ › 2 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your
+     subscription to the API.
+
+   enter sign out · ↑↓ move · esc cancel
+
+sign-out gone elsewhere
+ ? ○ claude-subscription was signed out
+   in another window
+   ○ claude-work was signed out too.
+   Your message wasn't sent. Where
+   should this chat go?
+
+ › 1 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over.
+   2 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter choose · esc cancel
+
+sign-out gone elsewhere, on the API
+ ? ○ claude-subscription was signed out
+   in another window
+   ○ claude-work was signed out too.
+   Your message wasn't sent. Where
+   should this chat go?
+
+   1 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over.
+ › 2 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter use the API · esc cancel
+
+where T§3b
+ ? Where should this chat continue?
+   It ran on ○ chatgpt.
+   Earlier reasoning won't carry over,
+   and reviewer stays behind.
+
+ › 1 ● claude-subscription
+     subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   2 ● claude-work
+     subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   3 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter choose · esc quit
+
+where provider going off
+ ? Where should this chat go?
+   gemini is going off.
+   Earlier reasoning won't carry over,
+   and worker stays behind.
+
+ › 1 ● claude-subscription
+     subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   2 ● claude-work
+     subscription · opus-5-5 high
+     cache rebuild ~$0.41
+
+   enter choose · esc cancel
+
+where T§3c, from the picker
+ ? Where should this chat continue?
+   It ran on ○ claude-subscription.
+
+ › 1 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+   2 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your
+     subscription to the API.
+
+   enter choose · esc back
+
+where T§3c, on the API
+ ? Where should this chat continue?
+   It ran on ○ claude-subscription.
+
+   1 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over, and coder stays behind.
+ › 2 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your
+     subscription to the API.
+
+   enter use the API · esc back
+
+where T§2a
+ ? ● claude-subscription's sign-in
+   expired
+   Where should this chat start?
+
+ › 1 Sign in again
+   2 ● claude-work
+     subscription · opus-5-5 high
+   3 ● chatgpt
+     subscription · gpt-6.1-sol high
+   4 ● claude-api
+     API · opus-5-5 high
+     This chat moves from your
+     subscription to the API.
+
+   enter choose · esc quit
+
+where T§2a, on the API
+ ? ● claude-subscription's sign-in
+   expired
+   Where should this chat start?
+
+   1 Sign in again
+   2 ● claude-work
+     subscription · opus-5-5 high
+   3 ● chatgpt
+     subscription · gpt-6.1-sol high
+ › 4 ● claude-api
+     API · opus-5-5 high
+     This chat moves from your
+     subscription to the API.
+
+   enter use the API · esc quit
+
+where T§2b, asks first
+ ? ● claude-token's key is missing
+   Where should this chat start?
+   This chat moves from your
+   subscription to the API.
+
+   1 ● claude-api
+     API · opus-5-5 high
+   2 ● work-api
+     API · opus-5-5 high
+
+   ↑↓ move · esc quit
+
+where T§3e
+ ? ● claude-subscription's sign-in
+   expired
+   This chat ran on it.
+
+ › 1 Sign in again
+   2 ● claude-work
+     subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   3 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry
+     over.
+   4 ● claude-api
+     API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your
+     subscription to the API.
+
+   enter choose · esc quit
+
+Unicode 80 provider
+ ? Sign in
+
+ › 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose · esc cancel
+
+gone
+ ? Sign in
+   ○ claude was signed out in another window. Your message waits until this
+   chat has an account.
+
+ › 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose · esc cancel
+
+name
+ ? Sign in
+
+ › Name for this account: claude
+
+   enter sign in · ctrl-u clear · esc cancel
+
+same account
+ ⨯ Not signed in: this is the same Claude account as ● claude-work.
+   To sign it in again: /login claude-work
+   enter close
+
+not working first
+ ? Sign in to Claude
+
+ › 1 Sign in again to ● claude-work
+   2 Sign in again to ● claude
+   3 Add another Claude account
+
+   enter choose · esc cancel
+
+sign-out which
+ ? Sign out of which account?
+
+   1 ● claude-subscription   Claude subscription · this chat
+   2 ● claude-work           Claude subscription · coder uses it
+   3 ● chatgpt               ChatGPT subscription · reviewer uses it
+   4 ● claude-api            Claude API · from ~/.config/wisp/.env
+
+   ↑↓ move · esc cancel
+
+sign-out which, after a down
+ ? Sign out of which account?
+
+ › 1 ● claude-subscription   Claude subscription · this chat
+   2 ● claude-work           Claude subscription · coder uses it
+   3 ● chatgpt               ChatGPT subscription · reviewer uses it
+   4 ● claude-api            Claude API · from ~/.config/wisp/.env
+
+   enter choose · esc cancel
+
+sign-out a stored key
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out a stored key, with a preset
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+   Preset coder used work-api; it now runs on its parent's account.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out nothing left
+ ? Sign out of ● claude?
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out nothing left
+ ? Sign out of ● claude and ● chatgpt?
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, nothing left
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, with a preset
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   Preset coder used claude-work; new agents from it won't start on the API.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, scout unpriced
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+     scout                                    —
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, a long name
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     code-reviewer         can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out a stored key, coder moving
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+
+   Moving to ● claude-subscription · subscription   cache rebuild
+     coder                                                 ~$0.08
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out where, typed
+ ? Sign out of ● claude-subscription?
+   This chat uses it. Where should it go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   ↑↓ move · esc cancel
+
+sign-out where, after sign out
+ ? Where should this chat go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   ↑↓ move · esc cancel
+
+sign-out where, chosen
+ ? Where should this chat go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ › 2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   enter sign out · ↑↓ move · esc cancel
+
+sign-out gone elsewhere
+ ? ○ claude-subscription was signed out in another window
+   ○ claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+ › 1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose · esc cancel
+
+sign-out gone elsewhere, on the API
+ ? ○ claude-subscription was signed out in another window
+   ○ claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+ › 2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter use the API · ↑↓ move · esc cancel
+
+where T§3b
+ ? Where should this chat continue?
+   It ran on ○ chatgpt.
+   Earlier reasoning won't carry over, and reviewer stays behind.
+
+ › 1 ● claude-subscription
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   3 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose · esc quit
+
+where provider going off
+ ? Where should this chat go?
+   gemini is going off.
+   Earlier reasoning won't carry over, and worker stays behind.
+
+ › 1 ● claude-subscription
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+
+   enter choose · esc cancel
+
+where T§3c, from the picker
+ ? Where should this chat continue?
+   It ran on ○ claude-subscription.
+
+ › 1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter choose · esc back
+
+where T§3c, on the API
+ ? Where should this chat continue?
+   It ran on ○ claude-subscription.
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ › 2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter use the API · ↑↓ move · esc back
+
+where T§2a
+ ? ● claude-subscription's sign-in expired
+   Where should this chat start?
+
+ › 1 Sign in again to ● claude-subscription
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+   3 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+   4 ● claude-api
+     Claude API · opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter choose · esc quit
+
+where T§2a, on the API
+ ? ● claude-subscription's sign-in expired
+   Where should this chat start?
+
+   1 Sign in again to ● claude-subscription
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+   3 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+ › 4 ● claude-api
+     Claude API · opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter use the API · ↑↓ move · esc quit
+
+where T§2b, asks first
+ ? ● claude-token's key is missing
+   Where should this chat start?
+   This chat moves from your subscription to the API.
+
+   1 ● claude-api
+     Claude API · opus-5-5 high
+   2 ● work-api
+     Claude API · opus-5-5 high
+
+   ↑↓ move · esc quit
+
+where T§3e
+ ? ● claude-subscription's sign-in expired
+   This chat ran on it.
+
+ › 1 Sign in again to ● claude-subscription
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   3 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   4 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose · esc quit
+
+Unicode 120 provider
+ ? Sign in
+
+ › 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose · esc cancel
+
+gone
+ ? Sign in
+   ○ claude was signed out in another window. Your message waits until this chat has an account.
+
+ › 1 Claude        Pro or Max subscription
+   2 ChatGPT       Plus or Pro subscription
+   3 Antigravity   Gemini subscription
+   4 API key       Claude, OpenAI, Gemini or a gateway
+
+   enter choose · esc cancel
+
+name
+ ? Sign in
+
+ › Name for this account: claude
+
+   enter sign in · ctrl-u clear · esc cancel
+
+same account
+ ⨯ Not signed in: this is the same Claude account as ● claude-work.
+   To sign it in again: /login claude-work
+   enter close
+
+not working first
+ ? Sign in to Claude
+
+ › 1 Sign in again to ● claude-work
+   2 Sign in again to ● claude
+   3 Add another Claude account
+
+   enter choose · esc cancel
+
+sign-out which
+ ? Sign out of which account?
+
+   1 ● claude-subscription   Claude subscription · this chat · new chats start here
+   2 ● claude-work           Claude subscription · coder uses it
+   3 ● chatgpt               ChatGPT subscription · reviewer uses it
+   4 ● claude-api            Claude API · from ~/.config/wisp/.env · scout uses it
+
+   ↑↓ move · esc cancel
+
+sign-out which, after a down
+ ? Sign out of which account?
+
+ › 1 ● claude-subscription   Claude subscription · this chat · new chats start here
+   2 ● claude-work           Claude subscription · coder uses it
+   3 ● chatgpt               ChatGPT subscription · reviewer uses it
+   4 ● claude-api            Claude API · from ~/.config/wisp/.env · scout uses it
+
+   enter choose · esc cancel
+
+sign-out a stored key
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out a stored key, with a preset
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+   Preset coder used work-api; it now runs on its parent's account.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out nothing left
+ ? Sign out of ● claude?
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out nothing left
+ ? Sign out of ● claude and ● chatgpt?
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, nothing left
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, with a preset
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     reviewer              can't move to Claude
+
+   Preset coder used claude-work; new agents from it won't start on the API.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, scout unpriced
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+     scout                                    —
+   Staying behind
+     reviewer              can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out all, a long name
+ ? Sign out of 4 accounts?
+   ○ claude-subscription · ○ claude-work · ○ chatgpt · ○ work-api (key deleted)
+
+   Moving to ● claude-api · API   cache rebuild
+     this chat                           ~$0.41
+     coder                               ~$0.08
+   Staying behind
+     code-reviewer         can't move to Claude
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out a stored key, coder moving
+ ? Sign out of ● work-api?
+   Its key is deleted from Wisp.
+
+   Moving to ● claude-subscription · subscription   cache rebuild
+     coder                                                 ~$0.08
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
+sign-out where, typed
+ ? Sign out of ● claude-subscription?
+   This chat uses it. Where should it go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   ↑↓ move · esc cancel
+
+sign-out where, after sign out
+ ? Where should this chat go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   ↑↓ move · esc cancel
+
+sign-out where, chosen
+ ? Where should this chat go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ › 2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 and ~$0.08
+     This chat and coder move from your subscription to the API.
+
+   enter sign out · ↑↓ move · esc cancel
+
+sign-out gone elsewhere
+ ? ○ claude-subscription was signed out in another window
+   ○ claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+ › 1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose · esc cancel
+
+sign-out gone elsewhere, on the API
+ ? ○ claude-subscription was signed out in another window
+   ○ claude-work was signed out too.
+   Your message wasn't sent. Where should this chat go?
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+ › 2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter use the API · ↑↓ move · esc cancel
+
+where T§3b
+ ? Where should this chat continue?
+   It ran on ○ chatgpt.
+   Earlier reasoning won't carry over, and reviewer stays behind.
+
+ › 1 ● claude-subscription
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   3 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose · esc quit
+
+where provider going off
+ ? Where should this chat go?
+   gemini is going off.
+   Earlier reasoning won't carry over, and worker stays behind.
+
+ › 1 ● claude-subscription
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+
+   enter choose · esc cancel
+
+where T§3c, from the picker
+ ? Where should this chat continue?
+   It ran on ○ claude-subscription.
+
+ › 1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+   2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter choose · esc back
+
+where T§3c, on the API
+ ? Where should this chat continue?
+   It ran on ○ claude-subscription.
+
+   1 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over, and coder stays behind.
+ › 2 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41 for this chat
+     This chat and coder move from your subscription to the API.
+
+   enter use the API · ↑↓ move · esc back
+
+where T§2a
+ ? ● claude-subscription's sign-in expired
+   Where should this chat start?
+
+ › 1 Sign in again to ● claude-subscription
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+   3 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+   4 ● claude-api
+     Claude API · opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter choose · esc quit
+
+where T§2a, on the API
+ ? ● claude-subscription's sign-in expired
+   Where should this chat start?
+
+   1 Sign in again to ● claude-subscription
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+   3 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+ › 4 ● claude-api
+     Claude API · opus-5-5 high
+     This chat moves from your subscription to the API.
+
+   enter use the API · ↑↓ move · esc quit
+
+where T§2b, asks first
+ ? ● claude-token's key is missing
+   Where should this chat start?
+   This chat moves from your subscription to the API.
+
+   1 ● claude-api
+     Claude API · opus-5-5 high
+   2 ● work-api
+     Claude API · opus-5-5 high
+
+   ↑↓ move · esc quit
+
+where T§3e
+ ? ● claude-subscription's sign-in expired
+   This chat ran on it.
+
+ › 1 Sign in again to ● claude-subscription
+   2 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.41
+   3 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.38
+     Earlier reasoning won't carry over.
+   4 ● claude-api
+     Claude API · opus-5-5 high
+     cache rebuild ~$0.41
+     This chat moves from your subscription to the API.
+
+   enter choose · esc quit

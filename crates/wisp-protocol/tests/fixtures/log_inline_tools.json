@@ -1,0 +1,9 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 5,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "inline_tools",
+  "model": "claude-haiku-5-5",
+  "state": "proven",
+  "endpoint_name": "gateway"
+}

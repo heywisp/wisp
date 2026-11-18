@@ -1,0 +1,15 @@
+id = "time"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Stamps each message with the time it was sent"
+settings = ["time"]
+
+[system]
+text = "A user message may begin with a 'Sent:' line that Wisp adds, giving the time it was sent; use it for anything involving dates or time, and don't mention it otherwise."
+
+[[hooks]]
+name = "sent"
+point = "before-turn"
+in = ["core/notes"]
+switch = "time"
+reserve = "Sent: Thursday 1970-01-01 00:00:00 UTC+00:00\n"

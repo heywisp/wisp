@@ -1,0 +1,163 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== opened
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+| ? Sign in to start
+  ~ 1..2 fg Rgb(86, 156, 214) bold; 3..19 fg Rgb(212, 212, 212) bold
+|
+| › 1 Claude        Pro or Max subscription
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..42 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 42..120 bg Rgb(4, 57, 94)
+|   2 ChatGPT       Plus or Pro subscription
+  ~ 3..5 fg Rgb(166, 166, 166); 5..43 fg Rgb(212, 212, 212)
+|   3 Antigravity   Gemini subscription
+  ~ 3..5 fg Rgb(166, 166, 166); 5..38 fg Rgb(212, 212, 212)
+|   4 API key       Claude, OpenAI, Gemini or a gateway
+  ~ 3..5 fg Rgb(166, 166, 166); 5..54 fg Rgb(212, 212, 212)
+|
+|   enter choose · esc quit
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..21 fg Rgb(166, 166, 166); 21..26 fg Rgb(117, 117, 117)
+|(20 blank rows)
+== key card
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+|   Let's connect a model.
+  ~ 3..25 fg Rgb(212, 212, 212)
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+| › Connect    ● Anthropic's API · api.anthropic.com
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..14 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 14..16 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 16..51 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 51..120 bg Rgb(4, 57, 94)
+|              ○ A gateway or proxy
+  ~ 0..14 bg Rgb(4, 57, 94); 14..34 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 34..120 bg Rgb(4, 57, 94)
+|   Key        paste the key
+  ~ 3..14 fg Rgb(166, 166, 166); 14..27 fg Rgb(117, 117, 117)
+|   Name       anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|
+|   enter next · tab move · esc quit
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..35 fg Rgb(117, 117, 117)
+|(19 blank rows)
+== name
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+|   Let's connect a model.
+  ~ 3..25 fg Rgb(212, 212, 212)
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ● Anthropic's API · api.anthropic.com
+  ~ 3..14 fg Rgb(166, 166, 166); 14..51 fg Rgb(212, 212, 212)
+|              ○ A gateway or proxy
+  ~ 14..34 fg Rgb(166, 166, 166)
+|   Key        sk-ant-api03-…************…6789  36 characters
+  ~ 3..14 fg Rgb(166, 166, 166); 14..60 fg Rgb(206, 145, 120)
+| › Name       anthropic
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..23 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 23..24 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94) inverse; 24..120 bg Rgb(4, 57, 94)
+|
+|   enter save · tab move · esc quit
+  ~ 3..8 fg Rgb(166, 166, 166); 8..16 fg Rgb(117, 117, 117); 16..19 fg Rgb(166, 166, 166); 19..27 fg Rgb(117, 117, 117); 27..30 fg Rgb(166, 166, 166); 30..35 fg Rgb(117, 117, 117)
+|(19 blank rows)
+== saving
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+|   Let's connect a model.
+  ~ 3..25 fg Rgb(212, 212, 212)
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ● Anthropic's API · api.anthropic.com
+  ~ 3..14 fg Rgb(166, 166, 166); 14..51 fg Rgb(212, 212, 212)
+|              ○ A gateway or proxy
+  ~ 14..34 fg Rgb(166, 166, 166)
+|   Key        sk-ant-api03-…************…6789  36 characters
+  ~ 3..14 fg Rgb(166, 166, 166); 14..60 fg Rgb(206, 145, 120)
+|   Name       anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|
+|   saving the account…
+  ~ 3..22 fg Rgb(166, 166, 166)
+|
+|   esc quit
+  ~ 3..6 fg Rgb(166, 166, 166); 6..11 fg Rgb(117, 117, 117)
+|(17 blank rows)
+== keychain
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+|   Let's connect a model.
+  ~ 3..25 fg Rgb(212, 212, 212)
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ● Anthropic's API · api.anthropic.com
+  ~ 3..14 fg Rgb(166, 166, 166); 14..51 fg Rgb(212, 212, 212)
+|              ○ A gateway or proxy
+  ~ 14..34 fg Rgb(166, 166, 166)
+|   Key        sk-ant-api03-…************…6789  36 characters
+  ~ 3..14 fg Rgb(166, 166, 166); 14..60 fg Rgb(206, 145, 120)
+|   Name       anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|
+|   The keychain didn't answer. Keep this key in ~/.config/wisp/credentials.json instead?
+  ~ 3..88 fg Rgb(212, 212, 212)
+|   1 Yes
+  ~ 3..5 fg Rgb(166, 166, 166); 5..8 fg Rgb(212, 212, 212)
+| › 2 No
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..5 fg Rgb(166, 166, 166) bg Rgb(4, 57, 94); 5..7 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 7..120 bg Rgb(4, 57, 94)
+|
+|   enter choose · esc back
+  ~ 3..8 fg Rgb(166, 166, 166); 8..18 fg Rgb(117, 117, 117); 18..21 fg Rgb(166, 166, 166); 21..26 fg Rgb(117, 117, 117)
+|(15 blank rows)
+== quitting
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+|   Let's connect a model.
+  ~ 3..25 fg Rgb(212, 212, 212)
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ● Anthropic's API · api.anthropic.com
+  ~ 3..14 fg Rgb(166, 166, 166); 14..51 fg Rgb(212, 212, 212)
+|              ○ A gateway or proxy
+  ~ 14..34 fg Rgb(166, 166, 166)
+|   Key        sk-ant-api03-…************…6789  36 characters
+  ~ 3..14 fg Rgb(166, 166, 166); 14..60 fg Rgb(206, 145, 120)
+|   Name       anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|
+|   saving the account…
+  ~ 3..22 fg Rgb(166, 166, 166)
+|   Wisp quits when the save ends.
+  ~ 3..33 fg Rgb(166, 166, 166)
+|(18 blank rows)
+== saved
+| ◉ wisp
+  ~ 1..2 fg Rgb(86, 156, 214); 3..7 fg Rgb(212, 212, 212) bold
+|
+|   Let's connect a model.
+  ~ 3..25 fg Rgb(212, 212, 212)
+|
+|   Provider   Anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|   Connect    ● Anthropic's API · api.anthropic.com
+  ~ 3..14 fg Rgb(166, 166, 166); 14..51 fg Rgb(212, 212, 212)
+|              ○ A gateway or proxy
+  ~ 14..34 fg Rgb(166, 166, 166)
+|   Key        sk-ant-api03-…************…6789  36 characters
+  ~ 3..14 fg Rgb(166, 166, 166); 14..60 fg Rgb(206, 145, 120)
+|   Name       anthropic
+  ~ 3..14 fg Rgb(166, 166, 166); 14..23 fg Rgb(212, 212, 212)
+|
+|   Checking… ok · saved in ~/.config/wisp/credentials.json
+  ~ 3..58 fg Rgb(137, 209, 133)
+|   note: this folder is inside a git work tree
+  ~ 3..46 fg Rgb(166, 166, 166)
+|(18 blank rows)

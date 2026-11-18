@@ -1,0 +1,8 @@
+interface model {
+  use wisp:plugin/call@0.1.0.{call-context};
+  record prompt { system: string, text: string, max-tokens: u32, native: option<string> }
+  record source { title: string, url: string }
+  record reply { text: string, sources: list<source> }
+  variant ask-error { not-allowed(string), cancelled, refused(string), failed(string) }
+  ask: async func(req: prompt, ctx: borrow<call-context>) -> result<reply, ask-error>;
+}

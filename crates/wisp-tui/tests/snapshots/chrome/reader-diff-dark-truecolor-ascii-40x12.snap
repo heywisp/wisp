@@ -1,0 +1,30 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| + Showed crates/wisp-core/src/cache.rs
+  ~ 1..2 fg Rgb(137, 209, 133); 3..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(212, 212, 212)
+|----------------------------------------
+  ~ 0..40 fg Rgb(88, 88, 88)
+|        1 +     let part_1 = fingerprin
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..39 bg Rgb(45, 49, 37)
+|            t.segment(1);
+  ~ 5..39 bg Rgb(45, 49, 37)
+|        2 +     let part_2 = fingerprin
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..39 bg Rgb(45, 49, 37)
+|            t.segment(2);
+  ~ 5..39 bg Rgb(45, 49, 37)
+|        3 +     let part_3 = fingerprin
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..39 bg Rgb(45, 49, 37)
+|            t.segment(3);
+  ~ 5..39 bg Rgb(45, 49, 37)
+|        4 +     let part_4 = fingerprin
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..39 bg Rgb(45, 49, 37)
+|            t.segment(4);
+  ~ 5..39 bg Rgb(45, 49, 37)
+|        5 +     let part_5 = fingerprin
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..39 bg Rgb(45, 49, 37)
+|   / search - 1-9/80 - q esc back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..20 fg Rgb(166, 166, 166); 20..23 fg Rgb(117, 117, 117); 23..28 fg Rgb(166, 166, 166); 28..33 fg Rgb(117, 117, 117)

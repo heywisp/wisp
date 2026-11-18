@@ -1,0 +1,8 @@
+{
+  "type": "send",
+  "id": "tui-4",
+  "text": "then write it up",
+  "mode": "queue",
+  "turn": 3,
+  "replaces": "tui-3"
+}

@@ -1,0 +1,6 @@
+{
+  "type": "tool_call_started",
+  "call_id": "toolu_08",
+  "cwd": "~/Projects/Wisp",
+  "movable": true
+}

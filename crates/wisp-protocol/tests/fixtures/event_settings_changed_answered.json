@@ -1,0 +1,32 @@
+{
+  "type": "settings_changed",
+  "answers": 7,
+  "endpoint": "env",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "model_switch"
+  },
+  "changes": [
+    {
+      "target": {
+        "name": "model"
+      },
+      "value": {
+        "kind": "text",
+        "text": "claude-sonnet-5-5"
+      },
+      "layer": "session",
+      "when": "next_turn",
+      "cache": {
+        "type": "rebuilt",
+        "reason": "model_switch"
+      },
+      "saved": {
+        "path_display": "~/.config/wisp/config.toml",
+        "line": 2
+      }
+    }
+  ]
+}

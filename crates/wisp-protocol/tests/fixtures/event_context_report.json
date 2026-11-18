@@ -1,0 +1,65 @@
+{
+  "type": "context_report",
+  "answers": 7,
+  "detail": "all",
+  "model": "claude-opus-5-5",
+  "endpoint": "direct",
+  "fill": {
+    "measured": {
+      "used": 62400,
+      "turn": 9,
+      "step": 4
+    }
+  },
+  "next": 63100,
+  "window": {
+    "tokens": 400000,
+    "source": "config",
+    "documented": 1000000
+  },
+  "compact_at": {
+    "tokens": 336000,
+    "set_by": "default"
+  },
+  "reserve": 64000,
+  "auto_compact": false,
+  "categories": [
+    {
+      "category": "system_prompt",
+      "tokens": 3100,
+      "source": "estimated"
+    },
+    {
+      "category": "tools",
+      "tokens": 1400,
+      "source": "estimated",
+      "items": [
+        {
+          "name": "bash",
+          "tokens": 1400
+        }
+      ]
+    },
+    {
+      "category": "tool_results",
+      "tokens": 22100,
+      "source": "split",
+      "items": [
+        {
+          "name": "cargo test",
+          "tokens": 9000,
+          "turn": 8
+        }
+      ]
+    }
+  ],
+  "basis": {
+    "partly_estimated": {
+      "reason": "timed out"
+    }
+  },
+  "epoch": 0,
+  "reread_cost_usd": 0.01248,
+  "compact_now_cost_usd": 0.13728,
+  "compact_now_head_write_usd": 0.12
+}

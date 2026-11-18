@@ -1,0 +1,66 @@
+---
+source: crates/wisp-render/src/markdown/tests.rs
+expression: "at_widths(LINKS, GlyphSet::Unicode)"
+---
+--- 120 ---
+   See [u accent|the docs][text.muted| (https://example.com/docs)], [u accent|https://example.com/auto], a bare [u accent|https://example.org/path?q=1] and
+   www.example.net, and [u accent|an image][text.muted| (https://example.com/a.png)]. An email [u accent|me@example.com].
+--- 80 ---
+   See [u accent|the docs][text.muted| (https://example.com/docs)], [u accent|https://example.com/auto], a bare
+   [u accent|https://example.org/path?q=1] and www.example.net, and [u accent|an image]
+   [text.muted|(https://example.com/a.png)]. An email [u accent|me@example.com].
+--- 60 ---
+   See [u accent|the docs][text.muted| (https://example.com/docs)],
+   [u accent|https://example.com/auto], a bare
+   [u accent|https://example.org/path?q=1] and www.example.net, and [u accent|an]
+   [u accent|image][text.muted| (https://example.com/a.png)]. An email
+   [u accent|me@example.com].
+--- 24 ---
+   See [u accent|the docs]
+   [text.muted|(https://example.com]
+   [text.muted|/docs)],
+   [u accent|https://example.com/]
+   [u accent|auto], a bare
+   [u accent|https://example.org/]
+   [u accent|path?q=1] and
+   www.example.net, and
+   [u accent|an image]
+   [text.muted|(https://example.com]
+   [text.muted|/a.png)]. An email
+   [u accent|me@example.com].
+--- 10 ---
+   See
+   [u accent|the]
+   [u accent|docs]
+   [text.muted|(https]
+   [text.muted|://exa]
+   [text.muted|mple.c]
+   [text.muted|om/doc]
+   [text.muted|s)],
+   [u accent|https:]
+   [u accent|//exam]
+   [u accent|ple.co]
+   [u accent|m/auto]
+   , a
+   bare
+   [u accent|https:]
+   [u accent|//exam]
+   [u accent|ple.or]
+   [u accent|g/path]
+   [u accent|?q=1]
+   and
+   www.ex
+   ample.
+   net,
+   and [u accent|an]
+   [u accent|image]
+   [text.muted|(https]
+   [text.muted|://exa]
+   [text.muted|mple.c]
+   [text.muted|om/a.p]
+   [text.muted|ng)].
+   An
+   email
+   [u accent|me@exa]
+   [u accent|mple.c]
+   [u accent|om].

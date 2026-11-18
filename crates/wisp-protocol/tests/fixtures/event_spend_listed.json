@@ -1,0 +1,46 @@
+{
+  "type": "spend_listed",
+  "request": 2,
+  "days": [
+    {
+      "day": "2026-11-14",
+      "accounts": {
+        "api": {
+          "usd": 2.0,
+          "plan_usd": 0.0,
+          "lower_bound": true
+        },
+        "subscription": {
+          "usd": 1.0,
+          "plan_usd": 1.0,
+          "lower_bound": true
+        }
+      },
+      "total": {
+        "usd": 3.0,
+        "plan_usd": 1.0,
+        "lower_bound": true
+      }
+    }
+  ],
+  "window": {
+    "since": "2026-11-14",
+    "accounts": {
+      "api": {
+        "usd": 2.0,
+        "plan_usd": 0.0,
+        "lower_bound": true
+      },
+      "subscription": {
+        "usd": 1.0,
+        "plan_usd": 1.0,
+        "lower_bound": true
+      }
+    },
+    "total": {
+      "usd": 3.0,
+      "plan_usd": 1.0,
+      "lower_bound": true
+    }
+  }
+}

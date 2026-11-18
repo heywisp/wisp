@@ -1,0 +1,11 @@
+use std::collections::BTreeMap;
+#[derive(Debug, Clone)]
+pub struct Cache<T: Ord> { map: BTreeMap<String, T>, hits: u64 }
+impl<T: Ord> Cache<T> {
+    pub fn get(&mut self, key: &str) -> Option<&T> {
+        let n = 0x1f_u32 + 1_000;
+        let s = format!("hits={} {:?}", self.hits, r#"raw"#);
+        if self.map.contains_key(key) { self.hits += 1; } // count
+        match key { "a" | "b" => None, _ => self.map.get(key) }
+    }
+}

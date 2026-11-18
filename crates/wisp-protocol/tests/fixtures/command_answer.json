@@ -1,0 +1,18 @@
+{
+  "type": "answer",
+  "call_id": "toolu_7",
+  "answers": [
+    {
+      "chosen": [
+        0
+      ]
+    },
+    {
+      "chosen": [
+        0,
+        2
+      ],
+      "own": "Webhooks for new notes\nand a feed"
+    }
+  ]
+}

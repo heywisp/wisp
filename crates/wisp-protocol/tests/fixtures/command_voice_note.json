@@ -1,0 +1,8 @@
+{
+  "type": "voice",
+  "command": {
+    "type": "note",
+    "call": "web-1",
+    "text": "Tapped: the red circle"
+  }
+}

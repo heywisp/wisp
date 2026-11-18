@@ -1,0 +1,77 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== reader
+| ✓ Showed crates/wisp-core/src/cache.rs                                                                          +36 −1
+  ~ 1..2 fg Idx(10); 3..9 bold; 113..116 fg Idx(10); 117..119 fg Idx(9)
+|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ~ 0..120 fg Idx(8)
+|        1   pub fn ttl() -> Duration {
+  ~ 5..10 fg Idx(7)
+|        2 -     Duration::from_secs(300)
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(9); 36..39 inverse
+|        2 +     Duration::from_secs(3600)
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10); 36..40 bold underline inverse
+|        3   }
+  ~ 5..10 fg Idx(7)
+|        4 + // 3600 seconds is one hour
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10); 12..39 italic
+|        5 +     let part_1 = fingerprint.segment(1);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        6 +     let part_2 = fingerprint.segment(2);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        7 +     let part_3 = fingerprint.segment(3);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        8 +     let part_4 = fingerprint.segment(4);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|        9 +     let part_5 = fingerprint.segment(5);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       10 +     let part_6 = fingerprint.segment(6);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       11 +     let part_7 = fingerprint.segment(7);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       12 +     let part_8 = fingerprint.segment(8);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       13 +     let part_9 = fingerprint.segment(9);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       14 +     let part_10 = fingerprint.segment(10);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       15 +     let part_11 = fingerprint.segment(11);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       16 +     let part_12 = fingerprint.segment(12);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       17 +     let part_13 = fingerprint.segment(13);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       18 +     let part_14 = fingerprint.segment(14);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       19 +     let part_15 = fingerprint.segment(15);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       20 +     let part_16 = fingerprint.segment(16);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       21 +     let part_17 = fingerprint.segment(17);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       22 +     let part_18 = fingerprint.segment(18);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       23 +     let part_19 = fingerprint.segment(19);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       24 +     let part_20 = fingerprint.segment(20);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       25 +     let part_21 = fingerprint.segment(21);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       26 +     let part_22 = fingerprint.segment(22);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       27 +     let part_23 = fingerprint.segment(23);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       28 +     let part_24 = fingerprint.segment(24);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       29 +     let part_25 = fingerprint.segment(25);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       30 +     let part_26 = fingerprint.segment(26);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       31 +     let part_27 = fingerprint.segment(27);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|       32 +     let part_28 = fingerprint.segment(28);
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|   /3600                                                                                                         1 of 2
+  ~ 3..4 fg Idx(8); 113..119 fg Idx(7)

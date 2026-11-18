@@ -1,0 +1,16 @@
+{
+  "type": "change_settings",
+  "request": 7,
+  "changes": [
+    {
+      "target": {
+        "name": "model"
+      },
+      "value": {
+        "kind": "text",
+        "text": "claude-sonnet-5-5"
+      }
+    }
+  ],
+  "save": true
+}

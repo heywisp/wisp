@@ -1,0 +1,21 @@
+{
+  "type": "question_closed",
+  "call_id": "toolu_7",
+  "how": {
+    "type": "answered",
+    "answers": [
+      {
+        "chosen": [
+          0
+        ]
+      },
+      {
+        "chosen": [
+          0,
+          2
+        ],
+        "own": "Webhooks for new notes\nand a feed"
+      }
+    ]
+  }
+}

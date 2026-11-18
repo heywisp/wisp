@@ -1,0 +1,12 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 1,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "process_started",
+  "turn": 2,
+  "id": 3,
+  "call_id": "toolu_03",
+  "reason": "started",
+  "tty": false,
+  "stdin": true
+}

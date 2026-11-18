@@ -1,0 +1,6 @@
+{
+  "type": "restart",
+  "data": {
+    "wait": true
+  }
+}

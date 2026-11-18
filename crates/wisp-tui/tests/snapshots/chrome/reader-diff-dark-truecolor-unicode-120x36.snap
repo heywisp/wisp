@@ -1,0 +1,78 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| ✓ Showed crates/wisp-core/src/cache.rs                                                                          +40 −0
+  ~ 1..2 fg Rgb(137, 209, 133); 3..9 fg Rgb(212, 212, 212) bold; 9..39 fg Rgb(212, 212, 212); 113..116 fg Rgb(137, 209, 133); 117..119 fg Rgb(244, 135, 113)
+|────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ~ 0..120 fg Rgb(88, 88, 88)
+|        1 +     let part_1 = fingerprint.segment(1);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        2 +     let part_2 = fingerprint.segment(2);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        3 +     let part_3 = fingerprint.segment(3);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        4 +     let part_4 = fingerprint.segment(4);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        5 +     let part_5 = fingerprint.segment(5);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        6 +     let part_6 = fingerprint.segment(6);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        7 +     let part_7 = fingerprint.segment(7);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        8 +     let part_8 = fingerprint.segment(8);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|        9 +     let part_9 = fingerprint.segment(9);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       10 +     let part_10 = fingerprint.segment(10);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       11 +     let part_11 = fingerprint.segment(11);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       12 +     let part_12 = fingerprint.segment(12);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       13 +     let part_13 = fingerprint.segment(13);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       14 +     let part_14 = fingerprint.segment(14);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       15 +     let part_15 = fingerprint.segment(15);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       16 +     let part_16 = fingerprint.segment(16);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       17 +     let part_17 = fingerprint.segment(17);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       18 +     let part_18 = fingerprint.segment(18);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       19 +     let part_19 = fingerprint.segment(19);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       20 +     let part_20 = fingerprint.segment(20);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       21 +     let part_21 = fingerprint.segment(21);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       22 +     let part_22 = fingerprint.segment(22);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       23 +     let part_23 = fingerprint.segment(23);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       24 +     let part_24 = fingerprint.segment(24);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       25 +     let part_25 = fingerprint.segment(25);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       26 +     let part_26 = fingerprint.segment(26);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       27 +     let part_27 = fingerprint.segment(27);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       28 +     let part_28 = fingerprint.segment(28);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       29 +     let part_29 = fingerprint.segment(29);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       30 +     let part_30 = fingerprint.segment(30);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       31 +     let part_31 = fingerprint.segment(31);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       32 +     let part_32 = fingerprint.segment(32);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|       33 +     let part_33 = fingerprint.segment(33);
+  ~ 5..10 fg Rgb(166, 166, 166) bg Rgb(45, 49, 37); 10..11 fg Rgb(137, 209, 133) bg Rgb(45, 49, 37); 11..119 bg Rgb(45, 49, 37)
+|   / search · 1-33/40 · ctrl-o every detail · q esc back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..21 fg Rgb(166, 166, 166); 21..24 fg Rgb(117, 117, 117); 24..30 fg Rgb(166, 166, 166); 30..46 fg Rgb(117, 117, 117); 46..51 fg Rgb(166, 166, 166); 51..56 fg Rgb(117, 117, 117)

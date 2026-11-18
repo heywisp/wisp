@@ -1,0 +1,9 @@
+{
+  "type": "command_done",
+  "answers": 7,
+  "outcome": {
+    "type": "refused",
+    "kind": "plugin_off",
+    "hint": "the acme plugin is turned off"
+  }
+}

@@ -1,0 +1,15 @@
+---
+source: crates/wisp-tui/src/app/picker/tests.rs
+expression: "painted(&p, &f, &t, set, width).join(\"\\n\")"
+---
+----------------------------------------
+   Model
+   * antigravity        subscription
+ >   gemini-4-carbon +  medium
+     gemini-4-argon
+     gemini-3.8-flash
+     gemini-3.8-flash-tiered
+   + Sign in to another account...
+   This chat uses it now
+
+   enter switch - esc close

@@ -1,0 +1,26 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 12,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "todos_updated",
+  "turn": 3,
+  "call_id": "toolu_7",
+  "items": [
+    {
+      "text": "Read the plan",
+      "status": "completed"
+    },
+    {
+      "text": "Write the plan",
+      "status": "in_progress"
+    },
+    {
+      "text": "Review it",
+      "status": "pending"
+    },
+    {
+      "text": "Drop the draft",
+      "status": "cancelled"
+    }
+  ]
+}

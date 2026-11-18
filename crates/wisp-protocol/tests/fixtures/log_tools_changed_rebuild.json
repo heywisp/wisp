@@ -1,0 +1,33 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 6,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "tools_changed",
+  "turn": 3,
+  "via": "rebuild",
+  "added": [
+    "show_diff"
+  ],
+  "system_prompt": "You are Wisp. You can show the user a diff.",
+  "system_prompt_sha256": "abababababababababababababababababababababababababababababababab",
+  "system_base_sha256": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef",
+  "tools": [
+    "show_diff",
+    "view_file"
+  ],
+  "tools_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "tool_definitions": [
+    {
+      "description": "Show a diff.",
+      "input_schema": {
+        "type": "object"
+      },
+      "name": "show_diff"
+    }
+  ],
+  "history_len": 4,
+  "tools_on": [
+    "show_diff",
+    "view_file"
+  ]
+}

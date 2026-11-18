@@ -1,0 +1,4 @@
+{
+  "type": "rejected",
+  "reason": "endpoint \"work\" is unavailable: WORK_KEY is not set in the environment"
+}

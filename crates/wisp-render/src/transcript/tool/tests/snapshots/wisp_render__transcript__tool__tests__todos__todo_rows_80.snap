@@ -1,0 +1,12 @@
+---
+source: crates/wisp-render/src/transcript/tool/tests/todos.rs
+expression: unicode
+---
+ ✓ Used write_todos 2 of 5 completed                                         0s
+     ✓ Read the plan
+     ◌ Write the parser and its validation table
+     ◦ Draw the list in the tool row
+     − Keep the old renderer
+     ✓ Run the checks
+
+   18s · 2 requests · 1 tool · cost unknown

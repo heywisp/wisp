@@ -1,0 +1,25 @@
+---
+source: crates/wisp-render/src/chrome/context/tests.rs
+expression: "render(&before_first_request(), &view(false))"
+---
+  ⣿ ⣿ ⣿ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   claude-opus-5-5 · direct
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   ~2k / 850k tokens (0%)
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   no request yet: estimated
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   Usage by category                      estimated (~)
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   ⣿ System prompt              ~312   <0.1%  estimated
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   ⣿ Tools (2)                 ~1.6k    0.2%  estimated
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀ ⣀   ⣿ Environment                ~120   <0.1%  estimated
+  ⣀ ⣀ ⣀ ⣀ ⣀ ⡪ ⡪ ⡪ ⡪ ⡪   ⣀ Free before the point     ~848k   84.8%
+  ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪ ⡪   ⡪ Reserve past the point     150k   15.0%
+                          Would compact at 850k (window − reserve)
+  1 cell = 10k            automatic compaction is off
+                          window 1M (shipped)
+                        ~ no request yet
+
+  Tools · 2 · ~1.6k
+  └─ shell ~1.1k · question ~500
+
+  Each step re-reads 2k: $0.00094 · compacting now ~$0.137, then ~$0.114 to
+  write the new head
+  /context all lists every item

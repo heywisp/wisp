@@ -1,0 +1,7 @@
+{
+  "type": "question_closed",
+  "call_id": "toolu_7",
+  "how": {
+    "type": "message_instead"
+  }
+}

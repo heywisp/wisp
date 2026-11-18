@@ -1,0 +1,129 @@
+---
+source: crates/wisp-tui/src/app/subscription_login/tests.rs
+expression: text
+---
+opened, link copied
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   tried your browser - link copied
+ > Code  hidden as you type or paste
+   enter finish - ctrl-o open - ctrl-l copy - esc cancel
+
+before the copy reports
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   tried your browser
+ > Code  hidden as you type or paste
+   enter finish - ctrl-o open - ctrl-l copy - esc cancel
+
+no browser, link copied
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   no browser here - link copied
+ > Code  hidden as you type or paste
+   enter finish - ctrl-l copy - esc cancel
+
+no browser, copy failed
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   no browser here - couldn't copy the link
+ > Code  hidden as you type or paste
+   enter finish - ctrl-l copy - esc cancel
+
+a press whose copy fails
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   no browser here - quit, then run wisp login claude
+ > Code  hidden as you type or paste
+   enter finish - ctrl-l copy - esc cancel
+
+a refused reopen
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   no browser here - link copied
+ > Code  hidden as you type or paste
+   enter finish - ctrl-l copy - esc cancel
+
+timed out
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   tried your browser
+   Code
+   This sign-in timed out. enter opens a new page.
+   enter open - esc cancel
+
+a paste mistake
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   tried your browser - link copied
+ > Code  ye5b...************...k9Qd  52 characters
+   That's only part of the code: use the Copy button on Claude's page.
+   enter finish - ctrl-o open - ctrl-l copy - esc cancel
+
+a refused code
+
+ ? Sign in to Claude                                                                       Claude subscription - claude
+   -> claude.ai/oauth/authorize...   tried your browser
+   Code
+   Claude didn't accept that code; each works once. enter opens a new page.
+   enter open - esc cancel
+
+adding another Claude account
+
+ ? Sign in to Claude                                                                  Claude subscription - claude-work
+   -> claude.ai/oauth/authorize...   tried your browser - link copied
+   If the page shows your other Claude account, switch accounts there first.
+ > Code  hidden as you type or paste
+   enter finish - ctrl-o open - ctrl-l copy - esc cancel
+
+done, chat elsewhere
+
+ + Signed in - Claude subscription - * claude
+
+ > 1 Use * claude for this chat
+   2 Not now
+
+   enter choose - esc close
+
+opened, link copied
+
+ ? Sign in to ChatGPT                                                                    ChatGPT subscription - chatgpt
+   -> auth.openai.com/oauth/authorize...   tried your browser - link copied
+   enter open - c copy - esc cancel
+
+before the copy reports
+
+ ? Sign in to ChatGPT                                                                    ChatGPT subscription - chatgpt
+   -> auth.openai.com/oauth/authorize...   tried your browser
+   enter open - c copy - esc cancel
+
+no browser, link copied
+
+ ? Sign in to ChatGPT                                                                    ChatGPT subscription - chatgpt
+   -> auth.openai.com/oauth/authorize...   no browser here - link copied
+   enter copy - esc cancel
+
+no browser, copy failed
+
+ ? Sign in to ChatGPT                                                                    ChatGPT subscription - chatgpt
+   -> auth.openai.com/oauth/authorize...   no browser here - couldn't copy the link
+   enter copy - esc cancel
+
+a press whose copy fails
+
+ ? Sign in to ChatGPT                                                                    ChatGPT subscription - chatgpt
+   -> auth.openai.com/oauth/authorize...   no browser here - quit, then run wisp login chatgpt
+   enter copy - esc cancel
+
+a refused reopen
+
+ ? Sign in to ChatGPT                                                                    ChatGPT subscription - chatgpt
+   -> auth.openai.com/oauth/authorize...   no browser here - link copied
+   enter copy - esc cancel
+
+timed out
+
+ ? Sign in to ChatGPT                                                                    ChatGPT subscription - chatgpt
+   -> auth.openai.com/oauth/authorize...   tried your browser
+   This sign-in timed out. enter opens a new page.
+   enter open - esc cancel

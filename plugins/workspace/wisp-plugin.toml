@@ -1,0 +1,19 @@
+id = "workspace"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Tells the model where it works"
+
+[[prompt_sections]]
+name = "environment"
+place = "lead"
+in = ["core/state"]
+after = []
+before = []
+continues = "core/environment"
+
+[[prompt_sections]]
+name = "terminal"
+place = "lead"
+in = ["core/state"]
+after = ["workspace/environment"]
+before = []

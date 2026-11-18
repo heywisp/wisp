@@ -1,0 +1,17 @@
+{
+  "type": "compaction_prepared",
+  "usage": {
+    "input_tokens": 2000,
+    "output_tokens": 900,
+    "cache_read_input_tokens": 88000,
+    "cache_creation_input_tokens": 0,
+    "cache_creation_5m_input_tokens": null,
+    "cache_creation_1h_input_tokens": null
+  },
+  "cost": {
+    "turn_usd": 0.071,
+    "session_usd": 1.25,
+    "turn_lower_bound": false,
+    "session_lower_bound": false
+  }
+}

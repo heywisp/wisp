@@ -1,0 +1,30 @@
+{
+  "action": {
+    "type": "show"
+  },
+  "target": "Rename the cache key",
+  "output": {
+    "type": "none"
+  },
+  "view": {
+    "type": "diff",
+    "title": "Rename the cache key",
+    "files": [
+      {
+        "path": "crates/wisp-core/src/cache.rs",
+        "hunks": "@@ -209,3 +209,3 @@\n fn key(req: &Request) -> Key {\n-    let key = hash(&req.system);\n+    let key = Fingerprint::of(req)?;\n     key\n",
+        "added": 1,
+        "removed": 1
+      },
+      {
+        "path": "src/new.rs",
+        "old_path": "src/old.rs",
+        "language": "rust",
+        "hunks": "@@\n-a\n+b\n",
+        "added": 1,
+        "removed": 1
+      }
+    ]
+  },
+  "purpose": "show"
+}

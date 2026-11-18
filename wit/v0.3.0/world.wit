@@ -1,0 +1,39 @@
+package wisp:plugin@0.3.0;
+
+world plugin {
+  import index;
+  export index-source;
+  import wisp:plugin/session@0.1.0;
+  import wisp:plugin/workspace@0.1.0;
+  import wisp:plugin/clock@0.1.0;
+  import wisp:plugin/settings@0.1.0;
+  import wisp:plugin/context@0.1.0;
+  import wisp:plugin/media@0.1.0;
+  import wisp:plugin/call@0.1.0;
+  import wisp:plugin/jobs@0.1.0;
+  import wisp:plugin/todos@0.1.0;
+  import wisp:plugin/agents@0.1.0;
+  import wisp:plugin/log@0.1.0;
+  import wisp:plugin/points@0.1.0;
+  import wisp:plugin/workspace-facts@0.2.0;
+  import wisp:plugin/instructions-report@0.2.0;
+  import wisp:plugin/job-news@0.2.0;
+  import wisp:plugin/pricing@0.2.0;
+  import wisp:plugin/http@0.2.0;
+  import wisp:plugin/agent@0.2.0;
+  import wisp:plugin/agent-tree@0.2.0;
+  import wisp:plugin/history@0.2.0;
+  import wisp:plugin/config@0.2.0;
+  import wisp:plugin/accounts@0.2.0;
+  import agent-states;
+  import screen-report;
+  import secrets;
+  import agent-rename;
+  export tools;
+  export commands;
+  export wisp:plugin/hooks@0.1.0;
+  export slot-render;
+  export wisp:plugin/prompt-sections@0.2.0;
+  export wisp:plugin/agent-hooks@0.2.0;
+  export wisp:plugin/strategy@0.2.0;
+}

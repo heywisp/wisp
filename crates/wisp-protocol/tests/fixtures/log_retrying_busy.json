@@ -1,0 +1,26 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 5,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "retrying",
+  "turn": 18,
+  "attempt": 11,
+  "delay_ms": 30000,
+  "reason": "HTTP 429: Too many concurrent requests",
+  "step": 3,
+  "kind": "rate_limit",
+  "detail": {
+    "phase": "response",
+    "source": "endpoint",
+    "status": 429,
+    "error_type": "rate_limit_error",
+    "retry": {
+      "type": "transient"
+    },
+    "possibly_billed": false
+  },
+  "busy": {
+    "waited_ms": 151000,
+    "window_ms": 600000
+  }
+}

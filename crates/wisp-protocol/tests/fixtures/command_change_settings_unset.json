@@ -1,0 +1,12 @@
+{
+  "type": "change_settings",
+  "request": 8,
+  "changes": [
+    {
+      "target": {
+        "path": "effort"
+      }
+    }
+  ],
+  "save": true
+}

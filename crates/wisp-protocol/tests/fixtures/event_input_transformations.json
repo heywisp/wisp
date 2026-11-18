@@ -1,0 +1,29 @@
+{
+  "type": "input_transformations",
+  "provider": "anthropic",
+  "transformations": [
+    {
+      "type": "thinking_dropped",
+      "path": "messages.7.content.0",
+      "reason": "prefix_binding_mismatch"
+    },
+    {
+      "type": "thinking_mismatch_allowed",
+      "path": null,
+      "reason": "prefix_binding_mismatch"
+    },
+    {
+      "type": "later_kind",
+      "reason": null,
+      "detail": {
+        "blocks": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "type": "bare"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "type": "search_ended",
+  "step": 2,
+  "attempt": 1,
+  "call_id": "srvtoolu_02",
+  "outcome": {
+    "status": "done",
+    "type": "failed",
+    "failure": "rate_limited",
+    "code": "too_many_requests"
+  }
+}

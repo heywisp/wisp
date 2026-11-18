@@ -1,0 +1,26 @@
+[package]
+name = "board"
+description = "A kanban for agents (boards, columns and cards), built as a WASM plugin of world wisp:plugin 0.2.0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jiff.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wisp-tool-text.workspace = true
+wit-bindgen.workspace = true
+
+[dev-dependencies]
+rustix = { workspace = true, features = ["net"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "rt"] }

@@ -1,0 +1,8 @@
+/target
+.env
+.claude/
+oauth-*.json
+oauth-*.pending
+oauth-*.account
+/docs/plans/
+/research/

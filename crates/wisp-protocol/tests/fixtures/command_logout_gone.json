@@ -1,0 +1,14 @@
+{
+  "type": "subscription_auth",
+  "command": {
+    "operation": "logout",
+    "request": 7,
+    "alias": "team",
+    "chat": "env",
+    "confirmed": true,
+    "follow": [
+      "late"
+    ],
+    "gone": true
+  }
+}

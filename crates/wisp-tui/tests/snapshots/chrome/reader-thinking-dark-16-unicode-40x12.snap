@@ -1,0 +1,30 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| ╎ Thought for 4 s
+  ~ 1..2 fg Idx(8); 3..18 fg Idx(7)
+|────────────────────────────────────────
+  ~ 0..40 fg Idx(8)
+| ╎ Placeholder thought line one,
+  ~ 1..2 fg Idx(8); 3..32 fg Idx(7) italic
+| ╎ wrapped narrowly.
+  ~ 1..2 fg Idx(8); 3..20 fg Idx(7) italic
+| ╎ Placeholder thought line two, longer
+  ~ 1..2 fg Idx(8); 3..39 fg Idx(7) italic
+| ╎ than the first.
+  ~ 1..2 fg Idx(8); 3..18 fg Idx(7) italic
+| ╎ Placeholder thought, 3rd.
+  ~ 1..2 fg Idx(8); 3..28 fg Idx(7) italic
+| ╎ Placeholder thought line 4,
+  ~ 1..2 fg Idx(8); 3..30 fg Idx(7) italic
+| ╎ middling.
+  ~ 1..2 fg Idx(8); 3..12 fg Idx(7) italic
+| ╎ Placeholder thought line five,
+  ~ 1..2 fg Idx(8); 3..33 fg Idx(7) italic
+| ╎ medium.
+  ~ 1..2 fg Idx(8); 3..10 fg Idx(7) italic
+|   / search · 1-9/14 · q esc back
+  ~ 3..4 fg Idx(7); 4..14 fg Idx(8); 14..20 fg Idx(7); 20..23 fg Idx(8); 23..28 fg Idx(7); 28..33 fg Idx(8)

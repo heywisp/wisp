@@ -1,0 +1,23 @@
+package wisp:plugin@0.2.0;
+
+interface slot-types {
+  use wisp:plugin/context@0.1.0.{fill};
+  enum tone { text, muted, faint, accent, ok, error }
+  enum node-state { working, waiting, done, failed, stopped }
+  record text-span { text: string, tone: tone, bold: bool }
+  record elapsed-span { since-ms: u64, tone: tone }
+  record usd-span { micros: u64, at-least: bool, tone: tone }
+  variant span { text(text-span), elapsed(elapsed-span), usd(usd-span), fill(fill) }
+  record row { key: string, value: list<span> }
+  record gauge { label: string, value: u64, max: u64, tone: tone, note: list<span> }
+  record spark { label: string, values: list<u64>, max: u64, tone: tone, note: list<span> }
+  record node { depth: u8, state: node-state, role: option<string>, label: string, facts: list<span> }
+  variant block { line(list<span>), rows(list<row>), gauge(gauge), spark(spark), %list(list<list<span>>), tree(list<node>), next-column, fill(fill) }
+  record content { note: list<span>, blocks: list<block> }
+  enum slot-view { panel, page }
+}
+
+interface slot-render {
+  use slot-types.{content, slot-view};
+  render-slot: async func(name: string, view: slot-view) -> result<content, string>;
+}

@@ -1,0 +1,10 @@
+{
+  "type": "settings_changed",
+  "endpoint": "env",
+  "model": "claude-sonnet-5-5",
+  "effort": "low",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "effort_change"
+  }
+}

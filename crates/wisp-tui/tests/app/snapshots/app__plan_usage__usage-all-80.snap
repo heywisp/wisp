@@ -1,0 +1,74 @@
+---
+source: crates/wisp-tui/tests/app/plan_usage.rs
+expression: text
+---
+╭─────────────────────────────────────────────────────────────────────────────╮
+│                                                                             │
+│    ⡐⠈ ⠁⠁     wisp                                                     0.0.0 │
+│   ⠰  ⢾⡷  ⠆   Your own AI. With a computer of its own.                       │
+│    ⠡⢀ ⡀⡀⠌    ● chatgpt · subscription · m low                               │
+│              ~/project                                                      │
+│                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────╯
+  enter send · ctrl-j new line · /help · /account switch account
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Usage
+────────────────────────────────────────────────────────────────────────────────
+  ChatGPT subscription · ● chatgpt   this chat
+    Weekly   ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    37%   resets Tue
+    API equivalent              ~$0.05
+
+  ChatGPT subscription · ● second
+    5-hour   ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    20%   1 min ago
+    Weekly   ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀    37%   1 min ago
+    API equivalent              ~$0.00
+
+  Claude subscription · ● claude
+    API equivalent              ~$0.05
+
+› ChatGPT subscription · ● expired
+    unavailable: login expired           enter sign in again
+    API equivalent              ~$0.00
+
+  Claude API · ● api
+    Spent                        $0.05
+────────────────────────────────────────────────────────────────────────────────
+  This chat                      $0.05 API · ~$0.10 subscriptions
+ enter sign in again · r refresh · esc close
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ⧉ 3 agents · 3 working                                         total ~$0.15+ │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ ⢎⠶⡰  Ready             ● chatgpt · subscription   m low · week ⣿⣀⣀⣀ 37% used │
+╰──────────────────────────────────────────────────────────────────────────────╯

@@ -1,0 +1,42 @@
+---
+source: crates/wisp-cli/src/auth/accounts/tests.rs
+expression: all
+---
+╭─ Accounts ───────────────────────────────────────────────────────────────╮
+│   Subscriptions           5-hour used      Weekly used                   │
+│   ● claude1   Claude  ⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀  42%  ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀  18%  starts new chats │
+│   ● claude2   Claude  ⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀  87%  ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀  64%                   │
+├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┤
+│   API                                                                    │
+│   ● team-gateway                                                         │
+│               gateway.example.com                                        │
+│   ● work-api  Claude  key missing · wisp login work-api                  │
+╰──────────────────────────────────────────────────────────────────────────╯
+╭─ Accounts ────────────────────────────────────────────────────────────────╮
+│   Subscriptions            5-hour used      Weekly used                   │
+│   ● chatgpt   ChatGPT  ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀  12%  ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀  31%                   │
+│   ● claude1   Claude   ⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀  42%  ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀  18%                   │
+│   ● claude2   Claude   sign-in expired · wisp login claude2               │
+├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┤
+│   API                                                                     │
+│   ● openai-api                                                            │
+│               OpenAI                                     starts new chats │
+╰───────────────────────────────────────────────────────────────────────────╯
+╭─ Accounts ────────────────────────────────────────────────────────────────╮
+│   Subscriptions            5-hour used      Weekly used                   │
+│   ● chatgpt   ChatGPT                   ⣿⣿⣿⣀⣀⣀⣀⣀⣀⣀  31%                   │
+│   ● claude1   Claude   usage unavailable                 starts new chats │
+│   ● claude2   Claude   ⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿ 100%  ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀  64%                   │
+╰───────────────────────────────────────────────────────────────────────────╯
+╭─ Accounts ───────────────────────────────────────────────────────────────╮
+│   Subscriptions           5-hour used      Weekly used                   │
+│   ● claude-personal                                                      │
+│               Claude  ⣿⣿⣿⣿⣿⣿⣿⣿⣀⣀  87%  ⣿⣿⣿⣿⣿⣿⣀⣀⣀⣀  64%                   │
+│   ● claude1   Claude  ⣿⣿⣿⣿⣀⣀⣀⣀⣀⣀  42%  ⣿⣀⣀⣀⣀⣀⣀⣀⣀⣀  18%  starts new chats │
+╰──────────────────────────────────────────────────────────────────────────╯
+╭─ Accounts ─────────────────────────────────────────────╮
+│   Subscriptions           5-hour used      Weekly used │
+│   ● claude2   Claude  sign-in expired                  │
+│     wisp login claude2                                 │
+╰────────────────────────────────────────────────────────╯
+No accounts yet. Run wisp login to sign in.

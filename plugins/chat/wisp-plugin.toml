@@ -1,0 +1,17 @@
+id = "chat"
+version = "0.1.0"
+world = "0.4.0"
+summary = "Renames this chat"
+
+[[tools]]
+name = "rename_chat"
+default = "on"
+held = true
+
+[[commands]]
+name = "rename"
+summary = "Rename this chat"
+
+[[commands.args]]
+name = "name"
+values = "free"

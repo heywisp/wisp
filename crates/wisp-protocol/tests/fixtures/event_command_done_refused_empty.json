@@ -1,0 +1,9 @@
+{
+  "type": "command_done",
+  "answers": 7,
+  "outcome": {
+    "type": "refused",
+    "kind": "empty",
+    "hint": "empty message: nothing to send"
+  }
+}

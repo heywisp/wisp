@@ -1,0 +1,238 @@
+---
+source: crates/wisp-protocol/src/settings/tests.rs
+expression: "rows.join(\"\\n\")"
+---
+agent
+  docs: an agent type's name
+  rule: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+agents.max_agents
+  docs: 1 to 50, or `none`
+  rule: must be a whole number from 1 to 50, or none
+agents.max_depth
+  docs: 1 to 5, or `none`
+  rule: must be a whole number from 1 to 5, or none
+agents.max_running
+  docs: 1 to 16, or `none`
+  rule: must be a whole number from 1 to 16, or none
+agents.max_tree_running
+  docs: 1 to 50, or `none`
+  rule: must be a whole number from 1 to 50, or none
+agents.wake_when_stuck
+  docs: 0 to 1440
+  rule: must be a whole number from 0 to 1440
+agents.warm_refreshes
+  docs: 0 to 24
+  rule: must be a whole number from 0 to 24
+aliases
+  docs: a list of model IDs
+  rule: needs a list of model IDs
+auth
+  docs: one of `api_key`, `bearer`, `anthropic_subscription`, `chatgpt_subscription`, `antigravity_subscription`
+  rule: must be one of api_key, bearer, anthropic_subscription, chatgpt_subscription, antigravity_subscription
+cache_ttl
+  docs: `5m` or `1h`
+  rule: must be 5m or 1h
+claude_usage
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+compact_at
+  docs: tokens (`400k`) or a share of the window (`85%`)
+  rule: needs a token count (400000 or 400k) or a share of the window (85%)
+context.auto_compact
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+context.background_compaction
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+context.background_tokens
+  docs: tokens (`40000`, `40k`, `1M`)
+  rule: needs a token count, such as 8000 or 8k
+context.compact_effort
+  docs: one of `low`, `medium`, `high`, `xhigh`, `max`
+  rule: must be one of low, medium, high, xhigh, max
+context.context_note
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+context.count_tokens
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+context.strategy
+  docs: `default` or a plugin's id
+  rule: needs default or a plugin id of 2 to 32 characters of a-z, 0-9 and -, starting with a letter
+context.verbatim_user_tokens
+  docs: tokens (`40000`, `40k`, `1M`)
+  rule: needs a token count, such as 8000 or 8k
+context_window
+  docs: tokens (`40000`, `40k`, `1M`)
+  rule: needs a token count, such as 8000 or 8k
+debug_cache
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+display.ambiguous
+  docs: one of `auto`, `wide`, `narrow`
+  rule: must be one of auto, wide, narrow
+display.color
+  docs: one of `auto`, `truecolor`, `256`, `16`, `none`
+  rule: must be one of auto, truecolor, 256, 16, none
+display.copy_on_select
+  docs: one of `auto`, `on`, `off`
+  rule: must be one of auto, on, off
+display.full_repaint
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line and in variables
+  rule: must be on or off
+display.motion
+  docs: one of `auto`, `full`, `calm`, `reduced`
+  rule: must be one of auto, full, calm, reduced
+display.mouse
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line and in variables
+  rule: must be on or off
+display.pictures
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+display.scroll_speed
+  docs: 1 to 20
+  rule: must be a whole number from 1 to 20
+display.sidebar
+  docs: `auto` or `hidden`
+  rule: must be auto or hidden
+display.sidebar_folded
+  docs: a list of sidebar sections (`<plugin>/<name>`), or `none`
+  rule: must be none or a list of sidebar sections, each <plugin>/<name>
+display.sidebar_pinned
+  docs: a list of sidebar sections (`<plugin>/<name>`), or `none`
+  rule: must be none or a list of sidebar sections, each <plugin>/<name>
+display.theme
+  docs: one of `auto`, `dark`, `light`
+  rule: must be one of auto, dark, light
+display.verbose
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+effort
+  docs: one of `low`, `medium`, `high`, `xhigh`, `max`
+  rule: must be one of low, medium, high, xhigh, max
+endpoint
+  docs: an account name
+  rule: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+instructions.extra
+  docs: `none` or `autonomous`
+  rule: must be none or autonomous
+instructions.source
+  docs: one of `auto`, `default`, `none`
+  rule: must be one of auto, default, none
+instructions.warn_tokens
+  docs: tokens (`40000`, `40k`, `1M`)
+  rule: needs a token count, such as 8000 or 8k
+keep_warm
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+key
+  docs: a secret, never typed as a value
+  rule: is a secret
+key_env
+  docs: a variable name
+  rule: needs a variable name of letters, digits and _
+key_store
+  docs: `file` or `keyring`
+  rule: must be file or keyring
+keychain
+  docs: one of `auto`, `on`, `off`
+  rule: must be one of auto, on, off
+log
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+max_in_flight
+  docs: 1 to 64, or `none`
+  rule: must be a whole number from 1 to 64, or none
+max_output
+  docs: tokens (`40000`, `40k`, `1M`)
+  rule: needs a token count, such as 8000 or 8k
+message_threads
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+model
+  docs: a model ID
+  rule: needs a model ID of letters, digits and . _ : @ / -
+native_compaction
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+native_web_search
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+plugins.<id>.enabled
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+plugins.<id>.hooks.<hook>
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+plugins.<id>.installed
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+plugins.<id>.slots.<name>
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+preload
+  docs: a list of tool names, core for Wisp's tools, or none for search and use
+  rule: must be core, none, or a list of tool names; none must stand alone
+preset
+  docs: an agent type's name
+  rule: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+price_cache_read
+  docs: US dollars (`0.50`)
+  rule: needs a number of dollars, such as 0.50
+price_input
+  docs: US dollars (`0.50`)
+  rule: needs a number of dollars, such as 0.50
+price_output
+  docs: US dollars (`0.50`)
+  rule: needs a number of dollars, such as 0.50
+pricing
+  docs: `list` or `none`
+  rule: must be list or none
+provider
+  docs: one of `anthropic`, `openai`, `gemini`
+  rule: must be one of anthropic, openai, gemini
+refusal_fallback
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+retry.budget_usd
+  docs: US dollars (`0.50`) or `none`
+  rule: needs a number of dollars, such as 0.50, or none
+self_check.before_end
+  docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
+  rule: must be on or off
+store_id
+  docs: written by Wisp
+  rule: must be one of 
+time
+  docs: one of `local`, `utc`, `off`
+  rule: must be one of local, utc, off
+tool_output.max_age_days
+  docs: 1 to 3650, or `none`
+  rule: must be a whole number from 1 to 3650, or none
+tools
+  docs: a list of tool names from the plugin catalog (the `--tools` values), or `none`
+  rule: must be none or a list of tool names
+turned_off
+  docs: names of tools, skills and servers, or `none`
+  rule: must be none or a list of names
+url
+  docs: a secret, never typed as a value
+  rule: is a secret
+url_env
+  docs: a variable name
+  rule: needs a variable name of letters, digits and _
+voice.endpoint
+  docs: an account name
+  rule: needs a name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+voice.instructions
+  docs: a file, relative to config.toml's directory, under `~/` or absolute
+  rule: needs a file path, relative to config.toml's directory, under ~/ or absolute
+voice.language
+  docs: a two-letter language code (ISO 639-1), such as en
+  rule: needs a two-letter language code (ISO 639-1), such as en
+voice.voice
+  docs: a voice's name
+  rule: needs a voice's name of 1 to 32 of a-z, 0-9, _ and -, starting with a letter or digit
+web_search
+  docs: a list of `web_search_20250305`, `web_search`, `google_search`, or `none`
+  rule: must be none or a list of one of web_search_20250305, web_search, google_search

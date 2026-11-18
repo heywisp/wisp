@@ -1,0 +1,19 @@
+{
+  "type": "endpoint_edited",
+  "answers": 21,
+  "name": "manifest",
+  "changed": [
+    "auth",
+    "url",
+    "key",
+    "store"
+  ],
+  "store": "file",
+  "check": {
+    "outcome": "ok"
+  },
+  "notes": [
+    "note: credentials.json is in ~/dotfiles/wisp, inside the git repository at ~/dotfiles; keep it out of commits with a .gitignore line",
+    "This config.toml now keeps its own copy of its keys (they were written by ~/.config/wisp/config.toml)."
+  ]
+}

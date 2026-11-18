@@ -1,0 +1,5 @@
+{
+  "type": "rejected",
+  "reason": "Blocked by acme/guard: that looks like a key",
+  "kind": "input_blocked"
+}

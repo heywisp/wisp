@@ -1,0 +1,16 @@
+---
+source: crates/wisp-tui/src/term/doctor/tests.rs
+expression: "shown.join(\"\\n\")"
+---
+"plain é 😀" => plain é 😀
+"a\tb\nc\r\nd" => a^Ib^Jc^M^Jd
+"\0\u{1}\u{7}\u{8}\u{b}\u{c}\u{1f}\u{7f}" => ^@^A^G^H^K^L^_^?
+"\u{80}\u{85}\u{90}\u{9b}\u{9c}\u{9f}" => M-^@M-^EM-^PM-^[M-^\M-^_
+"\u{1b}[2J\u{1b}[31mred\u{1b}[0m\u{1b}[?1049l" => ^[[2J^[[31mred^[[0m^[[?1049l
+"\u{1b}]0;pwned\u{7}" => ^[]0;pwned^G
+"\u{1b}]8;;https://evil.example\u{1b}\\x\u{1b}]8;;\u{1b}\\" => ^[]8;;https://evil.example^[\x^[]8;;^[\
+"\u{1b}]52;c;cm0gLXJmIH4K\u{7}" => ^[]52;c;cm0gLXJmIH4K^G
+"\u{1b}Pq#0\u{1b}\\" => ^[Pq#0^[\
+"\u{9b}31m\u{90}dcs\u{9c}" => M-^[31mM-^PdcsM-^\
+"safe\rFAKE PROMPT> \n" => safe^MFAKE PROMPT> ^J
+"x\u{1b}]0;title\u{7}\r\u{9b}2J\u{7f}y" => x^[]0;title^G^MM-^[2J^?y

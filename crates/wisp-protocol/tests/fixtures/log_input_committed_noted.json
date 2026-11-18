@@ -1,0 +1,15 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 10,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "input_committed",
+  "turn": 3,
+  "step": 2,
+  "inputs": [
+    {
+      "id": "tui-4",
+      "text": "check the tests too",
+      "note": "Sent while working."
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "type": "cache_miss_repeated",
+  "cause": {
+    "type": "injected_thinking",
+    "first_path": "messages.148.content.0",
+    "count": 2
+  },
+  "count": 2,
+  "usd": 1.75
+}

@@ -1,0 +1,48 @@
+package wisp:plugin@0.2.0;
+
+interface prompt-types {
+  enum at { start, turn, head }
+  variant prior { none, snapshot(string), legacy(option<string>) }
+  record rendered { snapshot: string, text: option<string> }
+}
+
+interface prompt-sections {
+  use prompt-types.{at, prior, rendered};
+  render-section: async func(name: string, at: at, previous: prior, target: option<string>) -> rendered;
+}
+
+interface workspace-facts {
+  use wisp:plugin/jobs@0.1.0.{size};
+  record environment-facts { cwd: string, project-root: option<string>, platform: string, resources: option<string>, tool-lines: list<string>, agent-lines: list<string> }
+  environment: func() -> option<environment-facts>;
+  config-dir: func() -> option<string>;
+  data-dir: func() -> result<string, string>;
+  terminal: func() -> option<size>;
+}
+
+interface job-news {
+  use wisp:plugin/jobs@0.1.0.{job-end};
+  record lost-job { id: u32, target: option<string>, end: job-end }
+  record ended-job { id: u32, target: string, end: job-end, unread: u64 }
+  record rewound-job { id: u32, target: string }
+  record kept-job { id: u32, log: string }
+  variant item { restarted(list<u32>), kept(list<kept-job>), unchecked(list<u32>), lost(lost-job), ended(ended-job), typed(u32), rewound(rewound-job) }
+  record news { wake: bool, items: list<item> }
+  opening: func() -> option<news>;
+}
+
+interface instructions-report {
+  enum scope { project, default, preset }
+  enum problem-kind { not-a-file, not-utf8, unreadable, import-missing, import-too-deep }
+  record problem { source: option<string>, kind: problem-kind, message: string }
+  variant diagnostic { problem(problem), large(u64) }
+  record source-info { scope: scope, name: string, display-path: string, bytes: u64, sha256: string, imported-by: option<string>, external: bool }
+  record candidate-info { scope: scope, display-path: string, bytes: option<u64>, mtime: option<s64>, sha256: option<string> }
+  record summary { chosen: option<source-info>, imports: list<source-info>, candidates: list<candidate-info>, diagnostics: list<diagnostic> }
+  record load-report { chosen: option<scope>, summary: summary, project-root: option<string> }
+  record file-change { scope: scope, name: string, display-path: string, old-sha256: option<string>, new-sha256: option<string> }
+  record change { %from: option<source-info>, to: option<source-info>, changed: list<file-change>, summary: summary }
+  loaded: func(report: load-report);
+  warning: func(diagnostic: diagnostic);
+  changed: func(change: change, text: string);
+}

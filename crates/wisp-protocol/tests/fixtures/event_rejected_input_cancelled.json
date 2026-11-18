@@ -1,0 +1,5 @@
+{
+  "type": "rejected",
+  "reason": "stopped before the turn started",
+  "kind": "input_cancelled"
+}

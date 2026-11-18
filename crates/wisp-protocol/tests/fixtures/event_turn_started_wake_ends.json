@@ -1,0 +1,27 @@
+{
+  "type": "turn_started",
+  "turn": 5,
+  "origin": "process_exit",
+  "ends": [
+    {
+      "id": 3,
+      "end": {
+        "type": "exited",
+        "exit": {
+          "type": "code",
+          "code": 1
+        }
+      }
+    },
+    {
+      "id": 5,
+      "end": {
+        "type": "stopped",
+        "by": {
+          "type": "time_limit",
+          "after_ms": 600000
+        }
+      }
+    }
+  ]
+}

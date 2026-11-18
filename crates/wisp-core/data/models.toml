@@ -1,0 +1,1174 @@
+[providers.anthropic]
+write_5m = 1.25
+write_1h = 2.0
+web_search_price = 0.01
+web_search_by_call = true
+web_search_model = "claude-haiku-5-5"
+message_threads = [
+    "claude-fable-5-2",
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-mythos-preview",
+    "claude-opus-5-5",
+    "claude-opus-5",
+    "claude-sonnet-5-5",
+    "claude-sonnet-5",
+    "claude-haiku-5-5",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-opus-4-5-20251101",
+    "claude-sonnet-4-5-20250929",
+]
+account_bound_thinking = ["claude-fable-5-2", "claude-haiku-5-5", "claude-sonnet-5-5"]
+
+[providers.anthropic.weekly_limits]
+Fable = ["claude-fable-5-2", "claude-fable-5-1", "claude-fable-5"]
+
+[providers.anthropic.claude_code]
+version = "2.1.321"
+usage_user_agent = "claude-code/{version}"
+betas = [
+    { value = "claude-code-20250219" },
+    { value = "oauth-2025-04-20", usage = true },
+    { value = "context-management-2025-06-27" },
+    { value = "effort-2025-11-24" },
+]
+headers = [
+    ["anthropic-dangerous-direct-browser-access", "true"],
+    ["user-agent", "claude-cli/{version} (external, sdk-cli)"],
+    ["x-app", "cli"],
+    ["x-stainless-arch", "{arch}"],
+    ["x-stainless-helper-method", "stream"],
+    ["x-stainless-lang", "js"],
+    ["x-stainless-os", "{os}"],
+    ["x-stainless-package-version", "0.80.0"],
+    ["x-stainless-retry-count", "0"],
+    ["x-stainless-runtime", "node"],
+    ["x-stainless-runtime-version", "v24.14.0"],
+    ["x-stainless-timeout", "600"],
+]
+
+[providers.anthropic.sources]
+weekly_limits = "https://support.claude.com/en/articles/17506494-claude-fable-5-2-launch-offers, Which models does a reset cover?; https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan"
+web_search_by_call = "Wisp: docs/endpoints.md, Web search; a fixed client function keeps the chat prefix independent of the search date"
+web_search_model = "https://platform.claude.com/docs/en/about-claude/models/overview; Wisp uses the small model for search-only requests"
+tools_after_results = "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages; the page permits tool additions after a tool-result user message; disabled pending a successful live probe"
+claude_code = "Claude Code releases: https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md; compatibility profile originally observed in Manifest (research/anthropic-subscription.md)"
+price = "https://platform.claude.com/docs/en/about-claude/pricing.md, with the Haiku 5.5 prompt-length rule under Long context pricing (checked 2026-11-10)"
+cache_writes = "https://platform.claude.com/docs/en/about-claude/pricing.md"
+web_search_price = "https://platform.claude.com/docs/en/about-claude/pricing"
+min_cacheable = "https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md"
+inline_tools = "Mid-conversation system messages and tool changes: mid-conversation system messages on Claude Fable 5.2, Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 5, Claude Opus 4.8, Claude Sonnet 5.5 and Claude Haiku 5.5; tool changes are in beta on the same models (beta inline-tools-2026-09-15, by value and by name, Claude API)"
+deferred_tools = "Tool search tool (read 2026-11-10): both tool search variants, and so defer_loading, are available on Claude Fable 5.2, Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5.5, Claude Opus 5, Claude Sonnet 5.5, Claude Sonnet 5, Claude Haiku 5.5, Claude Opus 4.8, Claude Opus 4.7, Claude Opus 4.6, Claude Sonnet 4.6, Claude Opus 4.5, Claude Sonnet 4.5 and Claude Haiku 4.5; Claude Opus 4.1 and earlier models don't support the tool search tool"
+message_threads = "https://platform.claude.com/docs/en/build-with-claude/message-threads: the page's featureMetadata (betaHeader message-threads-2026-08-12) lists supportedModels in this order"
+account_bound_thinking = "https://platform.claude.com/docs/en/build-with-claude/thinking#thinking-encryption: \"`signature` values are compatible across platforms, including the Claude API, Amazon Bedrock, and Claude Models on Google Cloud (Google managed). Values generated on one platform work on another, except that thinking blocks from Claude Sonnet 5.5, Claude Haiku 5.5, Claude Fable 5.2, and Claude Mythos 5.2 work only in the account that produced them or in an account linked to it\""
+pages = "https://platform.claude.com/docs/en/build-with-claude/effort · https://platform.claude.com/docs/en/build-with-claude/effort#change-effort-mid-conversation-beta · https://platform.claude.com/docs/en/about-claude/models/overview · claude-api skill: SKILL.md Thinking & Effort table, shared/models.md, shared/model-migration.md · https://platform.claude.com/docs/en/build-with-claude/vision · https://platform.claude.com/docs/en/build-with-claude/context-windows · https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages · https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool (read 2026-11-10)"
+
+[providers.openai]
+subscription_tools_after_outputs = []
+api_tools_after_outputs = []
+subscription_additional_tools = ["gpt-6.1-sol", "gpt-6-astra"]
+api_additional_tools = ["gpt-6.1-sol", "gpt-6-astra"]
+write_5m = 1.0
+write_1h = 1.0
+write_30m = 1.25
+write_12h = 2.5
+web_search_price = 0.01
+
+[providers.openai.codex]
+version = "0.169.0"
+window = 272000
+
+[providers.openai.sources]
+codex = "https://github.com/openai/codex/releases; the server hides models whose minimum client version exceeds the client_version sent to /codex/models; https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/models-manager/src/model_info.rs (fallback window for a model the list doesn't describe)"
+subscription_tools_after_outputs = "No model is proven after tool outputs on the ChatGPT subscription; a passing run on that subscription is required; the gateway-only live_found_tool_after_openai_outputs fills no row"
+api_tools_after_outputs = "No model is proven after tool outputs on the official OpenAI API; a passing run on that API is required; the gateway-only live_found_tool_after_openai_outputs fills no row"
+api_additional_tools = "https://developers.openai.com/api/docs/guides/tools-tool-search; research/plugin-hot-load.md §4.2: on the official OpenAI API, gpt-6.1-sol and gpt-6-astra returned HTTP 200, called a tool declared only by additional_tools, and read 7,136 cached input tokens with the item appended, matching the unchanged-tools baseline, versus 0 with the same definition added to tools, including the original-cache-key control"
+subscription_additional_tools = "https://developers.openai.com/api/docs/guides/tools-tool-search; research/plugin-hot-load.md §4.2: gpt-6.1-sol and gpt-6-astra accepted additional_tools after the user message, called its tool and a changed top-level definition, and read 7,040 cached tokens on addition and 7,168 on replay and redefinition; gpt-6.1-sol read 0 when the same tool was added to tools"
+price = "https://developers.openai.com/api/docs/pricing"
+cache_writes = "https://developers.openai.com/api/docs/pricing; write_30m and write_12h as added with the OpenAI connections (9b6cc6f5c), which name no page"
+web_search_price = "https://developers.openai.com/api/docs/pricing#built-in-tools"
+min_cacheable = "https://developers.openai.com/api/docs/guides/prompt-caching"
+
+[providers.gemini]
+default_model = "gemini-4-carbon"
+web_search_model = "gemini-3.1-flash-lite"
+web_search_price = 0.014
+
+[providers.gemini.antigravity]
+base_url = "https://daily-cloudcode-pa.googleapis.com"
+version = "1.5.5"
+user_agent = "antigravity/cli/{version}"
+default_model = "gemini-4-carbon-medium"
+session_id = "-3750763034362895579"
+cache_idle_s = 240
+
+[providers.gemini.sources]
+web_search_model = "https://ai.google.dev/gemini-api/docs/models"
+web_search_price = "https://ai.google.dev/gemini-api/docs/google-search"
+price = "https://ai.google.dev/gemini-api/docs/pricing"
+min_cacheable = "https://ai.google.dev/gemini-api/docs/caching"
+default_model = "https://ai.google.dev/gemini-api/docs/models"
+antigravity = "https://antigravity.google/docs; session_id is what the Antigravity CLI sends on every request; cache_idle_s is Wisp's own measurement; see docs/gemini.md"
+
+[models."claude-fable-5-2"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+per_message_effort = true
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 8.0
+price_output = 40.0
+price_cache_read = 0.20
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/models/fable-5-2/overview"
+
+[models."claude-fable-5-2".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort levels low/medium/high/xhigh/max; Claude Fable 5.2 supports all five, API default high; per-message effort (beta mid-conversation-output-config-2026-07-01) on the Claude API; 128K max output"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-fable-5-1"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+per_message_effort = true
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 10.0
+price_output = 50.0
+price_cache_read = 0.25
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-fable-5-1".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort levels low/medium/high/xhigh/max; default high on every current model except Claude Opus 5.5 and Claude Haiku 5.5; Per-message effort (beta mid-conversation-output-config-2026-07-01): Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 5, Claude Sonnet 5.5 and Claude Haiku 5.5 (thinking on only); 128K max output"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-mythos-5-1"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+per_message_effort = true
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 10.0
+price_output = 50.0
+price_cache_read = 0.25
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-mythos-5-1".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Same capabilities as Claude Fable 5.1; Per-message effort (beta mid-conversation-output-config-2026-07-01): Claude Fable 5.1, Claude Mythos 5.1, Claude Opus 5.5, Claude Opus 5, Claude Sonnet 5.5 and Claude Haiku 5.5 (thinking on only)"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-fable-5"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 10.0
+price_output = 50.0
+price_cache_read = 1.0
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-fable-5".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort low/medium/high/xhigh/max; unsupported models, Claude Fable 5 included, 400 on per-message effort"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-mythos-5"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 10.0
+price_output = 50.0
+price_cache_read = 1.0
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-mythos-5".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Mythos counterpart of Claude Fable 5: effort low through max, no per-message effort"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-mythos-preview"]
+provider = "anthropic"
+context_window = 1000000
+native_compaction = true
+web_search = ["web_search_20250305"]
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+sources = { native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand", web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool" }
+
+[models."claude-opus-5-5"]
+provider = "anthropic"
+listed = true
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+per_message_effort = true
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 4.0
+price_output = 20.0
+price_cache_read = 0.20
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-opus-5-5".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort low/medium/high/xhigh/max, default medium (not high); per-message effort (beta) supported"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-opus-5"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+per_message_effort = true
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 5.0
+price_output = 25.0
+price_cache_read = 0.50
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-opus-5".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort low-max (all five); per-message effort already works on Claude Opus 5"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-opus-4-8"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+inline_tools = true
+tools_after_results = false
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 5.0
+price_output = 25.0
+price_cache_read = 0.50
+min_cacheable = 1024
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-opus-4-8".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Opus 4.8 / 4.7: adaptive is the only on-mode; effort low/medium/high/xhigh/max"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-opus-4-7"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 5.0
+price_output = 25.0
+price_cache_read = 0.50
+min_cacheable = 2048
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-opus-4-7".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Opus 4.8 / 4.7: adaptive is the only on-mode; effort low/medium/high/xhigh/max (xhigh arrived with Opus 4.7)"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-opus-4-6"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "max"]
+default_effort = "high"
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "standard", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 5.0
+price_output = 25.0
+price_cache_read = 0.50
+min_cacheable = 4096
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-opus-4-6".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Opus 4.6 / Sonnet 4.6: adaptive thinking; effort low/medium/high/max (xhigh arrived with Opus 4.7)"
+images = "Vision: standard tier (all other models), 1,568 px and 1,568 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-sonnet-5-5"]
+provider = "anthropic"
+listed = true
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+per_message_effort = true
+inline_tools = true
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-sonnet-5-5".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort low/medium/high/xhigh/max, default high; per-message effort (beta) supported with thinking on"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-sonnet-5"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "high"
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.20
+min_cacheable = 1024
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-sonnet-5".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Sonnet 5: effort low/medium/high/xhigh/max; per-message effort is not available on Claude Sonnet 5"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-sonnet-4-6"]
+provider = "anthropic"
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "max"]
+default_effort = "high"
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "standard", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 3.0
+price_output = 15.0
+price_cache_read = 0.30
+min_cacheable = 1024
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-sonnet-4-6".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Opus 4.6 / Sonnet 4.6: adaptive thinking; effort low/medium/high/max"
+images = "Vision: standard tier (all other models), 1,568 px and 1,568 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-haiku-5-5"]
+provider = "anthropic"
+listed = true
+context_window = 1000000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+per_message_effort = true
+inline_tools = true
+deferred_tools = true
+adaptive_thinking = true
+images = { tier = "high", per_request = 600 }
+native_compaction = true
+web_search = ["web_search_20250305"]
+price_input = 0.10
+price_output = 0.50
+price_cache_read = 0.01
+long_prompt = { over = 100000, price_input = 0.50, price_output = 2.50, price_cache_read = 0.05 }
+min_cacheable = 512
+source = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
+
+[models."claude-haiku-5-5".sources]
+native_compaction = "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand"
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort low through max, default medium; per-message effort with thinking on; 128K max output"
+images = "Vision: high-resolution tier (Claude 4.7 and later models), 2,576 px and 4,784 visual tokens; context windows: 1M tokens, so 600 images per request"
+
+[models."claude-opus-4-5"]
+provider = "anthropic"
+aliases = ["claude-opus-4-5-20251101"]
+context_window = 200000
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+deferred_tools = true
+images = { tier = "standard", per_request = 100 }
+web_search = ["web_search_20250305"]
+price_input = 5.0
+price_output = 25.0
+price_cache_read = 0.50
+min_cacheable = 4096
+source = "https://platform.claude.com/docs/en/models/opus-4-5/overview"
+
+[models."claude-opus-4-5".sources]
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort works on Opus 4.5 (low/medium/high only - no xhigh/max); thinking via budget_tokens, no adaptive thinking; max output not given in the effort docs"
+images = "Vision: standard tier (all other models), 1,568 px and 1,568 visual tokens; context windows: 200k tokens, so 100 images per request"
+
+[models."claude-sonnet-4-5"]
+provider = "anthropic"
+aliases = ["claude-sonnet-4-5-20250929"]
+context_window = 200000
+efforts = []
+deferred_tools = true
+images = { tier = "standard", per_request = 100 }
+web_search = ["web_search_20250305"]
+price_input = 3.0
+price_output = 15.0
+price_cache_read = 0.30
+min_cacheable = 1024
+source = "https://platform.claude.com/docs/en/models/sonnet-4-5/overview"
+
+[models."claude-sonnet-4-5".sources]
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "Effort errors on Sonnet 4.5; thinking via budget_tokens only; max output not given in the effort docs"
+images = "Vision: standard tier (all other models), 1,568 px and 1,568 visual tokens; context windows: 200k tokens, so 100 images per request"
+
+[models."claude-haiku-4-5"]
+provider = "anthropic"
+aliases = ["claude-haiku-4-5-20251001"]
+context_window = 200000
+max_output = 64000
+efforts = []
+deferred_tools = true
+images = { tier = "standard", per_request = 100 }
+web_search = ["web_search_20250305"]
+price_input = 1.0
+price_output = 5.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://platform.claude.com/docs/en/models/haiku-4-5/overview"
+
+[models."claude-haiku-4-5".sources]
+web_search = "https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool"
+efforts = "No effort parameter (errors on Haiku 4.5); manual extended thinking with budget_tokens; 64K max output"
+images = "Vision: standard tier (all other models), 1,568 px and 1,568 visual tokens; context windows: 200k tokens, so 100 images per request"
+
+[models."gpt-6.2-sol"]
+provider = "openai"
+listed = true
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 1500 }
+web_search = ["web_search"]
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+long_prompt = { over = 272000, price_input = 4.0, price_output = 15.0, price_cache_read = 0.20 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-6.2-sol"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-6.2-sol", efforts = "https://chatgpt.com/backend-api/codex/models: supported_reasoning_levels for this model using the shipped Codex version; https://developers.openai.com/api/docs/api-reference/responses/create (medium request default)", images = "https://developers.openai.com/api/docs/guides/images-vision" }
+
+[models."gpt-6.2-astra"]
+provider = "openai"
+listed = true
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 1500 }
+web_search = ["web_search"]
+price_input = 8.0
+price_output = 40.0
+price_cache_read = 0.40
+long_prompt = { over = 272000, price_input = 16.0, price_output = 60.0, price_cache_read = 0.80 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-6.2-astra"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-6.2-astra", efforts = "https://chatgpt.com/backend-api/codex/models: supported_reasoning_levels for this model using the shipped Codex version; https://developers.openai.com/api/docs/api-reference/responses/create (medium request default)", images = "https://developers.openai.com/api/docs/guides/images-vision" }
+
+[models."gpt-6.1-sol"]
+provider = "openai"
+listed = true
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+long_prompt = { over = 272000, price_input = 4.0, price_output = 15.0, price_cache_read = 0.20 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-6.1-sol"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-6.1-sol", efforts = "https://developers.openai.com/api/docs/models/gpt-6.1-sol", images = "https://developers.openai.com/api/docs/models/gpt-6.1-sol" }
+
+[models."gpt-6-astra"]
+provider = "openai"
+listed = true
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 10.0
+price_output = 50.0
+price_cache_read = 1.0
+long_prompt = { over = 272000, price_input = 20.0, price_output = 75.0, price_cache_read = 2.0 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-6-astra"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-6-astra", efforts = "https://developers.openai.com/api/docs/models/gpt-6-astra", images = "https://developers.openai.com/api/docs/models/gpt-6-astra" }
+
+[models."gpt-6.1-terra"]
+provider = "openai"
+listed = true
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 1.0
+price_output = 5.0
+price_cache_read = 0.05
+long_prompt = { over = 272000, price_input = 2.0, price_output = 7.5, price_cache_read = 0.10 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-6.1-terra"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-6.1-terra", efforts = "https://developers.openai.com/api/docs/models/gpt-6.1-terra", images = "https://developers.openai.com/api/docs/models/gpt-6.1-terra" }
+
+[models."gpt-6-luna"]
+provider = "openai"
+listed = true
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 0.10
+price_output = 0.50
+price_cache_read = 0.01
+long_prompt = { over = 272000, price_input = 0.20, price_output = 0.75, price_cache_read = 0.02 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-6-luna"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-6-luna", efforts = "https://developers.openai.com/api/docs/models/gpt-6-luna", images = "https://developers.openai.com/api/docs/models/gpt-6-luna" }
+
+[models."gpt-6-sol"]
+provider = "openai"
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.20
+long_prompt = { over = 272000, price_input = 4.0, price_output = 15.0, price_cache_read = 0.40 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-6-sol"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-6-sol", efforts = "https://developers.openai.com/api/docs/models/gpt-6-sol", images = "https://developers.openai.com/api/docs/models/gpt-6-sol" }
+
+[models."gpt-5.6-sol"]
+provider = "openai"
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 4.0
+price_output = 20.0
+price_cache_read = 0.40
+long_prompt = { over = 272000, price_input = 8.0, price_output = 30.0, price_cache_read = 0.80 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-5.6-sol"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-5.6-sol", efforts = "https://developers.openai.com/api/docs/models/gpt-5.6-sol", images = "https://developers.openai.com/api/docs/models/gpt-5.6-sol" }
+
+[models."gpt-5.6-terra"]
+provider = "openai"
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 2.0
+price_output = 12.0
+price_cache_read = 0.20
+long_prompt = { over = 272000, price_input = 4.0, price_output = 18.0, price_cache_read = 0.40 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-5.6-terra"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-5.6-terra", efforts = "https://developers.openai.com/api/docs/models/gpt-5.6-terra", images = "https://developers.openai.com/api/docs/models/gpt-5.6-terra" }
+
+[models."gpt-5.6-luna"]
+provider = "openai"
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh", "max"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 0.20
+price_output = 1.20
+price_cache_read = 0.02
+long_prompt = { over = 272000, price_input = 0.40, price_output = 1.80, price_cache_read = 0.04 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-5.6-luna"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-5.6-luna", efforts = "https://developers.openai.com/api/docs/models/gpt-5.6-luna", images = "https://developers.openai.com/api/docs/models/gpt-5.6-luna" }
+
+[models."gpt-5.5"]
+provider = "openai"
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 5.0
+price_output = 30.0
+price_cache_read = 0.50
+long_prompt = { over = 272000, price_input = 10.0, price_output = 45.0, price_cache_read = 1.0 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-5.5"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-5.5", efforts = "https://developers.openai.com/api/docs/models/gpt-5.5", images = "https://developers.openai.com/api/docs/models/gpt-5.5" }
+
+[models."gpt-5.5-2026-04-23"]
+provider = "openai"
+context_window = 1050000
+max_output = 128000
+efforts = ["low", "medium", "high", "xhigh"]
+default_effort = "medium"
+images = { tier = "high", per_request = 20 }
+web_search = ["web_search"]
+price_input = 5.0
+price_output = 30.0
+price_cache_read = 0.50
+long_prompt = { over = 272000, price_input = 10.0, price_output = 45.0, price_cache_read = 1.0 }
+min_cacheable = 1024
+source = "https://developers.openai.com/api/docs/models/gpt-5.5"
+sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-5.5", efforts = "https://developers.openai.com/api/docs/models/gpt-5.5", images = "https://developers.openai.com/api/docs/models/gpt-5.5" }
+
+[models."gemini-4-carbon"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+listed = true
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-argon"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+listed = true
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-hydrogen"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+listed = true
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high", "xhigh"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 1.5
+price_output = 7.5
+price_cache_read = 0.075
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.8-flash"]
+provider = "gemini"
+web_search = ["google_search"]
+listed = true
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.75
+price_output = 3.75
+price_cache_read = 0.075
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.6-flash"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.75
+price_output = 3.75
+price_cache_read = 0.075
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.5-flash-lite"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.30
+price_output = 2.50
+price_cache_read = 0.03
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.1-flash-lite"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.25
+price_output = 1.50
+price_cache_read = 0.025
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.1-pro-preview"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 12.0
+price_cache_read = 0.20
+long_prompt = { over = 200000, price_input = 4.0, price_output = 18.0, price_cache_read = 0.40 }
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3-flash-preview"]
+provider = "gemini"
+web_search = ["google_search"]
+aliases = ["gemini-3-flash"]
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.50
+price_output = 3.0
+price_cache_read = 0.05
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-2.5-pro"]
+provider = "gemini"
+web_search = ["google_search"]
+listed = true
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high", "max"]
+default_effort = "high"
+adaptive_thinking = false
+thinking_budgets = { low = 1024, medium = 8192, high = 24576, max = 32768 }
+images = { tier = "standard", per_request = 100 }
+price_input = 1.25
+price_output = 10.0
+price_cache_read = 0.125
+long_prompt = { over = 200000, price_input = 2.50, price_output = 15.0, price_cache_read = 0.25 }
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-2.5-flash"]
+provider = "gemini"
+web_search = ["google_search"]
+aliases = ["gemini-2.5-flash-thinking"]
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high", "max"]
+default_effort = "medium"
+adaptive_thinking = false
+thinking_budgets = { low = 1024, medium = 8192, high = 24576, max = 24576 }
+images = { tier = "standard", per_request = 100 }
+price_input = 0.30
+price_output = 2.50
+price_cache_read = 0.03
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-2.5-flash-lite"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+efforts = ["low", "medium", "high", "max"]
+default_effort = "medium"
+adaptive_thinking = false
+thinking_budgets = { low = 1024, medium = 8192, high = 24576, max = 24576 }
+images = { tier = "standard", per_request = 100 }
+price_input = 0.10
+price_output = 0.40
+price_cache_read = 0.01
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-carbon-low"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 262144
+effort_variant = { family = "gemini-4-carbon", effort = "low" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-carbon-medium"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 262144
+effort_variant = { family = "gemini-4-carbon", effort = "medium" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-carbon-high"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 262144
+effort_variant = { family = "gemini-4-carbon", effort = "high" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-argon-low"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+effort_variant = { family = "gemini-4-argon", effort = "low" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-argon-medium"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+effort_variant = { family = "gemini-4-argon", effort = "medium" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-argon-high"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+effort_variant = { family = "gemini-4-argon", effort = "high" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 2.0
+price_output = 10.0
+price_cache_read = 0.10
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-hydrogen-low"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 262144
+effort_variant = { family = "gemini-4-hydrogen", effort = "low" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 1.5
+price_output = 7.5
+price_cache_read = 0.075
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-hydrogen-medium"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 262144
+effort_variant = { family = "gemini-4-hydrogen", effort = "medium" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 1.5
+price_output = 7.5
+price_cache_read = 0.075
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-hydrogen-high"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 262144
+effort_variant = { family = "gemini-4-hydrogen", effort = "high" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 1.5
+price_output = 7.5
+price_cache_read = 0.075
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-hydrogen-xhigh"]
+provider = "gemini"
+bill_tool_use_prompt = true
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 262144
+effort_variant = { family = "gemini-4-hydrogen", effort = "xhigh" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 1.5
+price_output = 7.5
+price_cache_read = 0.075
+min_cacheable = 4096
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.8-flash-low"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+effort_variant = { family = "gemini-3.8-flash", effort = "low" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.75
+price_output = 3.75
+price_cache_read = 0.075
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.8-flash-medium"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+effort_variant = { family = "gemini-3.8-flash", effort = "medium" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.75
+price_output = 3.75
+price_cache_read = 0.075
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.8-flash-high"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+effort_variant = { family = "gemini-3.8-flash", effort = "high" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.75
+price_output = 3.75
+price_cache_read = 0.075
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.8-flash-tiered"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+max_output = 65536
+efforts = []
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+price_input = 0.75
+price_output = 3.75
+price_cache_read = 0.075
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-3.1-flash-image"]
+provider = "gemini"
+context_window = 65536
+max_output = 65536
+efforts = []
+adaptive_thinking = false
+images = { tier = "standard", per_request = 100 }
+price_input = 0.25
+price_output = 1.50
+price_cache_read = 0.025
+min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }

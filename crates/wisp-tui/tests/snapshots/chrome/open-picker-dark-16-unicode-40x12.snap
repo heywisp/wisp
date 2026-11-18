@@ -1,0 +1,28 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== picker
+| ✓ Showed crates/wisp-core/src/cache.rs
+  ~ 1..2 fg Idx(10); 3..9 bold
+|        1 +     let part_1 = fingerprin
+  ~ 5..10 fg Idx(7); 10..11 fg Idx(10)
+|            t.segment(1);
+|────────────────────────────────────────
+  ~ 0..40 fg Idx(8)
+|   Open  2 of 5
+  ~ 3..7 bold; 9..15 fg Idx(8)
+|   Full transcript    every cell in full
+  ~ 22..40 fg Idx(7)
+| › ✓ Showed crates/wisp-core/src/cache.…
+  ~ 0..1 inverse; 1..2 fg Idx(12) inverse; 2..3 inverse; 3..4 fg Idx(10) inverse; 4..5 inverse; 5..11 bold inverse; 11..40 inverse
+|╭──────────────────────────────────────╮
+  ~ 0..40 fg Idx(8)
+|│                          total $0.01 │
+  ~ 0..1 fg Idx(8); 27..38 fg Idx(7); 39..40 fg Idx(8)
+|├──────────────────────────────────────┤
+  ~ 0..40 fg Idx(8)
+|│ ⢎⠶⡰  Ready   Claude API   sonnet-5-5 │
+  ~ 0..1 fg Idx(8); 2..3 fg Idx(8); 3..4 fg Idx(12); 4..5 fg Idx(8); 7..12 fg Idx(7); 15..25 fg Idx(7); 39..40 fg Idx(8)
+|╰──────────────────────────────────────╯
+  ~ 0..40 fg Idx(8)

@@ -1,0 +1,14 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 25,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "cache_miss_repeated",
+  "turn": 9,
+  "cause": {
+    "type": "injected_thinking",
+    "first_path": "messages.148.content.0",
+    "count": 2
+  },
+  "count": 2,
+  "usd": 1.75
+}

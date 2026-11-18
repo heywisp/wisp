@@ -1,0 +1,122 @@
+---
+source: crates/wisp-render/src/transcript/tests.rs
+expression: out
+---
+=== kept ===
+[on surface| ][user on surface|>][on surface| ][text on surface|Hi]
+
+   [text.muted|Anthropic is overloaded.]
+   [text.muted|Retrying step 1 (1 of 5) in 2 s.]
+
+   [text.muted|Anthropic sent an event this version doesn't know. It's kept in the log.]
+
+ [text.faint|:] [thinking|Thinking][text.muted| - 1s]
+ [text.faint|:] [i thinking|Hmm.]
+
+ [accent|*] Hello.
+
+   [text.faint|18s - $0.014 - ][text|cache miss]
+   [text.muted|+ end_turn - 18.0s (first token 0.8s) - in 40 - out 475 - reused 9.2k (100%)]
+   [text.muted|- +760 cached 1h - $0.014 - opus-5-5]
+   [text.muted|retry 1 of step 1 after 2000 ms: overloaded - HTTP 529 - overloaded_error -]
+   [text.muted|request req_011Retry - before the reply]
+   [text.muted|cache miss: reused 0 of the previous 9k prompt tokens, wrote 9.4k -]
+   [text.muted|diagnostics: {"changed":"tools"}]
+   [text.muted|cache diagnostics: {"prefix":12}]
+   [text.muted|unrecognised provider event: brand_new]
+=== capped ===
+[on surface| ][user on surface|>][on surface| ][text on surface|Hi]
+
+   [text.muted|Anthropic is overloaded.]
+   [text.muted|Retrying step 1 (1 of 5) in 2 s.]
+
+   [text.muted|Anthropic sent an event this version doesn't know. It's kept in the log.]
+
+ [text.faint|:] [thinking|Thinking][text.muted| - 1s]
+ [text.faint|:] [i thinking|Hmm.]
+
+ [accent|*] Hello.
+
+   [text.faint|18s - ][text|cut off at the output limit][text.faint| - $0.014+ - ][text|cache miss][text.faint| - ][text|not kept in]
+   [text|history]
+   [text.muted|- max_tokens - 18.0s (first token 0.8s) - in 40 - out 475 - reused 9.2k]
+   [text.muted|(100%) - +760 cached 1h - $0.014+ - opus-5-5 - not kept in history]
+   [text.muted|retry 1 of step 1 after 2000 ms: overloaded - HTTP 529 - overloaded_error -]
+   [text.muted|request req_011Retry - before the reply]
+   [text.muted|cache miss: reused 0 of the previous 9k prompt tokens, wrote 9.4k -]
+   [text.muted|diagnostics: {"changed":"tools"}]
+   [text.muted|cache diagnostics: {"prefix":12}]
+   [text.muted|unrecognised provider event: brand_new]
+=== cancelled ===
+[on surface| ][user on surface|>][on surface| ][text on surface|Hi]
+
+   [text.muted|Anthropic is overloaded.]
+   [text.muted|Retrying step 1 (1 of 5) in 2 s.]
+
+   [text.muted|Anthropic sent an event this version doesn't know. It's kept in the log.]
+
+ [text.faint|:] [thinking|Thinking][text.muted| - 1s]
+ [text.faint|:] [i thinking|Hmm.]
+
+ [accent|*] Hello.
+
+ [text.muted|-] [text.muted|Stopped. Nothing from this turn was kept.]
+
+   [text.faint|18s - $0.0031+ - ][text|cache miss]
+   [text.muted|x cancelled - 18.0s (first token 0.8s) - in 40 - out 475 - reused 9.2k]
+   [text.muted|(100%) - +760 cached 1h - $0.0031+ - dropped from history]
+   [text.muted|retry 1 of step 1 after 2000 ms: overloaded - HTTP 529 - overloaded_error -]
+   [text.muted|request req_011Retry - before the reply]
+   [text.muted|cache miss: reused 0 of the previous 9k prompt tokens, wrote 9.4k -]
+   [text.muted|diagnostics: {"changed":"tools"}]
+   [text.muted|cache diagnostics: {"prefix":12}]
+   [text.muted|unrecognised provider event: brand_new]
+=== failed ===
+[on surface| ][user on surface|>][on surface| ][text on surface|Hi]
+
+   [text.muted|Anthropic is overloaded.]
+   [text.muted|Retrying step 1 (1 of 5) in 2 s.]
+
+   [text.muted|Anthropic sent an event this version doesn't know. It's kept in the log.]
+
+ [text.faint|:] [thinking|Thinking][text.muted| - 1s]
+ [text.faint|:] [i thinking|Hmm.]
+
+ [accent|*] Hello.
+
+ [error|x] [error|Anthropic had a server error.][text| Nothing from this turn was kept.]
+   [text.muted|HTTP 200 - api_error - request req_011Stream - mid-stream]
+   [text.muted|Upstream provider stream was interrupted.]
+
+   [text.faint|18s - $1.20+ - ][text|cache miss]
+   [text.muted|x failed - 18.0s (first token 0.8s) - $1.20+ - dropped from history]
+   [text.muted|retry 1 of step 1 after 2000 ms: overloaded - HTTP 529 - overloaded_error -]
+   [text.muted|request req_011Retry - before the reply]
+   [text.muted|cache miss: reused 0 of the previous 9k prompt tokens, wrote 9.4k -]
+   [text.muted|diagnostics: {"changed":"tools"}]
+   [text.muted|cache diagnostics: {"prefix":12}]
+   [text.muted|unrecognised provider event: brand_new]
+=== usage limit ===
+[on surface| ][user on surface|>][on surface| ][text on surface|Hi]
+
+   [text.muted|Anthropic is overloaded.]
+   [text.muted|Retrying step 1 (1 of 5) in 2 s.]
+
+   [text.muted|Anthropic sent an event this version doesn't know. It's kept in the log.]
+
+ [text.faint|:] [thinking|Thinking][text.muted| - 1s]
+ [text.faint|:] [i thinking|Hmm.]
+
+ [accent|*] Hello.
+
+ [error|x] [error|Usage limit reached - resets time unavailable]
+   [text|Nothing from this turn was kept.]
+
+   [text.faint|18s - ][text|cost unknown, possibly billed][text.faint| - ][text|cache miss]
+   [text.muted|x failed - 18.0s (first token 0.8s) - cost unknown - dropped from history]
+   [text.muted|retry 1 of step 1 after 2000 ms: overloaded - HTTP 529 - overloaded_error -]
+   [text.muted|request req_011Retry - before the reply]
+   [text.muted|cache miss: reused 0 of the previous 9k prompt tokens, wrote 9.4k -]
+   [text.muted|diagnostics: {"changed":"tools"}]
+   [text.muted|cache diagnostics: {"prefix":12}]
+   [text.muted|unrecognised provider event: brand_new]

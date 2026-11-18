@@ -1,0 +1,182 @@
+---
+source: crates/wisp-render/src/highlight/diff/tests.rs
+expression: out
+---
+--- 120 ---
+   Paired:
+
+   [#A6A6A6|--- a/cache.rs]                                                                                                  [#757575|diff]
+   [#A6A6A6|+++ b/cache.rs]
+   [#A6A6A6|@@ -1,3 +1,3 @@]
+    [#569CD6|fn] [#DCDCAA|key]([#9CDCFE|req]: &Request) -> Key {
+   [#F48771 on #4B1818|-][on #4B1818|    ][#569CD6 on #4B1818|let][on #4B1818| key = ][#D4D4D4 on #6F1313|hash][on #4B1818|(][#D4D4D4 on #6F1313|&][on #4B1818|req][#D4D4D4 on #6F1313|.system][on #4B1818|, ][#D4D4D4 on #6F1313|1][on #4B1818|);][on #4B1818|                                                                                ]
+   [#89D185 on #2D3125|+][on #2D3125|    ][#569CD6 on #2D3125|let][on #2D3125| key = ][#D4D4D4 on #435026|Fingerprint::of][on #2D3125|(req, ][#D4D4D4 on #435026|2][on #2D3125|)][#D4D4D4 on #435026|?][on #2D3125|;][on #2D3125|                                                                            ]
+        key
+
+   Unequal:
+
+   [#A6A6A6|@@ -1,2 +1,3 @@]                                                                                            [#757575|diff rust]
+   [#F48771 on #4B1818|-][#569CD6 on #4B1818|let][on #4B1818| total = ][#DCDCAA on #4B1818|sum][on #4B1818|(][#D4D4D4 on #6F1313|a][on #4B1818|);][on #4B1818|                                                                                                ]
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|// gone][on #4B1818|                                                                                                            ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| count = ][#B5CEA8 on #2D3125|0][on #2D3125|;][on #2D3125|                                                                                                     ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| total = ][#DCDCAA on #2D3125|sum][on #2D3125|(][#D4D4D4 on #435026|b][on #2D3125|);][on #2D3125|                                                                                                ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| extra = ][#569CD6 on #2D3125|true][on #2D3125|;][on #2D3125|                                                                                                  ]
+
+   Hint:
+
+   [#A6A6A6|@@ -1 +1 @@]                                                                                              [#757575|diff python]
+   [#F48771 on #4B1818|-][#569CD6 on #4B1818|def][on #4B1818| ][#DCDCAA on #4B1818|f][on #4B1818|(][#D4D4D4 on #6F1313|x][on #4B1818|): ][#C586C0 on #4B1818|return][on #4B1818| ][#CE9178 on #4B1818|"][#D4D4D4 on #6F1313|a][#CE9178 on #4B1818|"][on #4B1818|                                                                                               ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|def][on #2D3125| ][#DCDCAA on #2D3125|f][on #2D3125|(][#D4D4D4 on #435026|y][on #2D3125|): ][#C586C0 on #2D3125|return][on #2D3125| ][#CE9178 on #2D3125|"][#D4D4D4 on #435026|b][#CE9178 on #2D3125|"][on #2D3125|                                                                                               ]
+
+   Unknown:
+
+   [#A6A6A6|--- a/notes.unknown]                                                                                             [#757575|diff]
+   [#A6A6A6|+++ b/notes.unknown]
+   [#A6A6A6|@@ -1 +1 @@]
+   [#F48771 on #4B1818|-][on #4B1818|plain ][#D4D4D4 on #6F1313|old][on #4B1818| words][on #4B1818|                                                                                                    ]
+   [#89D185 on #2D3125|+][on #2D3125|plain ][#D4D4D4 on #435026|new][on #2D3125| words][on #2D3125|                                                                                                    ]
+
+   Dashes:
+
+   [#A6A6A6|--- a/x.sql]                                                                                                     [#757575|diff]
+   [#A6A6A6|+++ b/x.sql]
+   [#A6A6A6|@@ -1,3 +1,2 @@]
+    [#569CD6|select] [#B5CEA8|1];
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|-- comment][on #4B1818|                                                                                                         ]
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|--][#D4D4D4 on #6F1313|-][on #4B1818|                                                                                                                ]
+   [#89D185 on #2D3125|+][#D4D4D4 on #2D3125 italic|--][#D4D4D4 on #435026| note][on #2D3125|                                                                                                            ]
+--- 80 ---
+   Paired:
+
+   [#A6A6A6|--- a/cache.rs]                                                          [#757575|diff]
+   [#A6A6A6|+++ b/cache.rs]
+   [#A6A6A6|@@ -1,3 +1,3 @@]
+    [#569CD6|fn] [#DCDCAA|key]([#9CDCFE|req]: &Request) -> Key {
+   [#F48771 on #4B1818|-][on #4B1818|    ][#569CD6 on #4B1818|let][on #4B1818| key = ][#D4D4D4 on #6F1313|hash][on #4B1818|(][#D4D4D4 on #6F1313|&][on #4B1818|req][#D4D4D4 on #6F1313|.system][on #4B1818|, ][#D4D4D4 on #6F1313|1][on #4B1818|);][on #4B1818|                                        ]
+   [#89D185 on #2D3125|+][on #2D3125|    ][#569CD6 on #2D3125|let][on #2D3125| key = ][#D4D4D4 on #435026|Fingerprint::of][on #2D3125|(req, ][#D4D4D4 on #435026|2][on #2D3125|)][#D4D4D4 on #435026|?][on #2D3125|;][on #2D3125|                                    ]
+        key
+
+   Unequal:
+
+   [#A6A6A6|@@ -1,2 +1,3 @@]                                                    [#757575|diff rust]
+   [#F48771 on #4B1818|-][#569CD6 on #4B1818|let][on #4B1818| total = ][#DCDCAA on #4B1818|sum][on #4B1818|(][#D4D4D4 on #6F1313|a][on #4B1818|);][on #4B1818|                                                        ]
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|// gone][on #4B1818|                                                                    ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| count = ][#B5CEA8 on #2D3125|0][on #2D3125|;][on #2D3125|                                                             ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| total = ][#DCDCAA on #2D3125|sum][on #2D3125|(][#D4D4D4 on #435026|b][on #2D3125|);][on #2D3125|                                                        ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| extra = ][#569CD6 on #2D3125|true][on #2D3125|;][on #2D3125|                                                          ]
+
+   Hint:
+
+   [#A6A6A6|@@ -1 +1 @@]                                                      [#757575|diff python]
+   [#F48771 on #4B1818|-][#569CD6 on #4B1818|def][on #4B1818| ][#DCDCAA on #4B1818|f][on #4B1818|(][#D4D4D4 on #6F1313|x][on #4B1818|): ][#C586C0 on #4B1818|return][on #4B1818| ][#CE9178 on #4B1818|"][#D4D4D4 on #6F1313|a][#CE9178 on #4B1818|"][on #4B1818|                                                       ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|def][on #2D3125| ][#DCDCAA on #2D3125|f][on #2D3125|(][#D4D4D4 on #435026|y][on #2D3125|): ][#C586C0 on #2D3125|return][on #2D3125| ][#CE9178 on #2D3125|"][#D4D4D4 on #435026|b][#CE9178 on #2D3125|"][on #2D3125|                                                       ]
+
+   Unknown:
+
+   [#A6A6A6|--- a/notes.unknown]                                                     [#757575|diff]
+   [#A6A6A6|+++ b/notes.unknown]
+   [#A6A6A6|@@ -1 +1 @@]
+   [#F48771 on #4B1818|-][on #4B1818|plain ][#D4D4D4 on #6F1313|old][on #4B1818| words][on #4B1818|                                                            ]
+   [#89D185 on #2D3125|+][on #2D3125|plain ][#D4D4D4 on #435026|new][on #2D3125| words][on #2D3125|                                                            ]
+
+   Dashes:
+
+   [#A6A6A6|--- a/x.sql]                                                             [#757575|diff]
+   [#A6A6A6|+++ b/x.sql]
+   [#A6A6A6|@@ -1,3 +1,2 @@]
+    [#569CD6|select] [#B5CEA8|1];
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|-- comment][on #4B1818|                                                                 ]
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|--][#D4D4D4 on #6F1313|-][on #4B1818|                                                                        ]
+   [#89D185 on #2D3125|+][#D4D4D4 on #2D3125 italic|--][#D4D4D4 on #435026| note][on #2D3125|                                                                    ]
+--- 24 ---
+   Paired:
+
+   [#A6A6A6|--- a/cache.rs]  [#757575|diff]
+   [#A6A6A6|+++ b/cache.rs]
+   [#A6A6A6|@@ -1,3 +1,3 @@]
+    [#569CD6|fn] [#DCDCAA|key]([#9CDCFE|req]: &Reques
+   t) -> Key {
+   [#F48771 on #4B1818|-][on #4B1818|    ][#569CD6 on #4B1818|let][on #4B1818| key = ][#D4D4D4 on #6F1313|hash][on #4B1818|(]
+   [#D4D4D4 on #6F1313|&][on #4B1818|req][#D4D4D4 on #6F1313|.system][on #4B1818|, ][#D4D4D4 on #6F1313|1][on #4B1818|);][on #4B1818|    ]
+   [#89D185 on #2D3125|+][on #2D3125|    ][#569CD6 on #2D3125|let][on #2D3125| key = ][#D4D4D4 on #435026|Finge]
+   [#D4D4D4 on #435026|rprint::of][on #2D3125|(req, ][#D4D4D4 on #435026|2][on #2D3125|)][#D4D4D4 on #435026|?][on #2D3125|;]
+        key
+
+   Unequal:
+
+   [#A6A6A6|@@ -1,2 +1,3 @@]
+   [#F48771 on #4B1818|-][#569CD6 on #4B1818|let][on #4B1818| total = ][#DCDCAA on #4B1818|sum][on #4B1818|(][#D4D4D4 on #6F1313|a][on #4B1818|);]
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|// gone][on #4B1818|            ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| count = ][#B5CEA8 on #2D3125|0][on #2D3125|;][on #2D3125|     ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| total = ][#DCDCAA on #2D3125|sum][on #2D3125|(][#D4D4D4 on #435026|b][on #2D3125|);]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|let][on #2D3125| extra = ][#569CD6 on #2D3125|true][on #2D3125|;][on #2D3125|  ]
+
+   Hint:
+
+   [#A6A6A6|@@ -1 +1 @@]
+   [#F48771 on #4B1818|-][#569CD6 on #4B1818|def][on #4B1818| ][#DCDCAA on #4B1818|f][on #4B1818|(][#D4D4D4 on #6F1313|x][on #4B1818|): ][#C586C0 on #4B1818|return][on #4B1818| ][#CE9178 on #4B1818|"][#D4D4D4 on #6F1313|a]
+   [#CE9178 on #4B1818|"][on #4B1818|                   ]
+   [#89D185 on #2D3125|+][#569CD6 on #2D3125|def][on #2D3125| ][#DCDCAA on #2D3125|f][on #2D3125|(][#D4D4D4 on #435026|y][on #2D3125|): ][#C586C0 on #2D3125|return][on #2D3125| ][#CE9178 on #2D3125|"][#D4D4D4 on #435026|b]
+   [#CE9178 on #2D3125|"][on #2D3125|                   ]
+
+   Unknown:
+
+   [#A6A6A6|--- a/notes.unknown]
+   [#A6A6A6|+++ b/notes.unknown]
+   [#A6A6A6|@@ -1 +1 @@]
+   [#F48771 on #4B1818|-][on #4B1818|plain ][#D4D4D4 on #6F1313|old][on #4B1818| words][on #4B1818|    ]
+   [#89D185 on #2D3125|+][on #2D3125|plain ][#D4D4D4 on #435026|new][on #2D3125| words][on #2D3125|    ]
+
+   Dashes:
+
+   [#A6A6A6|--- a/x.sql]     [#757575|diff]
+   [#A6A6A6|+++ b/x.sql]
+   [#A6A6A6|@@ -1,3 +1,2 @@]
+    [#569CD6|select] [#B5CEA8|1];
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|-- comment][on #4B1818|         ]
+   [#F48771 on #4B1818|-][#D4D4D4 on #4B1818 italic|--][#D4D4D4 on #6F1313|-][on #4B1818|                ]
+   [#89D185 on #2D3125|+][#D4D4D4 on #2D3125 italic|--][#D4D4D4 on #435026| note][on #2D3125|            ]
+--- 120, a run over the budget ---
+   Budget:
+
+   [#A6A6A6|@@ -1,9 +1,5 @@]                                                                                                 [#757575|diff]
+   [#F48771 on #4B1818|-][on #4B1818|a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a]
+   [on #4B1818| a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a a]
+   [on #4B1818| a a a a a a a a a a a a][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b]
+   [on #4B1818| b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b b]
+   [on #4B1818| b b b b b b b b b b b b][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c]
+   [on #4B1818| c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c c]
+   [on #4B1818| c c c c c c c c c c c c][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d]
+   [on #4B1818| d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d d]
+   [on #4B1818| d d d d d d d d d d d d][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e]
+   [on #4B1818| e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e e]
+   [on #4B1818| e e e e e e e e e e e e][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f]
+   [on #4B1818| f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f f]
+   [on #4B1818| f f f f f f f f f f f f][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g]
+   [on #4B1818| g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g g]
+   [on #4B1818| g g g g g g g g g g g g][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h]
+   [on #4B1818| h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h h]
+   [on #4B1818| h h h h h h h h h h h h][on #4B1818|                                                                                            ]
+   [#F48771 on #4B1818|-][on #4B1818|i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i]
+   [on #4B1818| i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i i]
+   [on #4B1818| i i i i i i i i i i i i][on #4B1818|                                                                                            ]
+   [#89D185 on #2D3125|+][on #2D3125|p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p]
+   [on #2D3125| p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p p]
+   [on #2D3125| p p p p p p p p p p p p][on #2D3125|                                                                                            ]
+   [#89D185 on #2D3125|+][on #2D3125|q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q]
+   [on #2D3125| q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q q]
+   [on #2D3125| q q q q q q q q q q q q][on #2D3125|                                                                                            ]
+   [#89D185 on #2D3125|+][on #2D3125|r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r]
+   [on #2D3125| r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r]
+   [on #2D3125| r r r r r r r r r r r r][on #2D3125|                                                                                            ]
+   [#89D185 on #2D3125|+][on #2D3125|s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s]
+   [on #2D3125| s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s s]
+   [on #2D3125| s s s s s s s s s s s s][on #2D3125|                                                                                            ]
+   [#89D185 on #2D3125|+][on #2D3125|alpha beta gamma][on #2D3125|                                                                                                   ]

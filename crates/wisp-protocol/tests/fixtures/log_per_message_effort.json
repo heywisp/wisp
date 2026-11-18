@@ -1,0 +1,9 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 9,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "per_message_effort",
+  "model": "claude-sonnet-5-5",
+  "state": "fallen_back",
+  "endpoint_name": "manifest"
+}

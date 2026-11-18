@@ -1,0 +1,6 @@
+The user answered:
+
+1. [Database] Which database should the service use?
+   In their own words: MySQL, it's what ops know
+
+Read the answers in the user's own words carefully: they may ask for something else, or ask you not to go on. Follow what they say.

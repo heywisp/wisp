@@ -1,0 +1,159 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== main
+|+-----------------------------------------------------------------------------+
+  ~ 0..79 fg Rgb(88, 88, 88)
+||                                                                             |
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+||    .-''  .   wisp                                                     0.1.0 |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..12 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+||   :  **  :   Your own AI. With a computer of its own.                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..7 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 9..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+||    '-..-'    sonnet-5-5 low                                                 |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..12 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+||              ~/Projects/Wisp - Claude API                                   |
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+||                                                                             |
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|+-----------------------------------------------------------------------------+
+  ~ 0..79 fg Rgb(88, 88, 88)
+|  enter send - ctrl-j new line - /help - /model switch model
+  ~ 2..7 fg Rgb(212, 212, 212); 7..15 fg Rgb(166, 166, 166); 15..21 fg Rgb(212, 212, 212); 21..33 fg Rgb(166, 166, 166); 33..38 fg Rgb(212, 212, 212); 38..41 fg Rgb(166, 166, 166); 41..47 fg Rgb(212, 212, 212); 47..60 fg Rgb(166, 166, 166)
+|(9 blank rows)
+| > Question 1
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+|   Anthropic is overloaded.
+  ~ 3..27 fg Rgb(166, 166, 166)
+|   Retrying step 1 (1 of 5) in 2 s.
+  ~ 3..35 fg Rgb(166, 166, 166)
+|
+| * An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   2.4s - cut off at the output limit - $0.50+ - cache miss - not kept in
+  ~ 3..10 fg Rgb(117, 117, 117); 10..37 fg Rgb(212, 212, 212); 37..49 fg Rgb(117, 117, 117); 49..59 fg Rgb(212, 212, 212); 59..62 fg Rgb(117, 117, 117); 62..73 fg Rgb(212, 212, 212)
+|   history
+  ~ 3..10 fg Rgb(212, 212, 212)
+|
+| > Question 2
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| * Partial.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| - Stopped. Nothing from this turn was kept.
+  ~ 1..2 fg Rgb(166, 166, 166); 3..44 fg Rgb(166, 166, 166)
+|
+|   0.9s - $0.003+ - cached 92%
+  ~ 3..30 fg Rgb(117, 117, 117)
+|
+| > Question 3
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| x Anthropic had a server error. Nothing from this turn was kept.
+  ~ 1..2 fg Rgb(244, 135, 113); 3..32 fg Rgb(244, 135, 113); 32..65 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request req_011Stream - mid-stream
+  ~ 3..60 fg Rgb(166, 166, 166)
+|   Upstream provider stream was interrupted.
+  ~ 3..44 fg Rgb(166, 166, 166)
+|
+|   1.2s - $0.20+
+  ~ 3..16 fg Rgb(117, 117, 117)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Rgb(88, 88, 88)
+||                                                                total $0.803+ |
+  ~ 0..1 fg Rgb(88, 88, 88); 65..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Rgb(88, 88, 88)
+|| > Ask anything, or type / for commands                                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(86, 156, 214); 4..5 fg Rgb(30, 30, 30) bg Rgb(212, 212, 212); 5..40 fg Rgb(117, 117, 117); 79..80 fg Rgb(88, 88, 88)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Rgb(88, 88, 88)
+|| (*)  Ready                          Claude API   sonnet-5-5 low - cached 92% |
+  ~ 0..1 fg Rgb(88, 88, 88); 2..3 fg Rgb(130, 130, 130); 3..4 fg Rgb(86, 156, 214); 4..5 fg Rgb(130, 130, 130); 7..12 fg Rgb(166, 166, 166); 38..48 fg Rgb(166, 166, 166); 51..61 fg Rgb(212, 212, 212); 62..78 fg Rgb(166, 166, 166); 79..80 fg Rgb(88, 88, 88)
+|+------------------------------------------------------------------------------+
+  ~ 0..80 fg Rgb(88, 88, 88)
+== ctrl-o
+|+-----------------------------------------------------------------------------+
+  ~ 0..79 fg Rgb(88, 88, 88)
+||                                                                             |
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+||    .-''  .   wisp                                                     0.1.0 |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..12 fg Rgb(130, 130, 130); 15..19 fg Rgb(212, 212, 212) bold; 72..77 fg Rgb(117, 117, 117); 78..79 fg Rgb(88, 88, 88)
+||   :  **  :   Your own AI. With a computer of its own.                       |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..7 fg Rgb(130, 130, 130); 7..9 fg Rgb(86, 156, 214); 9..12 fg Rgb(130, 130, 130); 15..28 fg Rgb(166, 166, 166); 28..55 fg Rgb(212, 212, 212) bold; 78..79 fg Rgb(88, 88, 88)
+||    '-..-'    sonnet-5-5 low                                                 |
+  ~ 0..1 fg Rgb(88, 88, 88); 4..12 fg Rgb(130, 130, 130); 15..29 fg Rgb(212, 212, 212); 78..79 fg Rgb(88, 88, 88)
+||              ~/Projects/Wisp - Claude API                                   |
+  ~ 0..1 fg Rgb(88, 88, 88); 15..43 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+||              cache 1h - logging to ~/.local/share/wisp/sessions/0193a.jsonl |
+  ~ 0..1 fg Rgb(88, 88, 88); 15..77 fg Rgb(166, 166, 166); 78..79 fg Rgb(88, 88, 88)
+||                                                                             |
+  ~ 0..1 fg Rgb(88, 88, 88); 78..79 fg Rgb(88, 88, 88)
+|+-----------------------------------------------------------------------------+
+  ~ 0..79 fg Rgb(88, 88, 88)
+| > Question 1
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+|   Anthropic is overloaded.
+  ~ 3..27 fg Rgb(166, 166, 166)
+|   Retrying step 1 (1 of 5) in 2 s.
+  ~ 3..35 fg Rgb(166, 166, 166)
+|
+| * An answer.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+|   2.4s - cut off at the output limit - $0.50+ - cache miss - not kept in
+  ~ 3..10 fg Rgb(117, 117, 117); 10..37 fg Rgb(212, 212, 212); 37..49 fg Rgb(117, 117, 117); 49..59 fg Rgb(212, 212, 212); 59..62 fg Rgb(117, 117, 117); 62..73 fg Rgb(212, 212, 212)
+|   history
+  ~ 3..10 fg Rgb(212, 212, 212)
+|   - max_tokens - 2.4s - in 40 - out 475 - reused 9.2k - +760 cached 1h -
+  ~ 3..73 fg Rgb(166, 166, 166)
+|   $0.50+ - sonnet-5-5 - not kept in history
+  ~ 3..44 fg Rgb(166, 166, 166)
+|   retry 1 of step 1 after 2000 ms: overloaded - HTTP 529 - overloaded_error -
+  ~ 3..78 fg Rgb(166, 166, 166)
+|   request req_011Retry - before the reply
+  ~ 3..42 fg Rgb(166, 166, 166)
+|   cache miss: reused 0 of the previous 9k prompt tokens, wrote 9k -
+  ~ 3..68 fg Rgb(166, 166, 166)
+|   diagnostics: {"changed":"tools"}
+  ~ 3..35 fg Rgb(166, 166, 166)
+|
+| > Question 2
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| * Partial.
+  ~ 1..2 fg Rgb(86, 156, 214)
+|
+| - Stopped. Nothing from this turn was kept.
+  ~ 1..2 fg Rgb(166, 166, 166); 3..44 fg Rgb(166, 166, 166)
+|
+|   0.9s - $0.003+ - cached 92%
+  ~ 3..30 fg Rgb(117, 117, 117)
+|   x cancelled - 0.9s - in 40 - out 475 - reused 9.2k - +760 cached 1h -
+  ~ 3..72 fg Rgb(166, 166, 166)
+|   $0.003+ - dropped from history
+  ~ 3..33 fg Rgb(166, 166, 166)
+|
+| > Question 3
+  ~ 0..1 bg Rgb(38, 38, 38); 1..2 fg Rgb(130, 130, 130) bg Rgb(38, 38, 38); 2..3 bg Rgb(38, 38, 38); 3..13 fg Rgb(212, 212, 212) bg Rgb(38, 38, 38); 13..80 bg Rgb(38, 38, 38)
+|
+| x Anthropic had a server error. Nothing from this turn was kept.
+  ~ 1..2 fg Rgb(244, 135, 113); 3..32 fg Rgb(244, 135, 113); 32..65 fg Rgb(212, 212, 212)
+|   HTTP 200 - api_error - request req_011Stream - mid-stream
+  ~ 3..60 fg Rgb(166, 166, 166)
+|   Upstream provider stream was interrupted.
+  ~ 3..44 fg Rgb(166, 166, 166)
+|
+|   1.2s - $0.20+
+  ~ 3..16 fg Rgb(117, 117, 117)
+|   x failed - 1.2s - $0.20+ - dropped from history
+  ~ 3..50 fg Rgb(166, 166, 166)
+|(6 blank rows)
+|   / search - 1-43/43 - [ to scrollback - q esc ctrl-o back
+  ~ 3..4 fg Rgb(166, 166, 166); 4..14 fg Rgb(117, 117, 117); 14..21 fg Rgb(166, 166, 166); 21..24 fg Rgb(117, 117, 117); 24..25 fg Rgb(166, 166, 166); 25..42 fg Rgb(117, 117, 117); 42..54 fg Rgb(166, 166, 166); 54..59 fg Rgb(117, 117, 117)

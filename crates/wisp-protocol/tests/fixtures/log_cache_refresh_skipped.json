@@ -1,0 +1,11 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 28,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "cache_refresh",
+  "turn": 9,
+  "outcome": "skipped",
+  "detail": "late",
+  "started_at": "2026-10-23T13:58:00Z",
+  "count": 3
+}

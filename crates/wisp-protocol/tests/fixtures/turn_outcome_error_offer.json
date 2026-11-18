@@ -1,0 +1,23 @@
+{
+  "status": "error",
+  "kind": "server",
+  "message": "Upstream provider stream was interrupted.",
+  "usage": null,
+  "cost": null,
+  "committed_steps": 2,
+  "detail": {
+    "phase": "stream",
+    "source": "endpoint",
+    "retry": {
+      "type": "transient"
+    },
+    "possibly_billed": false
+  },
+  "attempts": 3,
+  "offer": {
+    "retry": true,
+    "switch": true,
+    "focus": "retry",
+    "retries_at": 1800000060
+  }
+}

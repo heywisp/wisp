@@ -1,0 +1,1 @@
+{"messages":[{"content":[{"text":"hi","type":"text"}],"role":"user"}],"model":"claude-opus-5-5","output_config":{"effort":"high"},"system":[{"text":"be brief","type":"text"}],"thinking":{"display":"summarized","type":"adaptive"}}

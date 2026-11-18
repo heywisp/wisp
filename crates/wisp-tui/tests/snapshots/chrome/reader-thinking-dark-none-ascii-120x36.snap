@@ -1,0 +1,28 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| : Thought for 4 s
+|------------------------------------------------------------------------------------------------------------------------
+| : Placeholder thought line one, wrapped narrowly.
+  ~ 3..50 italic
+| : Placeholder thought line two, longer than the first.
+  ~ 3..55 italic
+| : Placeholder thought, 3rd.
+  ~ 3..28 italic
+| : Placeholder thought line 4, middling.
+  ~ 3..40 italic
+| : Placeholder thought line five, medium.
+  ~ 3..41 italic
+| : Placeholder thought line six, rather long.
+  ~ 3..45 italic
+| : Placeholder thought seven.
+  ~ 3..29 italic
+| : Placeholder 8th.
+  ~ 3..19 italic
+| : Placeholder 9.
+  ~ 3..17 italic
+|(24 blank rows)
+|   / search - 1-9/9 - ctrl-o every detail - q esc back

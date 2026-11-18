@@ -1,0 +1,29 @@
+---
+source: crates/wisp-tui/tests/app/settings_screen.rs
+expression: shot
+---
+| ⢎⠶⡰ wisp   Settings                               opus-5-5 · high · Claude API
+  ~ 1..2 fg Rgb(212, 212, 212); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(212, 212, 212); 5..9 fg Rgb(212, 212, 212) bold; 12..20 fg Rgb(212, 212, 212); 51..79 fg Rgb(166, 166, 166)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+| context
+  ~ 1..8 fg Rgb(212, 212, 212) bold
+| › Context line  on
+  ~ 0..1 bg Rgb(4, 57, 94); 1..2 fg Rgb(86, 156, 214) bg Rgb(4, 57, 94); 2..3 bg Rgb(4, 57, 94); 3..15 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 15..17 bg Rgb(4, 57, 94); 17..68 fg Rgb(212, 212, 212) bg Rgb(4, 57, 94); 68..80 bg Rgb(4, 57, 94)
+|
+|   window        off
+  ~ 3..15 fg Rgb(212, 212, 212); 17..68 fg Rgb(212, 212, 212)
+|   fill          on
+  ~ 3..15 fg Rgb(212, 212, 212); 17..68 fg Rgb(212, 212, 212)
+|(17 blank rows)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+| Context line: tell the model how full its context is, with a Context: line on…
+  ~ 1..15 fg Rgb(166, 166, 166); 15..79 fg Rgb(212, 212, 212) bold
+|
+| enter turn off
+  ~ 1..6 fg Rgb(166, 166, 166); 6..15 fg Rgb(117, 117, 117)
+|────────────────────────────────────────────────────────────────────────────────
+  ~ 0..80 fg Rgb(88, 88, 88)
+| ⢎⠶⡰  Settings   / filter · ? details · esc back
+  ~ 1..2 fg Rgb(130, 130, 130); 2..3 fg Rgb(86, 156, 214); 3..4 fg Rgb(130, 130, 130); 6..14 fg Rgb(212, 212, 212); 17..18 fg Rgb(166, 166, 166); 18..28 fg Rgb(117, 117, 117); 28..29 fg Rgb(166, 166, 166); 29..40 fg Rgb(117, 117, 117); 40..43 fg Rgb(166, 166, 166); 43..48 fg Rgb(117, 117, 117)

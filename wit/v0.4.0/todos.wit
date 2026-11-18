@@ -1,0 +1,8 @@
+package wisp:plugin@0.4.0;
+
+interface todos {
+  use wisp:plugin/call@0.1.0.{call-context};
+  use wisp:plugin/todos@0.1.0.{todo-status};
+  record todo { text: string, status: todo-status, section: option<string> }
+  replace: func(items: list<todo>, ctx: borrow<call-context>) -> result<_, string>;
+}

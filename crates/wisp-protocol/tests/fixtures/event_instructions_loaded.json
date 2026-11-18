@@ -1,0 +1,54 @@
+{
+  "type": "instructions_loaded",
+  "turn": null,
+  "chosen": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "imports": [
+    {
+      "scope": "project",
+      "name": "docs/style.md",
+      "display_path": "~/Projects/Wisp/docs/style.md",
+      "bytes": 9035,
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "imported_by": "AGENTS.md"
+    },
+    {
+      "scope": "project",
+      "name": "~/notes/team-rules.md",
+      "display_path": "~/notes/team-rules.md",
+      "bytes": 9035,
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "imported_by": "AGENTS.md",
+      "external": true
+    }
+  ],
+  "candidates": [
+    {
+      "scope": "project",
+      "display_path": "~/Projects/Wisp/AGENTS.md",
+      "bytes": 9035,
+      "mtime": 1792756800000000000,
+      "sha256": "abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "scope": "default",
+      "display_path": "~/.config/wisp/AGENTS.md"
+    }
+  ],
+  "diagnostics": [
+    {
+      "source": "~/Projects/Wisp/docs/gone.md",
+      "kind": "import_missing",
+      "message": "~/Projects/Wisp/docs/gone.md, imported by AGENTS.md, doesn't exist; the import was skipped."
+    },
+    {
+      "kind": "large",
+      "message": "instructions are large: about 20,000 tokens, about $0.004 per request to read and $0.16 per cache write (claude-opus-5-5)"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 23,
+  "at": "2026-10-25T12:00:00Z",
+  "type": "compaction_failed",
+  "turn": 4,
+  "trigger": "auto",
+  "engine": "native",
+  "kind": {
+    "error": "overloaded"
+  },
+  "message": "overloaded",
+  "usage": {
+    "input_tokens": 2000,
+    "output_tokens": 900,
+    "cache_read_input_tokens": 88000,
+    "cache_creation_input_tokens": 0,
+    "cache_creation_5m_input_tokens": null,
+    "cache_creation_1h_input_tokens": null
+  },
+  "cost_usd": 0.01,
+  "requested_by": "aa/ask"
+}

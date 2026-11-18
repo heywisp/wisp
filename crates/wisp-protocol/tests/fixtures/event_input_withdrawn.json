@@ -1,0 +1,7 @@
+{
+  "type": "input_withdrawn",
+  "ids": [
+    "tui-6"
+  ],
+  "by": "turn_failed"
+}

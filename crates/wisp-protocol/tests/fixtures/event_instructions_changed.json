@@ -1,0 +1,48 @@
+{
+  "type": "instructions_changed",
+  "turn": 2,
+  "from": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "to": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "changed": [
+    {
+      "display_path": "~/Projects/Wisp/AGENTS.md",
+      "old_sha256": "abababababababababababababababababababababababababababababababab",
+      "new_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+    }
+  ],
+  "chosen": {
+    "scope": "project",
+    "name": "AGENTS.md",
+    "display_path": "~/Projects/Wisp/AGENTS.md",
+    "bytes": 9035,
+    "sha256": "abababababababababababababababababababababababababababababababab"
+  },
+  "imports": [],
+  "candidates": [
+    {
+      "scope": "project",
+      "display_path": "~/Projects/Wisp/AGENTS.md",
+      "bytes": 9035,
+      "mtime": 1792756800000000000,
+      "sha256": "abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "scope": "default",
+      "display_path": "~/.config/wisp/AGENTS.md"
+    }
+  ],
+  "sent": true,
+  "diagnostics": []
+}

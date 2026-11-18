@@ -1,0 +1,65 @@
+{"type":"turn_started","turn":1}
+{"type":"step_started","step":1}
+{"type":"input_accepted","id":"in-1","mode":"queue","text":"Work through the todo list","held":false}
+{"type":"input_delivered","ids":["in-1"],"step":1}
+{"type":"block_started","index":0,"kind":{"type":"text"}}
+{"type":"text_delta","index":0,"text":"I'll work through the list."}
+{"type":"block_stopped","index":0}
+{"type":"block_started","index":1,"kind":{"type":"tool_use","name":"shell","writing":"a command"}}
+{"type":"block_stopped","index":1}
+{"type":"tool_call_requested","step":1,"block":1,"call_id":"toolu_test","tool":"shell","input":{"command":"cargo test -p wisp-core","description":"Run the wisp-core tests"},"display":{"action":{"type":"run"},"target":"cargo test -p wisp-core","output":{"type":"text"},"title":"Run the wisp-core tests"}}
+{"type":"block_started","index":2,"kind":{"type":"tool_use","name":"shell","writing":"a command"}}
+{"type":"block_stopped","index":2}
+{"type":"tool_call_requested","step":1,"block":2,"call_id":"toolu_fmt","tool":"shell","input":{"command":"cargo fmt --all --check"},"display":{"action":{"type":"run"},"target":"cargo fmt --all --check","output":{"type":"text"}}}
+{"type":"block_started","index":3,"kind":{"type":"tool_use","name":"shell","writing":"a command"}}
+{"type":"block_stopped","index":3}
+{"type":"tool_call_requested","step":1,"block":3,"call_id":"toolu_lint","tool":"shell","input":{"command":"cargo clippy --workspace","description":"Lint the workspace"},"display":{"action":{"type":"run"},"target":"cargo clippy --workspace","output":{"type":"text"},"title":"Lint the workspace"}}
+{"type":"block_started","index":4,"kind":{"type":"tool_use","name":"shell","writing":"a command"}}
+{"type":"block_stopped","index":4}
+{"type":"tool_call_requested","step":1,"block":4,"call_id":"toolu_dev","tool":"shell","input":{"command":"npm run dev","description":"Start the dev server","run_in_background":true},"display":{"action":{"type":"run"},"target":"npm run dev","output":{"type":"text"},"title":"Start the dev server"}}
+{"type":"block_started","index":5,"kind":{"type":"tool_use","name":"shell","writing":"a command"}}
+{"type":"block_stopped","index":5}
+{"type":"tool_call_requested","step":1,"block":5,"call_id":"toolu_psql","tool":"shell","input":{"command":"psql -U app notes","tty":true,"run_in_background":true},"display":{"action":{"type":"run"},"target":"psql -U app notes","output":{"type":"text"}}}
+{"type":"spend_changed","total":{"usd":0.012,"plan_usd":0.0}}
+{"type":"step_ended","step":1,"usage":{"input_tokens":900,"output_tokens":120,"cache_read_input_tokens":0,"cache_creation_input_tokens":2048,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2048},"cost_usd":0.012,"lower_bound":false}
+{"type":"tool_call_started","call_id":"toolu_test","cwd":"~/demo"}
+{"type":"tool_call_finished","call_id":"toolu_test","outcome":{"status":"completed","is_error":false,"exit":{"type":"code","code":0}},"output":{"tail":"test result: ok. 213 passed\n","bytes":28,"lines":1,"file":null,"file_problem":null,"inlined":true},"facts":[{"type":"exit","code":0}],"state":null,"duration_ms":12000}
+{"type":"tool_call_started","call_id":"toolu_fmt","cwd":"~/demo"}
+{"type":"tool_call_finished","call_id":"toolu_fmt","outcome":{"status":"completed","is_error":false,"exit":{"type":"code","code":0}},"output":{"tail":"","bytes":0,"lines":0,"file":null,"file_problem":null,"inlined":true},"facts":[{"type":"exit","code":0}],"state":null,"duration_ms":800}
+{"type":"tool_call_started","call_id":"toolu_lint","cwd":"~/demo"}
+{"type":"tool_call_finished","call_id":"toolu_lint","outcome":{"status":"completed","is_error":true,"exit":{"type":"code","code":101}},"output":{"tail":"error: unused variable `key`\n","bytes":29,"lines":1,"file":null,"file_problem":null,"inlined":true},"facts":[{"type":"exit","code":101}],"state":null,"duration_ms":2000}
+{"type":"tool_call_started","call_id":"toolu_dev","cwd":"~/demo"}
+{"type":"process_started","id":27,"call_id":"toolu_dev","target":"npm run dev","tty":false,"stdin":true,"file":"/tmp/wisp-demo/0027-process.out","reason":"started"}
+{"type":"tool_call_finished","call_id":"toolu_dev","outcome":{"status":"backgrounded","reason":"started"},"output":{"tail":"> vite\n","bytes":7,"lines":1,"file":null,"file_problem":null,"inlined":true},"facts":[{"type":"process","id":27}],"state":null,"duration_ms":1500,"process":27}
+{"type":"tool_call_started","call_id":"toolu_psql","cwd":"~/demo"}
+{"type":"process_started","id":31,"call_id":"toolu_psql","target":"psql -U app notes","tty":true,"stdin":true,"size":{"cols":80,"rows":24},"reason":"started"}
+{"type":"tool_call_finished","call_id":"toolu_psql","outcome":{"status":"backgrounded","reason":"started"},"output":{"tail":"notes=> ","bytes":8,"lines":1,"file":null,"file_problem":null,"inlined":true},"facts":[{"type":"process","id":31}],"state":null,"duration_ms":1500,"process":31}
+{"type":"step_started","step":2}
+{"type":"block_started","index":0,"kind":{"type":"tool_use","name":"terminal","writing":"input for a process"}}
+{"type":"block_stopped","index":0}
+{"type":"tool_call_requested","step":2,"block":0,"call_id":"toolu_echoed","tool":"terminal","input":{"id":31,"input":"select count(*) from notes;","keys":["Enter"]},"display":{"action":{"type":"input"},"target":"31","output":{"type":"text"},"view":{"type":"process","id":31,"text":"select count(*) from notes;","keys":["Enter"]}}}
+{"type":"block_started","index":1,"kind":{"type":"tool_use","name":"terminal","writing":"input for a process"}}
+{"type":"block_stopped","index":1}
+{"type":"tool_call_requested","step":2,"block":1,"call_id":"toolu_hidden","tool":"terminal","input":{"id":31,"input":"NOT-ECHOED-SECRET","keys":["Enter"]},"display":{"action":{"type":"input"},"target":"31","output":{"type":"text"},"view":{"type":"process","id":31,"text":"NOT-ECHOED-SECRET","keys":["Enter"]}}}
+{"type":"block_started","index":2,"kind":{"type":"tool_use","name":"terminal","writing":"input for a process"}}
+{"type":"block_stopped","index":2}
+{"type":"tool_call_requested","step":2,"block":2,"call_id":"toolu_refused","tool":"terminal","input":{"id":31,"input":"REFUSED-SECRET","keys":["Bogus"]},"display":{"action":{"type":"input"},"target":"31","output":{"type":"text"},"view":{"type":"process","id":31}}}
+{"type":"block_started","index":3,"kind":{"type":"tool_use","name":"terminal","writing":"input for a process"}}
+{"type":"block_stopped","index":3}
+{"type":"tool_call_requested","step":2,"block":3,"call_id":"toolu_old","tool":"terminal","input":{"input":"OLD-FORMAT-SECRET-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","action":"write"},"display":{"action":{"type":"other","name":"terminal"},"target":"{\"input\": \"OLD-FORMAT-SECRET-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…","output":{"type":"text"}}}
+{"type":"block_started","index":4,"kind":{"type":"tool_use","name":"shell","writing":"a command"}}
+{"type":"block_stopped","index":4}
+{"type":"tool_call_requested","step":2,"block":4,"call_id":"toolu_doc","tool":"shell","input":{"command":"cargo doc --no-deps","description":"Build the docs"},"display":{"action":{"type":"run"},"target":"cargo doc --no-deps","output":{"type":"text"},"title":"Build the docs"}}
+{"type":"spend_changed","total":{"usd":0.02,"plan_usd":0.0}}
+{"type":"step_ended","step":2,"usage":{"input_tokens":900,"output_tokens":120,"cache_read_input_tokens":0,"cache_creation_input_tokens":2048,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2048},"cost_usd":0.008,"lower_bound":false}
+{"type":"tool_call_started","call_id":"toolu_echoed","cwd":"~/demo"}
+{"type":"tool_call_finished","call_id":"toolu_echoed","outcome":{"status":"completed","is_error":false,"exit":null},"output":{"tail":"","bytes":0,"lines":0,"file":null,"file_problem":null,"inlined":true},"facts":[],"state":null,"duration_ms":1000,"typed":{"echoed":true,"unsent":false,"signalled":false}}
+{"type":"tool_call_started","call_id":"toolu_hidden","cwd":"~/demo"}
+{"type":"tool_call_finished","call_id":"toolu_hidden","outcome":{"status":"completed","is_error":false,"exit":null},"output":{"tail":"","bytes":0,"lines":0,"file":null,"file_problem":null,"inlined":true},"facts":[],"state":null,"duration_ms":1000,"typed":{"echoed":false,"unsent":false,"signalled":false}}
+{"type":"tool_call_started","call_id":"toolu_refused","cwd":"~/demo"}
+{"type":"tool_call_finished","call_id":"toolu_refused","outcome":{"status":"invalid_input","message":"unknown key: Bogus"},"output":{"tail":"","bytes":0,"lines":0,"file":null,"file_problem":null,"inlined":true},"facts":[],"state":null,"duration_ms":1000}
+{"type":"tool_call_started","call_id":"toolu_old","cwd":"~/demo"}
+{"type":"tool_call_finished","call_id":"toolu_old","outcome":{"status":"invalid_input","message":"`id` is required to write to a process"},"output":{"tail":"","bytes":0,"lines":0,"file":null,"file_problem":null,"inlined":true},"facts":[],"state":null,"duration_ms":1000}
+{"type":"turn_ended","outcome":{"status":"cancelled","usage":{"input_tokens":900,"output_tokens":120,"cache_read_input_tokens":0,"cache_creation_input_tokens":2048,"cache_creation_5m_input_tokens":0,"cache_creation_1h_input_tokens":2048},"cost":null,"committed_steps":2},"stats":{"started_at":"2026-10-23T09:00:00Z","first_byte_ms":700,"duration_ms":24000,"retries":0,"previous_prompt_tokens":null}}
+{"type":"process_restored","id":27,"call_id":"toolu_dev","target":"npm run dev","tty":false,"end":{"type":"lost","reason":"stopped_at_resume"},"duration_ms":600000}
+{"type":"process_restored","id":31,"call_id":"toolu_psql","target":"psql -U app notes","tty":true,"end":{"type":"exited","exit":{"type":"code","code":0}},"duration_ms":90000}

@@ -1,0 +1,31 @@
+{
+  "type": "agent_spawned",
+  "request": 7,
+  "agent": {
+    "path": "/review/planner",
+    "name": "planner",
+    "session_id": "s-child",
+    "parent": "/review",
+    "preset": "reviewer",
+    "model": "claude-opus-4-1",
+    "effort": "high",
+    "depth": 2,
+    "state": {
+      "state": "running"
+    },
+    "activity": {
+      "type": "streaming"
+    },
+    "spent_usd": 0.0,
+    "cwd": "~/Projects/Wisp-worktrees/review"
+  },
+  "session_id": "s-child",
+  "config": {
+    "preset": "reviewer",
+    "tools_off": [
+      "show_diff"
+    ],
+    "spawn": false,
+    "instructions": "~/roles/reviewer/AGENTS.md"
+  }
+}

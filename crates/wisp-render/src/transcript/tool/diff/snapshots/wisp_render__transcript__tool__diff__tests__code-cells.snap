@@ -1,0 +1,286 @@
+---
+source: crates/wisp-render/src/transcript/tool/diff/tests.rs
+expression: out
+---
+--- titled, 120, unicode ---
+ ✓ Load the config                                                                                              5 lines
+   ╭─ rust ──────────────────────────────────────────────────────────────────────────────────────────────────── copy ─╮
+   │ fn main() -> Result<(), Error> {                                                                                 │
+   │     let config = Config::load("wisp.toml")?;                                                                     │
+   │     println!("{}", config.name);                                                                                 │
+   │     Ok(())                                                                                                       │
+   │ }                                                                                                                │
+   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+--- titled, 120, unicode, copying ---
+ ✓ Load the config                                                                                              5 lines
+   ╭─ rust ───────────────────────────────────────────────────────────────────────────────────────────────── copying ─╮
+   │ fn main() -> Result<(), Error> {                                                                                 │
+   │     let config = Config::load("wisp.toml")?;                                                                     │
+   │     println!("{}", config.name);                                                                                 │
+   │     Ok(())                                                                                                       │
+   │ }                                                                                                                │
+   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+--- titled, 120, ascii, copying ---
+ + Load the config                                                                                              5 lines
+   +- rust ------------------------------------------------------------------------------------------------- copying -+
+   | fn main() -> Result<(), Error> {                                                                                 |
+   |     let config = Config::load("wisp.toml")?;                                                                     |
+   |     println!("{}", config.name);                                                                                 |
+   |     Ok(())                                                                                                       |
+   | }                                                                                                                |
+   +------------------------------------------------------------------------------------------------------------------+
+--- untitled with a wide line, 120, unicode ---
+ ✓ Showed code                                                                                                  2 lines
+   ╭─ sh ────────────────────────────────────────────────────────────────────────────────────────────────────── copy ─╮
+   │ cargo build --release                                                                                            │
+   │ echo "a placeholder line long enough to wrap at every width: forty columns, eighty columns and one hundred and t │
+   │ wenty columns of screen"                                                                                         │
+   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+--- no language, 120, unicode ---
+ ✓ Showed code                                                                                                   1 line
+   ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────── copy ─╮
+   │ cargo test -p wisp-core                                                                                          │
+   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+--- titled, 80, unicode ---
+ ✓ Load the config                                                      5 lines
+   ╭─ rust ──────────────────────────────────────────────────────────── copy ─╮
+   │ fn main() -> Result<(), Error> {                                         │
+   │     let config = Config::load("wisp.toml")?;                             │
+   │     println!("{}", config.name);                                         │
+   │     Ok(())                                                               │
+   │ }                                                                        │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- titled, 80, unicode, copying ---
+ ✓ Load the config                                                      5 lines
+   ╭─ rust ───────────────────────────────────────────────────────── copying ─╮
+   │ fn main() -> Result<(), Error> {                                         │
+   │     let config = Config::load("wisp.toml")?;                             │
+   │     println!("{}", config.name);                                         │
+   │     Ok(())                                                               │
+   │ }                                                                        │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- titled, 80, ascii, copying ---
+ + Load the config                                                      5 lines
+   +- rust --------------------------------------------------------- copying -+
+   | fn main() -> Result<(), Error> {                                         |
+   |     let config = Config::load("wisp.toml")?;                             |
+   |     println!("{}", config.name);                                         |
+   |     Ok(())                                                               |
+   | }                                                                        |
+   +--------------------------------------------------------------------------+
+--- untitled with a wide line, 80, unicode ---
+ ✓ Showed code                                                          2 lines
+   ╭─ sh ────────────────────────────────────────────────────────────── copy ─╮
+   │ cargo build --release                                                    │
+   │ echo "a placeholder line long enough to wrap at every width: forty colum │
+   │ ns, eighty columns and one hundred and twenty columns of screen"         │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- no language, 80, unicode ---
+ ✓ Showed code                                                           1 line
+   ╭─────────────────────────────────────────────────────────────────── copy ─╮
+   │ cargo test -p wisp-core                                                  │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- titled, 40, unicode ---
+ ✓ Load the config              5 lines
+   ╭─ rust ──────────────────── copy ─╮
+   │ fn main() -> Result<(), Error> { │
+   │     let config = Config::load("w │
+   │ isp.toml")?;                     │
+   │     println!("{}", config.name); │
+   │     Ok(())                       │
+   │ }                                │
+   ╰──────────────────────────────────╯
+--- titled, 40, unicode, copying ---
+ ✓ Load the config              5 lines
+   ╭─ rust ───────────────── copying ─╮
+   │ fn main() -> Result<(), Error> { │
+   │     let config = Config::load("w │
+   │ isp.toml")?;                     │
+   │     println!("{}", config.name); │
+   │     Ok(())                       │
+   │ }                                │
+   ╰──────────────────────────────────╯
+--- titled, 40, ascii, copying ---
+ + Load the config              5 lines
+   +- rust ----------------- copying -+
+   | fn main() -> Result<(), Error> { |
+   |     let config = Config::load("w |
+   | isp.toml")?;                     |
+   |     println!("{}", config.name); |
+   |     Ok(())                       |
+   | }                                |
+   +----------------------------------+
+--- untitled with a wide line, 40, unicode ---
+ ✓ Showed code                  2 lines
+   ╭─ sh ────────────────────── copy ─╮
+   │ cargo build --release            │
+   │ echo "a placeholder line long en │
+   │ ough to wrap at every width: for │
+   │ ty columns, eighty columns and o │
+   │ ne hundred and twenty columns of │
+   │  screen"                         │
+   ╰──────────────────────────────────╯
+--- no language, 40, unicode ---
+ ✓ Showed code                   1 line
+   ╭─────────────────────────── copy ─╮
+   │ cargo test -p wisp-core          │
+   ╰──────────────────────────────────╯
+--- folded, 80, unicode ---
+ ✓ Set up the steps                                                    45 lines
+   ╭─ rust ──────────────────────────────────────────────────────────── copy ─╮
+   │ fn setup() {                                                             │
+   │     step(1);                                                             │
+   │     step(2);                                                             │
+   │     step(3);                                                             │
+   │     step(4);                                                             │
+   │     step(5);                                                             │
+   │     step(6);                                                             │
+   │     step(7);                                                             │
+   │     step(8);                                                             │
+   │     step(9);                                                             │
+   │     step(10);                                                            │
+   │     step(11);                                                            │
+   │     step(12);                                                            │
+   │     step(13);                                                            │
+   │     step(14);                                                            │
+   │     step(15);                                                            │
+   │     step(16);                                                            │
+   │     step(17);                                                            │
+   │     step(18);                                                            │
+   ╰─ … 26 more lines ▸ ──────────────────────────────────────────────────────╯
+--- a cut language, 40, unicode ---
+ ✓ Showed code                   1 line
+   ╭─ placeholder-language-w… ─ copy ─╮
+   │ cargo test -p wisp-core          │
+   ╰──────────────────────────────────╯
+--- titled, 40, ascii ---
+ + Load the config              5 lines
+   +- rust -------------------- copy -+
+   | fn main() -> Result<(), Error> { |
+   |     let config = Config::load("w |
+   | isp.toml")?;                     |
+   |     println!("{}", config.name); |
+   |     Ok(())                       |
+   | }                                |
+   +----------------------------------+
+--- untitled with a wide line, 40, ascii ---
+ + Showed code                  2 lines
+   +- sh ---------------------- copy -+
+   | cargo build --release            |
+   | echo "a placeholder line long en |
+   | ough to wrap at every width: for |
+   | ty columns, eighty columns and o |
+   | ne hundred and twenty columns of |
+   |  screen"                         |
+   +----------------------------------+
+--- titled, 80, unicode, ctrl-o ---
+ ✓ Load the config                                                      5 lines
+   ╭─ rust ───────────────────────────────────────────────────────────────────╮
+   │ fn main() -> Result<(), Error> {                                         │
+   │     let config = Config::load("wisp.toml")?;                             │
+   │     println!("{}", config.name);                                         │
+   │     Ok(())                                                               │
+   │ }                                                                        │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- titled, 80, unicode, mouse off ---
+ ✓ Load the config                                                      5 lines
+   ╭─ rust ───────────────────────────────────────────────────────────────────╮
+   │ fn main() -> Result<(), Error> {                                         │
+   │     let config = Config::load("wisp.toml")?;                             │
+   │     println!("{}", config.name);                                         │
+   │     Ok(())                                                               │
+   │ }                                                                        │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- no language, 80, unicode, ctrl-o ---
+ ✓ Showed code                                                           1 line
+   ╭──────────────────────────────────────────────────────────────────────────╮
+   │ cargo test -p wisp-core                                                  │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- titled, 80, unicode, copied ---
+ ✓ Load the config                                                      5 lines
+   ╭─ rust ────────────────────────────────────────────────────────── copied ─╮
+   │ fn main() -> Result<(), Error> {                                         │
+   │     let config = Config::load("wisp.toml")?;                             │
+   │     println!("{}", config.name);                                         │
+   │     Ok(())                                                               │
+   │ }                                                                        │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- titled, 80, unicode, sent ---
+ ✓ Load the config                                                      5 lines
+   ╭─ rust ──────────────────────────────────────────────────────────── sent ─╮
+   │ fn main() -> Result<(), Error> {                                         │
+   │     let config = Config::load("wisp.toml")?;                             │
+   │     println!("{}", config.name);                                         │
+   │     Ok(())                                                               │
+   │ }                                                                        │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- titled, 80, unicode, not copied ---
+ ✓ Load the config                                                      5 lines
+   ╭─ rust ────────────────────────────────────────────────────── not copied ─╮
+   │ fn main() -> Result<(), Error> {                                         │
+   │     let config = Config::load("wisp.toml")?;                             │
+   │     println!("{}", config.name);                                         │
+   │     Ok(())                                                               │
+   │ }                                                                        │
+   ╰──────────────────────────────────────────────────────────────────────────╯
+--- a cut language, 40, unicode, copied ---
+ ✓ Showed code                   1 line
+   ╭─ placeholder-language… ─ copied ─╮
+   │ cargo test -p wisp-core          │
+   ╰──────────────────────────────────╯
+--- a cut language, 40, unicode, not copied ---
+ ✓ Showed code                   1 line
+   ╭─ placeholder-lang… ─ not copied ─╮
+   │ cargo test -p wisp-core          │
+   ╰──────────────────────────────────╯
+--- titled, 40, ascii, copied ---
+ + Load the config              5 lines
+   +- rust ------------------ copied -+
+   | fn main() -> Result<(), Error> { |
+   |     let config = Config::load("w |
+   | isp.toml")?;                     |
+   |     println!("{}", config.name); |
+   |     Ok(())                       |
+   | }                                |
+   +----------------------------------+
+--- a cut language, 40, ascii, not copied ---
+ + Showed code                   1 line
+   +- placeholder-la... - not copied -+
+   | cargo test -p wisp-core          |
+   +----------------------------------+
+--- titled, 80, unicode, truecolor ---
+ [#89D185|✓] [#D4D4D4|Load the config]                                                      [#A6A6A6|5 lines]
+   [#585858|╭─ ][#757575|rust][#585858| ──────────────────────────────────────────────────────────── ][#A6A6A6|copy][#585858| ─╮]
+   [#585858|│] [#569CD6|fn] [#DCDCAA|main]() -> [#4EC9B0|Result]<(), Error> {                                         [#585858|│]
+   [#585858|│]     [#569CD6|let] config = Config::load([#CE9178|"wisp.toml"])?;                             [#585858|│]
+   [#585858|│]     [#DCDCAA|println!]([#CE9178|"][#9CDCFE|{}][#CE9178|"], config.name);                                         [#585858|│]
+   [#585858|│]     [#4EC9B0|Ok](())                                                               [#585858|│]
+   [#585858|│] }                                                                        [#585858|│]
+   [#585858|╰──────────────────────────────────────────────────────────────────────────╯]
+--- titled, 80, unicode, truecolor, copying ---
+ [#89D185|✓] [#D4D4D4|Load the config]                                                      [#A6A6A6|5 lines]
+   [#585858|╭─ ][#757575|rust][#585858| ───────────────────────────────────────────────────────── ][#A6A6A6|copying][#585858| ─╮]
+   [#585858|│] [#569CD6|fn] [#DCDCAA|main]() -> [#4EC9B0|Result]<(), Error> {                                         [#585858|│]
+   [#585858|│]     [#569CD6|let] config = Config::load([#CE9178|"wisp.toml"])?;                             [#585858|│]
+   [#585858|│]     [#DCDCAA|println!]([#CE9178|"][#9CDCFE|{}][#CE9178|"], config.name);                                         [#585858|│]
+   [#585858|│]     [#4EC9B0|Ok](())                                                               [#585858|│]
+   [#585858|│] }                                                                        [#585858|│]
+   [#585858|╰──────────────────────────────────────────────────────────────────────────╯]
+--- titled, 80, unicode, truecolor, copied ---
+ [#89D185|✓] [#D4D4D4|Load the config]                                                      [#A6A6A6|5 lines]
+   [#585858|╭─ ][#757575|rust][#585858| ────────────────────────────────────────────────────────── ][#89D185|copied][#585858| ─╮]
+   [#585858|│] [#569CD6|fn] [#DCDCAA|main]() -> [#4EC9B0|Result]<(), Error> {                                         [#585858|│]
+   [#585858|│]     [#569CD6|let] config = Config::load([#CE9178|"wisp.toml"])?;                             [#585858|│]
+   [#585858|│]     [#DCDCAA|println!]([#CE9178|"][#9CDCFE|{}][#CE9178|"], config.name);                                         [#585858|│]
+   [#585858|│]     [#4EC9B0|Ok](())                                                               [#585858|│]
+   [#585858|│] }                                                                        [#585858|│]
+   [#585858|╰──────────────────────────────────────────────────────────────────────────╯]
+--- titled, 80, unicode, truecolor, not copied ---
+ [#89D185|✓] [#D4D4D4|Load the config]                                                      [#A6A6A6|5 lines]
+   [#585858|╭─ ][#757575|rust][#585858| ────────────────────────────────────────────────────── ][#F48771|not copied][#585858| ─╮]
+   [#585858|│] [#569CD6|fn] [#DCDCAA|main]() -> [#4EC9B0|Result]<(), Error> {                                         [#585858|│]
+   [#585858|│]     [#569CD6|let] config = Config::load([#CE9178|"wisp.toml"])?;                             [#585858|│]
+   [#585858|│]     [#DCDCAA|println!]([#CE9178|"][#9CDCFE|{}][#CE9178|"], config.name);                                         [#585858|│]
+   [#585858|│]     [#4EC9B0|Ok](())                                                               [#585858|│]
+   [#585858|│] }                                                                        [#585858|│]
+   [#585858|╰──────────────────────────────────────────────────────────────────────────╯]

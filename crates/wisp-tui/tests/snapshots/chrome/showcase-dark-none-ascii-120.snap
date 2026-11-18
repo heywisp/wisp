@@ -1,0 +1,41 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== answering
+|+--------------------------------------------------------------------------------------------------+
+||                                                                                                  |
+||    .-''  .   wisp                                                                          0.1.0 |
+  ~ 15..19 bold
+||   :  **  :   Your own AI. With a computer of its own.                                            |
+  ~ 28..55 bold
+||    '-..-'    sonnet-5-5 low                                                                      |
+||              ~/Projects/Wisp - Claude API                                                        |
+||                                                                                                  |
+|+--------------------------------------------------------------------------------------------------+
+|  enter send - ctrl-j new line - /help - /model switch model
+|(22 blank rows)
+| > Make cache misses name their cause
+|
+| : Thought for 4 s >
+| : Placeholder thought seven.
+  ~ 3..29 italic
+| : Placeholder 8th.
+  ~ 3..19 italic
+| : Placeholder 9.
+  ~ 3..17 italic
+|
+| * I'll start with how request prefixes are built:
+|
+|   let key = Fingerprint::of(req)?;                                                                                rust
+|
+|   Misses now say which part of the prefix changed: the system prompt, the tools or the _
+|+----------------------------------------------------------------------------------------------------------------------+
+||                                                                                                                      |
+|+----------------------------------------------------------------------------------------------------------------------+
+|| > Ask anything, or type / for commands                                                                               |
+  ~ 4..5 inverse
+|+----------------------------------------------------------------------------------------------------------------------+
+|| (*)  Kindling... 4s - v ~45 tokens - esc to stop                                         Claude API   sonnet-5-5 low |
+  ~ 104..114 bold
+|+----------------------------------------------------------------------------------------------------------------------+

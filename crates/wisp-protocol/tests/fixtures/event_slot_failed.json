@@ -1,0 +1,9 @@
+{
+  "type": "slot_failed",
+  "section": "context/window",
+  "failure": {
+    "type": "failed",
+    "message": "no fill yet"
+  },
+  "parked": false
+}

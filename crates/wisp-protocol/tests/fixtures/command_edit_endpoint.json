@@ -1,0 +1,14 @@
+{
+  "type": "edit_endpoint",
+  "request": 21,
+  "name": "manifest",
+  "edit": {
+    "auth": "bearer",
+    "url": {
+      "set": "https://gw.example.com/v1"
+    },
+    "key": "sk-test-not-a-real-key"
+  },
+  "store": "file",
+  "check": true
+}

@@ -1,0 +1,10 @@
+{
+  "type": "tools_changed",
+  "added": [
+    "read"
+  ],
+  "removed": [
+    "bash"
+  ],
+  "via": "inline"
+}

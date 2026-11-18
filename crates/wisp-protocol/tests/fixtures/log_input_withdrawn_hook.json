@@ -1,0 +1,16 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 46,
+  "at": "2026-10-28T12:00:00Z",
+  "type": "input_withdrawn",
+  "turn": null,
+  "ids": [
+    "tui-4"
+  ],
+  "by": {
+    "hook": {
+      "hook": "acme/guard",
+      "reason": "that looks like a key"
+    }
+  }
+}

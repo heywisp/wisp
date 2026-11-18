@@ -1,0 +1,45 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 11,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "settings_changed",
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "cache": {
+    "type": "rebuilt",
+    "reason": "request_option_change"
+  },
+  "endpoint_name": "env",
+  "endpoint": "https://api.anthropic.com",
+  "credential_source": "environment",
+  "changes": [
+    {
+      "target": {
+        "name": "cache_ttl"
+      },
+      "value": {
+        "kind": "text",
+        "text": "1h"
+      },
+      "layer": "session",
+      "when": "next_turn",
+      "unset": true
+    },
+    {
+      "target": {
+        "path": "models.\"claude-opus-5-5\".context_window"
+      },
+      "value": {
+        "kind": "tokens",
+        "text": "200000"
+      },
+      "layer": "session",
+      "when": "next_turn",
+      "saved": {
+        "path_display": "~/.config/wisp/config.toml",
+        "line": 4
+      },
+      "by": "agent"
+    }
+  ]
+}

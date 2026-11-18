@@ -1,0 +1,14 @@
+{
+  "session_id": "s-root",
+  "agent": "/review",
+  "depth": 1,
+  "config": {
+    "report": "summary"
+  },
+  "todos": [
+    {
+      "text": "Read the plan",
+      "status": "pending"
+    }
+  ]
+}

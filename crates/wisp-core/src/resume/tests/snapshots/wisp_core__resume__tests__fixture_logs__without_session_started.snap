@@ -1,0 +1,14 @@
+---
+source: crates/wisp-core/src/resume/tests/fixture_logs.rs
+expression: "(LoggedSession::read(headless), LoggedSession::costs(headless))"
+---
+(
+    Err(
+        "the log doesn't start with session_started",
+    ),
+    (
+        0.0125,
+        0.0,
+        false,
+    ),
+)

@@ -1,0 +1,19 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+assertion_line: 488
+expression: body
+---
+== reader
+| + Showed crates/wisp-core/src/cache.rs
+  ~ 3..9 bold
+|----------------------------------------
+|        1 +     let part_1 = fingerprin
+|            t.segment(1);
+|        2 +     let part_2 = fingerprin
+|            t.segment(2);
+|        3 +     let part_3 = fingerprin
+|            t.segment(3);
+|        4 +     let part_4 = fingerprin
+|            t.segment(4);
+|        5 +     let part_5 = fingerprin
+|   / search - 1-9/80 - q esc back

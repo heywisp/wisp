@@ -1,0 +1,10 @@
+id = "board"
+version = "0.1.0"
+world = "0.2.0"
+summary = "Boards of columns and cards that a tree of agents shares"
+
+[[tools]]
+name = "board_read"
+
+[[tools]]
+name = "board_write"

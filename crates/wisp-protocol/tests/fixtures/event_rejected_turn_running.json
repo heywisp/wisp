@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "reason": "/compact runs between turns. Send it after this one.",
+  "kind": "turn_running",
+  "request": 4
+}

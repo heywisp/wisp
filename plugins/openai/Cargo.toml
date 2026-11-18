@@ -1,0 +1,14 @@
+[package]
+name = "wisp-plugin-openai"
+description = "Your ChatGPT subscription and OpenAI API accounts, as a bundled Wisp plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wisp-plugin-api.workspace = true

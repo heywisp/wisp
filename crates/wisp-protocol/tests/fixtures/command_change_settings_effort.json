@@ -1,0 +1,15 @@
+{
+  "type": "change_settings",
+  "request": 2,
+  "changes": [
+    {
+      "target": {
+        "name": "effort"
+      },
+      "value": {
+        "kind": "text",
+        "text": "xhigh"
+      }
+    }
+  ]
+}

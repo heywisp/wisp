@@ -1,0 +1,22 @@
+---
+source: crates/wisp-tui/tests/app/scenes.rs
+expression: body
+---
+== reader
+| ✓ Showed crates/wisp-core/src/cache.rs
+  ~ 3..9 bold
+|────────────────────────────────────────
+|        1   pub fn ttl() -> Duration {
+|        2 -     Duration::from_secs(300
+  ~ 36..39 inverse
+|            )
+|        2 +     Duration::from_secs(360
+  ~ 36..39 bold underline inverse
+|            0)
+  ~ 12..13 bold underline inverse
+|        3   }
+|        4 + // 3600 seconds is one hour
+  ~ 12..39 italic
+|        5 +     let part_1 = fingerprin
+|            t.segment(1);
+|   /3600                         1 of 2

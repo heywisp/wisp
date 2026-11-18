@@ -1,0 +1,6 @@
+{
+  "type": "rejected",
+  "reason": "nothing to retry",
+  "kind": "not_retryable",
+  "request": 7
+}

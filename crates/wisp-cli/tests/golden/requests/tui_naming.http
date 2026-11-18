@@ -1,0 +1,8 @@
+### request 1
+POST /v1/messages HTTP/1.1
+x-api-key: <masked>
+anthropic-version: 2023-06-01
+content-type: application/json
+accept: text/event-stream
+
+{"model":"claude-opus-5-5","max_tokens":1024,"stream":true,"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"low"},"system":[{"type":"text","text":"Reply with only a short name for this chat, 2 to 4 words and at most 20 characters, in the language of the messages below."}],"messages":[{"role":"user","content":[{"type":"text","text":"the named chat\n\na second message\n\na third one"}]}]}

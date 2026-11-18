@@ -1,0 +1,30 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 5,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "tool_call_finished",
+  "turn": 1,
+  "call_id": "toolu_1",
+  "outcome": {
+    "status": "completed",
+    "is_error": false,
+    "exit": {
+      "type": "code",
+      "code": 0
+    }
+  },
+  "output": {
+    "tail": "test result: ok\n",
+    "bytes": 40000,
+    "lines": 812,
+    "file": "/tmp/wisp-s1/0003-bash.out",
+    "file_problem": null,
+    "inlined": false
+  },
+  "facts": [],
+  "state": null,
+  "duration_ms": 1200,
+  "notes": [
+    "Working directory: ~/Projects/Wisp/crates"
+  ]
+}

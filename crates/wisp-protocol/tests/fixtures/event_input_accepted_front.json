@@ -1,0 +1,8 @@
+{
+  "type": "input_accepted",
+  "id": "tui-7",
+  "mode": "steer",
+  "text": "and then run it",
+  "held": false,
+  "front": true
+}

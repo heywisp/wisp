@@ -1,0 +1,41 @@
+{
+  "role": "system",
+  "content": [
+    {
+      "type": "effort",
+      "level": "low",
+      "rendered": true
+    },
+    {
+      "type": "tool_removal",
+      "tool": {
+        "type": "tool_reference",
+        "name": "view_file"
+      }
+    },
+    {
+      "type": "tool_addition",
+      "tool": {
+        "type": "tool_reference",
+        "name": "bash"
+      }
+    },
+    {
+      "type": "tool_addition",
+      "tool": {
+        "type": "tool_definition",
+        "definition": {
+          "description": "Show the user a diff.",
+          "input_schema": {
+            "type": "object"
+          },
+          "name": "show_diff"
+        }
+      }
+    },
+    {
+      "type": "text",
+      "text": "You can show the user a change as a diff with the show_diff tool."
+    }
+  ]
+}
