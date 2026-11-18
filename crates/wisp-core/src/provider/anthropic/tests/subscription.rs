@@ -379,8 +379,8 @@ async fn subscription_http_profile_and_native_sse_are_preserved() {
             "{name}"
         );
     }
-    let identity = data().unwrap();
-    for (name, expected) in &identity.headers {
+    let (identity, version) = data().unwrap();
+    for (name, expected) in &identity.rendered(version).unwrap().headers {
         assert_eq!(
             sent_headers.get(name.as_str()).map(String::as_str),
             Some(expected.to_str().unwrap()),

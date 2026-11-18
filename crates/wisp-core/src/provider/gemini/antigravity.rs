@@ -11,15 +11,15 @@ use toml::de::DeValue;
 use wisp_protocol::{ErrorDetail, ErrorKind, FailurePhase, FailureSource, RetryClass};
 
 use super::super::classify::Carries;
+use super::super::client_version::Version;
 use super::super::{MAX_ERROR_DETAIL_CHARS, ProviderError};
 use crate::endpoints::ProviderKind;
 use crate::models::{ModelTable, RowError, bad_value, integer, table_of};
 
 const MAX_ONBOARD_POLLS: usize = 10;
 pub(super) const DEFAULT_POLL_DELAY: Duration = Duration::from_secs(2);
-const IDENTITY_FIELDS: [&str; 6] = [
+const IDENTITY_FIELDS: [&str; 5] = [
     "base_url",
-    "version",
     "user_agent",
     "default_model",
     "session_id",
@@ -39,8 +39,7 @@ pub(crate) static IDENTITY_ALLOWED: LazyLock<String> = LazyLock::new(|| {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Identity {
     pub base_url: String,
-    pub version: String,
-    pub user_agent: String,
+    user_agent_template: String,
     pub default_model: String,
     pub session_id: Option<String>,
     pub cache_idle_s: Option<u32>,
@@ -51,7 +50,6 @@ impl Identity {
         let bad = || bad_value("providers.gemini.antigravity", &IDENTITY_ALLOWED, at);
         let [
             Some(base_url),
-            Some(version),
             Some(user_agent),
             Some(default_model),
             session_id,
@@ -76,33 +74,7 @@ impl Identity {
         {
             return Err(bad());
         }
-        let version = version
-            .as_str()
-            .filter(|v| {
-                !v.is_empty()
-                    && v.bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
-            })
-            .ok_or_else(bad)?;
-        let template = user_agent
-            .as_str()
-            .filter(|t| t.contains("{version}"))
-            .ok_or_else(bad)?;
-        let rendered = template.replace("{version}", version);
-        if rendered.is_empty()
-            || rendered.contains(['{', '}'])
-            || rendered.bytes().any(|b| b.is_ascii_whitespace())
-        {
-            return Err(bad());
-        }
-        let lower_ua = rendered.to_ascii_lowercase();
-        if FORBIDDEN_UA_TOKENS
-            .iter()
-            .any(|token| lower_ua.contains(token))
-        {
-            return Err(bad());
-        }
-        HeaderValue::from_str(&rendered).map_err(|_| bad())?;
+        let user_agent_template = user_agent.as_str().ok_or_else(bad)?.to_owned();
         let default_model = default_model.as_str().ok_or_else(bad)?;
         wisp_protocol::check_model_id(default_model).map_err(|_| bad())?;
         let session_id = session_id
@@ -128,12 +100,35 @@ impl Identity {
             .transpose()?;
         Ok(Self {
             base_url: base_url.to_owned(),
-            version: version.to_owned(),
-            user_agent: rendered,
+            user_agent_template,
             default_model: default_model.to_owned(),
             session_id,
             cache_idle_s,
         })
+    }
+
+    pub(crate) fn user_agent(&self, version: Version) -> Option<String> {
+        if !self.user_agent_template.contains("{version}") {
+            return None;
+        }
+        let rendered = self
+            .user_agent_template
+            .replace("{version}", &version.to_string());
+        if rendered.is_empty()
+            || rendered.contains(['{', '}'])
+            || rendered.bytes().any(|b| b.is_ascii_whitespace())
+        {
+            return None;
+        }
+        let lower_ua = rendered.to_ascii_lowercase();
+        if FORBIDDEN_UA_TOKENS
+            .iter()
+            .any(|token| lower_ua.contains(token))
+        {
+            return None;
+        }
+        HeaderValue::from_str(&rendered).ok()?;
+        Some(rendered)
     }
 }
 
@@ -228,10 +223,11 @@ pub(super) struct AvailableModelEntry {
 pub(super) fn antigravity_headers(
     call: reqwest::RequestBuilder,
     token: &str,
+    user_agent: &str,
 ) -> reqwest::RequestBuilder {
     call.bearer_auth(token)
         .header("Content-Type", "application/json")
-        .header("User-Agent", super::antigravity_user_agent())
+        .header("User-Agent", user_agent)
 }
 
 fn conversation_id(model: &str, body: &Value) -> Option<String> {
@@ -269,7 +265,7 @@ pub(super) fn tagged(mut body: Value, model: &str, session: Option<&str>) -> Val
     body
 }
 
-pub(super) fn wrap_request(project: &str, model: &str, body: Value) -> Value {
+pub(super) fn wrap_request(project: &str, model: &str, body: Value, user_agent: &str) -> Value {
     let body = tagged(
         body,
         model,
@@ -278,7 +274,7 @@ pub(super) fn wrap_request(project: &str, model: &str, body: Value) -> Value {
     json!({
         "project": project,
         "model": model,
-        "userAgent": super::antigravity_user_agent(),
+        "userAgent": user_agent,
         "requestType": "agent",
         "requestId": format!("agent-{}", uuid::Uuid::new_v4()),
         "request": body,
@@ -325,16 +321,16 @@ fn ineligible_error(tiers: &[IneligibleTier]) -> ProviderError {
 pub(super) const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 async fn post_json_bounded(
-    client: &reqwest::Client,
-    url: &str,
+    call: reqwest::RequestBuilder,
     body: String,
     token: &str,
+    user_agent: &str,
     clock: &dyn crate::clock::Clock,
     timeout: Duration,
     label: &str,
 ) -> Result<Vec<u8>, ProviderError> {
     tokio::time::timeout(timeout, async {
-        let response = antigravity_headers(client.post(url).timeout(timeout).body(body), token)
+        let response = antigravity_headers(call.timeout(timeout).body(body), token, user_agent)
             .send()
             .await
             .map_err(|e| {
@@ -373,6 +369,7 @@ pub(super) async fn resolve_project(
     client: &reqwest::Client,
     base_url: &str,
     token: &str,
+    user_agent: &str,
     clock: &dyn crate::clock::Clock,
     poll_delay: Duration,
     request_timeout: Duration,
@@ -382,10 +379,10 @@ pub(super) async fn resolve_project(
     let load_url = format!("{base}/v1internal:loadCodeAssist");
     let load_body = json!({ "metadata": metadata.clone() }).to_string();
     let bytes = post_json_bounded(
-        client,
-        &load_url,
+        client.post(load_url),
         load_body,
         token,
+        user_agent,
         clock,
         request_timeout,
         "loadCodeAssist",
@@ -414,10 +411,10 @@ pub(super) async fn resolve_project(
             tokio::time::sleep(poll_delay).await;
         }
         let poll_bytes = post_json_bounded(
-            client,
-            &onboard_url,
+            client.post(&onboard_url),
             onboard_body.clone(),
             token,
+            user_agent,
             clock,
             request_timeout,
             "onboardUser",
@@ -447,6 +444,16 @@ pub(super) async fn resolve_project(
             RetryClass::Transient,
         ),
     ))
+}
+
+#[cfg(test)]
+pub(super) fn shipped_user_agent() -> String {
+    let row = ModelTable::shared().provider(ProviderKind::Gemini).unwrap();
+    row.antigravity
+        .as_ref()
+        .unwrap()
+        .user_agent(row.client.unwrap().version)
+        .unwrap()
 }
 
 #[cfg(test)]
@@ -528,7 +535,7 @@ mod tests {
 
     #[test]
     fn wrap_request_and_headers_carry_static_antigravity_product_identity_only() {
-        let ua = super::super::antigravity_user_agent();
+        let ua = shipped_user_agent();
         assert!(ua.starts_with("antigravity/cli/"), "{ua}");
         assert!(!ua.chars().any(char::is_whitespace), "{ua}");
         for forbidden in ["linux", "darwin", "macos", "windows", "x86_64", "aarch64"] {
@@ -536,7 +543,7 @@ mod tests {
         }
 
         let inner = json!({"contents": [{"role": "user", "parts": [{"text": "hi"}]}]});
-        let wrapped = wrap_request("proj-123", "gemini-4-carbon-medium", inner.clone());
+        let wrapped = wrap_request("proj-123", "gemini-4-carbon-medium", inner.clone(), &ua);
         assert_eq!(wrapped["project"], "proj-123");
         assert_eq!(wrapped["model"], "gemini-4-carbon-medium");
         assert_eq!(wrapped["userAgent"], ua);
@@ -567,6 +574,7 @@ mod tests {
                 super::super::antigravity_base_url()
             )),
             "tok_test",
+            &ua,
         )
         .build()
         .unwrap();
@@ -603,10 +611,12 @@ mod tests {
         ))])
         .await;
         let client = reqwest::Client::new();
+        let ua = shipped_user_agent();
         let id = resolve_project(
             &client,
             &server.url,
             "tok_1",
+            &ua,
             &SystemClock,
             Duration::from_millis(1),
             DEFAULT_REQUEST_TIMEOUT,
@@ -619,8 +629,7 @@ mod tests {
         };
         assert!(raw.starts_with("POST /v1internal:loadCodeAssist "));
         let headers = http::header_lines(&raw);
-        let ua = super::super::antigravity_user_agent();
-        assert!(headers.iter().any(|(k, v)| k == "user-agent" && v == ua));
+        assert!(headers.iter().any(|(k, v)| k == "user-agent" && v == &ua));
     }
 
     #[tokio::test]
@@ -643,6 +652,7 @@ mod tests {
             &client,
             &server.url,
             "tok_2",
+            &shipped_user_agent(),
             &SystemClock,
             Duration::from_millis(1),
             DEFAULT_REQUEST_TIMEOUT,
@@ -675,6 +685,7 @@ mod tests {
             &client,
             &server.url,
             "tok_3",
+            &shipped_user_agent(),
             &SystemClock,
             Duration::from_millis(1),
             DEFAULT_REQUEST_TIMEOUT,
@@ -695,6 +706,7 @@ mod tests {
             &client,
             &hang_server.url,
             "tok_hang",
+            &shipped_user_agent(),
             &SystemClock,
             Duration::from_millis(1),
             Duration::from_millis(60),
@@ -714,6 +726,7 @@ mod tests {
             &client,
             &body_stall_server.url,
             "tok_stall",
+            &shipped_user_agent(),
             &SystemClock,
             Duration::from_millis(1),
             Duration::from_millis(60),

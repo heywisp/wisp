@@ -10,8 +10,11 @@ use crate::agent::DEFAULT_MAX_TOKENS;
 use crate::config::{from_toml, usd_micros};
 use crate::context::{CompactAt, LimitTooSmall, check_limit};
 use crate::endpoints::ProviderKind;
-use crate::provider::anthropic::subscription::Identity;
-use crate::provider::gemini::antigravity::Identity as AntigravityIdentity;
+use crate::provider::anthropic::subscription::{IDENTITY_ALLOWED, Identity};
+use crate::provider::client_version::Client;
+use crate::provider::gemini::antigravity::{
+    IDENTITY_ALLOWED as ANTIGRAVITY_IDENTITY_ALLOWED, Identity as AntigravityIdentity,
+};
 use crate::provider::{ImageCaps, ModelCapabilities, ThinkingBudgets};
 use wisp_media::Tier;
 use wisp_protocol::settings::{
@@ -112,7 +115,8 @@ const SHIPPED_FIELDS: [(&str, Quote); 25] = [
     ("sources", Quote::Provenance),
 ];
 
-const PROVIDER_FIELDS: [(&str, Quote); 19] = [
+const PROVIDER_FIELDS: [(&str, Quote); 20] = [
+    ("client", Quote::Own("client")),
     ("claude_code", Quote::Own("claude_code")),
     ("codex", Quote::Own("codex")),
     ("write_5m", Quote::Own("cache_writes")),
@@ -232,7 +236,7 @@ pub struct LongPromptRow {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProviderRow {
     pub(crate) claude_code: Option<Identity>,
-    pub(crate) codex_version: Option<String>,
+    pub(crate) client: Option<Client>,
     pub(crate) codex_window: Option<u64>,
     pub write_5m: Option<u64>,
     pub write_1h: Option<u64>,
@@ -1040,19 +1044,6 @@ impl ConfigModels {
     }
 }
 
-fn codex_version_parts(version: &str) -> Option<[u64; 3]> {
-    let mut parts = version.split('.');
-    let mut next_number = || {
-        let part = parts.next()?;
-        if part.starts_with('+') {
-            return None;
-        }
-        part.parse().ok()
-    };
-    let numbers = [next_number()?, next_number()?, next_number()?];
-    parts.next().is_none().then_some(numbers)
-}
-
 fn walk_providers(
     at: Range<usize>,
     value: &DeValue<'_>,
@@ -1073,30 +1064,20 @@ fn walk_providers(
         };
         let keys = in_order(fields);
         let mut row = ProviderRow::default();
+        let mut claude_code = None;
+        let mut antigravity = None;
         for (field, value) in &keys {
             let (at, value) = (field.span(), value.get_ref());
             let write =
                 |field: &'static str| decimal(field, MULTIPLIER_WORDS, &at, value).map(Some);
             match &**field.get_ref() {
-                "claude_code" => row.claude_code = Some(Identity::parse(&at, value)?),
+                "claude_code" => claude_code = Some((Identity::parse(&at, value)?, at)),
+                "client" => row.client = Some(Client::parse(&at, value)?),
                 "codex" => {
-                    let bad = || {
-                        bad_value(
-                            "codex",
-                            "a table of version (three dot-separated numbers) and window (tokens)",
-                            &at,
-                        )
-                    };
-                    let [Some(version), Some(window)] =
-                        table_of(["version", "window"], value, &bad)?
-                    else {
+                    let bad = || bad_value("codex", "a table with a window (tokens)", &at);
+                    let [Some(window)] = table_of(["window"], value, &bad)? else {
                         return Err(bad());
                     };
-                    let version = version.as_str().ok_or_else(bad)?;
-                    if codex_version_parts(version).is_none() {
-                        return Err(bad());
-                    }
-                    row.codex_version = Some(version.to_owned());
                     let window = token_count("window", &at, window)?;
                     check_limit("codex", window, DEFAULT_MAX_TOKENS)
                         .map_err(|e| RowError::at(at, RowProblem::LimitTooSmall(e)))?;
@@ -1134,7 +1115,7 @@ fn walk_providers(
                     *slot = Some(id);
                 }
                 "antigravity" => {
-                    row.antigravity = Some(AntigravityIdentity::from_table(&at, value)?)
+                    antigravity = Some((AntigravityIdentity::from_table(&at, value)?, at))
                 }
                 key @ ("subscription_additional_tools"
                 | "api_additional_tools"
@@ -1159,6 +1140,31 @@ fn walk_providers(
                 "sources" => row.sources = sources(&at, value)?,
                 _ => return Err(RowError::at(at, RowProblem::UnknownProviderField)),
             }
+        }
+        let client_version = |at: &Range<usize>| {
+            row.client.map(|client| client.version).ok_or_else(|| {
+                bad_value(
+                    "client",
+                    "a table with a version when a subscription identity is present",
+                    at,
+                )
+            })
+        };
+        if let Some((identity, at)) = claude_code {
+            identity
+                .rendered(client_version(&at)?)
+                .ok_or_else(|| bad_value("claude_code", &IDENTITY_ALLOWED, &at))?;
+            row.claude_code = Some(identity);
+        }
+        if let Some((identity, at)) = antigravity {
+            identity.user_agent(client_version(&at)?).ok_or_else(|| {
+                bad_value(
+                    "providers.gemini.antigravity",
+                    &ANTIGRAVITY_IDENTITY_ALLOWED,
+                    &at,
+                )
+            })?;
+            row.antigravity = Some(identity);
         }
         check_sources(
             ("providers", name),

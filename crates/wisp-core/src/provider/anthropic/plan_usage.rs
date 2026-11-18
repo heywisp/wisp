@@ -10,9 +10,9 @@ use super::AnthropicProvider;
 pub(super) async fn lookup(
     provider: AnthropicProvider,
 ) -> Result<Option<PlanUsage>, PlanUsageError> {
-    if !provider.profile.subscription() {
+    let Some(identity) = provider.rendered.as_ref() else {
         return Ok(None);
-    }
+    };
     if !provider
         .usage_enabled
         .load(std::sync::atomic::Ordering::Acquire)
@@ -29,6 +29,7 @@ pub(super) async fn lookup(
         "https://api.anthropic.com/api/oauth/usage",
         &token,
         provider.clock.as_ref(),
+        identity,
     )
     .await
     .map(Some)
@@ -39,8 +40,8 @@ async fn fetch(
     url: &str,
     token: &str,
     clock: &dyn crate::clock::Clock,
+    identity: &super::subscription::Rendered,
 ) -> Result<PlanUsage, PlanUsageError> {
-    let identity = super::subscription::data().ok_or(PlanUsageError::Unsupported)?;
     let mut call = client
         .get(url)
         .bearer_auth(token)
@@ -233,8 +234,10 @@ mod tests {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap();
+        let (identity, version) = super::super::subscription::data().unwrap();
+        let rendered = identity.rendered(version).unwrap();
         assert_eq!(
-            fetch(&client, &url, "fake", &crate::clock::StillClock)
+            fetch(&client, &url, "fake", &crate::clock::StillClock, &rendered)
                 .await
                 .unwrap()
                 .windows
@@ -257,7 +260,7 @@ mod tests {
             .into_iter()
             .collect()
         );
-        for (name, value) in &super::super::subscription::data().unwrap().usage_headers {
+        for (name, value) in &rendered.usage_headers {
             assert!(headers.contains(&(name.as_str().into(), value.to_str().unwrap().into())));
         }
     }

@@ -7,7 +7,7 @@ use wisp_protocol::plan_usage::{
 };
 
 use super::GeminiProvider;
-use super::antigravity::{AvailableModelsResponse, Identity};
+use super::antigravity::AvailableModelsResponse;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(super) struct QuotaInfo {
@@ -18,11 +18,11 @@ pub(super) struct QuotaInfo {
 }
 
 pub(super) async fn lookup(provider: GeminiProvider) -> Result<Option<PlanUsage>, PlanUsageError> {
-    if !provider.subscription {
+    let Some(user_agent) = provider.user_agent.as_deref() else {
         return Ok(None);
-    }
+    };
     let _ = provider
-        .project_id()
+        .project_id(user_agent)
         .await
         .map_err(|error| PlanUsageError::from(&error))?;
     let token = provider
@@ -35,28 +35,19 @@ pub(super) async fn lookup(provider: GeminiProvider) -> Result<Option<PlanUsage>
         &provider.base_url,
         &token,
         provider.clock.as_ref(),
+        user_agent,
     )
     .await
     .map(Some)
 }
 
-pub(super) async fn fetch(
+async fn fetch(
     client: &reqwest::Client,
     base_url: &str,
     token: &str,
     clock: &dyn crate::clock::Clock,
+    user_agent: &str,
 ) -> Result<PlanUsage, PlanUsageError> {
-    fetch_with_identity(client, base_url, token, clock, super::antigravity::data()).await
-}
-
-async fn fetch_with_identity(
-    client: &reqwest::Client,
-    base_url: &str,
-    token: &str,
-    clock: &dyn crate::clock::Clock,
-    identity: Option<&Identity>,
-) -> Result<PlanUsage, PlanUsageError> {
-    let identity = identity.ok_or(PlanUsageError::Unsupported)?;
     let url = format!(
         "{}/v1internal:fetchAvailableModels",
         base_url.trim_end_matches('/')
@@ -66,7 +57,7 @@ async fn fetch_with_identity(
         .bearer_auth(token)
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
-        .header("User-Agent", &identity.user_agent)
+        .header("User-Agent", user_agent)
         .body("{}");
     let (raw, now) =
         super::super::body::fetch_json(call, PlanUsageError::AccessDenied, clock).await?;
@@ -515,7 +506,8 @@ mod tests {
         ))])
         .await;
         let client = reqwest::Client::new();
-        let usage = fetch(&client, &server.url, "tok_quota", &SystemClock)
+        let user_agent = super::super::antigravity::shipped_user_agent();
+        let usage = fetch(&client, &server.url, "tok_quota", &SystemClock, &user_agent)
             .await
             .unwrap();
         assert_eq!(usage.windows.len(), 1);
@@ -529,7 +521,7 @@ mod tests {
         assert!(
             headers
                 .iter()
-                .any(|(k, v)| k == "user-agent" && v == super::super::antigravity_user_agent())
+                .any(|(k, v)| k == "user-agent" && v == &user_agent)
         );
     }
 
@@ -541,17 +533,20 @@ mod tests {
         ])
         .await;
         let client = reqwest::Client::new();
-        let first = fetch(&client, &server.url, "bad_tok", &SystemClock)
+        let user_agent = super::super::antigravity::shipped_user_agent();
+        let first = fetch(&client, &server.url, "bad_tok", &SystemClock, &user_agent)
             .await
             .unwrap_err();
         assert_eq!(first, PlanUsageError::AuthenticationRequired);
-        let second = fetch(&client, &server.url, "forbidden_tok", &SystemClock)
-            .await
-            .unwrap_err();
+        let second = fetch(
+            &client,
+            &server.url,
+            "forbidden_tok",
+            &SystemClock,
+            &user_agent,
+        )
+        .await
+        .unwrap_err();
         assert_eq!(second, PlanUsageError::AccessDenied);
-        let missing = fetch_with_identity(&client, &server.url, "tok", &SystemClock, None)
-            .await
-            .unwrap_err();
-        assert_eq!(missing, PlanUsageError::Unsupported);
     }
 }

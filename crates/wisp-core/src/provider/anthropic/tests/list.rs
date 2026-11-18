@@ -51,7 +51,7 @@ async fn the_list_request_sends_each_accounts_own_header_set_to_its_own_origin()
     assert!(signed_in.headers()["authorization"].is_sensitive());
     let official = "https://api.anthropic.com/v1/models?limit=1000";
     assert_eq!(signed_in.url().as_str(), official);
-    let identity = crate::provider::anthropic::subscription::data().unwrap();
+    let (identity, version) = crate::provider::anthropic::subscription::data().unwrap();
     let betas = identity.betas.join(",");
     for (name, value) in [
         ("authorization", "Bearer synthetic-oauth"),
@@ -61,7 +61,7 @@ async fn the_list_request_sends_each_accounts_own_header_set_to_its_own_origin()
     ] {
         assert_eq!(named(&signed_in, name), Some(value), "{name}");
     }
-    for (name, value) in &identity.headers {
+    for (name, value) in &identity.rendered(version).unwrap().headers {
         assert_eq!(
             named(&signed_in, name.as_str()),
             Some(value.to_str().unwrap()),
