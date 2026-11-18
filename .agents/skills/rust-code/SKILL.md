@@ -14,7 +14,7 @@ AGENTS.md's code rules come first: no comments, no `unwrap`, `expect`, `panic!` 
 
 ## Checks
 
-- Follow CONTRIBUTING.md's "Before opening an MR" checks, through `heavy` (the `machine-load` skill).
+- Follow CONTRIBUTING.md's "Before opening a pull request" checks, through `heavy` (the `machine-load` skill).
 - For a named test, specify the package, test target and filter: `heavy cargo nextest run -p wisp-core --lib pricing::tests::unsplit_writes_use_session_ttl` for in-crate tests; `heavy cargo nextest run -p wisp-core --test instruction_files this_repositorys_skills_are_well_formed_and_portable` for an integration-test file.
 - Each worktree builds into its own target dir; never point two worktrees at one. Cargo rebuilds by file modification times, so a shared dir can reuse another tree's crates and a gate passes on the wrong code; a target dir that the flow's build-output tool moved in is not shared, since the tool checks that every file of the worktree is newer than it.
 - Two tests guard the rules no lint covers: `crates/wisp-protocol/tests/no_comments.rs` fails on any comment in a Rust or WIT file, and `crates/wisp-core/tests/instruction_files.rs` fails on a date or machine path in AGENTS.md, its imports or a skill. A change to the files these tests guard names them among its tests. Goldens, blessing and slow tests are covered in `docs/testing.md`.

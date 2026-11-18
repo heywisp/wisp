@@ -97,7 +97,7 @@ heavy docker run --rm --cpus=12 --memory=16g --memory-swap=16g -e CARGO_BUILD_JO
 
 ## Hung tests
 
-`.config/nextest.toml` marks a test slow after 60 s and terminates it after three periods (`slow-timeout = { period = "60s", terminate-after = 3 }`), so a hung test fails at about 3 minutes instead of holding a `heavy` slot or the CI job until an outer timeout. The `ci` profile sets no `slow-timeout` of its own and inherits this one and the overrides below from `default`. The frame-burst picture test takes about 70 s in CI, so the 180 s limit is about two and a half times that.
+`.config/nextest.toml` marks a test slow after 60 s and terminates it after three periods (`slow-timeout = { period = "60s", terminate-after = 3 }`), so a hung test fails at about 3 minutes instead of holding a `heavy` slot or the CI job until an outer timeout. The `ci` profile sets no `slow-timeout` of its own and inherits this one and the overrides below from `default`. The frame-burst picture test takes about 40 s in CI, so the 180 s limit is more than four times that.
 
 Three overrides give ignored tests longer, since they only run on request:
 

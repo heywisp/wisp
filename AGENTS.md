@@ -6,7 +6,7 @@ Research stays in the main checkout's git-ignored `research/`, not in the reposi
 
 ## Contribution rules (strict)
 
-Follow @CONTRIBUTING.md exactly. In short: Conventional Commit messages and MR titles, squash-merged MRs only, never push to `main`, branches named `type/short-desc`. Subagents never commit or push, except the single merge agent, which commits, rebases, pushes and merges approved MRs only through the verify-and-merge tools. The sole bootstrap exception is the one in the contribution rules, through the reviewed cut tool.
+Follow @CONTRIBUTING.md exactly. In short: Conventional Commit messages and pull request titles, squash-merged pull requests only, never push to `main`, branches named `type/short-desc`. Subagents never commit or push, except the single merge agent, which commits, rebases, pushes and merges approved pull requests only through the verify-and-merge tools.
 
 **Privacy:** never put the user's personal data (email, name, account IDs) in any external request, header or payload, including User-Agent strings. The only personal identity permitted in a publication is the user's chosen commit name and GitHub no-reply address, solely in Git author, committer and tagger fields and as the identity on the signing key. An API field used solely to set the squash commit's Git author field counts as that field. Only the public signing key may be registered with the host. Do not place this pair in any other field, text, file content, header, report or log.
 
