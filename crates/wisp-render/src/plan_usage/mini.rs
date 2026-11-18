@@ -179,30 +179,6 @@ pub fn warning_rows(
     )
 }
 
-pub fn refusal_rows(
-    endpoint: &str,
-    window: Option<&str>,
-    resets_at: Option<i64>,
-    layout: Layout,
-    time: impl Fn(i64) -> ResetTime,
-) -> Vec<StyledLine> {
-    let separator = Glyphs::of(layout.glyphs).separator;
-    let title = format!(
-        "Limit reached {separator} {}{}",
-        one_line(endpoint),
-        window.map_or_else(String::new, |w| format!(" {separator} {}", one_line(w)))
-    );
-    let reset = resets_at.map_or_else(String::new, |at| {
-        format!("resets {} {separator} ", time(at).short)
-    });
-    notice_rows(
-        &title,
-        &format!("{reset}/usage {}", one_line(endpoint)),
-        crate::chrome::context::MeterLevel::Over.look(),
-        layout,
-    )
-}
-
 fn notice_rows(
     title: &str,
     action: &str,
