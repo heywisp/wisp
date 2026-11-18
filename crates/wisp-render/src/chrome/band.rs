@@ -75,7 +75,11 @@ pub(crate) fn selection_lead(focused: bool, layout: Layout) -> Vec<StyledSpan> {
     vec![StyledSpan::plain(" "), marker, StyledSpan::plain(" ")]
 }
 
-fn split_at(spans: Vec<StyledSpan>, cols: usize, mode: WidthMode) -> [Vec<StyledSpan>; 2] {
+pub(super) fn split_at(
+    spans: Vec<StyledSpan>,
+    cols: usize,
+    mode: WidthMode,
+) -> [Vec<StyledSpan>; 2] {
     let mut head = vec![];
     let mut tail = vec![];
     let mut used = 0;

@@ -18,6 +18,7 @@ const EVERYTHING: Modes = Modes {
     focus_reports: true,
     cursor_hidden: true,
     mouse: true,
+    hover: true,
     alternate_scroll_off: Some(ScrollBack::Set),
 };
 
@@ -407,6 +408,7 @@ fn live_on(slave: &OwnedFd, master: &OwnedFd, mouse: bool) -> crate::term::Live 
         terminal,
         Modes {
             mouse,
+            hover: false,
             ..EVERYTHING
         },
     )

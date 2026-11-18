@@ -76,11 +76,12 @@ const EVERYTHING: Modes = Modes {
     focus_reports: true,
     cursor_hidden: true,
     mouse: true,
+    hover: true,
     alternate_scroll_off: Some(ScrollBack::Set),
 };
 
 const MOUSE_ON: [&str; 3] = ["\x1b[?1000h", "\x1b[?1002h", "\x1b[?1006h"];
-const MOUSE_OFF: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
+const MOUSE_OFF: &str = wisp_tui::term::modes::MOUSE_OFF;
 const SCROLL_OFF: &str = "\x1b[?1007l";
 const SCROLL_BACK: &str = "\x1b[?1007h";
 const ENTER_ALT: &str = "\x1b[?1049h";

@@ -1993,7 +1993,7 @@ pub trait Anim {
 ### 9.6 Restoring the terminal
 
 A guard (`Drop`) plus a panic hook. Undo everything, in reverse order, and keep going even when a step fails:
-end synchronized update; SGR reset; show the cursor; re-enable autowrap; disable mouse reports (1000, 1002, 1006);
+end synchronized update; SGR reset; show the cursor; re-enable autowrap; disable mouse reports (1000, 1002, 1003, 1006);
 put alternate scroll (1007) back when the probe or `WT_SESSION` says it was on; disable focus reports, bracketed
 paste and 2031; pop the keyboard flags; leave the alternate screen; restore the termios state. Do the same on
 `SIGTERM` and `SIGHUP`. A restore from the background writes the mode resets but no cursor moves or erases. The preview does the subset it uses, and passes Ctrl-C (exit 130), `q` and normal

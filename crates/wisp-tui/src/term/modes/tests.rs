@@ -8,6 +8,7 @@ const EVERYTHING: Modes = Modes {
     focus_reports: true,
     cursor_hidden: true,
     mouse: true,
+    hover: true,
     alternate_scroll_off: Some(ScrollBack::Set),
 };
 
@@ -60,7 +61,7 @@ fn restore_writes_the_expected_bytes_in_order() {
             "\x1b[0m",
             "\x1b[?25h",
             "\x1b[?7h",
-            "\x1b[?1006l\x1b[?1002l\x1b[?1000l",
+            "\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l",
             "\x1b[?1007h",
             "\x1b[?1004l",
             "\x1b[?2004l",
@@ -166,6 +167,7 @@ fn entering_is_the_reverse_of_restoring() {
             "enable bracketed paste",
             "enable focus reports",
             "enable mouse reports",
+            "enable mouse motion reports",
             "turn alternate scroll off",
             "hide the cursor",
         ]
@@ -183,11 +185,7 @@ fn entering_is_the_reverse_of_restoring() {
         port.log
             .contains(&"\x1b[?1000h\x1b[?1002h\x1b[?1006h".to_owned())
     );
-    assert!(
-        !port.log.iter().any(|l| l.contains("1003")),
-        "{:?}",
-        port.log
-    );
+    assert!(port.log.contains(&"\x1b[?1003h".to_owned()));
     assert!(port.log.contains(&"\x1b[?1007l".to_owned()));
 }
 
@@ -208,6 +206,14 @@ fn a_failed_enable_still_counts_as_on_so_restore_undoes_it() {
                 ..Modes::COOKED
             },
         ),
+        (
+            "\x1b[?1003h",
+            Modes {
+                mouse: true,
+                hover: true,
+                ..Modes::COOKED
+            },
+        ),
     ] {
         let mut port = Recorder {
             fail: vec![fail],
@@ -217,7 +223,17 @@ fn a_failed_enable_still_counts_as_on_so_restore_undoes_it() {
         let failures = execute(&mut port, &transition(&Modes::COOKED, &to), &mut state);
         assert_eq!(failures.len(), 1);
         assert_eq!(state, to);
-        assert!(restore_plan(&state).len() > 4, "{fail:?}");
+        let restore = restore_plan(&state);
+        assert!(restore.len() > 5, "{fail:?}");
+        assert!(execute(&mut port, &restore, &mut state).is_empty());
+        assert!(state.is_empty());
+        if to.hover {
+            assert!(
+                port.log
+                    .iter()
+                    .any(|bytes| bytes.starts_with("\x1b[?1003l"))
+            );
+        }
     }
 }
 
@@ -244,11 +260,36 @@ fn transitions_change_only_what_differs() {
         ]
     );
     assert!(transition(&to, &to).is_empty());
+    let plain = Modes {
+        mouse: true,
+        ..Modes::COOKED
+    };
+    let hover = Modes {
+        hover: true,
+        ..plain
+    };
+    assert_eq!(
+        transition(&Modes::COOKED, &hover),
+        [Change::Mouse(true), Change::Hover(true)]
+    );
+    assert_eq!(transition(&hover, &plain), [Change::Hover(false)]);
+    assert_eq!(
+        Change::Hover(false).bytes().unwrap(),
+        format!("\x1b[?1003l{MOUSE_ON}")
+    );
+    assert_eq!(transition(&hover, &Modes::COOKED), [Change::Mouse(false)]);
+    assert!(
+        Change::Mouse(false)
+            .bytes()
+            .unwrap()
+            .starts_with("\x1b[?1003l")
+    );
+    assert_eq!(restore_plan(&hover)[5..], [Change::Mouse(false)]);
 }
 
 #[test]
 fn the_lock_free_mirror_keeps_what_restore_needs() {
-    for bits in 0..512u16 {
+    for bits in 0..1024u16 {
         let modes = Modes::from_bits(bits);
         let canonical = if bits & (1 << 7) == 0 {
             bits & !(1 << 8)
@@ -259,7 +300,9 @@ fn the_lock_free_mirror_keeps_what_restore_needs() {
         let counted = canonical & !(1 << 8);
         assert_eq!(
             restore_plan(&modes).len(),
-            5 + counted.count_ones() as usize - usize::from(modes.cursor_hidden)
+            5 + counted.count_ones() as usize
+                - usize::from(modes.cursor_hidden)
+                - usize::from(modes.mouse && modes.hover)
         );
     }
     assert_eq!(

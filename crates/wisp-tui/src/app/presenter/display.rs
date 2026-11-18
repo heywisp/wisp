@@ -120,14 +120,16 @@ impl Presenter {
     }
 
     pub(super) fn set_modes<C: Console>(&mut self, console: &mut C) -> Result<(), AppError> {
-        let Some(mouse) = self.modes_due.take() else {
-            return Ok(());
-        };
+        let current = console.modes();
+        let mouse = self.modes_due.take().unwrap_or(current.mouse);
         let modes = Modes {
             mouse,
-            ..console.modes()
+            hover: mouse && self.agents_list.as_ref().is_some_and(|l| l.is_drawn()),
+            ..current
         };
-        if let Err(e) = console.set_modes(modes) {
+        if modes != current
+            && let Err(e) = console.set_modes(modes)
+        {
             return self.halt(console, e);
         }
         Ok(())

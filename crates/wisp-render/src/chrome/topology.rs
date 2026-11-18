@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use wisp_protocol::slot::{NodeState, SlotFlow, SlotTopologyNode};
 
+use super::band::split_at;
 use crate::canvas::{self, Canvas, Cell};
 use crate::markdown::Layout;
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,7 +14,7 @@ use crate::motion::{
 };
 use crate::picture::{Dot, Light, Mark, Ring, Scene, smooth};
 use crate::styled::{Look, StyledLine, StyledSpan};
-use crate::text::{WidthMode, spans_width, width};
+use crate::text::{WidthMode, fit_end, spans_padded, spans_width, width};
 use crate::theme::glyphs::{self, Glyphs};
 use crate::theme::{Ink, Token};
 use crate::transcript::copy;
@@ -65,6 +66,7 @@ pub struct Topology<'a> {
     pub nodes: &'a [SlotTopologyNode],
     pub flows: &'a [SlotFlow],
     pub picked: Option<&'a str>,
+    pub label: Option<(Option<&'a str>, &'a str)>,
     pub layout: Layout,
     pub at: Duration,
     pub now_ms: u64,
@@ -882,12 +884,15 @@ fn text_cells(lines: &[StyledLine], mode: WidthMode) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     for (y, line) in lines.iter().enumerate() {
         let mut x = 0;
-        for grapheme in line.spans.iter().flat_map(|s| s.text.graphemes(true)) {
-            let w = width(grapheme, mode);
-            if !grapheme.trim().is_empty() {
-                out.extend((x..x + w).map(|c| (c, y)));
+        for span in &line.spans {
+            let tinted = span.look.bg == Some(Token::AccentTint.into());
+            for grapheme in span.text.graphemes(true) {
+                let w = width(grapheme, mode);
+                if tinted || !grapheme.trim().is_empty() {
+                    out.extend((x..x + w).map(|c| (c, y)));
+                }
+                x += w;
             }
-            x += w;
         }
     }
     out
@@ -1021,6 +1026,7 @@ pub fn page(view: &Topology<'_>, height: usize) -> Drawing {
         glow(&mut shown, strength, inside);
     }
     let mut out = shown.lines();
+    hover_label(view, &spots, (left, top), &mut out, &glyphs);
     let below = out.len() as f32;
     let marks = marks.into_iter().map(|mark| Dot {
         at: (mark.at.0, mark.at.1 + below),
@@ -1104,6 +1110,42 @@ pub fn key_at<'a>(
     let near = near.filter(|&(_, (sx, sy))| sy == y && sx.abs_diff(x) <= 1);
     near.min_by_key(|&(_, (sx, _))| (sx.abs_diff(x), sx))
         .map(|(key, _)| key)
+}
+
+fn hover_label(
+    view: &Topology<'_>,
+    spots: &[Spot<'_>],
+    (left, top): (usize, usize),
+    lines: &mut [StyledLine],
+    glyphs: &Glyphs,
+) {
+    let Some((key, name)) = view.label else {
+        return;
+    };
+    let Some(&(_, (x, y))) = spots.iter().find(|(spot, _)| *spot == key) else {
+        return;
+    };
+    let (Some(x), Some(y)) = (x.checked_sub(left), y.checked_sub(top)) else {
+        return;
+    };
+    if x >= view.layout.width || y >= lines.len() || lines.len() < 2 {
+        return;
+    }
+    let row = if y + 1 == lines.len() { y - 1 } else { y + 1 };
+    let mode = view.layout.width_mode;
+    let name = fit_end(name, view.layout.width.saturating_sub(2), glyphs.more, mode);
+    if name.is_empty() {
+        return;
+    }
+    let cols = width(&name, mode) + 2;
+    let start = x.saturating_sub(cols / 2).min(view.layout.width - cols);
+    let [head, tail] = split_at(std::mem::take(&mut lines[row].spans), start, mode);
+    let [_, tail] = split_at(tail, cols, mode);
+    let look = Look::fg(Token::Text).on(Token::AccentTint).bold();
+    let mut spans = spans_padded(head, start, mode);
+    spans.push(StyledSpan::new(format!(" {name} "), look));
+    spans.extend(tail);
+    lines[row] = StyledLine::new(spans);
 }
 
 fn bracket(canvas: &mut Canvas, x: usize, y: usize) {

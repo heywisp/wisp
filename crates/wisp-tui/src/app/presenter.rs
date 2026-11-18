@@ -1766,6 +1766,7 @@ impl Presenter {
         if size == self.size || size.width == 0 || size.height == 0 {
             return;
         }
+        self.forget_agents_hover();
         self.size = size;
         self.resize_at = Some(now + RESIZE_DEBOUNCE);
         self.painter.invalidate();
@@ -1826,6 +1827,8 @@ impl Presenter {
         self.usage_status();
         self.drain_code();
         if self.select.handed_off() {
+            self.hide_agents();
+            self.set_modes(console)?;
             self.frames.drew(at);
             self.idle_due = None;
             return Ok(());
@@ -1838,8 +1841,14 @@ impl Presenter {
         self.chat_area = Rect::default();
         self.chip_at = None;
         let view = match paged {
-            Some(view) if self.pager.is_some() => view,
-            _ if self.settings_screen.is_some() => Some(self.settings_view(at)),
+            Some(view) if self.pager.is_some() => {
+                self.hide_agents();
+                view
+            }
+            _ if self.settings_screen.is_some() => {
+                self.hide_agents();
+                Some(self.settings_view(at))
+            }
             _ => {
                 self.card_seen = self.card_holds(at);
                 self.step_in_seen = self.step_in_holds(at);
@@ -1851,10 +1860,10 @@ impl Presenter {
         };
         self.frames.drew(at);
         self.idle_due = self.idle_next(at);
-        let Some(view) = view else {
-            return Ok(());
-        };
-        self.paint(console, &view, &shown)
+        if let Some(view) = view {
+            self.paint(console, &view, &shown)?;
+        }
+        self.set_modes(console)
     }
 
     fn paint<C: Console>(
@@ -2046,13 +2055,12 @@ impl Presenter {
         chrome: Layout,
     ) -> Option<Rect> {
         let top = match layer {
-            Layer::Dock(_) => return None,
+            Layer::Dock(_) | Layer::Agents => return None,
             Layer::Sidebar => return self.draw_sidebar(buffer, room, at),
             Layer::Usage => self.draw_usage_page(buffer, room, chrome),
             Layer::Question => self.draw_card(buffer, room, at, chrome),
             Layer::Endpoint => self.draw_endpoint_card(buffer, room, chrome),
             Layer::Processes => self.draw_ps(buffer, room, at, chrome),
-            Layer::Agents => self.draw_agents(buffer, room, at, chrome),
             Layer::StepIn => self.draw_step_in(buffer, room, at, chrome),
             Layer::Suggestions => self.draw_suggestions(buffer, room, chrome, at),
             Layer::Auth => self.draw_auth(buffer, room, chrome),
@@ -2215,11 +2223,13 @@ impl Presenter {
             self.sidebar.forget_drawn();
         }
         self.listed = None;
-        if !self.picker_open() && !layers.contains(&Layer::Agents) {
-            self.hide_agents();
-        }
+        let mut agents_at = None;
         self.card_hits.clear();
         for layer in layers {
+            if layer == Layer::Agents {
+                agents_at = Some(self.painted.len());
+                continue;
+            }
             if let Some(area) = self.paint_layer(layer, &mut buffer, rows.view, at, chrome) {
                 self.painted.push((layer, area));
                 if layer != Layer::Sidebar {
@@ -2227,6 +2237,22 @@ impl Presenter {
                     self.panel_covered(area.y);
                 }
             }
+        }
+        let visible_agents = agents_at.and_then(|index| {
+            let bottom = self.painted[index..]
+                .iter()
+                .map(|(_, area)| area.y)
+                .min()
+                .unwrap_or(rows.view);
+            self.draw_agents(&mut buffer, rows.view, bottom, at, chrome)
+                .map(|area| (index, area))
+        });
+        if let Some((index, area)) = visible_agents {
+            self.painted.insert(index, (Layer::Agents, area));
+            covered = true;
+            self.panel_covered(area.y);
+        } else {
+            self.hide_agents();
         }
         let unseen = self.shown_view().unseen();
         let edge = self.main_edge().unwrap_or(size.width);
@@ -2384,6 +2410,14 @@ impl Presenter {
     ) -> Result<(), AppError> {
         let now = Instant::now();
         let at = self.at(now);
+        if let Input::Mouse(mouse) = input
+            && mouse.kind == MouseKind::Move
+        {
+            if self.agents_hover((mouse.column, mouse.row), at) {
+                self.frames.mark();
+            }
+            return Ok(());
+        }
         if matches!(input, Input::Paste(_)) && self.swallows_terminal_paste(at) {
             return Ok(());
         }
@@ -2447,7 +2481,10 @@ impl Presenter {
                     self.paste_to(target, "", at);
                 }
             }
-            Input::Resize(size) => self.noticed_size(size, now),
+            Input::Resize(size) => {
+                self.forget_agents_hover();
+                self.noticed_size(size, now);
+            }
             Input::PictureRefused => self.lose_pictures(),
             Input::Focus(focused) => {
                 if focused && self.painter.has_tiles() {
@@ -2457,6 +2494,7 @@ impl Presenter {
                     self.select.focus_gained(at);
                 } else {
                     self.select.drag_lost();
+                    self.forget_agents_hover();
                 }
                 self.pacing.focus(focused);
             }
@@ -2608,8 +2646,8 @@ impl Presenter {
         self.painted.iter().any(|(shown, _)| *shown == layer)
     }
 
-    fn mouse_layer(&self, mouse: Mouse) -> Option<Layer> {
-        let point = Position::new(mouse.column, mouse.row);
+    fn mouse_layer(&self, (column, row): (u16, u16)) -> Option<Layer> {
+        let point = Position::new(column, row);
         self.painted
             .iter()
             .rev()
@@ -2640,7 +2678,7 @@ impl Presenter {
             }
             self.select.drop_open();
         }
-        let layer = self.mouse_layer(mouse);
+        let layer = self.mouse_layer((mouse.column, mouse.row));
         let panel = layer == Some(Layer::Sidebar);
         let held = self.overlay_open() || self.listed().is_some();
         if matches!(mouse.kind, MouseKind::WheelUp | MouseKind::WheelDown) {
@@ -2704,7 +2742,7 @@ impl Presenter {
             MouseKind::Press | MouseKind::Drag | MouseKind::Release => {
                 return self.pointer(mouse, at, console);
             }
-            MouseKind::RightPress => {}
+            MouseKind::RightPress | MouseKind::Move => {}
         }
         Ok(())
     }

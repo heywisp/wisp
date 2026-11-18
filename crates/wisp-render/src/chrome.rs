@@ -29,9 +29,9 @@ mod welcome;
 pub(crate) use agents::THIS_CHAT;
 pub use agents::{
     AGENTS_LIST_GAP, AGENTS_MIN_ROWS, AccountBilling, AgentRow, AgentsTree, AgentsView, MainRow,
-    PAGE_CHROME, agent_row, agents_next_change, agents_note, agents_page, agents_tree, beside,
-    chat_header, clocks_next_change, count_ladder, list_width, panel_rows, releasable, strip_line,
-    timed,
+    PAGE_CHROME, agent_label, agent_row, agents_next_change, agents_note, agents_page, agents_tree,
+    beside, chat_header, clocks_next_change, count_ladder, list_width, panel_rows, releasable,
+    strip_line, timed,
 };
 pub use band::{WIDE_FROM, band_cols, selected_line, selected_look, selected_row, selection_mark};
 pub use banner::{WORDMARK, banner, banner_next_change, banner_with, logo};

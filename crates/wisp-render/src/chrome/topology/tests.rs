@@ -390,6 +390,7 @@ fn view<'a>(
         nodes,
         flows: &[],
         picked: Some(picked),
+        label: None,
         layout: Layout::new(width, set),
         at: Duration::ZERO,
         now_ms: 0,
@@ -719,6 +720,111 @@ fn a_breathing_step_changes_only_the_working_dots_own_tiles() {
     };
     assert_eq!(changed.len(), working.len(), "{changed:?} {working:?}");
     assert!(changed.iter().all(under), "{changed:?} against {working:?}");
+}
+
+#[test]
+fn a_hovered_dot_s_name_sits_under_it_inside_the_picture() {
+    let nodes = scene("a=w b=w c=w d=w");
+    let view = view(&nodes, NOBODY, 32, GlyphSet::Unicode);
+    let look = Look::fg(Token::Text).on(Token::AccentTint).bold();
+    let height = 18;
+    let glyphs = Glyphs::of(view.layout.glyphs);
+    let legend = legend(&view, &glyphs).0.len();
+    let positions = super::paged(&view, height, legend).spots;
+    let draw = |key, name, height| {
+        page(
+            &Topology {
+                label: Some((key, name)),
+                ..view
+            },
+            height,
+        )
+    };
+    let band = |drawing: &Drawing, y: usize| {
+        drawing.lines[y]
+            .spans
+            .iter()
+            .find(|s| s.look == look)
+            .unwrap()
+            .text
+            .clone()
+    };
+    let (root_x, root_y) = positions[0].1;
+    let main = draw(None, ROOT_NAME, height);
+    assert_eq!(band(&main, root_y + 1), " main ");
+    assert_eq!(look_at(&main.lines, (root_x - 3, root_y + 1)), Some(look));
+    let name = "a-name-that-reaches-the-edge";
+    let band_width = name.len() + 2;
+    for (key, edge) in [(positions[1].0, 0), (positions[4].0, 32 - band_width)] {
+        let y = positions[1].1.1;
+        let over = draw(key, name, legend + y + 1);
+        assert_eq!(band(&over, y - 1), format!(" {name} "));
+        assert_eq!(look_at(&over.lines, (edge, y - 1)), Some(look));
+        assert_eq!(
+            look_at(&over.lines, (edge + band_width - 1, y - 1)),
+            Some(look)
+        );
+    }
+    let too_long = "long-name-".repeat(10);
+    let y = positions[1].1.1 + 1;
+    let fitted = band(&draw(Some("a"), &too_long, height), y);
+    assert_eq!(width(&fitted, view.layout.width_mode), 32);
+    assert!(fitted.ends_with("… "), "{fitted:?}");
+
+    let painted = |label| {
+        page(
+            &Topology {
+                pictures: true,
+                layout: Layout {
+                    width: 100,
+                    ..view.layout
+                },
+                label,
+                ..view
+            },
+            height,
+        )
+        .scenes
+        .remove(0)
+    };
+    let cell = (9, 19);
+    let bare = tiles(&painted(None), cell);
+    let label = |key| Some((Some(key), key));
+    let left = painted(label("a"));
+    let right = painted(label("d"));
+    let y = left.dots[1].at.1 as usize + 1;
+    let range = |scene: &Scene, i: usize| {
+        let x = scene.dots[i].at.0 as usize;
+        let cells = x - 1..=x + 1;
+        assert!(cells.clone().all(|x| scene.text_cells.contains(&(x, y))));
+        cells
+    };
+    let (a, d) = (range(&left, 1), range(&right, 4));
+    let (left, right) = (tiles(&left, cell), tiles(&right, cell));
+    let near = |r: Rect, x: &std::ops::RangeInclusive<usize>| {
+        r.y.abs_diff(y) <= 1 && r.x <= x.end() + 1 && r.x + r.cells >= *x.start()
+    };
+    let changed = |from: &[(Rect, u64)], to: &[(Rect, u64)]| {
+        from.iter()
+            .filter(|t| !to.contains(t))
+            .chain(to.iter().filter(|t| !from.contains(t)))
+            .map(|t| t.0)
+            .collect::<Vec<_>>()
+    };
+    let added = changed(&bare, &left);
+    assert!(
+        !added.is_empty() && added.iter().all(|&r| near(r, &a)),
+        "{added:?}"
+    );
+    let moved = changed(&left, &right);
+    assert!(
+        moved.iter().any(|&r| near(r, &a)) && moved.iter().any(|&r| near(r, &d)),
+        "{moved:?}"
+    );
+    assert!(
+        moved.iter().all(|&r| near(r, &a) || near(r, &d)),
+        "{moved:?}"
+    );
 }
 
 #[test]

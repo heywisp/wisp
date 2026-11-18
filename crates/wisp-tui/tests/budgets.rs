@@ -867,6 +867,7 @@ fn the_agents_page_at_200_by_60_with_30_agents() {
                 nodes: &nodes,
                 flows,
                 picked: None,
+                label: None,
                 layout: Layout::new(200, GlyphSet::Unicode),
                 at: Duration::from_millis(ms),
                 now_ms: ms,

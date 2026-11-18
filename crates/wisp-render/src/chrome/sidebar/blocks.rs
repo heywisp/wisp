@@ -274,6 +274,7 @@ fn lines(block: &SlotBlock, ctx: &Ctx) -> (Vec<Line>, bool) {
         nodes,
         flows,
         picked: None,
+        label: None,
         layout: Layout {
             width: ctx.inner(),
             ..ctx.layout

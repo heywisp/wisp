@@ -83,6 +83,15 @@ fn a_right_press_converts_and_its_drag_and_release_are_dropped() {
             modified: false
         }))
     );
+    assert_eq!(
+        convert(mouse(MouseEventKind::Moved)),
+        Some(Input::Mouse(Mouse {
+            kind: MouseKind::Move,
+            column: 7,
+            row: 3,
+            modified: false,
+        }))
+    );
     assert_eq!(convert(mouse(MouseEventKind::Up(MouseButton::Right))), None);
     assert_eq!(
         convert(mouse(MouseEventKind::Drag(MouseButton::Right))),
@@ -180,7 +189,7 @@ fn raw_key_bytes_give_the_input_crossterms_event_gives() {
     let Event::Mouse(down) = mouse(MouseEventKind::ScrollDown) else {
         panic!("not a mouse event")
     };
-    let clicks: [(&[u8], Event); 8] = [
+    let clicks: [(&[u8], Event); 9] = [
         (
             b"\x1b[<0;8;4M",
             mouse(MouseEventKind::Down(MouseButton::Left)),
@@ -205,6 +214,7 @@ fn raw_key_bytes_give_the_input_crossterms_event_gives() {
                 ..down
             }),
         ),
+        (b"\x1b[<35;8;4M", mouse(MouseEventKind::Moved)),
         (b"\x1b[I", Event::FocusGained),
         (b"\x1b[O", Event::FocusLost),
     ];
@@ -215,8 +225,7 @@ fn raw_key_bytes_give_the_input_crossterms_event_gives() {
             "{bytes:?}"
         );
     }
-    let dropped: &[u8] =
-        b"\x1b[M !!\x1b[<1;3;4M\x1b[<35;3;4M\x1b[1;5C\x1b[15~\x1b]11;x\x07\x1bPq\x1b\\";
+    let dropped: &[u8] = b"\x1b[M !!\x1b[<1;3;4M\x1b[1;5C\x1b[15~\x1b]11;x\x07\x1bPq\x1b\\";
     assert_eq!(keys(dropped, End::More), (vec![], dropped.len()));
 }
 

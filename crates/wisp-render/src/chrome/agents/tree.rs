@@ -17,7 +17,7 @@ pub struct AgentsTree {
     pub shown: Vec<AgentPath>,
 }
 
-fn label<'a>(row: Option<&'a AgentRow>, glyphs: &Glyphs) -> ((&'static str, Token), &'a str) {
+pub fn label<'a>(row: Option<&'a AgentRow>, glyphs: &Glyphs) -> ((&'static str, Token), &'a str) {
     row.map_or_else(|| main_label(glyphs), |row| agent_label(row, glyphs))
 }
 

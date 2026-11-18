@@ -30,6 +30,7 @@ pub trait Console {
 pub fn handed_off(modes: Modes) -> Modes {
     Modes {
         mouse: false,
+        hover: false,
         alternate_scroll_off: None,
         alternate_screen: false,
         ..modes
