@@ -1,0 +1,28 @@
+name: title
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  title:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - env:
+          MR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          types=$(sed -n 's/^  - `type`: //p' CONTRIBUTING.md | grep -oE '`[a-z]+`' | tr -d '`' | paste -sd'|' -)
+          [ -n "$types" ]
+          if ! printf '%s' "$MR_TITLE" | grep -Eq "^($types)(\([a-z0-9-]+\))?!?: [^A-Z[:space:]](.*[^.[:space:]])?$"; then
+            echo "MR title is not a Conventional Commit."
+            echo "Expected: type(scope)!: lowercase description, no trailing period (see CONTRIBUTING.md)"
+            exit 1
+          fi
