@@ -441,7 +441,7 @@ impl Presenter {
                     screen.click(entry);
                 }
             }
-            MouseKind::Drag | MouseKind::Release | MouseKind::RightPress => {}
+            MouseKind::Drag | MouseKind::Release | MouseKind::RightPress | MouseKind::Move => {}
         }
         self.frames.mark();
     }

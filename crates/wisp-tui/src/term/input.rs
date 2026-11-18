@@ -101,6 +101,7 @@ pub enum MouseKind {
     Drag,
     Release,
     RightPress,
+    Move,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -113,6 +114,7 @@ pub struct Mouse {
 
 pub fn mouse_of(event: MouseEvent) -> Option<Mouse> {
     let kind = match event.kind {
+        MouseEventKind::Moved => MouseKind::Move,
         MouseEventKind::ScrollUp => MouseKind::WheelUp,
         MouseEventKind::ScrollDown => MouseKind::WheelDown,
         MouseEventKind::Down(MouseButton::Left) => MouseKind::Press,
@@ -342,6 +344,7 @@ fn sgr_mouse(params: &[u8], released: bool) -> Option<Input> {
         (0, false, false) => MouseEventKind::Down(MouseButton::Left),
         (0, false, true) | (3, false, _) => MouseEventKind::Up(MouseButton::Left),
         (0, true, _) => MouseEventKind::Drag(MouseButton::Left),
+        (3, true, false) => MouseEventKind::Moved,
         (2, false, false) => MouseEventKind::Down(MouseButton::Right),
         (4, false, _) => MouseEventKind::ScrollUp,
         (5, false, _) => MouseEventKind::ScrollDown,

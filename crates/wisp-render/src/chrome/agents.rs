@@ -27,7 +27,7 @@ mod tree;
 pub use super::account::AccountBilling;
 pub(crate) use account::THIS_CHAT;
 pub(super) use account::{TOTAL, tree_amount};
-pub use tree::{AgentsTree, list_width, tree as agents_tree};
+pub use tree::{AgentsTree, label as agent_label, list_width, tree as agents_tree};
 
 pub const AGENTS_MIN_ROWS: usize = 4;
 pub const PAGE_CHROME: usize = 6;

@@ -41,6 +41,7 @@ pub fn modes(caps: &Caps) -> Modes {
         focus_reports: true,
         cursor_hidden: true,
         mouse: caps.mouse.value,
+        hover: false,
         alternate_scroll_off: Some(caps.alternate_scroll.value),
     }
 }

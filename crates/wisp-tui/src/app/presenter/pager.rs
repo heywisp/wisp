@@ -250,7 +250,11 @@ impl Presenter {
             MouseKind::WheelDown => {
                 pager.scroll(Scroll::Lines(rows));
             }
-            MouseKind::Press | MouseKind::Drag | MouseKind::Release | MouseKind::RightPress => {}
+            MouseKind::Press
+            | MouseKind::Drag
+            | MouseKind::Release
+            | MouseKind::RightPress
+            | MouseKind::Move => {}
         }
         self.frames.mark();
     }

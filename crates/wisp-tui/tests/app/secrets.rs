@@ -350,7 +350,7 @@ async fn a_paste_of_two_lines_is_refused_and_says_why() {
     .await;
 }
 
-fn server_asked() -> AgentEvent {
+pub(super) fn server_asked() -> AgentEvent {
     AgentEvent::SecretRequested {
         call_id: "server-key".into(),
         id: None,

@@ -450,7 +450,8 @@ impl Presenter {
             MouseKind::Press => self.press(mouse, at),
             MouseKind::Drag => self.drag(mouse, at),
             MouseKind::Release => return self.release(mouse, console, at),
-            MouseKind::WheelUp | MouseKind::WheelDown | MouseKind::RightPress => {}
+            MouseKind::WheelUp | MouseKind::WheelDown | MouseKind::RightPress | MouseKind::Move => {
+            }
         }
         Ok(())
     }

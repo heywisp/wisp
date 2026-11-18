@@ -24,7 +24,7 @@ pub enum ScrollBack {
 }
 
 pub const MOUSE_ON: &str = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
-pub const MOUSE_OFF: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
+pub const MOUSE_OFF: &str = "\x1b[?1003l\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 pub const ALTERNATE_SCROLL_OFF: &str = "\x1b[?1007l";
 pub const ALTERNATE_SCROLL_ON: &str = "\x1b[?1007h";
 
@@ -41,6 +41,7 @@ pub struct Modes {
     pub focus_reports: bool,
     pub cursor_hidden: bool,
     pub mouse: bool,
+    pub hover: bool,
     pub alternate_scroll_off: Option<ScrollBack>,
 }
 
@@ -53,6 +54,7 @@ impl Modes {
         focus_reports: false,
         cursor_hidden: false,
         mouse: false,
+        hover: false,
         alternate_scroll_off: None,
     };
 
@@ -66,6 +68,7 @@ impl Modes {
             | (self.mouse as u16) << 6
             | (self.alternate_scroll_off.is_some() as u16) << 7
             | (matches!(self.alternate_scroll_off, Some(ScrollBack::Set)) as u16) << 8
+            | (self.hover as u16) << 9
     }
 
     pub(super) fn from_bits(bits: u16) -> Modes {
@@ -78,6 +81,7 @@ impl Modes {
             focus_reports: on(4),
             cursor_hidden: on(5),
             mouse: on(6),
+            hover: on(9),
             alternate_scroll_off: match (on(7), on(8)) {
                 (false, _) => None,
                 (true, true) => Some(ScrollBack::Set),
@@ -106,6 +110,7 @@ impl Modes {
             && !self.focus_reports
             && !self.cursor_hidden
             && !self.mouse
+            && !self.hover
             && self.alternate_scroll_off.is_none()
     }
 }
@@ -122,6 +127,7 @@ pub enum Change {
     Keyboard(Option<KeyboardFlags>),
     AlternateScreen(bool),
     Mouse(bool),
+    Hover(bool),
     AlternateScrollOff(ScrollBack),
     AlternateScrollBack(ScrollBack),
     Termios { raw: bool },
@@ -169,6 +175,8 @@ impl Change {
             Change::AlternateScreen(true) => "enter the alternate screen",
             Change::Mouse(false) => "disable mouse reports",
             Change::Mouse(true) => "enable mouse reports",
+            Change::Hover(false) => "disable mouse motion reports",
+            Change::Hover(true) => "enable mouse motion reports",
             Change::AlternateScrollOff(_) => "turn alternate scroll off",
             Change::AlternateScrollBack(_) => "put alternate scroll back",
             Change::Termios { raw: false } => "restore termios",
@@ -196,6 +204,11 @@ impl Change {
             Change::AlternateScreen(false) => ansi(LeaveAlternateScreen),
             Change::Mouse(true) => MOUSE_ON.to_owned(),
             Change::Mouse(false) => MOUSE_OFF.to_owned(),
+            Change::Hover(true) => "\x1b[?1003h".to_owned(),
+            Change::Hover(false) => {
+                let hover_off = MOUSE_OFF.split_inclusive('l').next().unwrap_or_default();
+                format!("{hover_off}{MOUSE_ON}")
+            }
             Change::AlternateScrollOff(_) => ALTERNATE_SCROLL_OFF.to_owned(),
             Change::AlternateScrollBack(ScrollBack::Set) => ALTERNATE_SCROLL_ON.to_owned(),
             Change::AlternateScrollBack(ScrollBack::Untouched) => String::new(),
@@ -214,7 +227,8 @@ impl Change {
             Change::FocusReports(on)
             | Change::BracketedPaste(on)
             | Change::AlternateScreen(on)
-            | Change::Mouse(on) => on,
+            | Change::Mouse(on)
+            | Change::Hover(on) => on,
             Change::AlternateScrollOff(_) => true,
             Change::Keyboard(flags) => flags.is_some(),
             Change::Termios { raw } => raw,
@@ -232,7 +246,13 @@ impl Change {
             Change::BracketedPaste(on) => modes.bracketed_paste = on,
             Change::Keyboard(flags) => modes.keyboard = flags,
             Change::AlternateScreen(on) => modes.alternate_screen = on,
-            Change::Mouse(on) => modes.mouse = on,
+            Change::Mouse(on) => {
+                modes.mouse = on;
+                if !on {
+                    modes.hover = false;
+                }
+            }
+            Change::Hover(on) => modes.hover = on,
             Change::AlternateScrollOff(back) => modes.alternate_scroll_off = Some(back),
             Change::AlternateScrollBack(_) => modes.alternate_scroll_off = None,
             Change::Termios { raw } => modes.raw = raw,
@@ -254,8 +274,10 @@ pub fn restore_plan(from: &Modes) -> Vec<Change> {
 
 fn disables(from: &Modes, to: &Modes) -> Vec<Change> {
     let mut out = vec![];
-    if from.mouse && !to.mouse {
+    if (from.mouse || from.hover) && !to.mouse {
         out.push(Change::Mouse(false));
+    } else if from.hover && !to.hover {
+        out.push(Change::Hover(false));
     }
     if let Some(back) = from.alternate_scroll_off
         && to.alternate_scroll_off.is_none()
@@ -303,6 +325,9 @@ pub fn transition(from: &Modes, to: &Modes) -> Vec<Change> {
     }
     if to.mouse && !from.mouse {
         out.push(Change::Mouse(true));
+    }
+    if to.mouse && to.hover && (!from.mouse || !from.hover) {
+        out.push(Change::Hover(true));
     }
     if let Some(back) = to.alternate_scroll_off
         && from.alternate_scroll_off.is_none()

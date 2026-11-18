@@ -239,6 +239,7 @@ struct State {
     clipboard: Vec<Vec<u8>>,
     modes: Modes,
     set_modes: Vec<Modes>,
+    mode_bytes: String,
     slow: Duration,
 }
 
@@ -383,8 +384,12 @@ impl Screen {
             handed: vec![],
             taken_back: 0,
             clipboard: vec![],
-            modes: Modes::default(),
+            modes: Modes {
+                mouse: true,
+                ..Modes::default()
+            },
             set_modes: vec![],
+            mode_bytes: String::new(),
             slow: Duration::ZERO,
         })))
     }
@@ -686,6 +691,12 @@ impl Console for Screen {
 
     fn set_modes(&mut self, modes: Modes) -> io::Result<()> {
         let mut state = self.0.borrow_mut();
+        for bytes in wisp_tui::term::modes::transition(&state.modes, &modes)
+            .into_iter()
+            .filter_map(wisp_tui::term::modes::Change::bytes)
+        {
+            state.mode_bytes.push_str(&bytes);
+        }
         state.modes = modes;
         state.set_modes.push(modes);
         Ok(())

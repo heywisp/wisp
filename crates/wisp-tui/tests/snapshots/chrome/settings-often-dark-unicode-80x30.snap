@@ -37,8 +37,8 @@ expression: shot
 |(7 blank rows)
 |────────────────────────────────────────────────────────────────────────────────
   ~ 0..80 fg Rgb(88, 88, 88)
-| Mouse: use the mouse for scrolling and selecting
-  ~ 1..8 fg Rgb(166, 166, 166); 8..49 fg Rgb(212, 212, 212) bold
+| Mouse: use the mouse to scroll, select and see names under the pointer on `/a…
+  ~ 1..8 fg Rgb(166, 166, 166); 8..79 fg Rgb(212, 212, 212) bold
 | Wisp's own: on
   ~ 1..15 fg Rgb(212, 212, 212)
 | enter turn on

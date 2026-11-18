@@ -780,7 +780,7 @@ pub static SETTINGS: &[SettingSpec] = &[
         names::DISPLAY_MOUSE,
         Section::Display,
         "Mouse",
-        "Use the mouse for scrolling and selecting.",
+        "Use the mouse to scroll, select and see names under the pointer on `/agents`.",
         Kind::Bool,
     )
     .display(&["WISP_MOUSE"], Default::Const("on")),

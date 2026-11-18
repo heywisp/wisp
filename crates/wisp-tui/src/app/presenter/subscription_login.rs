@@ -787,7 +787,7 @@ impl Presenter {
                     }
                 }
             }
-            MouseKind::Drag | MouseKind::Release | MouseKind::RightPress => {}
+            MouseKind::Drag | MouseKind::Release | MouseKind::RightPress | MouseKind::Move => {}
         }
     }
 

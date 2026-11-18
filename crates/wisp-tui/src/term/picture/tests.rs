@@ -37,6 +37,7 @@ fn view<'a>(nodes: &'a [SlotTopologyNode], flows: &'a [SlotFlow], ms: u64) -> To
         nodes,
         flows,
         picked: None,
+        label: None,
         layout: Layout::new(46, GlyphSet::Unicode),
         at: Duration::from_millis(ms),
         now_ms: ms,

@@ -217,6 +217,10 @@ async fn clicked_at(a: &Agent, column: u16, row: u16) {
     click(a, column, row);
 }
 
+fn moved_to(a: &Agent, column: u16, row: u16) {
+    mouse(a, MouseKind::Move, column, row);
+}
+
 pub(crate) async fn docked(a: &mut Agent) {
     a.emit(both()).await;
     a.emit(tree()).await;
@@ -516,8 +520,12 @@ async fn working_agents(a: &Agent, keys: impl IntoIterator<Item = String>) {
     let nodes = keys
         .into_iter()
         .map(|key| SlotTopologyNode {
+            parent: key
+                .rsplit_once('/')
+                .map(|(parent, _)| parent)
+                .filter(|p| !p.is_empty())
+                .map(str::to_owned),
             key,
-            parent: None,
             state: NodeState::Working,
         })
         .collect();
@@ -667,6 +675,142 @@ async fn the_list_walks_with_up_and_down_and_a_click_opens_its_row() {
         a.key(KeyCode::Esc);
         quit(&a).await;
     })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_name_shows_under_the_mouse_and_always_names_the_dot_under_it() {
+    steering_on(
+        Screen::new(22, 40),
+        options_in(Mode::Dark),
+        |a| async move {
+            let paths = [
+                "/violet",
+                "/violet/indigo",
+                "/violet/indigo/iris",
+                "/violet/indigo/iris/rose",
+                "/violet/indigo/iris/rose/sage",
+            ];
+            for path in paths {
+                a.emit(spawned(entry(path, AgentState::Running, 0.4))).await;
+            }
+            working_agents(&a, paths.map(str::to_owned)).await;
+            a.ctrl('t').key(KeyCode::Down);
+            a.shows("● violet").await;
+            assert!(a.screen.0.borrow().mode_bytes.ends_with("\x1b[?1003h"));
+            let (bracket, row) = locate(&a.screen, "[●]");
+            let col = bracket + 1;
+            let has_name = || tinted(&a.screen).iter().any(|s| s == " violet ");
+            moved_to(&a, col, row);
+            a.until("violet under its dot", |lines| {
+                lines[usize::from(row + 1)].contains(" violet") && has_name()
+            })
+            .await;
+            let sized = a.screen.sized();
+            moved_to(&a, col + 1, row);
+            sleep(Duration::from_millis(100)).await;
+            assert_eq!(a.screen.sized(), sized, "same dot needs no draw");
+            moved_to(&a, 0, row);
+            a.until("no name off the dot", |_| !has_name()).await;
+
+            moved_to(&a, col, row);
+            a.until("violet hovered again", |_| has_name()).await;
+            a.key(KeyCode::Down);
+            a.shows("● indigo").await;
+            assert_ne!(locate(&a.screen, "[●]"), (bracket, row));
+            assert!(!has_name(), "the old name stayed after scrolling");
+            let (dot, row) = locate(&a.screen, "[●]");
+            moved_to(&a, dot + 1, row);
+            a.until("indigo hovered", |_| {
+                tinted(&a.screen).iter().any(|s| s == " indigo ")
+            })
+            .await;
+            a.key(KeyCode::Down);
+            let name = || tinted(&a.screen).iter().any(|s| s == " iris ");
+            a.until("iris scrolls under the still mouse", |_| name())
+                .await;
+            a.input(Input::Resize(a.screen.resize(22, 42)));
+            a.until("no name after resize", |_| !name()).await;
+            let (dot, row) = locate(&a.screen, "[●]");
+            moved_to(&a, dot + 1, row);
+            a.until("iris hovered after resize", |_| name()).await;
+            a.input(Input::Focus(false));
+            a.until("no name after losing focus", |_| !name()).await;
+            a.input(Input::Focus(true));
+            moved_to(&a, dot + 1, row);
+            a.until("iris hovered after focus returned", |_| name())
+                .await;
+            let mouse_on = format!("\x1b[?1003l{}", wisp_tui::term::modes::MOUSE_ON);
+            let plain_mouse = || a.screen.0.borrow().mode_bytes.ends_with(&mouse_on);
+            a.key(KeyCode::Enter);
+            a.shows("esc back").await;
+            assert!(plain_mouse());
+            a.key(KeyCode::Esc);
+            a.until("back in the main chat", |lines| !shows(lines, "esc back"))
+                .await;
+            a.ctrl('t');
+            a.shows("[⠶]").await;
+            for _ in 0..3 {
+                a.key(KeyCode::Down);
+            }
+            a.shows("● iris").await;
+            assert!(!name(), "the name reappeared without moving the mouse");
+            let (dot, row) = locate(&a.screen, "[●]");
+            moved_to(&a, dot + 1, row);
+            a.until("iris hovered after returning", |_| name()).await;
+            a.key(KeyCode::Esc);
+            a.until("motion reports off when the page closes", |_| {
+                !a.screen.0.borrow().modes.hover
+            })
+            .await;
+            assert!(plain_mouse());
+            quit(&a).await;
+        },
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_card_covering_the_page_turns_motion_off_and_forgets_the_pointer() {
+    steering_on(
+        Screen::new(15, 40),
+        options_in(Mode::Dark),
+        |a| async move {
+            one_working_agent(&a).await;
+            a.ctrl('t');
+            a.shows(" Agents").await;
+            assert!(a.screen.0.borrow().modes.hover);
+            let (column, row) = locate(&a.screen, "[⠶]");
+            let name = || tinted(&a.screen).iter().any(|s| s == " main ");
+            moved_to(&a, column + 1, row);
+            a.until("main under the mouse", |_| name()).await;
+
+            let mut request = super::secrets::server_asked();
+            let AgentEvent::SecretRequested {
+                call_id, reason, ..
+            } = &mut request
+            else {
+                panic!("expected a request");
+            };
+            reason.push_str(&" Enter the key in this card only.".repeat(8));
+            let call_id = call_id.clone();
+            a.emit(request).await;
+            let lines = a.shows("SENTRY_TOKEN").await;
+            assert!(!shows(&lines, " Agents"), "{lines:?}");
+            assert!(!a.screen.0.borrow().modes.hover);
+            a.emit(AgentEvent::SecretRequestClosed {
+                call_id,
+                how: wisp_protocol::SecretRequestEnd::Stopped,
+            })
+            .await;
+            a.shows(" Agents").await;
+            assert!(a.screen.0.borrow().modes.hover);
+            assert!(!name(), "the name came back without a mouse move");
+            moved_to(&a, column + 1, row);
+            a.until("main under the mouse again", |_| name()).await;
+            quit(&a).await;
+        },
+    )
     .await;
 }
 

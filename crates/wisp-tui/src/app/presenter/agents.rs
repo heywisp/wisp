@@ -2,14 +2,15 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use ratatui_core::buffer::Buffer;
+use ratatui_core::layout::Rect;
 use wisp_protocol::slot::{NodeState, SlotBlock, SlotFlow, SlotTopologyNode};
 use wisp_protocol::{AgentEvent, AgentPath, ClientCommand, DeliveryMode};
 use wisp_render::chrome::account::fit_parts;
 use wisp_render::chrome::topology::{Drawing, Topology, Toward, key_at, page, step};
 use wisp_render::chrome::{
     AGENTS_LIST_GAP, AGENTS_MIN_ROWS, AccountBilling, AgentRow, AgentsTree, AgentsView, ChatTurn,
-    MainRow, PAGE_CHROME, agent_row, agents_next_change, agents_note, agents_page, agents_tree,
-    beside, chat_header, clocks_next_change, list_width, panel_rows, releasable,
+    MainRow, PAGE_CHROME, agent_label, agent_row, agents_next_change, agents_note, agents_page,
+    agents_tree, beside, chat_header, clocks_next_change, list_width, panel_rows, releasable,
 };
 use wisp_render::markdown::Layout;
 use wisp_render::motion::FRAME_MIN;
@@ -40,12 +41,17 @@ pub(super) struct AgentsList {
 struct Paged {
     top: u16,
     height: usize,
+    mouse_cell: Option<(u16, u16)>,
     listed: Vec<AgentPath>,
     scenes: Vec<Rc<Scene>>,
     moving: bool,
 }
 
 impl AgentsList {
+    pub(super) fn is_drawn(&self) -> bool {
+        self.drawn.is_some()
+    }
+
     pub(super) fn shows_picture(&self) -> bool {
         self.drawn.as_ref().is_some_and(|d| !d.scenes.is_empty())
     }
@@ -363,6 +369,7 @@ impl Presenter {
             nodes,
             flows,
             picked: key(picked),
+            label: None,
             layout: Layout {
                 width: usize::from(self.size.width) - self.list_room(),
                 ..self.chrome_layout()
@@ -424,6 +431,28 @@ impl Presenter {
         let view = self.topology(self.drawn_nodes()?, &picked, at);
         key_at(&view, drawn.height, (x, y))
             .map(|hit| hit.map_or_else(AgentPath::root, AgentPath::new))
+    }
+
+    pub(super) fn agents_hover(&mut self, cell: (u16, u16), at: Duration) -> bool {
+        if !self.mouse {
+            return false;
+        }
+        let Some(drawn) = self.agents_list.as_mut().and_then(|l| l.drawn.as_mut()) else {
+            return false;
+        };
+        let before = drawn.mouse_cell.replace(cell);
+        let hit = |cell| {
+            (self.mouse_layer(cell) == Some(super::Layer::Agents))
+                .then(|| self.dot_at(cell, at))
+                .flatten()
+        };
+        before != Some(cell) && before.and_then(hit) != hit(cell)
+    }
+
+    pub(super) fn forget_agents_hover(&mut self) {
+        if let Some(drawn) = self.agents_list.as_mut().and_then(|l| l.drawn.as_mut()) {
+            drawn.mouse_cell = None;
+        }
     }
 
     pub(super) fn agents_click(&mut self, mouse: Mouse, at: Duration) -> bool {
@@ -787,7 +816,13 @@ impl Presenter {
         }
     }
 
-    fn agents_view_lines(&mut self, room: usize, at: Duration, chrome: Layout) -> Vec<StyledLine> {
+    fn agents_view_lines(
+        &mut self,
+        room: usize,
+        bottom: u16,
+        at: Duration,
+        chrome: Layout,
+    ) -> Vec<StyledLine> {
         let shown = self.agents_shown(room);
         let Some(list) = &mut self.agents_list else {
             return vec![];
@@ -796,6 +831,23 @@ impl Presenter {
             list.drawn = None;
             return vec![];
         }
+        let mouse_cell = list
+            .drawn
+            .as_ref()
+            .and_then(|d| d.mouse_cell)
+            .filter(|_| self.mouse);
+        let hovered = mouse_cell
+            .filter(|&(_, row)| row < bottom)
+            .and_then(|cell| self.dot_at(cell, at));
+        let glyphs = Glyphs::of(chrome.glyphs);
+        let label = hovered.as_ref().and_then(|path| {
+            let row = if path.is_root() {
+                None
+            } else {
+                Some(self.agents.row(path)?)
+            };
+            Some((key(path), agent_label(row, &glyphs).1))
+        });
         let picked = self.agent_picked();
         let height = room.saturating_sub(PAGE_CHROME);
         let drawn = self.drawn_nodes();
@@ -804,7 +856,13 @@ impl Presenter {
             scenes,
             moving,
         } = match drawn {
-            Some(drawn) => page(&self.topology(drawn, &picked, at), height),
+            Some(drawn) => page(
+                &Topology {
+                    label,
+                    ..self.topology(drawn, &picked, at)
+                },
+                height,
+            ),
             None if self.sidebar.offers(AGENTS_SECTION) => Drawing::default(),
             None => {
                 let plugin = AGENTS_SECTION.split('/').next().unwrap_or(AGENTS_SECTION);
@@ -852,10 +910,18 @@ impl Presenter {
         if let Some(list) = &mut self.agents_list {
             let top = u16::try_from(top).unwrap_or(u16::MAX);
             let fits = scenes.iter().all(|s| s.rows.end <= height);
-            let scenes = scenes.into_iter().filter(|_| fits).map(Rc::new);
+            let visible = usize::from(bottom.saturating_sub(top));
+            let scenes = scenes
+                .into_iter()
+                .filter(|s| fits && s.rows.start < visible)
+                .map(|mut s| {
+                    s.rows.end = s.rows.end.min(visible);
+                    Rc::new(s)
+                });
             list.drawn = Some(Paged {
                 top,
                 height,
+                mouse_cell,
                 listed,
                 scenes: scenes.collect(),
                 moving,
@@ -909,13 +975,27 @@ impl Presenter {
         &mut self,
         buffer: &mut Buffer,
         view_rows: u16,
+        bottom: u16,
         at: Duration,
         chrome: Layout,
-    ) -> Option<u16> {
-        let lines = self.agents_view_lines(usize::from(view_rows), at, chrome);
-        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-        let top = view_rows.saturating_sub(height);
-        paint_lines(buffer, top, buffer.area.width, &lines, &self.theme);
-        (!lines.is_empty()).then_some(top)
+    ) -> Option<Rect> {
+        if bottom == 0 {
+            return None;
+        }
+        let lines = self.agents_view_lines(usize::from(view_rows), bottom, at, chrome);
+        let top = view_rows.saturating_sub(u16::try_from(lines.len()).unwrap_or(u16::MAX));
+        let height = bottom.checked_sub(top)?.min(view_rows.saturating_sub(top));
+        if height == 0 {
+            return None;
+        }
+        let width = buffer.area.width;
+        paint_lines(
+            buffer,
+            top,
+            width,
+            lines.iter().take(usize::from(height)),
+            &self.theme,
+        );
+        Some(Rect::new(0, top, width, height))
     }
 }
