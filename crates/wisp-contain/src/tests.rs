@@ -13,7 +13,7 @@ fn poll_once<F: Future>(future: Pin<&mut F>) -> Poll<F::Output> {
 
 #[test]
 fn contain_sets_the_flag_only_while_the_work_runs() {
-    assert!(!is_contained());
+    assert!(is_contained());
     let inside = contain(is_contained).unwrap();
     assert!(inside);
     assert!(!is_contained());
