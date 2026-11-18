@@ -2,11 +2,11 @@
 
 These rules are strict. CI enforces what it can; reviewers enforce the rest.
 
-## Commits and merge requests
+## Commits and pull requests
 
-- **Every change lands through a merge request.** Nobody pushes to `main`. The sole exception is the one-time creation of the previously absent GitHub `main` by the merge agent through the reviewed project cut tool, with the single approved signed root. This exception does not permit updating or recreating `main`.
+- **Every change lands through a pull request.** Nobody pushes to `main`.
 - Ordinary GitHub merges require signed commits on `main`. If the branch's required-signatures check is missing or cannot be confirmed, do not merge.
-- **MRs are squash-merged.** The MR title becomes the single commit on `main`, so the title must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+- **Pull requests are squash-merged.** The pull request title becomes the single commit on `main`, so the title must follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
   ```
   type(scope)!: description
@@ -14,14 +14,14 @@ These rules are strict. CI enforces what it can; reviewers enforce the rest.
 
   - `type`: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
   - `scope` (optional): the area changed, usually a crate: `core`, `protocol`, `cli`, `wispd`
-  - `!` marks a breaking change; explain it in a `BREAKING CHANGE:` footer in the MR description
+  - `!` marks a breaking change; explain it in a `BREAKING CHANGE:` footer in the pull request description
   - `description`: imperative, lowercase, no trailing period, e.g. `feat(core): add anthropic provider`
 - **Branch names** mirror the type: `feat/anthropic-provider`, `fix/sse-reconnect`, `docs/caching-research`.
 - Commits inside a branch should also follow Conventional Commits. They disappear in the squash, but they keep review readable.
 
-## Before opening an MR
+## Before opening a pull request
 
-Before an MR is ready to merge, these checks must pass locally on the change:
+Before a pull request is ready to merge, these checks must pass locally on the change:
 
 ```sh
 cargo fmt --all --check
@@ -31,7 +31,7 @@ cargo nextest run -p <package>
 
 The tests of the code a change touched are the package tests of every workspace package containing a changed file, plus every test named by the plan, approach note or a reviewer. Files outside every package add no package tests. No Rust file may hold a comment line; CI's `no_comments` test (`crates/wisp-protocol/tests/no_comments.rs`) also checks WIT files.
 
-CI (`.github/workflows/ci.yml`) is the one full run of the exact tree that merges, including `cargo nextest run --workspace`, except clippy and the tests on an MR whose every changed file is on the safe list in its `changes` job; a merge needs its `ci-ok` check and the title check of `.github/workflows/title.yml`, which reads the types above.
+CI (`.github/workflows/ci.yml`) is the one full run of the exact tree that merges, including `cargo nextest run --workspace`, except clippy and the tests on a pull request whose every changed file is on the safe list in its `changes` job; a merge needs its `ci-ok` check and the title check of `.github/workflows/title.yml`, which reads the types above.
 
 CI's clippy job also runs `cargo clippy --target wasm32-wasip2 -p wasm-fixture -p board -- -D warnings`, the lint of the WASM guests, and `cargo clippy -p wisp-cli --no-default-features -- -D warnings`, the CLI without its `wasm` feature.
 
