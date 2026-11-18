@@ -360,14 +360,6 @@ fn page_detail_notices_and_mini_full_matrix() {
                     &theme
                 )
             ));
-            sections.push(format!(
-                "REFUSAL\n{}",
-                capture(
-                    &refusal_rows("claude-work", Some("5-hour"), Some(NOW), layout, time),
-                    layout,
-                    &theme
-                )
-            ));
             for (name, state) in [
                 ("two-window", &warning),
                 ("stale", &stale),

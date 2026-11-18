@@ -4,7 +4,7 @@ pub use page::{
     is_stale, page_rows, percent, severity,
 };
 pub(crate) mod mini;
-pub use mini::{UsageCandidate, UsageHint, fit_mini, mini_candidates, refusal_rows, warning_rows};
+pub use mini::{UsageCandidate, UsageHint, fit_mini, mini_candidates, warning_rows};
 
 use wisp_protocol::plan_usage::{UsageScope, UsageWindow, WINDOWS};
 

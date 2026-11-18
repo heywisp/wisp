@@ -318,16 +318,6 @@ Styles:
 "/usage claude-work":Style::new().fg(Color::Rgb(166, 166, 166))
 
 
-REFUSAL
- ! Limit reached - claude-work - 5-hour
-   resets in 2h 14m - Tue 19:00 -
-   /usage claude-work
-Styles:
-" ! ":Style::new().fg(Color::Rgb(244, 135, 113)) | "Limit reached - claude-work - 5-hour":Style::new().fg(Color::Rgb(244, 135, 113))
-"resets in 2h 14m - Tue 19:00 -":Style::new().fg(Color::Rgb(166, 166, 166))
-"/usage claude-work":Style::new().fg(Color::Rgb(166, 166, 166))
-
-
 MINI two-window Show ROOM 20
 !! week 93% used
 Styles:
