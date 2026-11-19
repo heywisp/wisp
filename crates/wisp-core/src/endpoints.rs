@@ -328,16 +328,21 @@ impl ProviderKind {
         endpoint: &ResolvedEndpoint,
         model: &str,
         timeout: Duration,
+        models: Option<&Path>,
     ) -> Result<CheckOutcome, EndpointError> {
         match self {
             Self::Anthropic => {
                 let provider = AnthropicProvider::from_endpoint(endpoint)?;
-                Ok(provider.count_tokens_probe(model, timeout).await)
+                Ok(provider
+                    .with_client_version(models)
+                    .count_tokens_probe(model, timeout)
+                    .await)
             }
             Self::OpenAi => Ok(OpenAiProvider::from_endpoint(endpoint)?
                 .probe(timeout)
                 .await),
             Self::Gemini => Ok(GeminiProvider::from_endpoint(endpoint)?
+                .with_client_version(models)
                 .probe(timeout)
                 .await),
         }
@@ -370,7 +375,9 @@ impl ProviderKind {
         match self {
             Self::Anthropic => {
                 let provider = AnthropicProvider::from_endpoint(endpoint)?;
-                Ok(Arc::new(provider.with_saved_list(models)))
+                Ok(Arc::new(
+                    provider.with_client_version(models).with_saved_list(models),
+                ))
             }
             Self::OpenAi => {
                 let provider = OpenAiProvider::from_endpoint(endpoint)?;
@@ -378,7 +385,9 @@ impl ProviderKind {
             }
             Self::Gemini => {
                 let provider = GeminiProvider::from_endpoint(endpoint)?;
-                Ok(Arc::new(provider.with_saved_list(models)))
+                Ok(Arc::new(
+                    provider.with_client_version(models).with_saved_list(models),
+                ))
             }
         }
     }

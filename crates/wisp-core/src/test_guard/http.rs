@@ -9,6 +9,7 @@ use super::within;
 
 pub(crate) enum Reply {
     Send(String),
+    Delayed(std::time::Duration, String),
     Hang,
     HeadThenHang(String),
 }
@@ -69,22 +70,25 @@ async fn until_closed(socket: &mut TcpStream) {
 }
 
 async fn answer(socket: &mut TcpStream, reply: Reply) -> Option<Heard> {
-    match reply {
-        Reply::Send(response) => {
-            let _ = socket.write_all(response.as_bytes()).await;
-            let _ = socket.shutdown().await;
-            None
-        }
+    let (delay, response) = match reply {
+        Reply::Send(response) => (None, response),
+        Reply::Delayed(delay, response) => (Some(delay), response),
         Reply::Hang => {
             until_closed(socket).await;
-            Some(Heard::Closed)
+            return Some(Heard::Closed);
         }
         Reply::HeadThenHang(head) => {
             let _ = socket.write_all(head.as_bytes()).await;
             until_closed(socket).await;
-            Some(Heard::Closed)
+            return Some(Heard::Closed);
         }
+    };
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
     }
+    let _ = socket.write_all(response.as_bytes()).await;
+    let _ = socket.shutdown().await;
+    None
 }
 
 pub(crate) async fn serve(replies: Vec<Reply>) -> Server {

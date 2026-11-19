@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
@@ -53,10 +53,27 @@ pub(crate) fn read_limited<T: DeserializeOwned>(
     alias: &str,
     largest: u64,
 ) -> Option<T> {
-    let file = File::open(path(folder, alias, "json")?).ok()?;
+    try_read_limited(folder, alias, largest).ok().flatten()
+}
+
+pub(crate) fn try_read<T: DeserializeOwned>(folder: &Path, alias: &str) -> io::Result<Option<T>> {
+    try_read_limited(folder, alias, LARGEST)
+}
+
+fn try_read_limited<T: DeserializeOwned>(
+    folder: &Path,
+    alias: &str,
+    largest: u64,
+) -> io::Result<Option<T>> {
+    let path = path(folder, alias, "json").ok_or(io::ErrorKind::InvalidInput)?;
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
     let mut bytes = Vec::new();
-    file.take(largest).read_to_end(&mut bytes).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    file.take(largest).read_to_end(&mut bytes)?;
+    Ok(serde_json::from_slice(&bytes).ok())
 }
 
 pub(crate) fn write<T: Serialize>(folder: &Path, alias: &str, record: &T) -> std::io::Result<()> {

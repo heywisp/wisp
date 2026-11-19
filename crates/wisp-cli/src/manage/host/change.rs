@@ -398,7 +398,7 @@ impl CliEndpointHost {
         let outcome = probe
             .draft
             .provider
-            .probe(&target, &self.model, CHECK_TIMEOUT)
+            .probe(&target, &self.model, CHECK_TIMEOUT, self.models.as_deref())
             .await;
         Some(check_result(outcome))
     }

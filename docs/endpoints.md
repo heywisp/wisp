@@ -1194,27 +1194,53 @@ A ChatGPT subscription signed in with `wisp login`, a Claude subscription signed
 | Antigravity subscription | `POST /v1internal:fetchAvailableModels` on the account's Cloud Code PA URL | default model (`defaultAgentModelId`), window (`maxTokens`), max output (`maxOutputTokens`) | `defaultAgentModelId` first, then the tables' listed rows, thinking-capable shipped rows, other shipped rows and unshipped rows |
 | Gemini API key | `GET /v1beta/models` on Google's URL | window (`inputTokenLimit`), max output (`outputTokenLimit`) | the tables' listed rows first, then thinking-capable shipped rows, other shipped rows and unshipped rows |
 
-ChatGPT's list request sends the compatibility version in the shipped model file's `[providers.openai.client]` table as `client_version`. The server can hide newer models from older client versions.
+ChatGPT's list request sends the Codex client version as `client_version` (see Client versions below). The server can hide newer models from older client versions.
 
-To check the shipped version against the latest stable Codex model catalog on GitHub, run:
+To check that the shipped fallback still supports the latest stable Codex catalog on GitHub, run:
 
 ```sh
 cargo nextest run -p wisp-core --lib --run-ignored ignored-only models::tests::shipped_codex_version_supports_the_latest_catalog
 ```
 
-To bump it, change only `version` in `[providers.openai.client]` in `crates/wisp-core/data/models.toml` to the newest stable Codex release's version (without `rust-v`). Run `wisp account models NAME` on a ChatGPT subscription with the updated build to confirm the list still loads.
+To bump it, change only `version` in `[providers.openai.client]` in `crates/wisp-core/data/models.toml` to the newest stable Codex release's version (without `rust-v`). The check fails if any model in the latest stable catalog needs a newer version than the shipped fallback.
 
 On a ChatGPT subscription, Wisp takes the listed default, lowered to the listed maximum if it is smaller. Values below 104,000 tokens are ignored. A `compact_at` in tokens that the default can't hold grows the window to the smallest one whose `window − reserve` reaches it, at most the listed maximum or a proved overflow (`docs/context.md`, "The point and the reserve"). Without a usable default, Wisp takes the smallest of the model's shipped window, the listed maximum (or the older saved `window` if the entry has neither new field), and the shipped fallback (`window` in `[providers.openai.codex]`). The fallback only lowers a known window: if there is neither a shipped model window nor a usable list bound, the window stays unknown. An older saved window remains only a bound until a connection loads a freshly fetched list.
 
 A Gemini or Antigravity entry carries only its window and max output; the shipped row supplies its other facts, so old saved copies of levels, default level, adaptive thinking, image input and search are ignored. For other providers the levels are exactly the known ones the list names, gaps included, and a list that names no default level keeps the tables' when its levels hold it. A model only a list names runs with what the list says and nothing only the tables know (per-message effort, inline tool changes, message threads, native compaction), its cost unknown until it is priced. On other accounts, a window too small for a compaction point is ignored and the tables' value applies. A max output below 32,000 tokens is ignored only where the tables have a value to use instead; a max output of 0 is always ignored. A list that is unreadable, misses a field Wisp needs, or shows no entry is a failed fetch. Wisp keeps only those fields, never display names, dates or other text, in `models/<key>.json` beside `sessions/` in its data folder (folder 700, file 600), one file per sign-in, named by a hash of the account's request URL and its profile path, or of an API key's account name; no secret is hashed into it. Beside it, `models/<key>.lock` is the empty file the check below takes its claim on (file 600).
 
-The list is fetched after a sign-in, and at start for each subscription with no saved attempt, waiting at most 5 seconds in all. An interactive Wisp checks ready accounts that have a list and aren't signed out in the background at startup and roughly every 15 minutes. It refreshes a successful list after an hour and retries a failed or interrupted fetch at the first check at least about 15 minutes later. A failure keeps the last list and shows no message. A one-shot run skips these background checks. The check sends only the list request in the table above, with the account's own address, credential and identity headers. If several Wisps check at once, only the one that claims the list's lock file fetches; it saves the attempt's time before sending the request.
+The list is fetched after a sign-in, and at start for each subscription with no saved attempt, waiting up to 5 seconds for the lists, plus up to 3 seconds only if a client version lookup starts. An interactive Wisp checks ready accounts that have a list and aren't signed out in the background at startup and roughly every 15 minutes. It refreshes a successful list after an hour and retries a failed or interrupted fetch at the first check at least about 15 minutes later. A failure keeps the last list and shows no message. A one-shot run skips these background checks. The check sends the list request in the table above, with the account's own address, credential and identity headers. A subscription may first look up its client version. If several Wisps check at once, only the one that claims the list's lock file fetches; it saves the attempt's time before sending the request.
 
-Choosing a model absent from a loaded account list, through a startup model flag (even in a one-shot run), settings or an agent's explicit, preset or fallback choice (including a retry after a usage limit), fetches that list once more before the choice is checked or a warning is shown. At startup this happens only if no candidate account already offers the model (`docs/commands.md`, "`wisp --model NAME`"). The fetch waits at most 5 seconds and happens once per account and model name in the session, shared by startup, settings and spawns; simultaneous choices wait for the same fetch and deadline even if the first choice is cancelled. An effort choice fetches only if it changes the model ID, and a fallback fetches only when its choice is reached. This selection-triggered fetch does not wait for the next background check. Its result sets the next background refresh time in the same way.
+Choosing a model absent from a loaded account list, through a startup model flag (even in a one-shot run), settings or an agent's explicit, preset or fallback choice (including a retry after a usage limit), fetches that list once more before the choice is checked or a warning is shown. At startup this happens only if no candidate account already offers the model (`docs/commands.md`, "`wisp --model NAME`"). Wisp waits up to 5 seconds for the fetch, plus up to 3 seconds only if a client version lookup starts. The fetch happens once per account and model name in the session, shared by startup, settings and spawns; simultaneous choices wait for the same fetch and deadline even if the first choice is cancelled. An effort choice fetches only if it changes the model ID, and a fallback fetches only when its choice is reached. This selection-triggered fetch does not wait for the next background check. Its result sets the next background refresh time in the same way.
 
 A connection reads its account's list when it is made and takes from a newer one only entries for models it has no entry for and has sent no request for, so no byte a connection sends changes: a model the chat uses, or any name a request has already carried, keeps its facts until the connection is replaced (a new sign-in, an `/account` edit, or a change seen from another window) or the next start. A connection made with no list keeps none, and its account shows no rows from the list until the next start. What a connection adds reaches `/model` through the endpoints event. `/context` and `wisp doctor` name a listed window's source: `subscription` or `API`.
 
 `wisp account models NAME` fetches the list live on any account and prints its IDs, shown entries first; when the answer isn't a full list (a gateway that sends only IDs, or a list with nothing shown), it prints each entry's `id`, sorted.
+
+## Client versions
+
+When a signed-in ChatGPT, Claude or Antigravity subscription sends a model-list
+request to its own origin, Wisp can check the latest stable release of Codex,
+Claude Code or Antigravity CLI on GitHub. It checks only once the list request's
+access token is ready. API keys, bearers, gateways and Antigravity on another
+origin do not check. Neither inference nor `wisp doctor --check` checks releases.
+
+Each client has a record in `models/client-<provider>.json` with the last version
+found and the last attempt time. The process holding the client's lock saves
+the attempt before it makes the request. Other processes use the record without
+waiting. There is at most one attempt per client per hour per shared models
+folder, even after failure. An hour is the minimum gap between attempts, not a
+promise of when a new release will be found: an idle Wisp may send no list.
+
+The release request times out after three seconds. It goes directly to GitHub,
+without a proxy, redirect or credentials, and sends Wisp's own user agent, not
+an account's identity. If offline or the check fails, the list uses the last
+version found, even if it is older than the shipped fallback. If none has been
+found, or there is no data folder, Wisp uses the shipped version.
+
+A list can use a newly found version immediately. Inference and other requests
+keep the version read when their connection was made. Client versions do not
+change prompt bytes or cache keys. If a provider refuses a version, Wisp reports
+the request error as usual; it does not roll back automatically.
 
 ## Busy endpoints
 

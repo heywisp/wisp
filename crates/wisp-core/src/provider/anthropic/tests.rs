@@ -11,7 +11,7 @@ use super::*;
 use crate::agent::testing::{body_of, fallback_marker, text_of, turn};
 use crate::provider::sse::{after_200, billed_in_stream, interrupted, send_failure};
 use crate::provider::{AssembledMessage, Assembler, Features, RequestOptions};
-use crate::test_guard::{assistant, pick};
+use crate::test_guard::{assistant, named_tool as tool, pick, tool_specs};
 use crate::test_guard::{holding_server, http, refusing_addr, until_turn_end, within};
 
 mod classification;
@@ -2948,16 +2948,6 @@ mod log_redaction {
     }
 }
 
-fn tool_specs() -> Vec<crate::tool::ToolSpec> {
-    ["alpha", "beta"]
-        .map(|name| crate::tool::ToolSpec {
-            description: format!("The {name} tool."),
-            input_schema: json!({"type": "object", "properties": {}}),
-            name: name.into(),
-        })
-        .to_vec()
-}
-
 fn body_with_tools(system: Option<&str>) -> serde_json::Value {
     let session = session(system, CacheTtl::FiveMinutes);
     let tools = tool_specs();
@@ -3735,14 +3725,6 @@ fn an_anthropic_event_may_fill_the_cap_but_not_pass_it() {
     let items = decoder.push(b"q");
     assert_eq!(items.len(), 1);
     assert_too_large(&decoder, &items);
-}
-
-fn tool(name: &str) -> ToolSpec {
-    ToolSpec {
-        description: format!("The {name} tool."),
-        input_schema: json!({"type": "object", "properties": {}}),
-        name: name.into(),
-    }
 }
 
 #[test]

@@ -481,7 +481,9 @@ impl CliEndpointHost {
                 return Ok(SaveOutcome::Cancelled);
             }
             let target = probe_target(&draft, &prepared.path, prepared.shown);
-            let outcome = provider.probe(&target, &self.model, CHECK_TIMEOUT).await;
+            let outcome = provider
+                .probe(&target, &self.model, CHECK_TIMEOUT, self.models.as_deref())
+                .await;
             if cancelled(&cancel) {
                 return Ok(SaveOutcome::Cancelled);
             }

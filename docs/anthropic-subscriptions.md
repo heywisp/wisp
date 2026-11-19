@@ -94,13 +94,14 @@ handling remain in use.
 The shipped identity is in `[providers.anthropic.claude_code]` in
 [`crates/wisp-core/data/models.toml`](../crates/wisp-core/data/models.toml).
 It holds the user-agent templates, ordered beta flags and compatibility headers.
-The templates use the Claude Code version from `[providers.anthropic.client]`.
+The fallback version and release source are in `[providers.anthropic.client]`.
 Wisp appends its requested feature flags without duplicates;
 these include the message-thread flag on a thread's requests
 (`docs/context.md`, "Message threads").
 
-Inference and model listing use the same identity headers. Usage lookup uses the
-same version and app identity, with only the betas marked for usage. Architecture
+Inference and usage lookup keep the version read when the connection was made.
+The model list can use a newer version immediately (`docs/endpoints.md`, "Client
+versions"). Usage lookup sends only the betas marked for usage. Architecture
 and OS are generic platform names. No user or machine identifier is generated.
 
 Every subscription request starts its system blocks with:

@@ -1033,6 +1033,7 @@ fn doctor(
                     targets,
                     &check_model,
                     wisp_core::endpoints::CHECK_TIMEOUT,
+                    models_folder().as_deref(),
                 ))
             });
         match checked {

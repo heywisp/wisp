@@ -10,10 +10,13 @@ use super::{
     THINKING_AND_TEXT, UNKNOWN_TYPES, assistant, json_reply, mock_server, plain_request, session,
 };
 use crate::agent::testing::body_of;
+use crate::endpoints::ProviderKind;
+use crate::plan_usage::record;
 use crate::provider::anthropic::subscription::{Profile, SYSTEM_IDENTITY, data};
 use crate::provider::anthropic::{
     AnthropicProvider, ConfigError, DEFAULT_BASE_URL, MESSAGE_THREADS_BETA, Marks, encode, layout,
 };
+use crate::provider::client_version::{Record, Version, record_alias};
 use crate::provider::credential::{Credential, SubscriptionKind};
 use crate::provider::{
     Assembler, Provider, ProviderEvent, Request, RequestOptions, TailMarker, Thread, TokenCount,
@@ -286,6 +289,81 @@ fn profile_prefix_and_actual_sent_body_stay_equal_across_turns_and_token_changes
     assert!(!second_body.contains("test-token"));
 }
 
+#[tokio::test]
+async fn a_newer_client_version_reaches_only_new_connections() {
+    let (base, seen) = mock_server(vec![http::sse(THINKING_AND_TEXT); 3]).await;
+    let dir = tempfile::tempdir().unwrap();
+    let connect = |version| {
+        let record = Record {
+            version: Version::parse(version),
+            checked: 0,
+        };
+        record::write(dir.path(), &record_alias(ProviderKind::Anthropic), &record).unwrap();
+        local_provider(&base).with_client_version(Some(dir.path()))
+    };
+    let old = connect("2.1.998");
+    let session = session(Some("Stable prompt."), CacheTtl::OneHour);
+    let tools = super::tool_specs();
+    let messages = [
+        Message::user_text("hello"),
+        assistant(vec![text("Hello.")]),
+        Message::user_text("again"),
+    ];
+    let request = |messages| Request {
+        tools: &tools,
+        ..plain_request(RequestOptions::default(), &session, messages, None)
+    };
+    let first = request(&messages[..1]);
+    assert!(
+        old.stream(&first)
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .all(|event| event.is_ok())
+    );
+    let new = connect("2.1.999");
+    let second = request(&messages[..]);
+    for provider in [&old, &new] {
+        assert!(
+            provider
+                .stream(&second)
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .all(|event| event.is_ok())
+        );
+    }
+    let requests = seen.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    for (sent, version) in requests.iter().zip(["2.1.998", "2.1.998", "2.1.999"]) {
+        assert_eq!(
+            headers(sent)["user-agent"],
+            format!("claude-cli/{version} (external, sdk-cli)")
+        );
+    }
+    let bodies: Vec<_> = requests.iter().map(|request| http::body(request)).collect();
+    assert_eq!(bodies[1], bodies[2]);
+    crate::test_guard::prefix::assert_prefix_stable(
+        &bodies[..2]
+            .iter()
+            .map(|body| serde_json::from_str(body).unwrap())
+            .collect::<Vec<_>>(),
+        None,
+    );
+    assert_eq!(
+        old.prefix_bytes(&second).unwrap(),
+        new.prefix_bytes(&second).unwrap()
+    );
+    assert_eq!(
+        old.cache_prefix(&second).unwrap(),
+        new.cache_prefix(&second).unwrap()
+    );
+    assert_eq!(
+        old.wire_print(&second).unwrap(),
+        new.wire_print(&second).unwrap()
+    );
+}
+
 #[test]
 fn explicit_tail_markers_use_the_subscription_prefix() {
     let session = session(Some("You are Wisp."), CacheTtl::OneHour);
@@ -379,8 +457,8 @@ async fn subscription_http_profile_and_native_sse_are_preserved() {
             "{name}"
         );
     }
-    let (identity, version) = data().unwrap();
-    for (name, expected) in &identity.rendered(version).unwrap().headers {
+    let (identity, client) = data().unwrap();
+    for (name, expected) in &identity.rendered(client.version).unwrap().headers {
         assert_eq!(
             sent_headers.get(name.as_str()).map(String::as_str),
             Some(expected.to_str().unwrap()),

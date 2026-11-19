@@ -149,7 +149,7 @@ fn check(
     eprint!(
         "Checking it with one count_tokens request (free on Anthropic's side; a gateway may count it)\u{2026} "
     );
-    let outcome = probe(&probe_endpoint(&draft, key, path, shown), ctx.model);
+    let outcome = probe(&probe_endpoint(&draft, key, path, shown), ctx);
     let reason = match &outcome {
         Ok(o) => {
             eprintln!("{o}");

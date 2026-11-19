@@ -452,7 +452,7 @@ pub(super) fn shipped_user_agent() -> String {
     row.antigravity
         .as_ref()
         .unwrap()
-        .user_agent(row.client.unwrap().version)
+        .user_agent(row.client.as_ref().unwrap().version)
         .unwrap()
 }
 
