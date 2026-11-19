@@ -22,6 +22,7 @@ struct State {
     base: String,
     issuer: String,
     protected: AtomicBool,
+    protected_listen: AtomicBool,
     revoked: AtomicBool,
     down: AtomicBool,
     plain_endpoints: AtomicBool,
@@ -49,6 +50,7 @@ impl Server {
             issuer: issuer.unwrap_or_else(|| base.clone()),
             base,
             protected: AtomicBool::new(protected),
+            protected_listen: AtomicBool::new(false),
             revoked: AtomicBool::new(false),
             down: AtomicBool::new(false),
             plain_endpoints: AtomicBool::new(false),
@@ -78,6 +80,10 @@ impl Server {
     }
     pub(crate) fn issuer(&self) -> String {
         self.state.issuer.clone()
+    }
+    #[allow(dead_code, reason = "only the integration-test copy uses this control")]
+    pub(crate) fn protect_listen(&self) {
+        self.state.protected_listen.store(true, Ordering::Release);
     }
     pub(crate) fn revoke(&self) {
         self.state.revoked.store(true, Ordering::Release);
@@ -169,6 +175,7 @@ async fn handle(mut socket: tokio::net::TcpStream, state: Arc<State>) {
             format!("{}/{suffix}", state.issuer)
         }
     };
+    let protected_listen = state.protected_listen.load(Ordering::Acquire);
     let (status, extra, result) = match path.as_str() {
         "/.well-known/oauth-protected-resource" | "/.well-known/oauth-protected-resource/mcp" => (
             200,
@@ -206,9 +213,10 @@ async fn handle(mut socket: tokio::net::TcpStream, state: Arc<State>) {
 
         "/mcp" if state.down.load(Ordering::Acquire) => (503, String::new(), json!({})),
         "/mcp"
-            if state.protected.load(Ordering::Acquire)
-                && (state.revoked.load(Ordering::Acquire)
-                    || headers.get("authorization") != Some(&format!("Bearer {ACCESS}"))) =>
+            if protected_listen && body["method"] == "subscriptions/listen"
+                || state.protected.load(Ordering::Acquire)
+                    && (state.revoked.load(Ordering::Acquire)
+                        || headers.get("authorization") != Some(&format!("Bearer {ACCESS}"))) =>
         {
             (
                 401,
@@ -224,7 +232,7 @@ async fn handle(mut socket: tokio::net::TcpStream, state: Arc<State>) {
             let version = state.version.load(Ordering::Acquire);
             let result = match body["method"].as_str().unwrap_or_default() {
                 "server/discover" => {
-                    json!({"resultType":"complete","supportedVersions":["2026-07-28"],"capabilities":{"tools":{}} ,"ttlMs":0,"cacheScope":"private"})
+                    json!({"resultType":"complete","supportedVersions":["2026-07-28"],"capabilities":{"tools":{"listChanged":protected_listen}} ,"ttlMs":0,"cacheScope":"private"})
                 }
                 "initialize" => {
                     json!({"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"fixture","version":"1"}})

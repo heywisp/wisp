@@ -23,16 +23,17 @@ use wisp_protocol::log::LogEvent;
 mod scratch;
 use scratch::{ScratchDir, alive};
 
+fn stdio_server(mode: &str) -> McpServer {
+    McpServer {
+        keys: Vec::new(),
+        command: env!("CARGO_BIN_EXE_mcp-test-server").into(),
+        args: vec![mode.into()],
+    }
+}
+
 fn service(scratch: &ScratchDir, name: &str, mode: &str) -> Service {
     Service::new(
-        BTreeMap::from([(
-            name.into(),
-            McpServer {
-                keys: Vec::new(),
-                command: env!("CARGO_BIN_EXE_mcp-test-server").into(),
-                args: vec![mode.into()],
-            },
-        )]),
+        BTreeMap::from([(name.into(), stdio_server(mode))]),
         scratch.root.clone(),
         Some(scratch.root.join("mcp")),
     )
@@ -275,6 +276,90 @@ async fn a_saved_list_is_read_without_starting_a_process() {
     );
 }
 
+async fn announce_change(mcp: &Service) {
+    mcp.call(
+        "mcp__local__z_echo",
+        json!({"announce":true}),
+        Duration::from_secs(5),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_server_that_says_its_list_changed_is_listed_again() {
+    for (mode, during_add) in [("modern", false), ("legacy", false), ("modern", true)] {
+        let scratch = ScratchDir::new("wisp-mcp-", mode);
+        let mcp = Service::new(
+            BTreeMap::new(),
+            scratch.root.clone(),
+            Some(scratch.root.join("mcp")),
+        );
+        scratch.write("list-changed", "yes");
+        if during_add {
+            scratch.write("announce-on-list", "yes");
+        }
+        mcp.add("local", stdio_server(mode)).await.unwrap();
+        let before = mcp.revision();
+        if !during_add {
+            announce_change(&mcp).await;
+        }
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while (!during_add && mcp.revision() == before)
+                || !mcp.saved("local").is_some_and(|list| {
+                    list.tools
+                        .iter()
+                        .any(|tool| tool.name == "z.echo" && tool.description == "Changed")
+                })
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let methods = fs::read_to_string(scratch.root.join("methods")).unwrap();
+        let count = |name| methods.lines().filter(|method| *method == name).count();
+        assert_eq!(count("server/discover"), 1);
+        assert_eq!(count("subscriptions/listen"), usize::from(mode == "modern"));
+    }
+}
+
+#[tokio::test]
+async fn a_new_notice_during_a_failed_relist_starts_another_attempt() {
+    let scratch = ScratchDir::new("wisp-mcp-", "failed-relist");
+    scratch.write("list-changed", "yes");
+    scratch.write("fail-relist", "yes");
+    let mcp = service(&scratch, "local", "modern");
+    mcp.connect("local").await.unwrap();
+    announce_change(&mcp).await;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !mcp
+            .saved("local")
+            .is_some_and(|list| list.tools.iter().any(|tool| tool.description == "Changed"))
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!scratch.root.join("fail-relist").exists());
+}
+
+#[tokio::test]
+async fn a_change_before_the_listen_acknowledgment_is_in_the_first_list() {
+    let scratch = ScratchDir::new("wisp-mcp-", "change-on-listen");
+    scratch.write("list-changed", "yes");
+    scratch.write("change-on-listen", "yes");
+    let mcp = service(&scratch, "local", "modern");
+    let list = mcp.list("local").await.unwrap();
+    assert_eq!(list.tools.len(), 3);
+    assert!(list.tools.iter().all(|tool| tool.description == "Changed"));
+    let methods = fs::read_to_string(scratch.root.join("methods")).unwrap();
+    assert!(methods.starts_with("server/discover\nsubscriptions/listen\ntools/list\n"));
+    assert_eq!(mcp.revision(), 1);
+}
+
 #[tokio::test]
 async fn a_changed_list_is_noticed_but_a_timestamp_change_is_not() {
     let scratch = ScratchDir::new("wisp-mcp-", "changed");
@@ -459,29 +544,36 @@ async fn mapped_names_round_trip_and_provider_invalid_names_are_refused() {
 
 #[tokio::test]
 async fn the_last_session_tree_handle_stops_the_whole_process_group() {
-    let scratch = ScratchDir::new("wisp-mcp-", "drop");
-    let mcp = service(&scratch, "local", "descendant");
-    mcp.connect("local").await.unwrap();
-    let child = mcp.clone();
-    let server: i32 = fs::read_to_string(scratch.root.join("server.pid"))
-        .unwrap()
-        .parse()
+    for mode in ["modern", "legacy"] {
+        let scratch = ScratchDir::new("wisp-mcp-", "drop");
+        scratch.write("descendant", "yes");
+        scratch.write("list-changed", "yes");
+        scratch.write("hang-relist", "yes");
+        let mcp = service(&scratch, "local", mode);
+        mcp.connect("local").await.unwrap();
+        let child = mcp.clone();
+        let server: i32 = fs::read_to_string(scratch.root.join("server.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let descendant: i32 = fs::read_to_string(scratch.root.join("child.pid"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        announce_change(&mcp).await;
+        exists(&scratch, "relist-pending").await;
+        assert!(alive(server) && alive(descendant));
+        drop(mcp);
+        assert!(alive(server) && alive(descendant));
+        drop(child);
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while alive(server) || alive(descendant) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
         .unwrap();
-    let descendant: i32 = fs::read_to_string(scratch.root.join("child.pid"))
-        .unwrap()
-        .parse()
-        .unwrap();
-    assert!(alive(server) && alive(descendant));
-    drop(mcp);
-    assert!(alive(server) && alive(descendant));
-    drop(child);
-    tokio::time::timeout(Duration::from_secs(10), async {
-        while alive(server) || alive(descendant) {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .unwrap();
+    }
 }
 
 #[tokio::test]
@@ -678,6 +770,37 @@ async fn http_service(scratch: &ScratchDir, server: &http::Server) -> Service {
         }
     );
     service
+}
+
+#[tokio::test]
+async fn a_protected_http_listen_does_not_require_sign_in_for_tools() {
+    let scratch = ScratchDir::new("wisp-mcp-", "protected-listen");
+    let server = http::Server::start(false, None).await;
+    server.protect_listen();
+    let mcp = http_service(&scratch, &server).await;
+    assert_eq!(mcp.rows()[0].state, State::Ready);
+    assert_eq!(mcp.saved("local").unwrap().tools.len(), 1);
+    mcp.call(
+        "mcp__local__echo",
+        json!({}),
+        Duration::from_secs(2),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(mcp.rows()[0].state, State::Ready);
+    server.requests(|requests| {
+        let count = |name| {
+            requests
+                .iter()
+                .filter(|request| request.body["method"] == name)
+                .count()
+        };
+        assert_eq!(count("server/discover"), 1);
+        assert_eq!(count("subscriptions/listen"), 1);
+        assert_eq!(count("tools/list"), 1);
+        assert_eq!(count("tools/call"), 1);
+    });
 }
 
 #[tokio::test]
@@ -1450,9 +1573,12 @@ async fn optional_listing_failures_keep_tools_and_good_saved_metadata_until_refr
 
 #[tokio::test]
 async fn optional_lists_that_never_answer_do_not_block_tools() {
-    for family in ["prompts", "resources"] {
+    for family in ["prompts", "resources", "listen"] {
         let scratch = ScratchDir::new("wisp-mcp-", family);
-        fs::write(scratch.root.join(format!("hang-{family}")), "yes").unwrap();
+        scratch.write(&format!("hang-{family}"), "yes");
+        if family == "listen" {
+            scratch.write("list-changed", "yes");
+        }
         let mcp = service(&scratch, "local", "modern");
         tokio::time::timeout(Duration::from_secs(15), mcp.connect("local"))
             .await
@@ -1463,13 +1589,15 @@ async fn optional_lists_that_never_answer_do_not_block_tools() {
         let list = mcp.saved("local").unwrap();
         assert_eq!(list.prompts.is_empty(), family == "prompts");
         assert_eq!(list.resources.is_empty(), family == "resources");
-        assert!(
-            fs::read_dir(scratch.root.join("mcp"))
-                .into_iter()
-                .flatten()
-                .flatten()
-                .all(|entry| !entry.path().extension().is_some_and(|ext| ext == "json"))
-        );
+        let persisted = fs::read_dir(scratch.root.join("mcp"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| entry.path().extension().is_some_and(|ext| ext == "json"));
+        assert_eq!(persisted, family == "listen");
+        if family == "listen" {
+            exists(&scratch, "cancelled").await;
+        }
         assert!(
             mcp.call(
                 "mcp__local__z_echo",
@@ -1779,6 +1907,8 @@ async fn a_missing_or_mismatched_key_is_reported_before_start_and_remove_clears_
 #[tokio::test]
 async fn setting_a_key_anew_restarts_then_keeps_it_and_preserves_an_old_key_after_failure() {
     let scratch = ScratchDir::new("wisp-mcp-", "key-replace");
+    scratch.write("list-changed", "yes");
+    scratch.write("slow-list", "yes");
     let mcp = key_service(&scratch, BTreeMap::new());
     let mut spec = key_spec();
     spec.keys.clear();
@@ -1790,7 +1920,24 @@ async fn setting_a_key_anew_restarts_then_keeps_it_and_preserves_an_old_key_afte
         before.replace("command =", "# user's command\ncommand ="),
     )
     .unwrap();
-    let result = mcp.set_keys("local", typed_key(KEY)).await.unwrap();
+    announce_change(&mcp).await;
+    exists(&scratch, "slow-list-started").await;
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        mcp.set_keys("local", typed_key(KEY)),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        fs::read_to_string(scratch.root.join("methods"))
+            .unwrap()
+            .lines()
+            .any(|method| method == "late-list-answered")
+    );
+    for service in [&mcp, &service(&scratch, "local", "text")] {
+        assert!(!canonical_specs(&service.saved("local").unwrap().tools).contains("Late"));
+    }
     assert!(result.kept);
     assert!(
         fs::read_to_string(scratch.root.join("config.toml"))

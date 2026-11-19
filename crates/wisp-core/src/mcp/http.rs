@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use futures::stream::BoxStream;
 use reqwest::header::{HeaderName, HeaderValue};
-use rmcp::model::ClientJsonRpcMessage;
+use rmcp::model::{ClientJsonRpcMessage, ClientRequest};
 use rmcp::transport::auth::{AuthClient, AuthorizationManager};
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClient, StreamableHttpError, StreamableHttpPostResponse,
@@ -56,8 +56,8 @@ impl Http {
         }
     }
 
-    fn received<T>(&self, result: Result<T, Error>) -> Result<T, Error> {
-        if let Err(Error::AuthRequired(challenge)) = &result {
+    fn received<T>(&self, result: Result<T, Error>, track_challenge: bool) -> Result<T, Error> {
+        if track_challenge && let Err(Error::AuthRequired(challenge)) = &result {
             *self
                 .challenge
                 .lock()
@@ -68,16 +68,22 @@ impl Http {
     }
 }
 
+fn is_listen(message: &ClientJsonRpcMessage) -> bool {
+    matches!(message, ClientJsonRpcMessage::Request(request)
+        if matches!(request.request, ClientRequest::SubscriptionsListenRequest(_)))
+}
+
 macro_rules! send {
-    ($this:ident, $uri:ident, $supplied:ident, $method:ident($($arg:expr),*)) => {{
+    ($this:ident, $uri:ident, $supplied:ident, $track:expr, $method:ident($($arg:expr),*)) => {{
         $this.check(&$uri, $supplied)?;
+        let track_challenge = $track;
         let result = async {
             match &$this.authorized {
                 Some(client) => client.$method($uri, $($arg),*).await,
                 None => $this.client.$method($uri, $($arg),*).await,
             }
         }.await;
-        $this.received(result)
+        $this.received(result, track_challenge)
     }};
 }
 
@@ -96,6 +102,7 @@ impl StreamableHttpClient for Http {
             self,
             uri,
             auth_header,
+            !is_listen(&message),
             post_message(message, session_id, None, custom_headers)
         )
     }
@@ -113,6 +120,7 @@ impl StreamableHttpClient for Http {
             self,
             uri,
             auth_header,
+            !is_listen(&message),
             post_message_with_max_sse_event_size(
                 message,
                 session_id,
@@ -134,6 +142,7 @@ impl StreamableHttpClient for Http {
             self,
             uri,
             auth_header,
+            true,
             delete_session(session_id, None, custom_headers)
         )
     }
@@ -150,6 +159,7 @@ impl StreamableHttpClient for Http {
             self,
             uri,
             auth_header,
+            true,
             get_stream(session_id, last_event_id, None, custom_headers)
         )
     }
@@ -167,6 +177,7 @@ impl StreamableHttpClient for Http {
             self,
             uri,
             auth_header,
+            true,
             get_stream_with_max_sse_event_size(
                 session_id,
                 last_event_id,
