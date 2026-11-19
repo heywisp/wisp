@@ -391,7 +391,7 @@ fn with_pictures_the_bar_and_the_marks_are_squares_in_column_order() {
     assert_eq!(bar.dots.iter().map(|d| d.ink).collect::<Vec<_>>(), inks);
     for (i, dot) in bar.dots.iter().enumerate() {
         let at = ((i / 4) as f32 + 0.5, ((i % 4) as f32 + 0.5) / 2.0);
-        assert_eq!((dot.at, dot.mark, dot.halo), (at, Mark::Square, false));
+        assert_eq!((dot.at, dot.mark, dot.frame), (at, Mark::Square, 0));
     }
     let marked: Vec<_> = marks.dots.iter().map(|d| (d.at, d.ink)).collect();
     let parts = [FillPart::System, FillPart::Tools, FillPart::Chat];

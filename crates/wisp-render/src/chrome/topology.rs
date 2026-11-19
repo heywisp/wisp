@@ -10,7 +10,7 @@ use crate::markdown::Layout;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::motion::{
-    FRAME_MIN, MotionCtx, REVEAL, REVEAL_STEP_MS, ms, picture_pulse, reveal, tree_glow, tree_pulse,
+    FRAME_MIN, MotionCtx, REVEAL, REVEAL_STEP_MS, ms, picture_frame, reveal, tree_pulse,
 };
 use crate::picture::{Dot, Light, Mark, Ring, Scene};
 use crate::styled::{Look, StyledLine, StyledSpan};
@@ -57,8 +57,6 @@ const LIGHT_RANK: u8 = 1;
 const ASCII_LIGHT: &str = "#";
 const TRAIL: usize = 3;
 const HUB: (u8, u8) = (0, 1);
-const GLOW_REACH: (f64, f64) = (3.0, 1.5);
-const GLOW_STEPS: f64 = 8.0;
 
 pub struct Topology<'a> {
     pub root: Option<&'a str>,
@@ -445,7 +443,7 @@ fn draw(
 
 type Pip = ((usize, usize), (u8, u8));
 
-fn trace(path: &[(usize, usize)], wires: &BTreeMap<(usize, usize), u8>) -> Vec<Pip> {
+fn cells(path: &[(usize, usize)]) -> Vec<(usize, usize)> {
     let toward = |a: usize, b: usize| (a + usize::from(b > a)).saturating_sub(usize::from(b < a));
     let mut cells: Vec<(usize, usize)> = path.first().copied().into_iter().collect();
     for pair in path.windows(2) {
@@ -455,6 +453,11 @@ fn trace(path: &[(usize, usize)], wires: &BTreeMap<(usize, usize), u8>) -> Vec<P
             cells.push(at);
         }
     }
+    cells
+}
+
+fn trace(path: &[(usize, usize)], wires: &BTreeMap<(usize, usize), u8>) -> Vec<Pip> {
+    let cells = cells(path);
     let line = |at| {
         let glyph = wire_glyph(wires.get(at).copied().unwrap_or(0), &glyphs::UNICODE);
         glyph.chars().next().and_then(canvas::braille).unwrap_or(0)
@@ -566,39 +569,6 @@ fn rings(grid: &mut Canvas, placed: &Placed, rings: &[((usize, usize), Duration)
     }
 }
 
-fn glow(grid: &mut Canvas, strength: f64, dots: impl Iterator<Item = (usize, usize)>) {
-    let (rx, ry) = GLOW_REACH;
-    let mut lit: BTreeMap<(usize, usize), f64> = BTreeMap::new();
-    for (x, y) in dots {
-        for dy in -(ry as isize)..=ry as isize {
-            for dx in -(rx as isize)..=rx as isize {
-                let d = ((dx as f64 / rx).powi(2) + (dy as f64 / ry).powi(2)).sqrt();
-                let u = (strength * (1.0 - d).max(0.0).powi(2) * GLOW_STEPS).round() / GLOW_STEPS;
-                let Some(at) = x.checked_add_signed(dx).zip(y.checked_add_signed(dy)) else {
-                    continue;
-                };
-                if u > 0.0 {
-                    let most = lit.entry(at).or_insert(0.0);
-                    *most = most.max(u);
-                }
-            }
-        }
-    }
-    for (at, u) in lit {
-        let tint = Ink::mix(Token::HueCool, Token::Bg, u, Token::Bg);
-        match grid.cell_mut(at) {
-            Some(Some(cell)) if cell.look.bg.is_none() => cell.look.bg = Some(tint),
-            Some(slot @ None) => {
-                *slot = Some(Cell {
-                    mark: canvas::Mark::Text(" "),
-                    look: Look::default().on(tint),
-                });
-            }
-            _ => {}
-        }
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct Drawing {
     pub lines: Vec<StyledLine>,
@@ -668,7 +638,7 @@ fn legend_mark(
         mark,
         radius: LEGEND_DOT,
         ink: Ink::from(token),
-        halo: false,
+        frame: 0,
         picked: false,
     });
     spans.push(StyledSpan::plain(" ".repeat(width(&glyph.text, mode))));
@@ -707,7 +677,7 @@ fn scene(
             mark: Mark::Root,
             radius: window.dot + MAIN_MORE,
             ink: Ink::from(Token::Accent),
-            halo: true,
+            frame: 0,
             picked: window.picked == Some(at),
         })
     });
@@ -723,30 +693,31 @@ fn scene(
             } else {
                 window.dot
             },
-            ink: match node.state {
-                NodeState::Working => picture_pulse(token, view.at, view.cx),
-                _ => Ink::from(token),
+            ink: Ink::from(token),
+            frame: if node.state == NodeState::Working {
+                picture_frame(view.at, view.cx)
+            } else {
+                0
             },
-            halo: true,
             picked: window.picked == Some(at),
         })
     });
     let drawn: Vec<Dot> = root.into_iter().chain(dots).collect();
     let (left, top) = (window.at.0 as f32, window.at.1 as f32);
     let shift = |(x, y): (f32, f32)| (x - left, y - top);
-    let lights = lit.lights.into_iter().map(|(path, h)| {
-        let along = (h + 1) as f32 / route_len(&path) as f32;
-        Light {
-            path: path.into_iter().map(|cell| shift(centre(cell))).collect(),
-            along,
-            radius: window.dot,
-        }
+    let lights = lit.lights.into_iter().filter_map(|(path, h)| {
+        let head = h + 1;
+        let route = cells(&path);
+        let trail = route.get(head.saturating_sub(TRAIL)..=head)?;
+        Some(Light {
+            path: trail.iter().map(|&cell| shift(centre(cell))).collect(),
+        })
     });
     let rings = lit.rings.into_iter().filter_map(|(cell, open)| {
         let at = window.inside(cell)?;
         let on = *drawn.iter().find(|d| d.at == at)?;
-        let open = open.as_secs_f32() / REVEAL.as_secs_f32();
-        Some(Ring { on, open })
+        let step = (3 * ms(open) / ms(REVEAL)).min(2) as u8;
+        Some(Ring { on, step })
     });
     Scene {
         width: view.layout.width,
@@ -815,14 +786,6 @@ struct Flights {
 impl Flights {
     fn any(&self) -> bool {
         !self.lights.is_empty() || !self.rings.is_empty()
-    }
-
-    fn landing(&self) -> Vec<(usize, usize)> {
-        let flying = self
-            .lights
-            .iter()
-            .filter_map(|(path, _)| path.last().copied());
-        flying.chain(self.rings.iter().map(|ring| ring.0)).collect()
     }
 }
 
@@ -1032,14 +995,6 @@ pub fn page(view: &Topology<'_>, height: usize) -> Drawing {
         if on && free && !dotted {
             shown.text((x, y), glyph, faint);
         }
-    }
-    if let Some(strength) = tree_glow(view.at, view.cx).filter(|_| !view.pictures) {
-        let landing = lit.landing();
-        let working = (view.nodes.iter().zip(&placed.pos))
-            .filter(|(node, _)| node.state == NodeState::Working)
-            .filter_map(|(_, at)| at.filter(|at| !landing.contains(at)));
-        let inside = working.filter_map(|(x, y)| Some((x.checked_sub(left)?, y.checked_sub(top)?)));
-        glow(&mut shown, strength, inside);
     }
     let mut out = shown.lines();
     hover_label(view, &spots, (left, top), &mut out, &glyphs);
