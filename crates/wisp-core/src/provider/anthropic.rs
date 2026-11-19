@@ -22,6 +22,7 @@ use super::classify::{
     self, Carries, ErrorObject, body_error, error_object, header_request_id, overflows,
     refuse_attachment, refuse_foreign_search, refuse_search, suspect_search,
 };
+use super::client_version::{self, Client, Version};
 pub use super::credential::{Credential, EnvFile, Source};
 use super::forms::{Layout, native};
 use super::sse::{
@@ -286,6 +287,8 @@ pub struct AnthropicProvider {
     credential: Credential,
     profile: Profile,
     rendered: Option<subscription::Rendered>,
+    client_version: Option<Client>,
+    models_folder: Option<PathBuf>,
     official: bool,
     threads: bool,
     waits: Waits,
@@ -332,7 +335,20 @@ impl AnthropicProvider {
 
     #[must_use]
     pub fn with_saved_list(mut self, folder: Option<&Path>) -> Self {
+        self.models_folder = folder.map(Path::to_path_buf);
         self.list = ListCell::new(SavedList::take(folder, self.list_key.as_deref()));
+        self
+    }
+
+    pub(crate) fn with_client_version(mut self, folder: Option<&Path>) -> Self {
+        if let Some(client) = &self.client_version
+            && let Some((identity, _)) = subscription::data()
+        {
+            let version = client_version::current(client, folder, ProviderKind::Anthropic);
+            if let Some(rendered) = identity.rendered(version) {
+                self.rendered = Some(rendered);
+            }
+        }
         self
     }
 
@@ -349,14 +365,14 @@ impl AnthropicProvider {
         auth: AuthHeader,
         credential: &Credential,
         base_url: &str,
-        identity: Option<(&subscription::Identity, super::client_version::Version)>,
+        identity: Option<(&subscription::Identity, &Client)>,
     ) -> Result<Self, ConfigError> {
         let profile = Profile::for_credential(credential)?;
         profile.check_origin(base_url)?;
         let rendered = if profile.subscription() {
             Some(
                 identity
-                    .and_then(|(identity, version)| identity.rendered(version))
+                    .and_then(|(identity, client)| identity.rendered(client.version))
                     .ok_or(ConfigError::SubscriptionIdentity)?,
             )
         } else {
@@ -375,6 +391,10 @@ impl AnthropicProvider {
             credential: credential.clone(),
             profile,
             rendered,
+            client_version: identity
+                .filter(|_| profile.subscription())
+                .map(|(_, client)| client.clone()),
+            models_folder: None,
             official,
             threads: official,
             waits: Waits {
@@ -426,29 +446,47 @@ impl AnthropicProvider {
         h
     }
 
-    async fn list_request(&self) -> Result<reqwest::RequestBuilder, ProviderError> {
+    fn list_request(
+        &self,
+        subscription: Option<(Version, HeaderValue)>,
+    ) -> reqwest::RequestBuilder {
         let mut headers = self.base_headers("application/json");
-        if let Some(identity) = &self.rendered {
-            identity.extend_headers(&mut headers);
-            let betas = subscription::data()
-                .map(|(identity, _)| identity.betas.join(","))
-                .unwrap_or_default();
-            if let Ok(betas) = HeaderValue::from_str(&betas) {
-                headers.insert(HeaderName::from_static("anthropic-beta"), betas);
+        if let Some((version, authorization)) = subscription {
+            if let Some((identity, _)) = subscription::data() {
+                if let Some(rendered) = identity.rendered(version) {
+                    rendered.extend_headers(&mut headers);
+                }
+                if let Ok(betas) = HeaderValue::from_str(&identity.betas.join(",")) {
+                    headers.insert(HeaderName::from_static("anthropic-beta"), betas);
+                }
             }
-            headers.insert("authorization", bearer(&self.credential).await?);
+            headers.insert("authorization", authorization);
         }
-        let call = self.client.get(&self.models_url).headers(headers);
-        Ok(call.timeout(list::TIMEOUT))
+        self.client
+            .get(&self.models_url)
+            .headers(headers)
+            .timeout(list::TIMEOUT)
     }
 
-    async fn models_response(&self) -> Result<reqwest::Response, ProviderError> {
-        let sent = self.list_request().await?.send().await;
-        sent.map_err(|_| Unusable::Unreachable.error(ProviderKind::Anthropic))
+    async fn models_response(
+        &self,
+        folder: Option<&Path>,
+    ) -> Result<reqwest::Response, ProviderError> {
+        let subscription = if let Some(client) = &self.client_version {
+            let authorization = bearer(&self.credential).await?;
+            let version = client_version::resolve(client, folder, ProviderKind::Anthropic).await;
+            Some((version, authorization))
+        } else {
+            None
+        };
+        self.list_request(subscription)
+            .send()
+            .await
+            .map_err(|_| Unusable::Unreachable.error(ProviderKind::Anthropic))
     }
 
     async fn fetch_ids(&self) -> Result<Vec<String>, ProviderError> {
-        let bytes = list_bytes(self.models_response().await?).await?;
+        let bytes = list_bytes(self.models_response(self.models_folder.as_deref()).await?).await?;
         match list::anthropic::parse(&bytes) {
             Ok(list) => Ok(list.ids()),
             Err(_) => list::ids_only(&bytes).map_err(|e| e.error(ProviderKind::Anthropic)),
@@ -461,7 +499,7 @@ impl AnthropicProvider {
         let Some(_claim) = self.list.begin(&folder, key, always, now) else {
             return;
         };
-        let response = self.models_response().await;
+        let response = self.models_response(Some(&folder)).await;
         self.save_fetched(response, &folder).await;
     }
 

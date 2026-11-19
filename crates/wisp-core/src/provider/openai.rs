@@ -22,6 +22,7 @@ use wisp_protocol::{
 
 use super::anthropic::{status_outcome, unexpected, unreachable};
 use super::classify::{self, Carries, ErrorObject, error_object};
+use super::client_version::{self, Version};
 use super::credential::{Credential, SubscriptionKind, subscription_authentication_failed};
 use super::sse::{Decoder, IDLE_TIMEOUT, SseParser, Waits, broken};
 use super::{
@@ -130,6 +131,8 @@ pub fn check_credential(credential: &Credential) -> Result<(), ConfigError> {
 pub struct OpenAiProvider {
     clock: std::sync::Arc<dyn crate::clock::Clock>,
     client: Client,
+    client_version: Option<client_version::Client>,
+    models_folder: Option<PathBuf>,
     credential: Credential,
     url: String,
     subscription: bool,
@@ -211,6 +214,15 @@ impl OpenAiProvider {
         Ok(Self {
             clock: std::sync::Arc::new(crate::clock::SystemClock),
             client,
+            client_version: subscription
+                .then(|| {
+                    crate::models::ModelTable::shared()
+                        .provider(ProviderKind::OpenAi)?
+                        .client
+                        .clone()
+                })
+                .flatten(),
+            models_folder: None,
             credential: endpoint.credential.clone(),
             url,
             subscription,
@@ -234,6 +246,7 @@ impl OpenAiProvider {
 
     #[must_use]
     pub fn with_saved_list(mut self, folder: Option<&Path>) -> Self {
+        self.models_folder = folder.map(Path::to_path_buf);
         self.list = ListCell::new(SavedList::take(folder, self.list_key.as_deref()));
         self
     }
@@ -344,7 +357,7 @@ impl OpenAiProvider {
             .map(|base| format!("{base}{tail}"))
     }
 
-    fn models_url(&self) -> Result<String, ProviderError> {
+    fn models_url(&self, version: Option<Version>) -> Result<String, ProviderError> {
         let unavailable = || {
             ProviderError::new(
                 ErrorKind::InvalidRequest,
@@ -352,11 +365,7 @@ impl OpenAiProvider {
             )
         };
         if self.subscription {
-            let version = crate::models::ModelTable::shared()
-                .provider(ProviderKind::OpenAi)
-                .and_then(|row| row.client)
-                .ok_or_else(unavailable)?
-                .version;
+            let version = version.ok_or_else(unavailable)?;
             Ok(format!(
                 "{CHATGPT_BASE_URL}/codex/models?client_version={version}"
             ))
@@ -365,9 +374,18 @@ impl OpenAiProvider {
         }
     }
 
-    async fn models_response(&self) -> Result<reqwest::Response, ProviderError> {
-        let url = self.models_url()?;
+    async fn models_response(
+        &self,
+        folder: Option<&Path>,
+    ) -> Result<reqwest::Response, ProviderError> {
         let token = self.credential.access_token().await?;
+        let version = match &self.client_version {
+            Some(client) => {
+                Some(client_version::resolve(client, folder, ProviderKind::OpenAi).await)
+            }
+            None => None,
+        };
+        let url = self.models_url(version)?;
         let mut call = self
             .client
             .get(url)
@@ -406,7 +424,7 @@ impl OpenAiProvider {
         let Some(_claim) = self.list.begin(&folder, key, always, now) else {
             return;
         };
-        let response = self.models_response().await;
+        let response = self.models_response(Some(&folder)).await;
         self.save_fetched(response, &folder).await;
     }
 
@@ -427,7 +445,7 @@ impl OpenAiProvider {
     }
 
     async fn fetch_ids(&self) -> Result<Vec<String>, ProviderError> {
-        let response = self.models_response().await?;
+        let response = self.models_response(self.models_folder.as_deref()).await?;
         if self.subscription {
             return Ok(self.read_list(response).await?.ids());
         }

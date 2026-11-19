@@ -31,6 +31,8 @@ Fable = ["claude-fable-5-2", "claude-fable-5-1", "claude-fable-5"]
 
 [providers.anthropic.client]
 version = "2.1.321"
+latest = "https://api.github.com/repos/anthropics/claude-code/releases/latest"
+tag_prefix = "v"
 
 [providers.anthropic.claude_code]
 usage_user_agent = "claude-code/{version}"
@@ -85,6 +87,8 @@ web_search_price = 0.01
 
 [providers.openai.client]
 version = "0.169.0"
+latest = "https://api.github.com/repos/openai/codex/releases/latest"
+tag_prefix = "rust-v"
 
 [providers.openai.codex]
 window = 272000
@@ -108,6 +112,7 @@ web_search_price = 0.014
 
 [providers.gemini.client]
 version = "1.5.5"
+latest = "https://api.github.com/repos/google-antigravity/antigravity-cli/releases/latest"
 
 [providers.gemini.antigravity]
 base_url = "https://daily-cloudcode-pa.googleapis.com"

@@ -7,6 +7,7 @@ use tokio::sync::watch;
 use super::generation::{Change, Guarded, Unavailable};
 use super::host::Reconnected;
 use crate::kit::{Connect, Connected};
+use crate::models::list::{LIST_WAIT, ListWait};
 
 #[derive(Clone)]
 pub struct LiveCatalog {
@@ -57,10 +58,11 @@ impl CatalogReader {
                     let (running, finished) = watch::channel(());
                     let catalog = self.clone();
                     let alias = alias.to_owned();
-                    let deadline = tokio::time::Instant::now() + crate::models::list::LIST_WAIT;
+                    let deadline = tokio::time::Instant::now() + LIST_WAIT;
                     tokio::spawn(async move {
-                        let _ =
-                            tokio::time::timeout_at(deadline, catalog.refetch(&alias, true)).await;
+                        let wait = ListWait::default();
+                        wait.until(deadline, wait.fetch(catalog.refetch(&alias, true)))
+                            .await;
                         drop(running);
                     });
                     finished

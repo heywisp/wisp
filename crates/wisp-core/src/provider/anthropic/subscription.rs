@@ -10,7 +10,7 @@ use super::{ConfigError, DEFAULT_BASE_URL, Request, beta_header};
 use crate::endpoints::ProviderKind;
 use crate::models::{ModelTable, RowError, bad_value, table_of};
 use crate::provider::classify::{kind_of, status_kind};
-use crate::provider::client_version::Version;
+use crate::provider::client_version::{Client, Version};
 use crate::provider::credential::{Credential, SubscriptionKind};
 use crate::provider::{ProviderError, ProviderEvent, Refused, is_token_char};
 
@@ -153,9 +153,9 @@ impl Identity {
     }
 }
 
-pub(super) fn data() -> Option<(&'static Identity, Version)> {
+pub(super) fn data() -> Option<(&'static Identity, &'static Client)> {
     let row = ModelTable::shared().provider(ProviderKind::Anthropic)?;
-    Some((row.claude_code.as_ref()?, row.client?.version))
+    Some((row.claude_code.as_ref()?, row.client.as_ref()?))
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

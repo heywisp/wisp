@@ -1,11 +1,13 @@
 use std::collections::BTreeSet;
+use std::future::Future;
 use std::path::Path;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use tokio::time::{Instant, timeout_at};
 use wisp_protocol::settings::AccountModel;
 use wisp_protocol::{Effort, ErrorDetail, ErrorKind, FailurePhase, FailureSource, RetryClass};
 use wisp_protocol::{check_model_id, valid_model_id};
@@ -23,6 +25,32 @@ pub const REFRESH_AFTER: i64 = 60 * 60;
 pub const ROUND_EVERY: Duration = Duration::from_secs(REFRESH_AFTER.unsigned_abs() / 4);
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 pub const LIST_WAIT: Duration = Duration::from_secs(5);
+
+tokio::task_local! {
+    static LIST_WAIT_BUDGET: ListWait;
+}
+
+#[derive(Clone, Default)]
+pub struct ListWait(Arc<OnceLock<Duration>>);
+
+impl ListWait {
+    pub async fn fetch<T>(&self, future: impl Future<Output = T>) -> T {
+        LIST_WAIT_BUDGET.scope(self.clone(), future).await
+    }
+
+    pub async fn until(&self, deadline: Instant, future: impl Future) {
+        tokio::pin!(future);
+        if timeout_at(deadline, &mut future).await.is_err()
+            && let Some(extra) = self.0.get()
+        {
+            let _ = timeout_at(deadline + *extra, future).await;
+        }
+    }
+
+    pub(crate) fn reserve_for_release(limit: Duration) {
+        let _ = LIST_WAIT_BUDGET.try_with(|wait| wait.0.set(limit));
+    }
+}
 
 pub mod anthropic;
 

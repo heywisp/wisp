@@ -966,11 +966,16 @@ fn probe_endpoint(draft: &Draft, key: &str, path: &Path, shown: PathShown) -> Re
     }
 }
 
-fn probe(endpoint: &ResolvedEndpoint, model: &str) -> Result<CheckOutcome, String> {
+fn probe(endpoint: &ResolvedEndpoint, ctx: &Context<'_>) -> Result<CheckOutcome, String> {
     let runtime = wisp_core::runtime::build(&mut tokio::runtime::Builder::new_current_thread())
         .map_err(|e| format!("could not start the check: {e}"))?;
     runtime
-        .block_on(endpoint.provider.probe(endpoint, model, CHECK_TIMEOUT))
+        .block_on(endpoint.provider.probe(
+            endpoint,
+            ctx.model,
+            CHECK_TIMEOUT,
+            ctx.models.as_deref(),
+        ))
         .map_err(|e| e.to_string())
 }
 
@@ -1335,7 +1340,7 @@ fn add(args: &AddArgs, ctx: &Context<'_>, flow: &Flow) -> ExitCode {
                 "Checking it with one count_tokens request (free on Anthropic's side; a gateway may count it)\u{2026} "
             );
         }
-        let outcome = probe(&probe_endpoint(&draft, &key, &path, shown), ctx.model);
+        let outcome = probe(&probe_endpoint(&draft, &key, &path, shown), ctx);
         match &outcome {
             Ok(o) => eprintln!("{o}"),
             Err(e) => eprintln!("not checked: {e}"),

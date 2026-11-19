@@ -151,7 +151,7 @@ fn subscription_identity_data_renders_in_order_and_rejects_invalid_rows() {
     let original = ModelTable::shared()
         .provider(ProviderKind::Anthropic)
         .unwrap();
-    let version = original.client.unwrap().version;
+    let version = original.client.as_ref().unwrap().version;
     let changed_version = Version::parse("1.2.3").unwrap();
     let template = original.claude_code.as_ref().unwrap();
     let identity = template.rendered(changed_version).unwrap();
@@ -1040,7 +1040,7 @@ fn antigravity_shipped_metadata_has_no_machine_or_personal_data() {
         identity.base_url,
         "https://daily-cloudcode-pa.googleapis.com"
     );
-    let shipped = gemini.client.unwrap().version;
+    let shipped = gemini.client.as_ref().unwrap().version;
     let ua = identity.user_agent(shipped).unwrap();
     let version = ua.strip_prefix("antigravity/cli/").unwrap();
     assert_eq!(version, shipped.to_string());
@@ -1236,11 +1236,15 @@ fn subscription_versions_come_from_client_tables_and_reject_invalid_rows() {
             .provider(kind)
             .unwrap()
             .client
+            .as_ref()
             .unwrap()
             .version
             .to_string();
         let prefix = format!("[providers.{name}.client]");
         let original = format!("{prefix}\nversion = {version:?}");
+        let (_, rest) = SHIPPED.split_once(&prefix).unwrap();
+        let (fields, _) = rest.split_once("\n\n").unwrap();
+        let client_table = format!("{prefix}{fields}");
         assert!(SHIPPED.contains(&original));
         let changed = SHIPPED.replace(&original, &format!("{prefix}\nversion = '999999999.0.3'"));
         let changed = ModelTable::parse_shipped(&changed).unwrap();
@@ -1249,6 +1253,7 @@ fn subscription_versions_come_from_client_tables_and_reject_invalid_rows() {
                 .provider(kind)
                 .unwrap()
                 .client
+                .as_ref()
                 .unwrap()
                 .version
                 .to_string(),
@@ -1276,8 +1281,33 @@ fn subscription_versions_come_from_client_tables_and_reject_invalid_rows() {
                 "{name}: {entry}"
             );
         }
+        for suffix in [
+            "latest = 'http://example.com/releases/latest'",
+            "latest = 'https://'",
+            "latest = 'https://CANARY_USER@example.com/'",
+            "latest = 'https://:CANARY_PASSWORD@example.com/'",
+            "latest = 'https://example.com/?'",
+            "latest = 'https://example.com/#'",
+            "latest = 1",
+            "tag_prefix = 'abcdefghijklmnopq'",
+            "tag_prefix = 'rust.v'",
+            "tag_prefix = 'é'",
+            "tag_prefix = true",
+        ] {
+            let broken = SHIPPED.replace(&client_table, &format!("{original}\n{suffix}"));
+            assert!(
+                matches!(
+                    shipped_error(&broken),
+                    RowProblem::BadValue {
+                        field: "client",
+                        ..
+                    }
+                ),
+                "{name}: {suffix}"
+            );
+        }
         if kind != ProviderKind::OpenAi {
-            let without_client = SHIPPED.replace(&original, "");
+            let without_client = SHIPPED.replace(&client_table, "");
             assert!(
                 matches!(
                     shipped_error(&without_client),
@@ -1400,38 +1430,27 @@ async fn fetch_codex_check_input(client: &reqwest::Client, url: &str) -> String 
 #[tokio::test]
 #[ignore = "network: checks the latest public Codex release on GitHub"]
 async fn shipped_codex_version_supports_the_latest_catalog() {
+    let codex = ModelTable::shared()
+        .provider(ProviderKind::OpenAi)
+        .and_then(|row| row.client.as_ref())
+        .expect("shipped OpenAI Codex client");
+    let latest = codex.latest.as_ref().expect("Codex release source");
+    let version = crate::provider::client_version::lookup(latest)
+        .await
+        .expect("expected a stable Codex release");
+    let tag = format!("{}{version}", latest.tag_prefix);
+    let url = format!(
+        "https://raw.githubusercontent.com/openai/codex/{tag}/codex-rs/models-manager/models.json"
+    );
     let client = reqwest::Client::builder()
-        .user_agent("Wisp-Codex-Version-Check")
+        .no_proxy()
+        .user_agent(crate::plugin::http::USER_AGENT)
         .timeout(std::time::Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("build GitHub client");
-    let release = fetch_codex_check_input(
-        &client,
-        "https://api.github.com/repos/openai/codex/releases/latest",
-    )
-    .await;
-    let release: Value =
-        serde_json::from_str(&release).expect("invalid JSON for GitHub's latest Codex release");
-    let tag = release
-        .get("tag_name")
-        .and_then(Value::as_str)
-        .expect("expected tag_name for GitHub's latest Codex release");
-    assert!(
-        tag.strip_prefix("rust-v")
-            .and_then(Version::parse)
-            .is_some(),
-        "expected a Codex release tag like rust-vX.Y.Z, got {tag:?}"
-    );
-    let url = format!(
-        "https://raw.githubusercontent.com/openai/codex/{tag}/codex-rs/models-manager/models.json"
-    );
     let catalog = fetch_codex_check_input(&client, &url).await;
-    let shipped = ModelTable::shared()
-        .provider(ProviderKind::OpenAi)
-        .and_then(|row| row.client)
-        .expect("shipped OpenAI Codex version")
-        .version;
+    let shipped = codex.version;
     let incompatible = models_requiring_newer_codex(&catalog, &shipped.to_string())
         .unwrap_or_else(|err| panic!("could not check the Codex catalog at {tag}: {err}"));
     assert!(

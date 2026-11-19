@@ -717,7 +717,7 @@ impl Job<'_> {
                 );
                 let outcome = probe(
                     &probe_endpoint(&draft, &current, self.path, self.shown),
-                    self.ctx.model,
+                    self.ctx,
                 );
                 match &outcome {
                     Ok(o) => eprintln!("{o}"),

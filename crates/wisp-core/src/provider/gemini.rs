@@ -24,7 +24,7 @@ use wisp_protocol::{Billing, CacheTtl, ContentBlock, ErrorKind, VariableName, va
 
 use super::anthropic::{status_outcome, unexpected, unreachable};
 use super::classify::{self, Carries, error_object};
-use super::client_version::Version;
+use super::client_version;
 use super::credential::{Credential, EnvFile, Source, SubscriptionKind};
 use super::sse::{IDLE_TIMEOUT, Waits};
 use super::{ModelCapabilities, PrefixBytes, Provider, ProviderError, ProviderEvent, Request};
@@ -254,6 +254,7 @@ pub struct GeminiProvider {
     base_url: String,
     identity: String,
     user_agent: Option<String>,
+    client_version: Option<client_version::Client>,
     official: bool,
     project_cache: Arc<Mutex<Option<String>>>,
     onboard_poll_delay: Duration,
@@ -278,13 +279,13 @@ impl GeminiProvider {
     pub fn from_endpoint(endpoint: &ResolvedEndpoint) -> Result<Self, ConfigError> {
         let identity = ModelTable::shared()
             .provider(ProviderKind::Gemini)
-            .and_then(|row| Some((row.antigravity.as_ref()?, row.client?.version)));
+            .and_then(|row| Some((row.antigravity.as_ref()?, row.client.as_ref()?)));
         Self::from_endpoint_with_identity(endpoint, identity)
     }
 
     fn from_endpoint_with_identity(
         endpoint: &ResolvedEndpoint,
-        identity: Option<(&antigravity::Identity, Version)>,
+        identity: Option<(&antigravity::Identity, &client_version::Client)>,
     ) -> Result<Self, ConfigError> {
         check_credential(&endpoint.credential, endpoint.key_var())?;
         let subscription =
@@ -311,12 +312,17 @@ impl GeminiProvider {
         let user_agent = if subscription {
             Some(
                 identity
-                    .and_then(|(identity, version)| identity.user_agent(version))
+                    .and_then(|(identity, client)| identity.user_agent(client.version))
                     .ok_or(ConfigError::SubscriptionIdentity)?,
             )
         } else {
             None
         };
+        let client_version = identity.filter(|_| subscription).map(|(_, client)| {
+            client.clone().for_origin(is_antigravity_origin(
+                &parsed.origin().ascii_serialization(),
+            ))
+        });
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
@@ -342,6 +348,7 @@ impl GeminiProvider {
             base_url,
             identity,
             user_agent,
+            client_version,
             official,
             project_cache: Arc::new(Mutex::new(initial_project)),
             onboard_poll_delay: antigravity::DEFAULT_POLL_DELAY,
@@ -354,6 +361,18 @@ impl GeminiProvider {
             },
             list: ListCell::default(),
         })
+    }
+
+    pub(crate) fn with_client_version(mut self, folder: Option<&Path>) -> Self {
+        if let Some(client) = &self.client_version
+            && let Some(identity) = antigravity::data()
+        {
+            let version = client_version::current(client, folder, ProviderKind::Gemini);
+            if let Some(rendered) = identity.user_agent(version) {
+                self.user_agent = Some(rendered);
+            }
+        }
+        self
     }
 
     #[must_use]
@@ -517,8 +536,11 @@ impl GeminiProvider {
         }
     }
 
-    async fn fetch_models(&self) -> Result<(ModelList, Option<String>), ProviderError> {
-        let (entries, default_model) = self.fetch_model_limits().await?;
+    async fn fetch_models(
+        &self,
+        folder: Option<&Path>,
+    ) -> Result<(ModelList, Option<String>), ProviderError> {
+        let (entries, default_model) = self.fetch_model_limits(folder).await?;
         let list = self.listed(entries, default_model.as_deref())?;
         Ok((list, default_model))
     }
@@ -535,10 +557,17 @@ impl GeminiProvider {
 
     async fn fetch_model_limits(
         &self,
+        folder: Option<&Path>,
     ) -> Result<(Vec<ModelLimits>, Option<String>), ProviderError> {
         if let Some(user_agent) = self.user_agent.as_deref() {
             let _ = self.project_id(user_agent).await?;
             let token = self.credential.access_token().await?;
+            let agent = if let Some(client) = &self.client_version {
+                let version = client_version::resolve(client, folder, ProviderKind::Gemini).await;
+                antigravity::data().and_then(|identity| identity.user_agent(version))
+            } else {
+                None
+            };
             let url = format!("{}/v1internal:fetchAvailableModels", self.base_url);
             let response = antigravity::antigravity_headers(
                 self.client
@@ -547,7 +576,7 @@ impl GeminiProvider {
                     .timeout(list::TIMEOUT)
                     .body("{}"),
                 &token,
-                user_agent,
+                agent.as_deref().unwrap_or(user_agent),
             )
             .send()
             .await
@@ -661,7 +690,7 @@ impl GeminiProvider {
         let Some(_claim) = self.list.begin(&folder, key, always, now) else {
             return;
         };
-        let fetched = self.fetch_models().await.ok();
+        let fetched = self.fetch_models(Some(&folder)).await.ok();
         self.save_fetched(fetched, &folder);
     }
 
@@ -753,7 +782,7 @@ impl Provider for GeminiProvider {
 
     fn model_ids(&self) -> BoxFuture<'_, Result<Vec<String>, ProviderError>> {
         async move {
-            let (list, default_model) = self.fetch_models().await?;
+            let (list, default_model) = self.fetch_models(self.models_folder.as_deref()).await?;
             if let Some(folder) = &self.models_folder {
                 self.save_fetched(Some((list.clone(), default_model)), folder);
             }
@@ -1145,6 +1174,8 @@ pub(crate) fn build_body(request: &Request<'_>) -> Result<Value, ProviderError> 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::plan_usage::record;
+    use crate::provider::client_version::{Latest, Record, Version, record_alias};
     use crate::provider::{Assembler, Features, Rendering, RequestOptions};
     use crate::test_guard::http;
     use futures::StreamExt;
@@ -1283,7 +1314,16 @@ pub(crate) mod tests {
             },
             "https://cloudcode-pa.googleapis.com",
         );
-        assert!(GeminiProvider::from_endpoint(&prod_sub).is_ok());
+        for (origin, latest) in [
+            (antigravity_base_url(), true),
+            (PRODUCTION_ANTIGRAVITY_ORIGIN, true),
+            ("https://other.googleapis.com", false),
+            ("http://127.0.0.1:1", false),
+        ] {
+            let endpoint = endpoint(prod_sub.credential.clone(), origin);
+            let provider = GeminiProvider::from_endpoint(&endpoint).unwrap();
+            assert_eq!(provider.client_version.unwrap().latest.is_some(), latest);
+        }
         let missing_identity =
             GeminiProvider::from_endpoint_with_identity(&prod_sub, None).unwrap_err();
         assert!(matches!(
@@ -1299,6 +1339,19 @@ pub(crate) mod tests {
             DEFAULT_BASE_URL,
         );
         assert!(GeminiProvider::from_endpoint_with_identity(&api_ep, None).is_ok());
+        assert!(
+            GeminiProvider::from_endpoint(&api_ep)
+                .unwrap()
+                .client_version
+                .is_none()
+        );
+        let gateway = endpoint(api_ep.credential.clone(), "https://gateway.example.com");
+        assert!(
+            GeminiProvider::from_endpoint(&gateway)
+                .unwrap()
+                .client_version
+                .is_none()
+        );
 
         let query_url = endpoint(
             Credential::ApiKey("AIzaCANARY_gemini_key_with_underscre_1".into()),
@@ -1597,29 +1650,39 @@ pub(crate) mod tests {
             CheckOutcome::Forbidden
         );
 
-        let valid_profile = cred_dir.join("valid-oauth.json");
-        let valid_payload = json!({
-            "version": 1,
-            "kind": "antigravity",
-            "access_token": "ya29.CANARY_PROBE_TOK",
-            "refresh_token": "1//CANARY_PROBE_REF",
-            "expires_at": u64::MAX / 2,
-            "generation": 0
-        })
-        .to_string();
-        crate::secrets::write_atomic(&valid_profile, valid_payload.as_bytes(), 0o600).unwrap();
+        let valid_profile = antigravity_profile(&cred_dir, None);
+        let valid_payload = std::fs::read_to_string(&valid_profile).unwrap();
         let s_ok = http::serve(vec![http::Reply::Send(http::json(
             "200 OK",
             &json!({"models": {}}).to_string(),
         ))])
         .await;
-        let p_ok =
-            GeminiProvider::from_endpoint(&sub_endpoint(&s_ok.url, Some(valid_profile.clone())))
-                .unwrap();
-        assert_eq!(p_ok.probe(Duration::from_secs(2)).await, CheckOutcome::Ok);
+        let saved = Record {
+            version: Version::parse("1.5.11"),
+            checked: 0,
+        };
+        record::write(dir.path(), &record_alias(ProviderKind::Gemini), &saved).unwrap();
+        let outcome = ProviderKind::Gemini
+            .probe(
+                &sub_endpoint(&s_ok.url, Some(valid_profile.clone())),
+                "",
+                Duration::from_secs(2),
+                Some(dir.path()),
+            )
+            .await
+            .unwrap();
+        assert_eq!(outcome, CheckOutcome::Ok);
         let probe_reqs = s_ok.requests.lock().unwrap().clone();
         assert_eq!(probe_reqs.len(), 1);
         assert!(probe_reqs[0].starts_with("POST /v1internal:fetchAvailableModels "));
+        assert!(
+            http::header_lines(&probe_reqs[0])
+                .contains(&("user-agent".into(), "antigravity/cli/1.5.11".into()))
+        );
+        assert_eq!(
+            record::read(dir.path(), &record_alias(ProviderKind::Gemini)),
+            Some(saved)
+        );
         let on_disk = std::fs::read_to_string(&valid_profile).unwrap();
         assert_eq!(on_disk, valid_payload);
     }
@@ -1907,23 +1970,198 @@ pub(crate) mod tests {
         );
     }
 
+    const ANTIGRAVITY_TOKEN: &str = "ya29.CANARY_AG_TOK";
+
+    fn antigravity_profile(cred_dir: &Path, project: Option<&str>) -> PathBuf {
+        crate::secrets::create_folder(cred_dir).unwrap();
+        let profile = cred_dir.join("ag-profile.json");
+        let mut payload = json!({
+            "version": 1, "kind": "antigravity", "access_token": ANTIGRAVITY_TOKEN,
+            "refresh_token": "1//CANARY_AG_REF", "expires_at": u64::MAX / 2,
+            "generation": 0,
+        });
+        if let Some(project) = project {
+            payload["project_id"] = json!(project);
+        }
+        crate::secrets::write_atomic(&profile, &serde_json::to_vec(&payload).unwrap(), 0o600)
+            .unwrap();
+        profile
+    }
+
+    #[tokio::test]
+    async fn antigravity_lists_with_the_latest_release_and_new_connections_stream_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("models");
+        let credentials = dir.path().join("creds");
+        let profile = antigravity_profile(&credentials, Some("fixture-project"));
+        let listed = http::json(
+            "200 OK",
+            &json!({"models": {
+                "gemini-4-carbon-high": {"apiProvider":"API_PROVIDER_GOOGLE_GEMINI"}
+            }})
+            .to_string(),
+        );
+        let stream = http::sse(&format!(
+            "data: {}\n\n",
+            json!({"response": {"candidates": [{
+                "content": {"role":"model", "parts":[{"text":"Pong"}]}, "finishReason":"STOP"
+            }]}})
+        ));
+        let added = "gemini-4.8-test";
+        let delay = Duration::from_millis(2600);
+        let mut replies = vec![http::Reply::Send(listed)];
+        replies.extend((0..4).map(|_| http::Reply::Send(stream.clone())));
+        replies.push(http::Reply::Delayed(
+            delay,
+            http::json("200 OK", &json!({"models": {added: {}}}).to_string()),
+        ));
+        let server = http::serve(replies).await;
+        let release = http::serve(vec![
+            http::Reply::Send(http::json(
+                "200 OK",
+                r#"{"tag_name":"1.5.11","draft":false,"prerelease":false}"#,
+            )),
+            http::Reply::Hang,
+            http::Reply::Hang,
+        ])
+        .await;
+        let account = |profile| {
+            endpoint(
+                Credential::Subscription {
+                    kind: SubscriptionKind::Antigravity,
+                    secret: ANTIGRAVITY_TOKEN.into(),
+                    profile: Some(profile),
+                },
+                &server.url,
+            )
+        };
+        let ep = account(profile);
+        let connect = || {
+            GeminiProvider::from_endpoint(&ep)
+                .unwrap()
+                .with_client_version(Some(&folder))
+        };
+        let old = connect();
+        let shipped = old.user_agent.as_deref().unwrap();
+        let mut temporary = GeminiProvider::from_endpoint(&ep).unwrap();
+        let latest = Latest {
+            url: release.url.parse().unwrap(),
+            tag_prefix: String::new(),
+        };
+        temporary.client_version.as_mut().unwrap().latest = Some(latest.clone());
+        temporary.refresh_list(folder.clone(), true).await;
+        assert_eq!(
+            SavedList::load(&folder, temporary.list_key().unwrap())
+                .unwrap()
+                .list
+                .ids(),
+            ["gemini-4-carbon-high"]
+        );
+        let alias = record_alias(ProviderKind::Gemini);
+        let saved: Record = record::read(&folder, &alias).unwrap();
+        assert_eq!(saved.version, Version::parse("1.5.11"));
+        let new = connect();
+        let agent = "antigravity/cli/1.5.11";
+        let mut session = test_session();
+        session.system = Some("Stable prompt.".into());
+        let tools = crate::test_guard::tool_specs();
+        let messages = [
+            Message::user_text("Ping"),
+            Message {
+                role: wisp_protocol::Role::Assistant,
+                content: vec![ContentBlock::Text {
+                    text: "Pong".into(),
+                }],
+            },
+            Message::user_text("Again"),
+        ];
+        for turns in [&messages[..1], &messages[..]] {
+            let request = Request {
+                session: &session,
+                messages: turns,
+                tools: &tools,
+                deferred: &[],
+                by_value: &[],
+                server_tools: &[],
+                previous_response_id: None,
+                features: Features::default(),
+                options: RequestOptions::default(),
+                rendering: &Rendering::default(),
+                compaction: None,
+            };
+            for provider in [&old, &new] {
+                assert!(assembled(provider.stream(&request).collect().await).is_ok());
+            }
+            assert_eq!(
+                old.cache_prefix(&request).unwrap(),
+                new.cache_prefix(&request).unwrap()
+            );
+        }
+        let stale = Record {
+            checked: saved.checked - list::REFRESH_AFTER,
+            ..saved
+        };
+        record::write(&folder, &alias, &stale).unwrap();
+        let provider = Arc::new(temporary.with_saved_list(Some(&folder)));
+        let name = ep.name.as_str();
+        let catalog = crate::endpoints::catalog::LiveCatalog::new(crate::kit::Connected {
+            provider: provider.clone(),
+            ready: vec![crate::agent::Connection {
+                name: name.into(),
+                provider: provider.clone(),
+                context: crate::test_guard::log_context(),
+                priced: true,
+            }],
+            unavailable: Vec::new(),
+            active: name.into(),
+            env_account: None,
+        })
+        .with_lists(Some(folder.clone()));
+        let began = tokio::time::Instant::now();
+        assert!(catalog.reader().refetch_unlisted(name, added).await);
+        assert!(began.elapsed() > list::LIST_WAIT);
+        assert!(provider.model_list().unwrap().find(added).is_some());
+        let after: Record = record::read(&folder, &alias).unwrap();
+        assert_eq!(after.version, saved.version);
+        assert!(after.checked > stale.checked);
+        record::write(&folder, &alias, &stale).unwrap();
+        let mut signed_out =
+            GeminiProvider::from_endpoint(&account(credentials.join("missing.json"))).unwrap();
+        signed_out.client_version.as_mut().unwrap().latest = Some(latest);
+        signed_out.refresh_list(folder.clone(), true).await;
+        assert_eq!(record::read(&folder, &alias), Some(stale));
+        assert_eq!(release.requests.lock().unwrap().len(), 2);
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 6);
+        for (request, agent) in requests
+            .iter()
+            .zip([agent, shipped, agent, shipped, agent, agent])
+        {
+            assert!(http::header_lines(request).contains(&("user-agent".into(), agent.into())));
+        }
+        for sent in [&requests[0], &requests[5]] {
+            assert!(sent.starts_with("POST /v1internal:fetchAvailableModels "));
+        }
+        for [old, new] in requests[1..5].as_chunks::<2>().0 {
+            let body = |raw: &str, agent: &str| {
+                assert!(raw.starts_with("POST /v1internal:streamGenerateContent?alt=sse "));
+                let bytes = http::body(raw);
+                let value: Value = serde_json::from_str(bytes).unwrap();
+                assert_eq!(value["userAgent"], agent);
+                assert!(value["request"]["sessionId"].is_string());
+                assert!(value["request"]["labels"].is_object());
+                bytes
+                    .replace(&format!("\"userAgent\":{}", value["userAgent"]), "")
+                    .replace(&format!("\"requestId\":{}", value["requestId"]), "")
+            };
+            assert_eq!(body(old, shipped), body(new, agent));
+        }
+    }
+
     #[tokio::test]
     async fn antigravity_refresh_captures_default_agent_model_id_with_shipped_fallback() {
         let dir = tempfile::tempdir().unwrap();
-        let cred_dir = dir.path().join("creds");
-        crate::secrets::create_folder(&cred_dir).unwrap();
-        let profile = cred_dir.join("ag-profile.json");
-        let payload = json!({
-            "version": 1,
-            "kind": "antigravity",
-            "access_token": "ya29.CANARY_AG_TOK",
-            "refresh_token": "1//CANARY_AG_REF",
-            "expires_at": u64::MAX / 2,
-            "generation": 0,
-            "project_id": "proj-ag-default-1"
-        });
-        crate::secrets::write_atomic(&profile, &serde_json::to_vec(&payload).unwrap(), 0o600)
-            .unwrap();
+        let profile = antigravity_profile(&dir.path().join("creds"), Some("proj-ag-default-1"));
 
         let listed_max_output = 65_536;
         let models_resp = json!({
@@ -1964,7 +2202,7 @@ pub(crate) mod tests {
             provider: ProviderKind::Gemini,
             credential: Credential::Subscription {
                 kind: SubscriptionKind::Antigravity,
-                secret: "ya29.CANARY_AG_TOK".into(),
+                secret: ANTIGRAVITY_TOKEN.into(),
                 profile: Some(profile),
             },
             base_url: server.url.clone(),
@@ -2322,10 +2560,13 @@ pub(crate) mod tests {
     ) -> (GeminiProvider, String, Vec<ModelLimits>) {
         let mut provider = GeminiProvider::from_endpoint(endpoint)
             .unwrap_or_else(|_| panic!("the Gemini account's provider failed"));
-        let (limits, default) = provider.fetch_model_limits().await.unwrap_or_else(|error| {
-            report_live_failure(&error);
-            panic!("listing Gemini models failed")
-        });
+        let (limits, default) = provider
+            .fetch_model_limits(None)
+            .await
+            .unwrap_or_else(|error| {
+                report_live_failure(&error);
+                panic!("listing Gemini models failed")
+            });
         let list = provider.listed(limits.clone(), default.as_deref()).unwrap();
         provider.list = ListCell::new_with_default(Some(Arc::new(list)), default);
         let default = provider.default_model();

@@ -88,6 +88,18 @@ pub(crate) fn protocol_fixture(name: &str) -> LogRecord {
     serde_json::from_str(&fixture::stored(&fs::read_to_string(path).unwrap())).unwrap()
 }
 
+pub(crate) fn named_tool(name: &str) -> crate::tool::ToolSpec {
+    crate::tool::ToolSpec {
+        description: format!("The {name} tool."),
+        input_schema: json!({"type": "object", "properties": {}}),
+        name: name.into(),
+    }
+}
+
+pub(crate) fn tool_specs() -> [crate::tool::ToolSpec; 2] {
+    ["alpha", "beta"].map(named_tool)
+}
+
 pub(crate) fn log_context() -> LogContext {
     LogContext {
         endpoint: "https://api.anthropic.com".into(),

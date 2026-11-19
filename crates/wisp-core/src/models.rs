@@ -1142,13 +1142,16 @@ fn walk_providers(
             }
         }
         let client_version = |at: &Range<usize>| {
-            row.client.map(|client| client.version).ok_or_else(|| {
-                bad_value(
-                    "client",
-                    "a table with a version when a subscription identity is present",
-                    at,
-                )
-            })
+            row.client
+                .as_ref()
+                .map(|client| client.version)
+                .ok_or_else(|| {
+                    bad_value(
+                        "client",
+                        "a table with a version when a subscription identity is present",
+                        at,
+                    )
+                })
         };
         if let Some((identity, at)) = claude_code {
             identity

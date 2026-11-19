@@ -5,6 +5,7 @@ use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint
 use crate::models::list::tests::{claude_entry, claude_wire};
 use crate::models::list::{REFRESH_AFTER, SavedList, anthropic};
 use crate::provider::anthropic::{AnthropicProvider, Credential, DEFAULT_BASE_URL, Source};
+use crate::provider::client_version::Version;
 use crate::provider::credential::SubscriptionKind;
 use crate::provider::{Provider, ProviderError};
 use crate::test_guard::http;
@@ -34,8 +35,15 @@ fn connect(credential: Credential, base_url: &str) -> AnthropicProvider {
     AnthropicProvider::from_endpoint(&account(credential, base_url)).unwrap()
 }
 
-async fn built(provider: &AnthropicProvider) -> reqwest::Request {
-    let request = provider.list_request().await.unwrap().build().unwrap();
+async fn built(provider: &AnthropicProvider, version: Option<Version>) -> reqwest::Request {
+    let subscription = match version {
+        Some(version) => Some((
+            version,
+            super::super::bearer(&provider.credential).await.unwrap(),
+        )),
+        None => None,
+    };
+    let request = provider.list_request(subscription).build().unwrap();
     assert_eq!(request.method(), "GET");
     request
 }
@@ -47,14 +55,17 @@ fn named<'a>(request: &'a reqwest::Request, name: &str) -> Option<&'a str> {
 
 #[tokio::test]
 async fn the_list_request_sends_each_accounts_own_header_set_to_its_own_origin() {
-    let signed_in = built(&connect(credential("synthetic-oauth"), DEFAULT_BASE_URL)).await;
+    let connected = connect(credential("CANARY_CLAUDE_LIST"), DEFAULT_BASE_URL);
+    assert!(connected.client_version.as_ref().unwrap().latest.is_some());
+    let version = Version::parse("2.1.999").unwrap();
+    let signed_in = built(&connected, Some(version)).await;
     assert!(signed_in.headers()["authorization"].is_sensitive());
     let official = "https://api.anthropic.com/v1/models?limit=1000";
     assert_eq!(signed_in.url().as_str(), official);
-    let (identity, version) = crate::provider::anthropic::subscription::data().unwrap();
+    let (identity, _) = crate::provider::anthropic::subscription::data().unwrap();
     let betas = identity.betas.join(",");
     for (name, value) in [
-        ("authorization", "Bearer synthetic-oauth"),
+        ("authorization", "Bearer CANARY_CLAUDE_LIST"),
         ("anthropic-beta", betas.as_str()),
         ("anthropic-version", "2023-06-01"),
         ("accept", "application/json"),
@@ -70,7 +81,9 @@ async fn the_list_request_sends_each_accounts_own_header_set_to_its_own_origin()
     }
     assert_eq!(named(&signed_in, "x-api-key"), None);
     let key = api_key("synthetic-key");
-    let api = built(&connect(key, DEFAULT_BASE_URL)).await;
+    let api_provider = connect(key, DEFAULT_BASE_URL);
+    assert!(api_provider.client_version.is_none());
+    let api = built(&api_provider, None).await;
     assert_eq!(api.url().as_str(), official);
     assert_eq!(named(&api, "x-api-key"), Some("synthetic-key"));
     assert_eq!(named(&api, "anthropic-version"), Some("2023-06-01"));
@@ -78,7 +91,9 @@ async fn the_list_request_sends_each_accounts_own_header_set_to_its_own_origin()
         assert_eq!(named(&api, absent), None, "{absent}");
     }
     let bearer = Credential::AuthToken("synthetic-token".into());
-    let gateway = built(&connect(bearer, "https://gateway.example/anthropic/")).await;
+    let gateway_provider = connect(bearer, "https://gateway.example/anthropic/");
+    assert!(gateway_provider.client_version.is_none());
+    let gateway = built(&gateway_provider, None).await;
     let url = "https://gateway.example/anthropic/v1/models?limit=1000";
     assert_eq!(gateway.url().as_str(), url);
     let token = named(&gateway, "authorization");

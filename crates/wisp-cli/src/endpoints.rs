@@ -649,6 +649,7 @@ pub(crate) async fn check(
     targets: Vec<(String, Target)>,
     model: &str,
     timeout: Duration,
+    models: Option<&std::path::Path>,
 ) -> Report {
     let (request_words, cost_words) = check_summary(&targets, model);
     let mut text = String::from("\naccount check\n");
@@ -672,7 +673,7 @@ pub(crate) async fn check(
         };
         let line = match endpoint
             .provider
-            .probe(&endpoint, probe_model, timeout)
+            .probe(&endpoint, probe_model, timeout, models)
             .await
         {
             Ok(outcome) => {

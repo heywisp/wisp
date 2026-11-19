@@ -234,8 +234,8 @@ mod tests {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap();
-        let (identity, version) = super::super::subscription::data().unwrap();
-        let rendered = identity.rendered(version).unwrap();
+        let (identity, client_version) = super::super::subscription::data().unwrap();
+        let rendered = identity.rendered(client_version.version).unwrap();
         assert_eq!(
             fetch(&client, &url, "fake", &crate::clock::StillClock, &rendered)
                 .await

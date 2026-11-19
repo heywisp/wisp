@@ -1942,37 +1942,84 @@ fn subscriptions_are_priced_only_when_list_pricing_is_selected() {
     }
 }
 
-#[test]
-fn subscription_cache_routing_matches_the_stable_body_key_only_for_subscriptions() {
-    let mut provider = provider();
+#[tokio::test]
+async fn subscription_cache_routing_matches_the_stable_body_key_only_for_subscriptions() {
+    use crate::plan_usage::record;
+    use crate::provider::client_version::{Record, record_alias};
+    let server = http::serve(
+        (0..3)
+            .map(|_| stream_reply("200 OK", &[], &data(&[created(), completed(&[message()])])))
+            .collect(),
+    )
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let connect = |version| {
+        record::write(
+            dir.path(),
+            &record_alias(ProviderKind::OpenAi),
+            &Record {
+                version: Version::parse(version),
+                checked: 0,
+            },
+        )
+        .unwrap();
+        let mut provider = subscription().with_saved_list(Some(dir.path()));
+        provider.url = format!("{}/backend-api/codex/responses", server.url);
+        provider
+    };
     let session = session();
     let rendering = Rendering::default();
-    let mut messages = vec![Message::user_text("first")];
-    let mut keys = Vec::new();
-    for subscription in [false, true, true] {
-        provider.subscription = subscription;
-        let body = provider
-            .body(&request(&session, &messages, &[], &rendering))
-            .unwrap();
-        let request = provider
-            .inference_request(&body, "synthetic-token")
+    let tools = crate::test_guard::tool_specs();
+    let messages = [Message::user_text("first"), Message::user_text("more")];
+    let first = request(&session, &messages[..1], &tools, &rendering);
+    let second = request(&session, &messages, &tools, &rendering);
+    let api = provider();
+    assert!(
+        !api.inference_request(&api.body(&first).unwrap(), "CANARY_CODEX_API")
             .build()
-            .unwrap();
-        let key = body["prompt_cache_key"].as_str().unwrap();
-        if subscription {
-            assert_eq!(request.headers()["session-id"], key);
-            assert_eq!(request.headers()["originator"], "codex_cli_rs");
-            assert_eq!(
-                request.headers()["user-agent"],
-                "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
-            );
-            keys.push(key.to_owned());
-        } else {
-            assert!(!request.headers().contains_key("session-id"));
-        }
-        messages.push(Message::user_text("more"));
+            .unwrap()
+            .headers()
+            .contains_key("session-id")
+    );
+    let old = connect("0.168.0");
+    assert!(
+        old.stream(&first)
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .all(|event| event.is_ok())
+    );
+    let new = connect("0.170.0");
+    for provider in [&old, &new] {
+        assert!(
+            provider
+                .stream(&second)
+                .collect::<Vec<_>>()
+                .await
+                .into_iter()
+                .all(|event| event.is_ok())
+        );
+    }
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(http::body(&requests[1]), http::body(&requests[2]));
+    let mut keys = Vec::new();
+    for sent in requests.iter() {
+        let headers: BTreeMap<_, _> = http::header_lines(sent).into_iter().collect();
+        let body: Value = serde_json::from_str(http::body(sent)).unwrap();
+        assert_eq!(
+            headers["session-id"],
+            body["prompt_cache_key"].as_str().unwrap()
+        );
+        assert_eq!(headers["originator"], "codex_cli_rs");
+        assert_eq!(
+            headers["user-agent"],
+            "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
+        );
+        keys.push(headers["session-id"].clone());
     }
     assert_eq!(keys[0], keys[1]);
+    assert_eq!(keys[1], keys[2]);
 }
 
 #[test]
@@ -3015,23 +3062,28 @@ fn openai_body_rejects_foreign_provider_models() {
 }
 
 #[test]
-fn the_model_list_url_uses_the_shipped_codex_version_only_for_subscriptions() {
-    let table = crate::models::ModelTable::shared();
-    let version = table
-        .provider(ProviderKind::OpenAi)
-        .unwrap()
-        .client
-        .unwrap()
-        .version
-        .to_string();
-    let url = reqwest::Url::parse(&signed_in("synthetic-profile").models_url().unwrap()).unwrap();
-    assert_eq!(url.path(), "/backend-api/codex/models");
+fn the_model_list_url_uses_the_codex_client_version_only_for_subscriptions() {
+    let subscription = signed_in("synthetic-profile");
+    let client = subscription.client_version.as_ref().unwrap();
+    assert!(client.latest.is_some());
+    for version in [client.version, Version::parse("0.170.0").unwrap()] {
+        let url = reqwest::Url::parse(&subscription.models_url(Some(version)).unwrap()).unwrap();
+        assert_eq!(url.path(), "/backend-api/codex/models");
+        assert_eq!(
+            url.query_pairs().collect::<Vec<_>>(),
+            [("client_version".into(), version.to_string().into())]
+        );
+    }
+    let api = provider();
+    assert!(api.client_version.is_none());
     assert_eq!(
-        url.query_pairs().collect::<Vec<_>>(),
-        [("client_version".into(), version.into())]
-    );
-    assert_eq!(
-        provider().models_url().unwrap(),
+        api.models_url(None).unwrap(),
         format!("{DEFAULT_BASE_URL}/v1/models")
     );
+    let gateway = OpenAiProvider::from_endpoint(&endpoint(
+        Credential::ApiKey("CANARY_GATEWAY".into()),
+        "https://gateway.example/openai",
+    ))
+    .unwrap();
+    assert!(gateway.client_version.is_none());
 }

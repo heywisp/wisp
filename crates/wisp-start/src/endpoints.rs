@@ -408,6 +408,7 @@ pub struct Due {
     pub listed: Vec<String>,
 }
 
+use wisp_core::models::list::ListWait;
 pub use wisp_core::models::list::{LIST_WAIT, ROUND_EVERY};
 
 pub fn due(entries: &BTreeMap<EndpointName, Availability>, folder: &Path, now: i64) -> Due {
@@ -452,8 +453,14 @@ pub fn keep_lists_fresh(catalog: LiveCatalog, names: Vec<String>) {
 }
 
 pub async fn fetch_due(fetches: Vec<BoxFuture<'static, ()>>, deadline: Duration) {
-    let running: Vec<_> = fetches.into_iter().map(tokio::spawn).collect();
-    let _ = tokio::time::timeout(deadline, futures::future::join_all(running)).await;
+    let deadline = tokio::time::Instant::now() + deadline;
+    let waits = fetches.into_iter().map(|fetch| {
+        let wait = ListWait::default();
+        let budget = wait.clone();
+        let running = tokio::spawn(async move { budget.fetch(fetch).await });
+        async move { wait.until(deadline, running).await }
+    });
+    futures::future::join_all(waits).await;
 }
 
 pub fn view(
