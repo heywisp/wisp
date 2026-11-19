@@ -2569,6 +2569,7 @@ fn the_hand_off_turns_mouse_reports_off_before_leaving_and_back_on_after() {
 const PROBE_TOOL: &str = r#"#!/bin/sh
 d="$(dirname "$0")"
 n="$(basename "$0")"
+if [ "$n" = powershell.exe ] && [ "$1" = -Sta ]; then exit 1; fi
 t=no
 if [ -t 0 ] || [ -t 1 ] || [ -t 2 ]; then t=yes; fi
 read -r pid comm state ppid pgrp session tty tpgid rest < /proc/$$/stat
