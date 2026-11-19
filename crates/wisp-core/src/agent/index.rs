@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use wisp_protocol::AgentEvent;
@@ -23,7 +25,7 @@ impl Agent {
         self.gather_entries(events).await;
     }
 
-    pub(super) fn index_allowed(&self) -> std::collections::BTreeSet<String> {
+    pub(super) fn index_allowed(&self) -> BTreeSet<String> {
         let allowed = self.permitted_tools().unwrap_or_else(|| {
             let mut allowed = self.toolbox.enabled().clone();
             if self.toolbox.provider_of(SEARCH_CAPABILITY).is_some()

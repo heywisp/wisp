@@ -4002,6 +4002,7 @@ impl Agent {
         model: &str,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Vec<Call> {
+        self.follow_servers(events).await;
         let mut calls = Vec::with_capacity(found.len());
         for (block, id, name, input) in found {
             let sent = self.track().sent_search;
@@ -5167,7 +5168,7 @@ impl Agent {
         let ran = run.is_some();
         if ran && !token.is_cancelled() {
             self.queue_switches(switches, events).await;
-            self.added_servers(events).await;
+            self.follow_servers(events).await;
             Box::pin(self.gather_entries(events)).await;
         }
         let kept = run

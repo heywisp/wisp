@@ -498,6 +498,11 @@ impl Toolbox {
         *self = std::mem::take(self).with_held(all);
     }
 
+    pub(crate) fn replace_held(&mut self, id: &str, held: Vec<ToolEntry>) {
+        self.held.retain(|tool| tool.tool().id() != id);
+        self.add_held(held);
+    }
+
     pub fn has_plugin(&self, id: &str) -> bool {
         self.tools
             .iter()

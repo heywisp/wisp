@@ -191,8 +191,9 @@ the row says `Read skill` or `Read document`, with its estimated token count.
 
 The index is gathered at start and refreshed at a turn opening or after a completed,
 uncancelled tool call when a source marks it changed. This does not change provider
-declarations or the cached system prefix. A main agent's server add also gathers the new held tools before
-its next step; shared server-off filters apply to every agent's lookups. Duplicate names are resolved
+declarations or the cached system prefix. Held server tools follow a listing before
+the next step; a child follows only the servers present when it starts or resumes. Shared server-off
+filters apply to every agent's lookups. Duplicate names are resolved
 by kind (tool, skill, document), then stable source order, with a problem for the
 discarded entry. Search ranking is in the plugin, not the kernel. A found tool can load mid-turn where the pair supports it, without changing any
 earlier request bytes; `use` runs a held tool without changing the request prefix.

@@ -423,12 +423,20 @@ fn a_prepared_call_has_the_original_name_and_forwards_input_and_result() {
 #[test]
 fn a_removed_tools_routing_names_stay_without_retaining_its_definition() {
     let service = Arc::new(Service {
+        servers: Mutex::new(vec![server("local", State::Ready, true, 1)]),
         tools: Mutex::new(vec![tool()]),
         failure: Some("local was removed".into()),
         ..Service::default()
     });
-    let plugin = plugin(service, true);
+    let plugin = plugin(service.clone(), true);
     block_on(plugin.describe(&context()));
+    service.tools.lock().unwrap().clear();
+    assert_eq!(
+        block_on(plugin.prepare("mcp__local__echo", "{}"))
+            .err()
+            .unwrap(),
+        "local no longer has echo"
+    );
     assert_eq!(
         plain(block_on(plugin.run_command("mcp", "remove local"))),
         "local removed"
@@ -443,11 +451,15 @@ fn a_removed_tools_routing_names_stay_without_retaining_its_definition() {
 }
 
 #[test]
-fn only_a_missing_list_is_started_by_the_background_hook() {
+fn every_stopped_server_that_is_on_is_listed_by_the_background_hook() {
     let service = Arc::new(Service {
         servers: Mutex::new(vec![
             server("empty", State::Stopped, true, 0),
             server("missing", State::Stopped, false, 0),
+            Server {
+                off: true,
+                ..server("off", State::Stopped, true, 0)
+            },
             server("running", State::Ready, true, 3),
         ]),
         ..Service::default()
@@ -461,7 +473,7 @@ fn only_a_missing_list_is_started_by_the_background_hook() {
         "list",
         Event::SessionStart(wisp_plugin_api::hooks::SessionStart { resumed: false }),
     ));
-    assert_eq!(*service.connected.lock().unwrap(), ["missing"]);
+    assert_eq!(*service.connected.lock().unwrap(), ["empty", "missing"]);
 }
 
 #[test]

@@ -1514,6 +1514,59 @@ async fn index_entries_sort_by_kind_and_name_and_leave_out_an_off_tool() {
 }
 
 #[tokio::test]
+async fn a_server_published_during_gather_does_not_add_out_of_scope_skills_or_documents() {
+    use tokio::sync::Notify;
+    use wisp_plugin_api::index::{Entry, Kind};
+
+    #[derive(Default)]
+    struct GatedEntries {
+        started: Notify,
+        listed: Notify,
+    }
+
+    impl Plugin for GatedEntries {
+        fn entries(&self) -> wisp_plugin_api::BoxFuture<'_, Vec<Entry>> {
+            Box::pin(async move {
+                self.started.notify_one();
+                self.listed.notified().await;
+                vec![
+                    index_entry(Kind::Skill, "mcp__local__prompt:review.code"),
+                    index_entry(Kind::Document, "mcp__local__resource:test:///notes"),
+                ]
+            })
+        }
+    }
+
+    let folder = tempfile::tempdir().unwrap();
+    let kernel = KernelHost::new();
+    let service = crate::mcp::Service::new(BTreeMap::new(), folder.path().into(), None);
+    kernel.set_mcp(service.clone());
+    kernel.scope_mcp();
+    let source = Arc::new(GatedEntries::default());
+    let sources = BTreeMap::from([("mcp".into(), source.clone() as Arc<dyn Plugin>)]);
+    let toolbox = crate::tool::Toolbox::default();
+    let allowed = BTreeSet::new();
+    let (problems, ()) = tokio::join!(kernel.gather_index(&toolbox, &allowed, sources), async {
+        source.started.notified().await;
+        service
+            .add(
+                "local",
+                crate::config::McpServer {
+                    command: crate::test_guard::mcp_server(),
+                    args: vec!["text".into()],
+                    keys: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        source.listed.notify_one();
+    });
+    assert!(problems.is_empty(), "{problems:?}");
+    assert!(!service.prompts().is_empty() && !service.resources().is_empty());
+    assert!(kernel.index_entries().is_empty());
+}
+
+#[tokio::test]
 async fn opening_an_index_entry_routes_to_its_owning_source() {
     use wisp_plugin_api::index::Kind;
     let kernel = Arc::new(KernelHost::new());

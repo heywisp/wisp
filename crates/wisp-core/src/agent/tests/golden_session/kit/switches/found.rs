@@ -1,6 +1,7 @@
 use super::*;
 use crate::provider::{ModelCapabilities, PrefixBytes, ProviderError, ProviderEvent, Request};
 use futures::stream::BoxStream;
+use wisp_tool_text::index::SAVED_LIST;
 
 struct FoundProvider {
     inner: Arc<dyn Provider>,
@@ -55,6 +56,9 @@ pub(super) fn found_kit(server: &Server, env: &Env, store: &MemoryStore, native:
         crate::plugin::Tools::new(registry.clone(), registry.default_on())
             .with_preload(vec!["none".into()]),
     );
+    kit.start_layers
+        .flags
+        .push(crate::plugin::testing::hook_flag("mcp", "list", false));
     kit
 }
 
@@ -886,13 +890,17 @@ async fn saved_mcp(env: &Env) -> crate::mcp::Service {
 }
 
 fn mcp_search() -> Reply {
+    mcp_search_for("mcp_search", "z echo")
+}
+
+fn mcp_search_for(id: &'static str, query: &str) -> Reply {
     reply(
-        "msg_mcp_search",
+        &format!("msg_{id}"),
         500,
         vec![call(
-            "mcp_search",
+            id,
             "search",
-            json!({"query":"z echo", "kind":"tool", "limit":1}),
+            json!({"query":query, "kind":"tool", "limit":1}),
         )],
         "tool_use",
     )
@@ -937,13 +945,13 @@ async fn mcp_session(native: bool) {
         registry.clone(),
         registry.on_tools(&std::collections::BTreeSet::from(["search".into()])),
     ));
-    kit.start_layers.flags = vec![crate::settings::Given {
+    kit.start_layers.flags.push(crate::settings::Given {
         target: wisp_protocol::settings::Target::Name(
             wisp_protocol::settings::find("tools").unwrap(),
         ),
         value: SettingValue::List(vec!["search".into()]),
         origin: "--tools".into(),
-    }];
+    });
     let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
     let mut session = Session::start(built.agent);
     session.turn("u1", "Find z echo and call it.").await;
@@ -956,7 +964,11 @@ async fn mcp_session(native: bool) {
             .any(|event| matches!(event, AgentEvent::PluginsChanged { .. }))
     );
     let agent = session.end().await;
-    assert!(result_text(&body(&server, 1), "mcp_search").contains("mcp__local__z_echo"));
+    let hit = result_text(&body(&server, 1), "mcp_search");
+    assert!(
+        hit.contains("mcp__local__z_echo") && hit.contains(SAVED_LIST),
+        "{hit}"
+    );
     assert_eq!(
         result_text(&body(&server, 2), "mcp_call"),
         json!([{"type":"text","text":r#"{"a":[1],"b":2}"#}]).to_string()
@@ -1026,14 +1038,16 @@ async fn server_skills_and_documents_are_gathered_searched_and_opened_through_us
         .turn("u1", "Find and read the server skill and document.")
         .await;
     let agent = session.end().await;
-    assert!(
-        result_text(&body(&server, 1), "find_mcp_skill")
-            .contains("skill mcp__local__prompt:review.code")
-    );
-    assert!(
-        result_text(&body(&server, 1), "find_mcp_document")
-            .contains("document mcp__local__resource:test:///notes")
-    );
+    for (id, name) in [
+        ("find_mcp_skill", "skill mcp__local__prompt:review.code"),
+        (
+            "find_mcp_document",
+            "document mcp__local__resource:test:///notes",
+        ),
+    ] {
+        let hit = result_text(&body(&server, 1), id);
+        assert!(hit.contains(name) && hit.contains(SAVED_LIST), "{hit}");
+    }
     let skill = result_text(&body(&server, 2), "read_mcp_skill");
     assert!(
         skill.contains("Skill: mcp__local__prompt:review.code"),
@@ -1110,6 +1124,7 @@ async fn a_changed_loaded_mcp_definition_updates_by_value_or_keeps_the_session_v
             mcp_search(),
             mcp_call(updates),
             says("msg_done", 700, "Done."),
+            mcp_search_for("find_held", "a first"),
             says("msg_next", 800, "Next."),
         ])
         .await;
@@ -1151,14 +1166,162 @@ async fn a_changed_loaded_mcp_definition_updates_by_value_or_keeps_the_session_v
         );
         let latest = body(&server, 3).to_string();
         assert_eq!(latest.contains("Changed"), updates);
+        let hit = result_text(&body(&server, 4), "find_held");
+        assert!(
+            hit.contains("mcp__local__a-first — Changed") && !hit.contains(SAVED_LIST),
+            "{hit}"
+        );
         if !updates {
             assert!(second.iter().any(|event| matches!(event, AgentEvent::PluginsChanged { kept, .. } if kept.iter().any(|record| record.id == "mcp"))));
         }
-        for n in 1..4 {
+        for n in 1..5 {
             kept_prefix(&server, n - 1, n);
         }
         rebuilds(&store, &agent).await;
     }
+}
+
+#[tokio::test]
+async fn a_listing_reaches_the_same_turns_next_search_without_the_saved_list_note() {
+    let env = Env::new("mcp-follow");
+    let server = Server::start(vec![
+        mcp_call(false),
+        mcp_search(),
+        says("msg_done", 700, "Done."),
+    ])
+    .await;
+    let store = MemoryStore::default();
+    let mut kit = found_kit(&server, &env, &store, false);
+    kit.mcp = saved_mcp(&env).await;
+    fs::write(env.work().join("changed"), "yes").unwrap();
+    let agent = kit
+        .build(on(CAPABLE, kit::Start::Fresh))
+        .await
+        .unwrap()
+        .agent;
+    let mut session = Session::start(agent);
+    session.turn("u1", "Call z echo, then find it.").await;
+    let agent = session.end().await;
+    assert!(result_text(&body(&server, 1), "mcp_call").contains("MCP result"));
+    let hit = result_text(&body(&server, 2), "mcp_search");
+    assert!(
+        hit.contains("Changed") && !hit.contains(SAVED_LIST),
+        "{hit}"
+    );
+    kept_prefix(&server, 0, 1);
+    kept_prefix(&server, 1, 2);
+    rebuilds(&store, &agent).await;
+}
+
+#[tokio::test]
+async fn a_chat_start_lists_saved_servers_that_are_on_and_leaves_off_ones_stopped() {
+    use crate::mcp::State;
+    for off in [false, true] {
+        let env = Env::new(if off { "mcp-start-off" } else { "mcp-start-on" });
+        let replies = if off {
+            Vec::new()
+        } else {
+            vec![
+                says("msg_first", 400, "First."),
+                mcp_search(),
+                says("msg_done", 700, "Done."),
+            ]
+        };
+        let server = Server::start(replies).await;
+        let store = MemoryStore::default();
+        let service = saved_mcp(&env).await;
+        fs::write(env.work().join("changed"), "yes").unwrap();
+        let methods = env.work().join("methods");
+        let before = fs::read(&methods).unwrap();
+        let mut kit = found_kit(&server, &env, &store, false);
+        kit.mcp = service.clone();
+        kit.start_layers.flags.clear();
+        if off {
+            kit.start_layers.flags.push(local_off());
+        }
+        let agent = kit
+            .build(on(CAPABLE, kit::Start::Fresh))
+            .await
+            .unwrap()
+            .agent;
+        let mut session = Session::start(agent);
+        if off {
+            session.until(|event| matches!(event, AgentEvent::HookRan { hook, point, .. } if hook == "mcp/list" && point == "session-start")).await;
+        } else {
+            session.turn("u1", "Say First.").await;
+            assert!(until(|| service.rows()[0].state == State::Ready).await);
+            session.turn("u2", "Find z echo.").await;
+            let hit = result_text(&body(&server, 2), "mcp_search");
+            assert!(
+                hit.contains("Changed") && !hit.contains(SAVED_LIST),
+                "{hit}"
+            );
+            kept_prefix(&server, 0, 1);
+            kept_prefix(&server, 1, 2);
+        }
+        let agent = session.end().await;
+        if off {
+            assert!(service.rows()[0].off);
+            assert_eq!(service.rows()[0].state, State::Stopped);
+            assert_eq!(fs::read(&methods).unwrap(), before);
+            assert!(server.seen().bodies.is_empty());
+        } else {
+            rebuilds(&store, &agent).await;
+        }
+    }
+}
+
+fn local_off() -> crate::settings::Given {
+    crate::settings::Given {
+        target: wisp_protocol::settings::Target::Name(
+            wisp_protocol::settings::find(wisp_protocol::settings::names::TURNED_OFF).unwrap(),
+        ),
+        value: SettingValue::List(vec!["local".into()]),
+        origin: "--set".into(),
+    }
+}
+
+#[tokio::test]
+async fn a_restored_child_cannot_list_a_saved_server_before_the_root_starts() {
+    let env = Env::new("mcp-resume-child-before-root");
+    let server = Server::start(vec![says("msg_first", 400, "First.")]).await;
+    let store = MemoryStore::default();
+    let service = saved_mcp(&env).await;
+    let mut kit = found_kit(&server, &env, &store, false);
+    kit.mcp = service.clone();
+    let spec = || super::resumed::child_with(env.work(), &["search", "use"]);
+    let mut original = Session::start(kit.build_child(spec()).await.unwrap());
+    original.turn("u1", "Say First.").await;
+    original.end().await;
+    let (log, recovered, logged, rebuilt) = reopen(&store, &server);
+    let resume = kit::Resume {
+        log,
+        recovered: &recovered,
+        truncated_bytes: 0,
+        logged: logged.as_ref(),
+        rebuilt,
+    };
+    kit.start_layers.flags = vec![local_off()];
+    let methods = env.work().join("methods");
+    let before = fs::read(&methods).unwrap();
+    let (child, _) = kit.resume_child(spec(), resume).await.unwrap();
+    let mut restored = Session::start(child);
+    restored
+        .send(ClientCommand::DescribeSettings {
+            request: RequestId(2),
+        })
+        .await;
+    restored
+        .until(|e| matches!(e, AgentEvent::SettingsSnapshot(s) if s.answers == RequestId(2)))
+        .await;
+    let child = restored.end().await;
+    assert!(!child.hook_on(&crate::plugin::hooks::Name::new("mcp", "list")));
+    assert!(
+        !service.rows()[0].off,
+        "the root has not published its switches yet"
+    );
+    assert_eq!(service.rows()[0].state, crate::mcp::State::Stopped);
+    assert_eq!(fs::read(methods).unwrap(), before);
 }
 
 #[tokio::test]
@@ -1167,12 +1330,14 @@ async fn a_child_finds_and_uses_a_server_unless_its_preset_takes_search_away() {
     let server = Server::start(vec![
         mcp_search(),
         mcp_call(false),
+        mcp_search_for("mcp_search_again", "z echo"),
         says("msg_done", 700, "Done."),
     ])
     .await;
     let store = MemoryStore::default();
     let mut kit = found_kit(&server, &env, &store, false);
     kit.mcp = saved_mcp(&env).await;
+    fs::write(env.work().join("changed"), "yes").unwrap();
     let child = kit
         .build_child(super::resumed::child_with(env.work(), &["search", "use"]))
         .await
@@ -1182,6 +1347,14 @@ async fn a_child_finds_and_uses_a_server_unless_its_preset_takes_search_away() {
     session.turn("u1", "Find z echo and call it.").await;
     session.end().await;
     assert!(result_text(&body(&server, 2), "mcp_call").contains("MCP result"));
+    let hit = result_text(&body(&server, 3), "mcp_search_again");
+    assert!(
+        hit.contains("Changed") && !hit.contains(SAVED_LIST),
+        "{hit}"
+    );
+    for n in 1..4 {
+        kept_prefix(&server, n - 1, n);
+    }
     let config = crate::test_guard::parse(
         "[agents.presets.reader]\ndescription = 'Reads'\ntools_off = ['search']\n",
     )
@@ -1397,11 +1570,13 @@ async fn cached_mcp_tools_follow_the_plugin_switch_at_start_off_and_back_on() {
         let mut kit = found_kit(&server, &env, &store, false);
         kit.mcp = service.clone();
         if start_off {
-            kit.start_layers.flags = vec![crate::plugin::testing::plugin_flag(
-                "mcp",
-                ENABLED_KEY,
-                false,
-            )];
+            kit.start_layers
+                .flags
+                .push(crate::plugin::testing::plugin_flag(
+                    "mcp",
+                    ENABLED_KEY,
+                    false,
+                ));
             let switches = crate::plugin::PluginSwitches {
                 off: std::collections::BTreeSet::from(["mcp".into()]),
                 removed: Default::default(),

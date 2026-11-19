@@ -76,6 +76,20 @@ impl Mcp {
         }
     }
 
+    fn missing(&self, server: &str, original: &str) -> String {
+        if self
+            .host
+            .mcp()
+            .servers()
+            .iter()
+            .any(|row| row.name == server)
+        {
+            wording::gone(server, original)
+        } else {
+            wording::removed(server)
+        }
+    }
+
     fn on(&self, server: &str) -> bool {
         !self
             .host
@@ -370,17 +384,7 @@ impl Plugin for Mcp {
                 .get(name)
                 .cloned();
             match known {
-                Some((server, original))
-                    if self
-                        .host
-                        .mcp()
-                        .servers()
-                        .iter()
-                        .any(|row| row.name == server) =>
-                {
-                    Err(wording::gone(&server, &original))
-                }
-                Some((server, _)) => Err(wording::removed(&server)),
+                Some((server, original)) => Err(self.missing(&server, &original)),
                 None => wisp_plugin_api::index::Index::open(&(), name).await,
             }
         })
@@ -419,19 +423,7 @@ impl Plugin for Mcp {
                 return Err(wisp_tool_text::manage::turned_off(&server));
             }
             if !self.tools().iter().any(|tool| tool.name == name) {
-                return Err(
-                    if self
-                        .host
-                        .mcp()
-                        .servers()
-                        .iter()
-                        .any(|row| row.name == server)
-                    {
-                        wording::gone(&server, &original)
-                    } else {
-                        wording::removed(&server)
-                    },
-                );
+                return Err(self.missing(&server, &original));
             }
             let display = display(server, original);
             Ok(Box::new(McpCall {
@@ -535,15 +527,15 @@ impl Plugin for Mcp {
                 _ => {}
             }
             if hook == "list" && !self.listing.swap(true, Ordering::AcqRel) {
-                let missing: Vec<_> = self
+                let stopped: Vec<_> = self
                     .host
                     .mcp()
                     .servers()
                     .into_iter()
-                    .filter(|server| !server.listed && server.state == State::Stopped)
+                    .filter(|server| !server.off && server.state == State::Stopped)
                     .collect();
                 futures::future::join_all(
-                    missing
+                    stopped
                         .iter()
                         .map(|server| self.host.mcp().connect(&server.name)),
                 )

@@ -1159,7 +1159,7 @@ These sections are brief; the detail is in the research.
 - **Execution.** Read-only calls run in parallel, and results are published in order [HL §7.1 #21].
 - **Hooks** follow the Claude Code schema, run sandboxed, and only narrow.
 - **Plugins.** Tools, slash commands and hooks come from plugins through one contract, the `wisp:plugin` WIT world in `wit/v0.1.0/`, mirrored by `wisp-plugin-api` with its manifest (`docs/plugins.md`, `docs/plans/plugins.md`). Plugin crates live under `plugins/` and may depend only on `wisp-plugin-api`, `wisp-tool-text`, `wisp-diff`, `wisp-media`, `wisp-instructions`, `wisp-index` and allow-listed pure crates.
-- **MCP:** the kernel `mcp` service owns lazy stdio connections and saved canonical tool lists, shared by a session tree (`docs/mcp.md`). The bundled plugin exposes saved tools through search/use and local server commands; HTTP and sign-in follow separately.
+- **MCP:** the kernel `mcp` service owns server connections and saved canonical tool lists, shared by a session tree. See `docs/mcp.md` for when connections start. The bundled plugin exposes saved tools through search/use and local server commands; HTTP and sign-in follow separately.
   Serving MCP and an ACP gateway come later (O11).
 
 ### 9.4 Policy, sandbox and secrets

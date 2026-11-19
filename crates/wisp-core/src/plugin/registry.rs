@@ -909,6 +909,7 @@ impl Registry {
         let context = self.build_context(&on_tools);
         let holdable = self.holdable(&on_tools);
         let ids = self.plugins.keys().cloned().collect();
+        let generation = host.mcp().changes();
         let StartedSet {
             entries,
             held,
@@ -920,6 +921,7 @@ impl Registry {
         } = self
             .start_set(&ids, &context, (&on_tools, &holdable), &host)
             .await;
+        host.mcp_described(generation);
         let toolbox = Toolbox::new(entries)
             .with_held(held)
             .with_natives(natives)

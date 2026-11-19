@@ -8,6 +8,7 @@ use wisp_plugin_api::index::{Entry, Index, Kind};
 use wisp_plugin_api::manifest::Origin;
 
 use super::{KernelHost, PluginHost, locked};
+use crate::mcp::PLUGIN as MCP_PLUGIN;
 use crate::plugin::imports::Import;
 use crate::plugin::{Problem, panicked};
 use crate::tool::{ToolSpec, Toolbox};
@@ -21,6 +22,8 @@ pub(super) struct State {
     parameters: BTreeMap<String, String>,
     dirty: bool,
     off: BTreeSet<String>,
+    described: u64,
+    mcp_scope: Option<BTreeSet<String>>,
     pub(super) switching: Option<super::manage::Switching>,
     pub(super) pending: Vec<super::manage::Switch>,
     pub(super) managing: super::manage::Managing,
@@ -29,6 +32,26 @@ pub(super) struct State {
 }
 
 impl KernelHost {
+    pub(crate) fn mcp_pending(&self) -> Option<u64> {
+        let changes = self.mcp().changes();
+        (locked(&self.index).described != changes).then_some(changes)
+    }
+
+    pub(crate) fn mcp_described(&self, generation: u64) {
+        locked(&self.index).described = generation;
+    }
+
+    pub(crate) fn scope_mcp(&self) {
+        let servers = self.mcp().rows().into_iter().map(|row| row.name).collect();
+        let mut state = locked(&self.index);
+        state.mcp_scope = Some(servers);
+        state.dirty = true;
+    }
+
+    pub(crate) fn mcp_scope(&self) -> Option<BTreeSet<String>> {
+        locked(&self.index).mcp_scope.clone()
+    }
+
     pub(crate) fn index_entries(&self) -> Vec<Entry> {
         let off = self.mcp().disabled_entries();
         locked(&self.index)
@@ -82,10 +105,10 @@ impl KernelHost {
         allowed: &BTreeSet<String>,
         sources: BTreeMap<String, Arc<dyn Plugin>>,
     ) -> Vec<Problem> {
-        let off = {
+        let (off, described, scope) = {
             let mut state = locked(&self.index);
             state.dirty = false;
-            state.off.clone()
+            (state.off.clone(), state.described, state.mcp_scope.clone())
         };
         let parameters: BTreeMap<_, _> = allowed
             .iter()
@@ -132,7 +155,27 @@ impl KernelHost {
         let mut names = BTreeSet::new();
         let mut owners = BTreeMap::new();
         let mut entries = Vec::new();
-        for (entry, owner) in candidates {
+        let mcp = self.mcp();
+        let unconfirmed = mcp.unconfirmed_entries();
+        let scoped = scope.map(|servers| mcp.entries_of(&servers));
+        let moved = mcp.changes() != described;
+        for (mut entry, owner) in candidates {
+            let mcp_entry = (moved || scoped.is_some())
+                && owner.as_ref().map_or_else(
+                    || {
+                        toolbox
+                            .held_tool(&entry.name)
+                            .is_some_and(|tool| tool.tool().id() == MCP_PLUGIN)
+                    },
+                    |(id, _)| id == MCP_PLUGIN,
+                );
+            if mcp_entry
+                && scoped
+                    .as_ref()
+                    .is_some_and(|allowed| !allowed.contains_key(&entry.name))
+            {
+                continue;
+            }
             if !names.insert(entry.name.clone())
                 || (entry.kind != Kind::Tool && parameters.contains_key(&entry.name))
             {
@@ -147,6 +190,9 @@ impl KernelHost {
                     });
                 }
                 continue;
+            }
+            if unconfirmed.contains_key(&entry.name) || (moved && mcp_entry) {
+                entry.summary = wisp_tool_text::index::from_saved_list(&entry.summary);
             }
             if let Some((_, owner)) = owner {
                 owners.insert(entry.name.clone(), Arc::downgrade(&owner));
