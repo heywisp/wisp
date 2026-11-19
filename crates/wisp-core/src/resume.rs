@@ -107,6 +107,7 @@ impl ToolsHash {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Current {
     pub endpoint_name: Option<String>,
+    pub provider: Option<String>,
     pub model: String,
     pub effort: Effort,
     pub cache_ttl: CacheTtl,
@@ -561,7 +562,7 @@ struct Fold {
     out: LoggedSession,
     undelivered: BTreeSet<InputId>,
     turn_in_run: bool,
-    change: Option<(Option<String>, String, Effort)>,
+    change: Option<(Option<String>, String, Effort, Option<String>)>,
     options: LaterOptions,
     logged_tools: ToolsHash,
     turn_tools: ToolsHash,
@@ -689,6 +690,7 @@ impl Fold {
                 ended: false,
                 current: Current {
                     endpoint_name: started.endpoint_name.clone(),
+                    provider: None,
                     model: started.model.clone(),
                     effort: started.effort,
                     cache_ttl: started.cache_ttl,
@@ -867,6 +869,20 @@ impl Fold {
                     current.context_note,
                     current.auto_compact,
                 );
+                let endpoint = endpoint_name
+                    .clone()
+                    .or_else(|| self.out.started.endpoint_name.clone());
+                let provider = self
+                    .change
+                    .as_ref()
+                    .filter(|(name, _, _, _)| *name == endpoint)
+                    .and_then(|(_, _, _, provider)| provider.clone())
+                    .or_else(|| {
+                        current
+                            .provider
+                            .clone()
+                            .filter(|_| current.endpoint_name == endpoint)
+                    });
                 if retry_of.is_none() {
                     let options = std::mem::take(&mut self.options);
                     message_time = options.time.unwrap_or(message_time);
@@ -874,12 +890,10 @@ impl Fold {
                     auto_compact = options.auto_compact.or(auto_compact);
                     self.change = None;
                 }
-                let endpoint = endpoint_name
-                    .clone()
-                    .or_else(|| self.out.started.endpoint_name.clone());
                 self.out.switched |= endpoint != self.out.current.endpoint_name;
                 self.out.current = Current {
                     endpoint_name: endpoint,
+                    provider,
                     model: model
                         .clone()
                         .unwrap_or_else(|| self.out.started.model.clone()),
@@ -1270,13 +1284,19 @@ impl Fold {
                 model,
                 effort,
                 endpoint_name,
+                provider,
                 endpoint,
                 tools,
                 tools_sha256,
                 changes,
                 ..
             } => {
-                self.change = Some((endpoint_name.clone(), model.clone(), *effort));
+                self.change = Some((
+                    endpoint_name.clone(),
+                    model.clone(),
+                    *effort,
+                    provider.clone(),
+                ));
                 for change in changes {
                     if let Some(SettingTarget::Name(name)) = change.target.known() {
                         self.options.set(name.as_str(), change.value.as_ref());
@@ -1664,7 +1684,7 @@ impl Fold {
     }
 
     fn pending(&self) -> Option<PendingPair> {
-        let (endpoint, model, effort) = self.change.clone()?;
+        let (endpoint, model, effort, _) = self.change.clone()?;
         let current = &self.out.current;
         let endpoint = endpoint.filter(|name| Some(name) != current.endpoint_name.as_ref());
         let same = endpoint.is_none() && model == current.model && effort == current.effort;

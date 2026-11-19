@@ -201,8 +201,8 @@ content!(LogEvent, redactions, {
     } => [endpoint, endpoint_name, tools, system_prompt, whole, tools_on],
     Self::SettingsChanged {
         model, effort: _, cache: _, endpoint_name, endpoint, credential_source: _, account_bound, tools,
-        tools_sha256: _, changes, withdrawn: _,
-    } => [model, endpoint_name, endpoint, account_bound, tools, changes],
+        provider, tools_sha256: _, changes, withdrawn: _,
+    } => [model, endpoint_name, provider, endpoint, account_bound, tools, changes],
     Self::PerMessageEffort { model, state: _, endpoint_name } => [model, endpoint_name],
     Self::BindingControls { model, state: _, endpoint_name } => [model, endpoint_name],
     Self::NativeWebSearch { endpoint_name, state: _ } => [endpoint_name],

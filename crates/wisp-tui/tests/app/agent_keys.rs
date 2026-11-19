@@ -1477,6 +1477,63 @@ async fn a_typed_account_answer_does_not_follow_focus_to_another_chat() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn an_agents_account_picker_shows_another_providers_row_and_reasoning_note() {
+    let mut facts = work_accounts();
+    facts.on_accounts.push(wisp_render::chrome::AccountFacts {
+        account: "chatgpt".into(),
+        model: "gpt-6.1-sol".into(),
+        rates: Some(wisp_render::chrome::ModelRates {
+            writes: None,
+            input_per_mtok: 2.0,
+            output_per_mtok: 10.0,
+            cache_read_per_mtok: 0.2,
+            long_prompt: None,
+        }),
+        max_output: None,
+    });
+    steering_facts(
+        screen(),
+        options(Start::Stalled),
+        facts,
+        |mut a| async move {
+            chat_on_work(&mut a).await;
+            a.paste("/account").key(KeyCode::Enter);
+            let request = describe_w(&mut a).await;
+            let pair = [
+                ("claude-work", Credential::AnthropicPlan),
+                ("chatgpt", Credential::ChatGptPlan),
+            ];
+            let mut listed = listed(request, pair, &[]);
+            let AgentEvent::Agent { event, .. } = &mut listed else {
+                unreachable!()
+            };
+            let AgentEvent::SettingsSnapshot(snapshot) = event.as_mut() else {
+                unreachable!()
+            };
+            snapshot.endpoints[1].provider = "openai".into();
+            snapshot.endpoints[1].default_model = Some("gpt-6.1-sol".into());
+            a.emit(listed).await;
+            a.key(KeyCode::Down);
+            let lines = a.settle().await;
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| l.contains("chatgpt") && l.contains("ChatGPT subscription")),
+                "{lines:#?}"
+            );
+            let preview = line_with(&lines, "Moves this chat to");
+            assert!(
+                preview.contains("chatgpt") && preview.contains("cache rebuild ~$"),
+                "{preview}"
+            );
+            line_with(&lines, "On chatgpt, earlier reasoning won't carry over.");
+            a.ctrl('c').ctrl('c');
+        },
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_refused_switch_in_an_agents_chat_shows_one_note_there() {
     steering_facts(screen(), options(Start::Stalled), work_accounts(), |mut a| async move {
         chat_on_work(&mut a).await;
@@ -1487,7 +1544,7 @@ async fn a_refused_switch_in_an_agents_chat_shows_one_note_there() {
         let ClientCommand::ChangeSettings { request, save: false, .. } = to_w(&mut a).await else {
             panic!("expected /account chatgpt to go to /w");
         };
-        let reason = "account chatgpt is another provider, and an agent's history never moves to another provider";
+        let reason = "account chatgpt was removed in this chat, or edited so it no longer loads; agents can use it again from the next session";
         let refused = AgentEvent::Rejected {
             reason: reason.to_owned(),
             id: None,
@@ -1501,7 +1558,7 @@ async fn a_refused_switch_in_an_agents_chat_shows_one_note_there() {
         none_with(&lines, &copy::rejected(reason)[..20]);
         a.key(KeyCode::Esc);
         assert_eq!(a.next().await, watch("/w", false));
-        none_with(&a.settle().await, "another provider");
+        none_with(&a.settle().await, "was removed in this chat");
         a.ctrl('t').key(KeyCode::Down).key(KeyCode::Enter);
         assert_eq!(a.next().await, watch("/w", true));
         a.paste("/model").key(KeyCode::Enter);

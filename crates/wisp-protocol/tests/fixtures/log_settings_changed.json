@@ -10,6 +10,7 @@
     "reason": "endpoint_switch"
   },
   "endpoint_name": "manifest",
+  "provider": "anthropic",
   "endpoint": "https://gw.example.com",
   "credential_source": "env_file",
   "account_bound": [

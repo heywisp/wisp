@@ -347,14 +347,6 @@ impl Walk<'_> {
         next: &mut Vec<(SpawnedRecord, String)>,
     ) {
         let path = spawned.path.clone();
-        let kind = LoggedKind::read(spawned.provider.as_deref());
-        if kind == LoggedKind::Unknown {
-            return self.not_loaded(
-                spawned,
-                "it ran on a provider this Wisp doesn't know (a newer Wisp wrote its log)",
-                "its log names a provider this Wisp doesn't know",
-            );
-        }
         let reopened = match self.kit.logs.reopen(&spawned.session_id, self.lock) {
             Ok(reopened) => reopened,
             Err(e) => {
@@ -420,6 +412,20 @@ impl Walk<'_> {
                 );
             }
         };
+        let kind = LoggedKind::read(
+            logged
+                .current
+                .provider
+                .as_deref()
+                .or(spawned.provider.as_deref()),
+        );
+        if kind == LoggedKind::Unknown {
+            return self.not_loaded(
+                spawned,
+                "it ran on a provider this Wisp doesn't know (a newer Wisp wrote its log)",
+                "its log names a provider this Wisp doesn't know",
+            );
+        }
         let caller = self.root.caller();
         let view = EndpointView::connected(&connected, &caller.endpoint);
         let agent_name = path.as_str().trim_start_matches('/').to_owned();
@@ -885,6 +891,9 @@ impl AgentsService {
             };
             let mut entry = known.entry(cell, state, child.mail_sender(), granted, now, &view);
             entry.worker = self.shared.presets.worker(entry.config.preset.as_deref());
+            let session = child.session();
+            entry.model = session.model.clone();
+            entry.effort = session.effort;
             entry.place = Place {
                 endpoint: Some(child.endpoint_name().to_owned()),
                 provider: Some(child.provider_kind().as_str().to_owned()),

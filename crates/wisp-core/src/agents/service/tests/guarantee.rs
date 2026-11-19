@@ -382,6 +382,85 @@ async fn a_failed_turn_sends_a_failed_notice() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_used_up_child_skips_a_provider_switched_off_before_the_catalog_refresh() {
+    let now = 1_800_000_000;
+    let gate = Arc::new(Semaphore::new(0));
+    let first = scripted(failing(&gate, now, now + 3600));
+    first.knobs(|k| k.billing = Some(wisp_protocol::Billing::AnthropicPlan));
+    let spare = scripted([]);
+    table(&spare, Table::OpenAi);
+    let second = scripted([uses(&[report_call("r1", "done")])]);
+    let host = crate::endpoints::testing::AuthHost::with(agent::Connection {
+        name: ENV.into(),
+        provider: first,
+        context: context_with(&[]),
+        priced: false,
+    });
+    for (name, provider) in [("spare", spare.clone()), ("second", second.clone())] {
+        *host.next_provider.lock().unwrap() = Some(provider);
+        host.load(name);
+    }
+    let cache = crate::plan_usage::PlanUsageCache::default();
+    let mut run = start(
+        "guarantee-off-fallback",
+        Setup {
+            endpoint_host: Some(host.clone()),
+            clock: Some(Arc::new(ShiftedClock::at(Timestamp::from_second(now).unwrap(), None))),
+            plan_usage: cache.clone(),
+            preset_config: Some(
+                "[agents.presets.worker]\ndescription = 'Works'\nendpoint = 'env'\nfallback = [{endpoint = 'spare', model = 'gpt-6.1-sol'}, {endpoint = 'second'}]\n",
+            ),
+            ..Setup::default()
+        },
+        Vec::new(),
+    )
+    .await;
+    run.spawn(SpawnRequest {
+        preset: Some("worker".into()),
+        ..spawn_request("worker", "Do it.")
+    })
+    .await;
+    run.until("the child's step", |e| {
+        matches!(inner(e, "/worker"), Some(AgentEvent::StepStarted { .. }))
+    })
+    .await;
+    let env = host
+        .catalog
+        .view()
+        .ready
+        .into_iter()
+        .find(|c| c.name == ENV)
+        .unwrap();
+    let generation = cache.bind(ENV, env.provider).unwrap();
+    let error = used_up(now, Some(now + 3600));
+    cache.reached(
+        ENV,
+        generation,
+        error.detail.limit_reached.as_deref().unwrap(),
+    );
+    host.catalog
+        .set_providers_off(BTreeMap::from([("openai".into(), false)]));
+    gate.add_permits(1);
+    run.child_ended("/worker").await;
+    let changed = run
+        .until("the fallback move", |e| {
+            matches!(
+                inner(e, "/worker"),
+                Some(AgentEvent::SettingsChanged { .. })
+            )
+        })
+        .await;
+    assert!(
+        matches!(inner(&changed, "/worker"), Some(AgentEvent::SettingsChanged { endpoint, .. }) if endpoint == "second"),
+        "{changed:?}"
+    );
+    super::resume::reported(&mut run, "/worker").await;
+    assert_eq!(second.sent().len(), 1);
+    assert!(spare.sent().is_empty());
+    run.quit().await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_parent_once() {
     let now = 1_800_000_000;
     let clock = Arc::new(ShiftedClock::at(Timestamp::from_second(now).unwrap(), None));
@@ -396,7 +475,7 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
         Setup {
             endpoints: vec![
                 subscription("first"),
-                openai("spare", wisp_protocol::Billing::ChatGptPlan),
+                openai("spare", wisp_protocol::Billing::Metered),
                 subscription("second"),
             ],
             clock: Some(clock),
@@ -408,7 +487,7 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
         },
         vec![
             ("first:/worker", failing(&gates[0], now, now + 3600)),
-            ("second:/worker", failing(&gates[1], now, now + 7200)),
+            ("spare:/worker", failing(&gates[1], now, now + 7200)),
             ("first:/unheld", failing(&gates[2], now, now + 3600)),
             ("first:/", vec![done("noted"); 2]),
         ],
@@ -427,7 +506,7 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
         matches!(e, AgentEvent::TurnStarted { .. })
     })
     .await;
-    for ((name, reset), gate) in [("first", now + 3600), ("second", now + 7200)]
+    for ((name, reset), gate) in [("first", now + 3600), ("spare", now + 7200)]
         .into_iter()
         .zip(&gates)
     {
@@ -436,6 +515,9 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
         })
         .await;
         hold_limit(&run, &cache, name, (now, reset));
+        if name == "spare" {
+            hold_limit(&run, &cache, "second", (now, reset));
+        }
         gate.add_permits(1);
         run.child_ended("/worker").await;
     }
@@ -467,14 +549,14 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
                 AgentEvent::SettingsChanged { endpoint, answers: None, .. },
                 AgentEvent::TurnStarted { retry_of: Some(1), answers: None, .. },
                 AgentEvent::TurnEnded { .. },
-            ] if endpoint == "second"
+            ] if endpoint == "spare"
         ),
         "{moved:#?}"
     );
     let failed = run.requests("first:/worker");
-    let retried = run.requests("second:/worker");
+    let retried = run.requests("spare:/worker");
     assert_eq!((failed.len(), retried.len()), (1, 1));
-    assert!(run.requests("spare:/worker").is_empty());
+    assert!(run.requests("second:/worker").is_empty());
     assert_eq!(
         format!("{:?}", retried[0].messages),
         format!("{:?}", failed[0].messages)
@@ -489,7 +571,7 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
     assert_eq!((mail[0].0, mail[0].1), (MailKind::Notice, false));
     let notice = wisp_protocol::mail_body(&mail[0].2);
     assert!(
-        notice.starts_with("moved to second with claude-opus-5-5 high (cache rebuild ~$"),
+        notice.starts_with("API: moved to spare with gpt-6-astra high (cache rebuild ~$"),
         "{notice}"
     );
     assert!(
@@ -499,7 +581,7 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
     assert_eq!((mail[1].0, mail[1].1), (MailKind::Notice, true));
     assert_eq!(
         wisp_protocol::mail_body(&mail[1].2),
-        "/worker failed (rate_limit): second reached its usage limit, resets in 2h00m."
+        "/worker failed (rate_limit): spare reached its usage limit, resets in 2h00m."
     );
 
     use crate::agent::testing::{NEW_GEMINI, gemini_list};

@@ -1,6 +1,6 @@
 use wisp_protocol::Billing;
 
-use super::endpoints::{child_retry, failed_child, logged_spawn, retry_refused, spawned_entry};
+use super::endpoints::{child_retry, failed_child, logged_spawn, spawned_entry};
 use super::limits::priced;
 use super::resume::{entry, list, not_resumed, reported, resume, set_provider};
 use super::*;
@@ -494,9 +494,8 @@ async fn a_zero_usage_child_on_a_plan_endpoint_logs_its_billing_mode() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn an_openai_childs_retry_is_refused_another_provider_and_moves_to_a_second_openai_endpoint()
-{
-    use wisp_protocol::settings::{SettingChange, SettingValue, SwitchQuote, SwitchTarget, names};
+async fn an_openai_child_can_retry_on_anthropic_and_switch_back() {
+    use wisp_protocol::settings::{SettingChange, SettingValue, names};
     let kernels = Kernels::default();
     let mut run = start(
         "openai-retry",
@@ -507,17 +506,15 @@ async fn an_openai_childs_retry_is_refused_another_provider_and_moves_to_a_secon
                     voice: true,
                     ..endpoint("claude")
                 },
-                openai("gpt2", Billing::Metered),
             ],
             root_model: GPT,
             kernels: kernels.clone(),
-            models: Some("[models.\"claude-opus-5-5\"]\ncompact_at = 1000\n"),
             ..Setup::default()
         },
         vec![
             ("gpt:/w", vec![refused_request()]),
             (
-                "gpt2:/w",
+                "claude:/w",
                 vec![priced(uses(&[report_call("r1", "moved")]), 5_000, 40)],
             ),
             ("gpt:/", vec![done("noted"); 3]),
@@ -529,36 +526,11 @@ async fn an_openai_childs_retry_is_refused_another_provider_and_moves_to_a_secon
         matches!(&failed, TurnOutcome::Error { offer: Some(o), .. } if o.switch),
         "{failed:?}"
     );
-    assert_eq!(
-        retry_refused(&mut run, "/w", "claude").await,
-        "account claude is another provider, and an agent's history never moves to another provider"
-    );
-    let claude = SettingChange::named("endpoint", SettingValue::Text("claude".into())).unwrap();
-    let request = run.request();
-    let (changes, save) = (vec![claude], false);
-    run.send(child(
-        "/w",
-        ClientCommand::ChangeSettings {
-            request,
-            changes,
-            save,
-        },
-    ))
-    .await;
-    let refused = run
-        .until("/w's refusal", |e| {
-            matches!(inner(e, "/w"), Some(AgentEvent::Rejected { request: Some(r), .. }) if *r == request)
-        })
-        .await;
-    let Some(AgentEvent::Rejected { reason, .. }) = inner(&refused, "/w") else {
-        unreachable!()
-    };
-    assert_eq!(
-        reason,
-        "account claude is another provider, and an agent's history never moves to another provider"
-    );
-    child_retry(&mut run, "/w", "gpt2").await;
-    run.child_ended("/w").await;
+    child_retry(&mut run, "/w", "claude").await;
+    assert!(matches!(
+        run.child_ended("/w").await,
+        TurnOutcome::Completed { .. }
+    ));
     let request = run.request();
     run.send(child("/w", ClientCommand::DescribeSettings { request }))
         .await;
@@ -571,34 +543,42 @@ async fn an_openai_childs_retry_is_refused_another_provider_and_moves_to_a_secon
         unreachable!()
     };
     let listed: Vec<&str> = snapshot.endpoints.iter().map(|e| e.name.as_str()).collect();
-    assert_eq!(listed, ["gpt", "gpt2"]);
+    assert_eq!(listed, ["gpt", "claude"]);
     let row = snapshot
         .settings
         .iter()
         .find(|s| s.name.spec().name == names::ENDPOINT);
-    assert_eq!(row.unwrap().choices, ["gpt", "gpt2"]);
+    assert_eq!(row.unwrap().choices, ["gpt", "claude"]);
     let voice = snapshot
         .settings
         .iter()
         .find(|s| s.name.spec().name == names::VOICE_ENDPOINT);
     assert_eq!(voice.unwrap().choices, ["claude"]);
-    let claude = |q: &SwitchQuote| matches!(&q.target, SwitchTarget::Endpoint(n) | SwitchTarget::Pair { endpoint: n, .. } if n == "claude");
-    assert!(
-        !snapshot.switches.iter().any(claude),
-        "{:?}",
-        snapshot.switches
-    );
     let agents = list(&mut run).await;
     assert_eq!(
         (
             entry(&agents, "/w").endpoint.as_deref(),
             entry(&agents, "/w").provider.as_deref()
         ),
-        (Some("gpt2"), Some("openai"))
+        (Some("claude"), Some("anthropic"))
     );
+    let gpt = SettingChange::named("endpoint", SettingValue::Text("gpt".into())).unwrap();
+    let request = run.request();
+    run.send(child(
+        "/w",
+        ClientCommand::ChangeSettings {
+            request,
+            changes: vec![gpt],
+            save: false,
+        },
+    ))
+    .await;
+    run.until("the child's switch back", |e| {
+        matches!(inner(e, "/w"), Some(AgentEvent::SettingsChanged { answers: Some(r), endpoint, .. }) if *r == request && endpoint == "gpt")
+    })
+    .await;
     let run = run.quit().await;
-    assert!(run.requests("claude:/w").is_empty());
-    assert_eq!(run.requests("gpt2:/w").len(), 1);
+    assert_eq!(run.requests("claude:/w").len(), 1);
 }
 
 #[tokio::test(start_paused = true)]

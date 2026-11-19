@@ -147,12 +147,13 @@ impl Agent {
         if self.agents.endpoint_gone(&target.name) {
             return Some(crate::agents::endpoints::gone_text(&target.name));
         }
-        (target.provider.kind() != self.provider().kind()).then(|| {
-            format!(
-                "account {} is another provider, and an agent's history never moves to another provider",
-                crate::agents::endpoints::plain(&target.name)
-            )
-        })
+        let reason = self
+            .endpoint_catalog
+            .as_ref()?
+            .provider_off_words(target.provider.kind())?;
+        let name = crate::endpoints::EndpointName::parse(&target.name)
+            .unwrap_or_else(crate::endpoints::EndpointName::env);
+        Some(crate::endpoints::unavailable_words(&name, &reason))
     }
 
     pub(super) async fn next_choice(&mut self, failed: &Pending) -> Option<(Pending, String)> {

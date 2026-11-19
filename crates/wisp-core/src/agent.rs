@@ -3246,17 +3246,15 @@ impl Agent {
         attempts: u32,
         gave_up: Option<GaveUp>,
     ) -> TurnOutcome {
-        let provider = self.provider_kind().as_str();
-        let off = self
-            .endpoint_catalog
-            .as_ref()
-            .and_then(|catalog| catalog.providers_off().get(provider).copied());
-        let (kind, message) = match off {
-            Some(removed) if kind == ErrorKind::Auth => (
-                ErrorKind::Other,
-                crate::plugin::registry::off_words(provider, removed),
-            ),
-            _ => (kind, message),
+        let (kind, message) = if kind == ErrorKind::Auth
+            && let Some(reason) = self
+                .endpoint_catalog
+                .as_ref()
+                .and_then(|catalog| catalog.provider_off_words(self.provider_kind()))
+        {
+            (ErrorKind::Other, reason)
+        } else {
+            (kind, message)
         };
         let message = if kind == ErrorKind::ThinkingBinding {
             self.binding_message(&message)
