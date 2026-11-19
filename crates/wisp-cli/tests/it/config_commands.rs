@@ -63,6 +63,31 @@ fn clean(output: &Output, home: &Home) {
     );
 }
 
+#[test]
+fn latest_on_an_account_without_a_release_says_so_and_sends_nothing() {
+    let server = serve();
+    let home = Home::configured("latest-no-release");
+    home.write(
+        CONFIG,
+        &format!(
+            "[endpoints.work]\nauth = 'api_key'\nkey_env = 'LOCAL_KEY'\nurl = {:?}\n",
+            server.url()
+        ),
+    );
+    let output = home.run_with(
+        &["account", "models", "work", "--latest"],
+        &[("LOCAL_KEY", CANARY_KEY)],
+        "",
+    );
+    assert_eq!(code(&output), 1);
+    assert_eq!(
+        err(&output),
+        "wisp: work has no client release to look up\n"
+    );
+    assert!(out(&output).is_empty());
+    assert!(server.heads().is_empty());
+}
+
 const COMMENTED: &str =
     "# my settings\neffort = \"high\" # thinking\n\n# display\n[display]\ntheme = \"dark\"\n";
 

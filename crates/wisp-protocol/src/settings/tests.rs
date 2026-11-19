@@ -340,6 +340,21 @@ mod registry {
             instructions.shown(&ok("voice.instructions", CANARY)),
             crate::NOT_SHOWN
         );
+        assert_eq!(
+            ok(names::CLIENT_VERSION, " 0.170.0 "),
+            SettingValue::Text("0.170.0".into())
+        );
+        let client_version = find(names::CLIENT_VERSION).unwrap();
+        let error = client_version.parse(CANARY).unwrap_err();
+        assert_eq!(error.rule, "needs the form 1.2.3");
+        let diagnostic = format!("{error:?}");
+        assert!(!diagnostic.contains(CANARY));
+        for bad in ["1.2", "01.2.3", "1.2.3-alpha", "+1.2.3"] {
+            assert_eq!(
+                format!("{:?}", client_version.parse(bad).unwrap_err()),
+                diagnostic
+            );
+        }
         for (name, bad) in [
             ("debug_cache", CANARY),
             ("effort", CANARY),

@@ -208,6 +208,7 @@ fn an_openai_pair_never_defers_and_its_provider_gets_no_deferred_tools() {
         ("https://gateway.example/v1", false),
     ] {
         let endpoint = crate::endpoints::ResolvedEndpoint {
+            client_version: None,
             name: crate::endpoints::EndpointName::parse("openai-test").unwrap(),
             provider: crate::endpoints::ProviderKind::OpenAi,
             credential: crate::provider::credential::Credential::ApiKey("synthetic".into()),

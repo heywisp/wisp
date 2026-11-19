@@ -246,6 +246,7 @@ fn a_preset_row_names_each_fallback_and_its_own_account_note() {
             .contains("fallback 2: model gpt-9 isn't one account direct serves")
     );
     let live = wisp_core::endpoints::ResolvedEndpoint {
+        client_version: None,
         name: wisp_core::endpoints::EndpointName::parse("direct").unwrap(),
         provider: wisp_core::endpoints::ProviderKind::Anthropic,
         credential: Credential::ApiKey("CANARYKEY".into()),

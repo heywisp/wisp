@@ -7,7 +7,8 @@ const TAG: &str = "rust-v0.170.0";
 
 fn client(url: &str) -> Client {
     Client {
-        version: Version::parse("0.169.0").unwrap(),
+        pinned: None,
+        version: ClientVersion::parse("0.169.0").unwrap(),
         latest: Some(Latest {
             url: Url::parse(url).unwrap(),
             tag_prefix: "rust-v".into(),
@@ -38,7 +39,7 @@ async fn a_latest_release_gives_its_canonical_version_and_is_recorded() {
     ])
     .await;
     let client = client(&format!("{}/releases/latest", server.url));
-    let version = Version::parse("0.170.0").unwrap();
+    let version = ClientVersion::parse("0.170.0").unwrap();
     let before = now();
     assert_eq!(resolve(&client, Some(&folder), KIND).await, version);
     assert_eq!(current(&client, Some(&folder), KIND), version);
@@ -93,7 +94,7 @@ async fn a_latest_release_gives_its_canonical_version_and_is_recorded() {
         ..saved
     };
     record::write(&folder, &alias, &stale).unwrap();
-    let next = Version::parse("0.171.0").unwrap();
+    let next = ClientVersion::parse("0.171.0").unwrap();
     assert_eq!(resolve(&client, Some(&folder), KIND).await, next);
     assert_eq!(server.requests.lock().unwrap().len(), 2);
 }
@@ -170,7 +171,7 @@ async fn a_malformed_release_answer_fails_and_keeps_the_recorded_version() {
         .chain([("unreachable", unreachable.as_str())])
     {
         let client = client(url);
-        let version = Version::parse("0.168.0").unwrap();
+        let version = ClientVersion::parse("0.168.0").unwrap();
         let saved = Record {
             version: Some(version),
             checked: now() - REFRESH_AFTER,
@@ -201,10 +202,21 @@ async fn the_reported_version_is_the_last_found_then_the_shipped_one() {
     let path = folder.join(format!("{alias}.json"));
     let server = http::serve(vec![reply("200 OK", &release("rust-v0.168.0"))]).await;
     let client = client(&server.url);
+    let pin = ClientVersion::parse("0.169.1").unwrap();
+    let pinned = Client {
+        pinned: Some(pin),
+        ..client.clone()
+    };
+    assert_eq!(current(&pinned, None, KIND), pin);
+    assert_eq!(resolve(&pinned, None, KIND).await, pin);
     let shipped = client.version;
     assert_eq!(current(&client, Some(folder), KIND), shipped);
     assert_eq!(resolve(&client, None, KIND).await, shipped);
-    for version in [None, Version::parse("0.170.0"), Version::parse("0.168.0")] {
+    for version in [
+        None,
+        ClientVersion::parse("0.170.0"),
+        ClientVersion::parse("0.168.0"),
+    ] {
         record::write(
             folder,
             &alias,
@@ -217,16 +229,24 @@ async fn the_reported_version_is_the_last_found_then_the_shipped_one() {
         let expected = version.unwrap_or(shipped);
         assert_eq!(current(&client, Some(folder), KIND), expected);
         assert_eq!(resolve(&client, Some(folder), KIND).await, expected);
+        assert_eq!(current(&pinned, Some(folder), KIND), pin);
+        assert_eq!(resolve(&pinned, Some(folder), KIND).await, pin);
     }
-    let old = Version::parse("0.168.0").unwrap();
-    let newer = Version::parse("0.170.0").unwrap();
+    let old = ClientVersion::parse("0.168.0").unwrap();
+    let newer = ClientVersion::parse("0.170.0").unwrap();
     let stale = Record {
         version: Some(newer),
         checked: now() - REFRESH_AFTER,
     };
     record::write(folder, &alias, &stale).unwrap();
+    assert_eq!(resolve(&pinned, Some(folder), KIND).await, pin);
     assert_eq!(
-        resolve(&client.clone().for_origin(false), Some(folder), KIND).await,
+        resolve(
+            &for_account(&client, true, false, None).unwrap(),
+            Some(folder),
+            KIND
+        )
+        .await,
         newer
     );
     std::fs::write(&path, r#"{"version":"00.1.2","checked":0}"#).unwrap();
@@ -287,7 +307,7 @@ async fn lookup_proxy_test_child() {
         .unwrap();
     assert_eq!(proxied, "proxy fixture");
     let latest = client(&url).latest.unwrap();
-    assert_eq!(lookup(&latest).await, Version::parse("0.170.0"));
+    assert_eq!(lookup(&latest).await, ClientVersion::parse("0.170.0"));
 }
 
 #[tokio::test]
@@ -333,7 +353,7 @@ async fn overlapping_resolves_in_one_folder_send_one_lookup_and_keep_its_version
     let dir = tempfile::tempdir().unwrap();
     let folder = dir.path();
     let alias = record_alias(KIND);
-    let previous = Version::parse("0.168.0").unwrap();
+    let previous = ClientVersion::parse("0.168.0").unwrap();
     let saved = Record {
         version: Some(previous),
         checked: now() - REFRESH_AFTER,
@@ -373,7 +393,7 @@ async fn overlapping_resolves_in_one_folder_send_one_lookup_and_keep_its_version
     assert_eq!(during.version, saved.version);
     assert!(during.checked > saved.checked);
     respond.notify_one();
-    let found = Version::parse("0.170.0").unwrap();
+    let found = ClientVersion::parse("0.170.0").unwrap();
     assert_eq!(first.await.unwrap(), found);
     assert_eq!(
         record::read(folder, &alias),
@@ -384,4 +404,106 @@ async fn overlapping_resolves_in_one_folder_send_one_lookup_and_keep_its_version
     );
     assert_eq!(resolve(&client, Some(folder), KIND).await, found);
     assert!(requests.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn a_forced_lookup_ignores_the_hour_and_records_like_any_lookup() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path();
+    let alias = record_alias(KIND);
+    let path = folder.join(format!("{alias}.json"));
+    let found = ClientVersion::parse("0.170.0").unwrap();
+    let next = ClientVersion::parse("0.171.0").unwrap();
+    let pin = ClientVersion::parse("0.168.0").unwrap();
+    let server = http::serve(vec![
+        reply("200 OK", &release(TAG)),
+        reply("500 Error", ""),
+        reply("200 OK", &release("rust-v0.171.0")),
+    ])
+    .await;
+    let account = client(&server.url);
+    let mut saved = Record {
+        version: Some(account.version),
+        checked: now() - 1,
+    };
+    record::write(folder, &alias, &saved).unwrap();
+    assert_eq!(
+        check(&account, Some(folder), KIND).await,
+        Lookup::Found(found)
+    );
+    let found_record: Record = record::read(folder, &alias).unwrap();
+    assert_eq!(found_record.version, Some(found));
+    assert!(found_record.checked > saved.checked);
+    assert_eq!(resolve(&account, Some(folder), KIND).await, found);
+    let claim = record::claim(folder, &alias);
+    assert!(matches!(claim, Claim::Held(_)));
+    assert_eq!(check(&account, Some(folder), KIND).await, Lookup::Busy);
+    assert_eq!(record::read(folder, &alias), Some(found_record));
+    assert_eq!(server.requests.lock().unwrap().len(), 1);
+    drop(claim);
+
+    saved = Record {
+        version: Some(found),
+        checked: now() - 1,
+    };
+    record::write(folder, &alias, &saved).unwrap();
+    assert_eq!(
+        check(&account, Some(folder), KIND).await,
+        Lookup::Kept(found)
+    );
+    let failed: Record = record::read(folder, &alias).unwrap();
+    assert_eq!(failed.version, saved.version);
+    assert!(failed.checked > saved.checked);
+    let pinned = Client {
+        pinned: Some(pin),
+        ..account.clone()
+    };
+    assert_eq!(
+        check(&pinned, Some(folder), KIND).await,
+        Lookup::Found(next)
+    );
+    assert_eq!(current(&account, Some(folder), KIND), next);
+    assert_eq!(current(&pinned, Some(folder), KIND), pin);
+    assert_eq!(resolve(&pinned, Some(folder), KIND).await, pin);
+
+    assert_eq!(
+        check(
+            &for_account(&account, true, false, None).unwrap(),
+            Some(folder),
+            KIND
+        )
+        .await,
+        Lookup::NoRelease
+    );
+    for folder in [None, Some(path.as_path())] {
+        assert_eq!(
+            check(&account, folder, KIND).await,
+            Lookup::Unrecorded(None)
+        );
+    }
+    assert_eq!(server.requests.lock().unwrap().len(), 3);
+
+    let blocked_write = http::gateway({
+        let path = path.clone();
+        move |_| {
+            let path = path.clone();
+            async move {
+                std::fs::remove_file(&path).unwrap();
+                std::fs::create_dir(&path).unwrap();
+                reply("200 OK", &release(TAG))
+            }
+        }
+    })
+    .await;
+    let account = client(&blocked_write);
+    assert_eq!(
+        check(&account, Some(folder), KIND).await,
+        Lookup::Unrecorded(Some(found))
+    );
+    assert_eq!(
+        check(&account, Some(folder), KIND).await,
+        Lookup::Unrecorded(None)
+    );
+    std::fs::remove_dir(&path).unwrap();
+    assert_eq!(resolve(&account, Some(folder), KIND).await, found);
 }

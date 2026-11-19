@@ -504,6 +504,7 @@ fn changed(spec: &SettingSpec, run: &Run) -> SettingValue {
         | Kind::VarName
         | Kind::VoiceName
         | Kind::Language
+        | Kind::ClientVersion
         | Kind::Path
         | Kind::List(_)
         | Kind::SectionNames

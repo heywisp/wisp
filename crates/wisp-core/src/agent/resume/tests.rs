@@ -4,6 +4,7 @@ fn openai_rewrite_uses_input_prices_without_anthropic_write_premiums() {
     use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, UrlSource};
     use crate::provider::credential::{Credential, Source};
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("openai").unwrap(),
         provider: ProviderKind::OpenAi,
         credential: Credential::ApiKey("synthetic".into()),

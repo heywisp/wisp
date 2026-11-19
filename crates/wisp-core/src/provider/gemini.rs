@@ -183,6 +183,7 @@ pub(crate) fn implicit_endpoint(
     };
     let name = EndpointName::parse(default_name).unwrap_or_else(|| EndpointName::keys_file(false));
     Ok(Some(ResolvedEndpoint {
+        client_version: None,
         name,
         provider: ProviderKind::Gemini,
         credential,
@@ -309,20 +310,30 @@ impl GeminiProvider {
         if subscription && !valid_antigravity_url(&endpoint.base_url) {
             return Err(ConfigError::Subscription);
         }
+        let client_version = identity.and_then(|(_, row)| {
+            client_version::for_account(
+                row,
+                subscription,
+                endpoint.official(),
+                endpoint.client_version,
+            )
+        });
         let user_agent = if subscription {
             Some(
                 identity
-                    .and_then(|(identity, client)| identity.user_agent(client.version))
+                    .zip(client_version.as_ref())
+                    .and_then(|((identity, _), row)| {
+                        identity.user_agent(client_version::current(
+                            row,
+                            None,
+                            ProviderKind::Gemini,
+                        ))
+                    })
                     .ok_or(ConfigError::SubscriptionIdentity)?,
             )
         } else {
             None
         };
-        let client_version = identity.filter(|_| subscription).map(|(_, client)| {
-            client.clone().for_origin(is_antigravity_origin(
-                &parsed.origin().ascii_serialization(),
-            ))
-        });
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
@@ -1175,12 +1186,13 @@ pub(crate) fn build_body(request: &Request<'_>) -> Result<Value, ProviderError> 
 pub(crate) mod tests {
     use super::*;
     use crate::plan_usage::record;
-    use crate::provider::client_version::{Latest, Record, Version, record_alias};
+    use crate::provider::client_version::{Latest, Record, record_alias};
     use crate::provider::{Assembler, Features, Rendering, RequestOptions};
     use crate::test_guard::http;
     use futures::StreamExt;
     use serde_json::json;
     use std::collections::BTreeMap;
+    use wisp_protocol::settings::ClientVersion;
     use wisp_protocol::{CacheTtl, Effort, Message, MessageTime, SessionConfig};
 
     fn test_session() -> SessionConfig {
@@ -1198,6 +1210,7 @@ pub(crate) mod tests {
 
     fn endpoint(credential: Credential, base_url: &str) -> ResolvedEndpoint {
         ResolvedEndpoint {
+            client_version: None,
             name: EndpointName::parse("gemini-api").unwrap(),
             provider: ProviderKind::Gemini,
             credential,
@@ -1278,8 +1291,8 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
-    fn from_endpoint_validates_subscription_origin_and_clean_urls() {
+    #[tokio::test]
+    async fn from_endpoint_validates_subscription_origin_and_clean_urls() {
         let bad_sub = endpoint(
             Credential::Subscription {
                 kind: SubscriptionKind::ChatGpt,
@@ -1323,6 +1336,12 @@ pub(crate) mod tests {
             let endpoint = endpoint(prod_sub.credential.clone(), origin);
             let provider = GeminiProvider::from_endpoint(&endpoint).unwrap();
             assert_eq!(provider.client_version.unwrap().latest.is_some(), latest);
+            if !latest {
+                assert_eq!(
+                    client_version::check_account(&endpoint, None).await,
+                    client_version::Lookup::NoRelease
+                );
+            }
         }
         let missing_identity =
             GeminiProvider::from_endpoint_with_identity(&prod_sub, None).unwrap_err();
@@ -1352,6 +1371,13 @@ pub(crate) mod tests {
                 .client_version
                 .is_none()
         );
+
+        for endpoint in [&api_ep, &gateway] {
+            assert_eq!(
+                client_version::check_account(endpoint, None).await,
+                client_version::Lookup::NoRelease
+            );
+        }
 
         let query_url = endpoint(
             Credential::ApiKey("AIzaCANARY_gemini_key_with_underscre_1".into()),
@@ -1592,6 +1618,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn subscription_probe_honors_timeout_and_distinguishes_key_refused_from_forbidden() {
         let sub_endpoint = |url: &str, profile: Option<PathBuf>| ResolvedEndpoint {
+            client_version: None,
             name: EndpointName::parse("antigravity").unwrap(),
             provider: ProviderKind::Gemini,
             credential: Credential::Subscription {
@@ -1658,7 +1685,7 @@ pub(crate) mod tests {
         ))])
         .await;
         let saved = Record {
-            version: Version::parse("1.5.11"),
+            version: ClientVersion::parse("1.5.11"),
             checked: 0,
         };
         record::write(dir.path(), &record_alias(ProviderKind::Gemini), &saved).unwrap();
@@ -2010,7 +2037,7 @@ pub(crate) mod tests {
         let added = "gemini-4.8-test";
         let delay = Duration::from_millis(2600);
         let mut replies = vec![http::Reply::Send(listed)];
-        replies.extend((0..4).map(|_| http::Reply::Send(stream.clone())));
+        replies.extend((0..6).map(|_| http::Reply::Send(stream.clone())));
         replies.push(http::Reply::Delayed(
             delay,
             http::json("200 OK", &json!({"models": {added: {}}}).to_string()),
@@ -2059,9 +2086,16 @@ pub(crate) mod tests {
         );
         let alias = record_alias(ProviderKind::Gemini);
         let saved: Record = record::read(&folder, &alias).unwrap();
-        assert_eq!(saved.version, Version::parse("1.5.11"));
+        assert_eq!(saved.version, ClientVersion::parse("1.5.11"));
         let new = connect();
         let agent = "antigravity/cli/1.5.11";
+        let pinned_agent = "antigravity/cli/1.5.10";
+        let pinned = GeminiProvider::from_endpoint(&ResolvedEndpoint {
+            client_version: ClientVersion::parse("1.5.10"),
+            ..ep.clone()
+        })
+        .unwrap()
+        .with_client_version(Some(&folder));
         let mut session = test_session();
         session.system = Some("Stable prompt.".into());
         let tools = crate::test_guard::tool_specs();
@@ -2089,13 +2123,13 @@ pub(crate) mod tests {
                 rendering: &Rendering::default(),
                 compaction: None,
             };
-            for provider in [&old, &new] {
+            for provider in [&old, &new, &pinned] {
                 assert!(assembled(provider.stream(&request).collect().await).is_ok());
+                assert_eq!(
+                    old.cache_prefix(&request).unwrap(),
+                    provider.cache_prefix(&request).unwrap()
+                );
             }
-            assert_eq!(
-                old.cache_prefix(&request).unwrap(),
-                new.cache_prefix(&request).unwrap()
-            );
         }
         let stale = Record {
             checked: saved.checked - list::REFRESH_AFTER,
@@ -2132,17 +2166,23 @@ pub(crate) mod tests {
         assert_eq!(record::read(&folder, &alias), Some(stale));
         assert_eq!(release.requests.lock().unwrap().len(), 2);
         let requests = server.requests.lock().unwrap();
-        assert_eq!(requests.len(), 6);
-        for (request, agent) in requests
-            .iter()
-            .zip([agent, shipped, agent, shipped, agent, agent])
-        {
+        assert_eq!(requests.len(), 8);
+        for (request, agent) in requests.iter().zip([
+            agent,
+            shipped,
+            agent,
+            pinned_agent,
+            shipped,
+            agent,
+            pinned_agent,
+            agent,
+        ]) {
             assert!(http::header_lines(request).contains(&("user-agent".into(), agent.into())));
         }
-        for sent in [&requests[0], &requests[5]] {
+        for sent in [&requests[0], &requests[7]] {
             assert!(sent.starts_with("POST /v1internal:fetchAvailableModels "));
         }
-        for [old, new] in requests[1..5].as_chunks::<2>().0 {
+        for [old, new, pinned] in requests[1..7].as_chunks::<3>().0 {
             let body = |raw: &str, agent: &str| {
                 assert!(raw.starts_with("POST /v1internal:streamGenerateContent?alt=sse "));
                 let bytes = http::body(raw);
@@ -2154,7 +2194,9 @@ pub(crate) mod tests {
                     .replace(&format!("\"userAgent\":{}", value["userAgent"]), "")
                     .replace(&format!("\"requestId\":{}", value["requestId"]), "")
             };
-            assert_eq!(body(old, shipped), body(new, agent));
+            let baseline = body(old, shipped);
+            assert_eq!(baseline, body(new, agent));
+            assert_eq!(baseline, body(pinned, pinned_agent));
         }
     }
 
@@ -2198,6 +2240,7 @@ pub(crate) mod tests {
         .await;
 
         let sub_ep = ResolvedEndpoint {
+            client_version: None,
             name: EndpointName::parse("antigravity").unwrap(),
             provider: ProviderKind::Gemini,
             credential: Credential::Subscription {

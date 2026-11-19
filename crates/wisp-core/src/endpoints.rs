@@ -12,10 +12,10 @@ use wisp_protocol::endpoint::loopback_host;
 pub use wisp_protocol::is_variable_name;
 use wisp_protocol::settings::{
     A_STRING, AGENTS_GROUP, AUTH_ANTHROPIC_SUBSCRIPTION, AUTH_ANTIGRAVITY_SUBSCRIPTION,
-    AUTH_API_KEY, AUTH_BEARER, AUTH_CHATGPT_SUBSCRIPTION, Form, HOOKS_TABLE, PLUGIN_HOOK,
-    PLUGIN_SLOT, PLUGINS_GROUP, PRESETS_GROUP, PRESETS_TABLE, PRICING_LIST, PRICING_NONE,
-    PROVIDER_ANTHROPIC, PROVIDER_GEMINI, PROVIDER_OPENAI, Place, SLOTS_TABLE, SettingSpec,
-    SettingValue, Site, SitePath, names, quoted_or,
+    AUTH_API_KEY, AUTH_BEARER, AUTH_CHATGPT_SUBSCRIPTION, ClientVersion, Form, HOOKS_TABLE,
+    PLUGIN_HOOK, PLUGIN_SLOT, PLUGINS_GROUP, PRESETS_GROUP, PRESETS_TABLE, PRICING_LIST,
+    PRICING_NONE, PROVIDER_ANTHROPIC, PROVIDER_GEMINI, PROVIDER_OPENAI, Place, SLOTS_TABLE,
+    SettingSpec, SettingValue, Site, SitePath, names, quoted_or,
 };
 use wisp_protocol::{
     ACCOUNT_FLAG, CONFIG_FILE, CREDENTIALS, InstructionsSource, SECRET_FIELDS, VAR_NAME_CHARS,
@@ -597,6 +597,7 @@ pub struct EndpointConfig {
     pub url: Option<String>,
     pub url_env: Option<VariableName>,
     pub pricing: PricingMode,
+    pub client_version: Option<ClientVersion>,
 }
 
 impl fmt::Debug for EndpointConfig {
@@ -608,6 +609,7 @@ impl fmt::Debug for EndpointConfig {
             .field("url", &self.url.as_deref().map(origin))
             .field("url_env", &self.url_env)
             .field("pricing", &self.pricing)
+            .field("client_version", &self.client_version)
             .finish()
     }
 }
@@ -1485,6 +1487,7 @@ impl Walk<'_> {
                     url = Some((text.to_owned(), at));
                 }
                 "max_in_flight"
+                | "client_version"
                 | "background_tokens"
                 | "native_web_search"
                 | "background_compaction" => {
@@ -1531,6 +1534,12 @@ impl Walk<'_> {
                 );
             }
         }
+        let client_version = values
+            .iter()
+            .find_map(|(setting, value, _)| match (setting, value) {
+                (&names::CLIENT_VERSION, SettingValue::Text(text)) => ClientVersion::parse(text),
+                _ => None,
+            });
         for (setting, value, line) in values {
             if let Some(spec) = wisp_protocol::settings::find(setting) {
                 saved.insert(
@@ -1624,6 +1633,7 @@ impl Walk<'_> {
             url: url.map(|(u, _)| u),
             url_env: url_env.map(|(v, _)| v),
             pricing,
+            client_version,
         };
         Ok((name, Parsed::Named(config), store_at, rows, mark))
     }
@@ -1726,6 +1736,7 @@ pub struct ResolvedEndpoint {
     pub key_env: Option<VariableName>,
     pub url_source: UrlSource,
     pub pricing: PricingMode,
+    pub client_version: Option<ClientVersion>,
 }
 
 impl fmt::Debug for ResolvedEndpoint {
@@ -1739,6 +1750,7 @@ impl fmt::Debug for ResolvedEndpoint {
             .field("key_env", &self.key_env)
             .field("url_source", &self.url_source)
             .field("pricing", &self.pricing)
+            .field("client_version", &self.client_version)
             .finish()
     }
 }
@@ -2184,6 +2196,7 @@ fn stored_endpoint(
         key_env: None,
         url_source,
         pricing: config.pricing,
+        client_version: config.client_version,
     })
 }
 
@@ -2275,6 +2288,7 @@ fn variable_endpoint(
         key_env: Some(key_env.clone()),
         url_source,
         pricing: config.pricing,
+        client_version: config.client_version,
     })
 }
 
@@ -2400,7 +2414,7 @@ pub fn exported_key(variables: &Variables<'_>) -> Option<(VariableName, Source)>
     Some((implicit.key_var().clone(), implicit.source))
 }
 
-pub fn price_flagged<'a>(
+pub fn account_flagged<'a>(
     entries: &'a mut BTreeMap<EndpointName, Availability>,
     more: impl IntoIterator<Item = &'a mut ResolvedEndpoint>,
     flags: &[crate::settings::Given],
@@ -2414,13 +2428,19 @@ pub fn price_flagged<'a>(
             let wisp_protocol::settings::Target::Path(path) = &given.target else {
                 continue;
             };
-            let (Place::Endpoint(name), names::PRICING, SettingValue::Text(mode)) =
+            let (Place::Endpoint(name), field, SettingValue::Text(value)) =
                 (&path.place, path.spec().name, &given.value)
             else {
                 continue;
             };
             if endpoint.name.as_str() == name || (name == ENV && endpoint.from_keys_file()) {
-                endpoint.pricing = PricingMode::parse(mode).unwrap_or(PricingMode::List);
+                match field {
+                    names::PRICING => {
+                        endpoint.pricing = PricingMode::parse(value).unwrap_or(PricingMode::List)
+                    }
+                    names::CLIENT_VERSION => endpoint.client_version = ClientVersion::parse(value),
+                    _ => {}
+                }
             }
         }
     }
@@ -2430,7 +2450,7 @@ impl EndpointBook {
     #[must_use]
     pub fn with_flags(mut self, flags: &[crate::settings::Given]) -> Self {
         let more = std::iter::once(&mut self.active).chain(self.implicit.as_mut());
-        price_flagged(&mut self.entries, more, flags);
+        account_flagged(&mut self.entries, more, flags);
         self
     }
 

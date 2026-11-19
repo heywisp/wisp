@@ -1247,7 +1247,6 @@ async fn signing_in_again_works_on_the_host_wisp_login_builds() {
             wisp_core::secrets::keyring::Budget::Fresh(
                 wisp_core::secrets::keyring::TERMINAL_DEADLINE,
             ),
-            &[],
         )
     };
     assert!(host.catalog.is_none());
@@ -1748,6 +1747,7 @@ async fn another_windows_changes_reach_this_one_only_through_the_watch() {
     catalog.check().await;
     note(shadowed.join(" "));
     let failing = wisp_core::endpoints::ResolvedEndpoint {
+        client_version: None,
         name: wisp_core::endpoints::EndpointName::parse("failing").unwrap(),
         provider: wisp_core::endpoints::ProviderKind::Anthropic,
         credential: wisp_core::provider::credential::Credential::ApiKey(

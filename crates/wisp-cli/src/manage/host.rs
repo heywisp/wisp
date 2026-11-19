@@ -153,6 +153,7 @@ fn probe_target(draft: &Draft, path: &Path, shown: PathShown) -> ResolvedEndpoin
         None => (draft.provider.default_url().to_owned(), UrlSource::Official),
     };
     ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::env(),
         provider: draft.provider,
         credential,
@@ -173,7 +174,6 @@ impl CliEndpointHost {
         endpoint: Option<&str>,
         keychain: Arc<Keychain>,
         budget: Budget,
-        set: &[wisp_core::settings::Given],
     ) -> CliEndpointHost {
         CliEndpointHost {
             catalog: None,
@@ -186,7 +186,7 @@ impl CliEndpointHost {
             home: ctx.home.clone(),
             keychain,
             budget,
-            set: set.to_vec(),
+            set: ctx.set.to_vec(),
             models: ctx.models.clone(),
         }
     }
@@ -259,6 +259,7 @@ impl CliEndpointHost {
         Context {
             env_file: self.env_file.as_deref(),
             config: self.config.as_deref(),
+            set: &self.set,
             model: &self.model,
             caps: crate::prompt_caps(&wisp_tui::term::SavedDisplay::default()),
             claude_usage: false,

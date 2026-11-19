@@ -35,6 +35,9 @@ cache_ttl
 claude_usage
   docs: `true` or `false` in `config.toml`, `on` or `off` on the command line
   rule: must be on or off
+client_version
+  docs: a version such as 1.2.3
+  rule: needs the form 1.2.3
 compact_at
   docs: tokens (`400k`) or a share of the window (`85%`)
   rule: needs a token count (400000 or 400k) or a share of the window (85%)

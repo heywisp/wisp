@@ -367,6 +367,7 @@ mod tests {
         ];
         for (model, effort, steps, want) in cases {
             let endpoint = ResolvedEndpoint {
+                client_version: None,
                 name: EndpointName::parse("openai-test").unwrap(),
                 provider: ProviderKind::OpenAi,
                 credential: Credential::ApiKey("synthetic-openai-key".into()),

@@ -50,6 +50,49 @@ impl fmt::Display for TokensOrPercent {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct ClientVersion([u32; 3]);
+
+impl ClientVersion {
+    pub fn parse(version: &str) -> Option<Self> {
+        let mut parts = version.split('.');
+        let mut numbers = [0; 3];
+        for number in &mut numbers {
+            let part = parts.next()?;
+            if !(1..=9).contains(&part.len())
+                || (part.len() > 1 && part.starts_with('0'))
+                || !part.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                return None;
+            }
+            *number = part.parse().ok()?;
+        }
+        parts.next().is_none().then_some(Self(numbers))
+    }
+}
+
+impl fmt::Display for ClientVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [major, minor, patch] = self.0;
+        write!(f, "{major}.{minor}.{patch}")
+    }
+}
+
+impl TryFrom<String> for ClientVersion {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value).ok_or("invalid client version")
+    }
+}
+
+impl From<ClientVersion> for String {
+    fn from(version: ClientVersion) -> Self {
+        version.to_string()
+    }
+}
+
 pub fn parse_tokens(text: &str) -> Option<u64> {
     let text = text.trim();
     let (digits, scale) = match text.char_indices().last() {

@@ -121,7 +121,14 @@ pub(crate) enum EndpointCommand {
     #[command(
         about = "List models available to a named OpenAI, ChatGPT, Gemini or Antigravity connection"
     )]
-    Models { name: String },
+    Models {
+        name: String,
+        #[arg(
+            long,
+            help = "Look up the latest client release now, then list the models with it"
+        )]
+        latest: bool,
+    },
     #[command(about = "Remove an account and delete its stored key")]
     Remove {
         #[arg(value_name = "NAME", help = "The account to remove")]
@@ -355,6 +362,7 @@ pub(crate) fn url_from_var(
 pub(crate) struct Context<'a> {
     pub(crate) env_file: Option<&'a Path>,
     pub(crate) config: Option<&'a Path>,
+    pub(crate) set: &'a [wisp_core::settings::Given],
     pub(crate) model: &'a str,
     pub(crate) caps: wisp_tui::term::Caps,
     pub(crate) claude_usage: bool,
@@ -366,12 +374,16 @@ pub(crate) struct Context<'a> {
 
 impl Context<'_> {
     pub(crate) fn sources(&self) -> endpoints::Sources {
+        self.sources_for(None)
+    }
+
+    pub(crate) fn sources_for(&self, endpoint: Option<&str>) -> endpoints::Sources {
         let flags = endpoints::Flags {
             env_file: self.env_file,
             config: self.config,
-            endpoint: None,
+            endpoint,
             keychain: self.keychain,
-            set: &[],
+            set: self.set,
         };
         endpoints::Sources::load(&flags, self.xdg_config_home.clone(), self.home.clone())
     }
@@ -559,7 +571,7 @@ fn parse_name_for(text: &str, env: &str) -> Result<EndpointName, String> {
 
 pub(crate) fn run(command: &EndpointCommand, ctx: &Context<'_>) -> ExitCode {
     match command {
-        EndpointCommand::Models { name } => crate::auth::models(ctx, name),
+        EndpointCommand::Models { name, latest } => crate::auth::models(ctx, name, *latest),
         EndpointCommand::Add(args) => add(args, ctx, &ADD),
         EndpointCommand::List { name } => list(ctx, name.as_deref()),
         EndpointCommand::Remove {
@@ -952,6 +964,7 @@ fn probe_endpoint(draft: &Draft, key: &str, path: &Path, shown: PathShown) -> Re
         None => (draft.provider.default_url().to_owned(), UrlSource::Official),
     };
     ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::env(),
         provider: draft.provider,
         credential,

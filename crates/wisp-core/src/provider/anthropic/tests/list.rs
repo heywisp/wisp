@@ -5,13 +5,14 @@ use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint
 use crate::models::list::tests::{claude_entry, claude_wire};
 use crate::models::list::{REFRESH_AFTER, SavedList, anthropic};
 use crate::provider::anthropic::{AnthropicProvider, Credential, DEFAULT_BASE_URL, Source};
-use crate::provider::client_version::Version;
 use crate::provider::credential::SubscriptionKind;
 use crate::provider::{Provider, ProviderError};
 use crate::test_guard::http;
+use wisp_protocol::settings::ClientVersion;
 
-fn account(credential: Credential, base_url: &str) -> ResolvedEndpoint {
+pub(super) fn account(credential: Credential, base_url: &str) -> ResolvedEndpoint {
     ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("claude-test").unwrap(),
         provider: ProviderKind::Anthropic,
         credential,
@@ -35,7 +36,7 @@ fn connect(credential: Credential, base_url: &str) -> AnthropicProvider {
     AnthropicProvider::from_endpoint(&account(credential, base_url)).unwrap()
 }
 
-async fn built(provider: &AnthropicProvider, version: Option<Version>) -> reqwest::Request {
+async fn built(provider: &AnthropicProvider, version: Option<ClientVersion>) -> reqwest::Request {
     let subscription = match version {
         Some(version) => Some((
             version,
@@ -57,7 +58,8 @@ fn named<'a>(request: &'a reqwest::Request, name: &str) -> Option<&'a str> {
 async fn the_list_request_sends_each_accounts_own_header_set_to_its_own_origin() {
     let connected = connect(credential("CANARY_CLAUDE_LIST"), DEFAULT_BASE_URL);
     assert!(connected.client_version.as_ref().unwrap().latest.is_some());
-    let version = Version::parse("2.1.999").unwrap();
+    assert!(connected.list_key().is_none());
+    let version = ClientVersion::parse("2.1.999").unwrap();
     let signed_in = built(&connected, Some(version)).await;
     assert!(signed_in.headers()["authorization"].is_sensitive());
     let official = "https://api.anthropic.com/v1/models?limit=1000";

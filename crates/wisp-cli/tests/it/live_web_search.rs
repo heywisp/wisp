@@ -415,6 +415,7 @@ async fn live_native_web_search_on_openai() {
         return;
     };
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("openai").unwrap(),
         provider: ProviderKind::OpenAi,
         credential: Credential::ApiKey(key),

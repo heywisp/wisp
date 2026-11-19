@@ -1569,6 +1569,7 @@ fn warm_limits_require_provider_support() {
     use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, UrlSource};
     use crate::provider::credential::{Credential, Source};
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("openai").unwrap(),
         provider: ProviderKind::OpenAi,
         credential: Credential::ApiKey("synthetic".into()),

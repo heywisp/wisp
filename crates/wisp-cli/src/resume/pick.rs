@@ -7,7 +7,7 @@ use wisp_protocol::settings::{PLUGIN_SLOT, names};
 
 pub(crate) const NEWER_OPEN: &str = "The newest chat here is open in another window.";
 
-pub(crate) const KEPT_SETTINGS: [&str; 25] = [
+pub(crate) const KEPT_SETTINGS: [&str; 26] = [
     names::DISPLAY_AMBIGUOUS,
     names::DISPLAY_COLOR,
     names::DISPLAY_COPY_ON_SELECT,
@@ -32,6 +32,7 @@ pub(crate) const KEPT_SETTINGS: [&str; 25] = [
     names::URL,
     names::URL_ENV,
     names::MAX_IN_FLIGHT,
+    names::CLIENT_VERSION,
     names::PRICING,
 ];
 

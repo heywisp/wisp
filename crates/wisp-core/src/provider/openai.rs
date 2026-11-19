@@ -15,6 +15,7 @@ use reqwest::Client;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use wisp_protocol::plan_usage::{PlanUsage, PlanUsageError};
+use wisp_protocol::settings::ClientVersion;
 use wisp_protocol::{
     CitedSource, ContentBlock, Effort, ErrorKind, FailurePhase, ImageSource, MediaSource, Message,
     Role, Secret, StopReason, ToolRef, Usage, VariableName,
@@ -22,7 +23,7 @@ use wisp_protocol::{
 
 use super::anthropic::{status_outcome, unexpected, unreachable};
 use super::classify::{self, Carries, ErrorObject, error_object};
-use super::client_version::{self, Version};
+use super::client_version;
 use super::credential::{Credential, SubscriptionKind, subscription_authentication_failed};
 use super::sse::{Decoder, IDLE_TIMEOUT, SseParser, Waits, broken};
 use super::{
@@ -214,14 +215,7 @@ impl OpenAiProvider {
         Ok(Self {
             clock: std::sync::Arc::new(crate::clock::SystemClock),
             client,
-            client_version: subscription
-                .then(|| {
-                    crate::models::ModelTable::shared()
-                        .provider(ProviderKind::OpenAi)?
-                        .client
-                        .clone()
-                })
-                .flatten(),
+            client_version: client_version::account_client(endpoint),
             models_folder: None,
             credential: endpoint.credential.clone(),
             url,
@@ -357,7 +351,7 @@ impl OpenAiProvider {
             .map(|base| format!("{base}{tail}"))
     }
 
-    fn models_url(&self, version: Option<Version>) -> Result<String, ProviderError> {
+    fn models_url(&self, version: Option<ClientVersion>) -> Result<String, ProviderError> {
         let unavailable = || {
             ProviderError::new(
                 ErrorKind::InvalidRequest,
@@ -1558,6 +1552,7 @@ pub(crate) fn build_body(request: &Request<'_>) -> Result<Value, ProviderError> 
     static TEST_PROVIDER: std::sync::OnceLock<OpenAiProvider> = std::sync::OnceLock::new();
     let provider = TEST_PROVIDER.get_or_init(|| {
         let ep = ResolvedEndpoint {
+            client_version: None,
             name: crate::endpoints::EndpointName::env(),
             provider: ProviderKind::OpenAi,
             credential: Credential::ApiKey("synthetic-openai-key".into()),

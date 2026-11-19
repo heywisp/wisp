@@ -945,6 +945,7 @@ fn gateway(kind: wisp_core::endpoints::ProviderKind) -> Arc<dyn Provider> {
     use wisp_core::endpoints::{EndpointName, PricingMode, ResolvedEndpoint, UrlSource};
     use wisp_core::provider::credential::{Credential, Source};
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("live-preload").unwrap(),
         provider: kind,
         credential: Credential::AuthToken(

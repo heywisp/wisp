@@ -257,7 +257,7 @@ impl Sources {
         let keychain = keychain(&self.inputs)?;
         let config = self.config.as_ref().map_err(Clone::clone)?;
         let mut entries = EndpointBook::entries(config.as_ref(), &self.secrets, &keychain);
-        wisp_core::endpoints::price_flagged(&mut entries, None, &self.set);
+        wisp_core::endpoints::account_flagged(&mut entries, None, &self.set);
         wisp_core::endpoints::without_providers(&mut entries, &self.off);
         Ok(entries)
     }

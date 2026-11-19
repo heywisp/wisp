@@ -83,7 +83,8 @@ pub fn widget(spec: &SettingSpec) -> Option<Widget> {
             | Kind::PluginId
             | Kind::Language
             | Kind::Names
-            | Kind::Path,
+            | Kind::Path
+            | Kind::ClientVersion,
         ) => Some(Widget::Text),
         _ => None,
     }

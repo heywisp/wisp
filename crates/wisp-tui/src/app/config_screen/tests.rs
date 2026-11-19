@@ -85,19 +85,12 @@ fn every_placed_name_is_a_registered_setting() {
     for name in EVERYDAY {
         assert!(ORDER.contains(name), "{name}");
     }
-    let fields: std::collections::BTreeSet<&str> =
-        entries::ENDPOINT_FIELDS.iter().copied().collect();
-    let endpoint_specs: std::collections::BTreeSet<&str> = SETTINGS
-        .iter()
-        .filter(|s| {
-            s.is_built()
-                && s.has_site(wisp_protocol::settings::Site::Endpoint)
-                && !s.has_site(wisp_protocol::settings::Site::Global)
-                && !OFF_SCREEN.contains(&s.name)
-        })
-        .map(|s| s.name)
-        .collect();
-    assert_eq!(fields, endpoint_specs);
+    for field in entries::ENDPOINT_FIELDS {
+        assert!(
+            entries::endpoint_specs().any(|spec| spec.name == *field),
+            "{field}"
+        );
+    }
 }
 
 #[test]
@@ -107,12 +100,16 @@ fn every_built_plain_setting_has_one_place_or_waits_for_an_entry_pane() {
     once.sort_unstable();
     once.dedup();
     assert_eq!(once.len(), placed.len(), "a name is placed twice");
+    let pages = entries::endpoint_specs()
+        .chain(entries::model_specs())
+        .map(|spec| spec.name)
+        .collect::<Vec<_>>();
     for spec in SETTINGS
         .iter()
         .filter(|s| s.status == Status::Built && !s.per_plugin())
     {
         let shown = placed.contains(&spec.name)
-            || ENTRY_PANES.contains(&spec.name)
+            || pages.contains(&spec.name)
             || OFF_SCREEN.contains(&spec.name);
         match spec.secrecy {
             Secrecy::Plain => assert!(shown, "{} has no place", spec.name),
@@ -124,11 +121,6 @@ fn every_built_plain_setting_has_one_place_or_waits_for_an_entry_pane() {
     for name in ENTRY_PANES.iter().chain(OFF_SCREEN) {
         assert!(!placed.contains(name), "{name}");
     }
-    let pages = entries::ENDPOINT_FIELDS
-        .iter()
-        .chain(ENTRY_PANES)
-        .copied()
-        .chain(entries::model_specs().map(|spec| spec.name));
     for name in pages {
         assert!(!OFF_SCREEN.contains(&name), "{name}");
     }

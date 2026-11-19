@@ -2042,6 +2042,7 @@ fn model_validation_substitutes_the_default_for_each_provider_and_keeps_gateway_
     use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, UrlSource};
     use crate::provider::credential::Source;
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("openai").unwrap(),
         provider: ProviderKind::OpenAi,
         credential: Credential::ApiKey("synthetic".into()),

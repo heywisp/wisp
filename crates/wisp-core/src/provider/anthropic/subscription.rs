@@ -4,13 +4,14 @@ use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use toml::de::DeValue;
+use wisp_protocol::settings::ClientVersion;
 use wisp_protocol::{Billing, ErrorKind, FailureSource};
 
 use super::{ConfigError, DEFAULT_BASE_URL, Request, beta_header};
 use crate::endpoints::ProviderKind;
 use crate::models::{ModelTable, RowError, bad_value, table_of};
 use crate::provider::classify::{kind_of, status_kind};
-use crate::provider::client_version::{Client, Version};
+use crate::provider::client_version::Client;
 use crate::provider::credential::{Credential, SubscriptionKind};
 use crate::provider::{ProviderError, ProviderEvent, Refused, is_token_char};
 
@@ -114,7 +115,7 @@ impl Identity {
         })
     }
 
-    pub(crate) fn rendered(&self, version: Version) -> Option<Rendered> {
+    pub(crate) fn rendered(&self, version: ClientVersion) -> Option<Rendered> {
         let version = version.to_string();
         let render = |template: &str| {
             let value = template

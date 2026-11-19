@@ -127,6 +127,7 @@ The kernel reads these tables without starting servers. `command` can also be an
 | Setting | Values (default) | Saved at | Command line | Applies | |
 |---|---|---|---|---|---|
 | `auth` | one of `api_key`, `bearer`, `anthropic_subscription`, `chatgpt_subscription`, `antigravity_subscription` (none) | `endpoints.<e>.auth` | `wisp account edit` | new chats for the current account; at the next switch for another | How the account takes its key: api_key, bearer or anthropic_subscription for Anthropic, api_key or chatgpt_subscription for OpenAI, api_key, bearer or antigravity_subscription for Gemini. |
+| `client_version` | a version such as 1.2.3 (latest release) | `endpoints.<e>.client_version` | `--set PATH=…` | new chats | The version to report. |
 | `key` | a secret, never typed as a value (none) | `endpoints.<e>.key` | `wisp account edit` | new chats for the current account; at the next switch for another | The account's key, kept in credentials.json; change it with wisp account edit. |
 | `key_env` | a variable name (none) | `endpoints.<e>.key_env` | `wisp account edit` | new chats for the current account; at the next switch for another | The variable that holds the account's key, where no keychain is available. |
 | `key_store` | `file` or `keyring` (none) | `endpoints.<e>.key_store` | `wisp account edit` | new chats for the current account; at the next switch for another | Where the account's key is kept: file (credentials.json) or keyring. |

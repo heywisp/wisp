@@ -13,6 +13,7 @@ Aliases: needs a list of model IDs
 Sign-in: must be one of api_key, bearer, anthropic_subscription, chatgpt_subscription, antigravity_subscription
 Cache lifetime: must be 5m or 1h
 Claude usage lookup: must be on or off
+Client version: a version such as 1.2.3
 Compact at: tokens, or a share such as 60%
 Compact automatically: must be on or off
 Background compaction: must be on or off

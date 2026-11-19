@@ -71,6 +71,7 @@ fn a_full_file_parses_every_field() {
     assert_eq!(
         config.endpoints[&name("direct")],
         EndpointConfig {
+            client_version: None,
             provider: ProviderKind::Anthropic,
             auth: AuthKind::ApiKey,
             key: KeyFrom::Variable(var("WISP_DIRECT_KEY")),
@@ -82,6 +83,7 @@ fn a_full_file_parses_every_field() {
     assert_eq!(
         config.endpoints[&name("manifest")],
         EndpointConfig {
+            client_version: None,
             provider: ProviderKind::Anthropic,
             auth: AuthKind::Bearer,
             key: KeyFrom::Variable(var("MANIFEST_API_KEY")),
@@ -188,7 +190,7 @@ fn every_error_class_has_a_wisp_message() {
             format!("{base}color = \"blue\"\n"),
             at(
                 4,
-                "unknown field in [endpoints.manifest]; allowed: auth, background_compaction, background_tokens, key_env, key_store, mark, max_in_flight, models, native_web_search, pricing, provider, url, url_env",
+                "unknown field in [endpoints.manifest]; allowed: auth, background_compaction, background_tokens, client_version, key_env, key_store, mark, max_in_flight, models, native_web_search, pricing, provider, url, url_env",
             ),
         ),
         (
@@ -1172,6 +1174,7 @@ fn provider_kinds_dispatch_through_one_table() {
 #[test]
 fn a_named_endpoint_connects_with_its_own_variable_in_errors() {
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: name("gw"),
         provider: ProviderKind::Anthropic,
         credential: Credential::AuthToken("bad\nCANARY".into()),
@@ -1200,6 +1203,7 @@ fn a_named_endpoint_connects_with_its_own_variable_in_errors() {
 #[test]
 fn plain_http_is_flagged_unless_loopback() {
     let at = |url: &str| ResolvedEndpoint {
+        client_version: None,
         name: name("gw"),
         provider: ProviderKind::Anthropic,
         credential: Credential::AuthToken("t".into()),
@@ -1941,6 +1945,7 @@ fn a_key_shaped_variable_name_loads_but_is_shown_nowhere() {
 #[test]
 fn a_connected_endpoint_digests_the_prefix_its_requests_send() {
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: name("gw"),
         provider: ProviderKind::Anthropic,
         credential: Credential::AuthToken("tok".into()),
@@ -2062,6 +2067,34 @@ fn the_env_table_refuses_each_connection_field_on_its_line() {
 }
 
 #[test]
+fn a_hand_set_client_version_reaches_its_account() {
+    let table = "[endpoints.claude]
+auth = 'anthropic_subscription'
+key_env = 'LOCAL_KEY'
+";
+    let config = config(&format!("{table}client_version = '0.168.0'\n"));
+    let env = env_of(&[("LOCAL_KEY", "sk-ant-oat-CANARYclientfixture")]);
+    let entries = EndpointBook::entries(Some(&config), &NoSecrets, &absent(&env, None, false));
+    assert!(
+        ready(&entries, "claude")
+            .credential
+            .subscription()
+            .is_some()
+    );
+    assert_eq!(
+        ready(&entries, "claude").client_version,
+        ClientVersion::parse("0.168.0")
+    );
+    assert_eq!(
+        error(&format!("{table}client_version = '0.168'\n")),
+        at(
+            4,
+            r#"client_version must be three dot-separated numbers, such as "1.2.3""#
+        )
+    );
+}
+
+#[test]
 fn max_in_flight_takes_a_whole_number_or_none_on_the_env_and_named_tables() {
     let file = config(
         "[endpoints.env]\nmax_in_flight = 4\n\n[endpoints.gw]\nurl = \"https://gw.example.com\"\nauth = \"bearer\"\nkey_env = \"GW_KEY\"\nmax_in_flight = \"none\"\n",
@@ -2142,6 +2175,7 @@ fn every_ready_endpoint_logs_the_billing_mode_its_provider_bills() {
     ];
     for (provider, credential, base_url, billing) in cases {
         let endpoint = ResolvedEndpoint {
+            client_version: None,
             name: name("work"),
             provider,
             credential,
@@ -2269,6 +2303,11 @@ fn the_registry_lists_every_word_the_core_parsers_take() {
 fn samples(kind: Kind) -> Vec<String> {
     let quoted = |text: &str| format!("\"{text}\"");
     match kind {
+        Kind::ClientVersion => ["1.2.3", "0.170.0", "1.2", "01.2.3", "1.2.3-alpha"]
+            .map(quoted)
+            .into_iter()
+            .chain(["1".into()])
+            .collect(),
         Kind::Bool => vec!["true".into(), "false".into(), quoted("on")],
         Kind::Int { min, max, none } => {
             let mut out = vec![min.to_string(), max.to_string()];
@@ -2607,6 +2646,7 @@ fn custom_origin_treats_each_subscriptions_official_base_url_as_official() {
     ] {
         assert_eq!(kind.base_url(), expected_url);
         let endpoint = ResolvedEndpoint {
+            client_version: None,
             name: name("sub"),
             provider,
             credential: Credential::Subscription {

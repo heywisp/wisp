@@ -9,6 +9,7 @@ pub const ALIASES: &str = "aliases";
 pub const AUTH: &str = "auth";
 pub const CACHE_TTL: &str = "cache_ttl";
 pub const CLAUDE_USAGE: &str = "claude_usage";
+pub const CLIENT_VERSION: &str = "client_version";
 pub const COMPACT_AT: &str = "compact_at";
 pub const CONTEXT_AUTO_COMPACT: &str = "context.auto_compact";
 pub const CONTEXT_BACKGROUND_COMPACTION: &str = "context.background_compaction";

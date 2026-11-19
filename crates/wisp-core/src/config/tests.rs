@@ -205,7 +205,7 @@ fn the_allowed_lists_come_from_the_registry() {
     );
     assert_eq!(
         endpoint_fields(),
-        "auth, background_compaction, background_tokens, key_env, key_store, mark, max_in_flight, models, native_web_search, pricing, provider, url, url_env"
+        "auth, background_compaction, background_tokens, client_version, key_env, key_store, mark, max_in_flight, models, native_web_search, pricing, provider, url, url_env"
     );
     assert_eq!(group_fields("instructions"), "extra, source, warn_tokens");
     assert_eq!(

@@ -13,6 +13,7 @@ aliases: a list of model IDs
 auth: "api_key", "bearer", "anthropic_subscription", "chatgpt_subscription" or "antigravity_subscription"
 cache_ttl: "5m" or "1h"
 claude_usage: true or false
+client_version: three dot-separated numbers, such as "1.2.3"
 compact_at: a number of tokens (400000) or a share of the window ("85%")
 context.auto_compact: true or false
 context.background_compaction: true or false

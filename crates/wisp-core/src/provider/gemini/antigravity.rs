@@ -8,10 +8,10 @@ use reqwest::header::HeaderValue;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use toml::de::DeValue;
+use wisp_protocol::settings::ClientVersion;
 use wisp_protocol::{ErrorDetail, ErrorKind, FailurePhase, FailureSource, RetryClass};
 
 use super::super::classify::Carries;
-use super::super::client_version::Version;
 use super::super::{MAX_ERROR_DETAIL_CHARS, ProviderError};
 use crate::endpoints::ProviderKind;
 use crate::models::{ModelTable, RowError, bad_value, integer, table_of};
@@ -107,7 +107,7 @@ impl Identity {
         })
     }
 
-    pub(crate) fn user_agent(&self, version: Version) -> Option<String> {
+    pub(crate) fn user_agent(&self, version: ClientVersion) -> Option<String> {
         if !self.user_agent_template.contains("{version}") {
             return None;
         }

@@ -43,6 +43,7 @@ fn session() -> SessionConfig {
 
 pub(crate) fn endpoint(credential: Credential, base_url: &str) -> ResolvedEndpoint {
     ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("openai-test").unwrap(),
         provider: ProviderKind::OpenAi,
         credential,
@@ -1813,6 +1814,7 @@ async fn custom_gateways_allow_foreign_provider_model_ids_while_official_endpoin
     task.handle.abort();
 
     let custom_openai = OpenAiProvider::from_endpoint(&ResolvedEndpoint {
+        client_version: None,
         name: crate::endpoints::EndpointName::parse("gw").unwrap(),
         provider: ProviderKind::OpenAi,
         credential: Credential::ApiKey("synthetic-openai".into()),
@@ -1947,7 +1949,7 @@ async fn subscription_cache_routing_matches_the_stable_body_key_only_for_subscri
     use crate::plan_usage::record;
     use crate::provider::client_version::{Record, record_alias};
     let server = http::serve(
-        (0..3)
+        (0..4)
             .map(|_| stream_reply("200 OK", &[], &data(&[created(), completed(&[message()])])))
             .collect(),
     )
@@ -1958,7 +1960,7 @@ async fn subscription_cache_routing_matches_the_stable_body_key_only_for_subscri
             dir.path(),
             &record_alias(ProviderKind::OpenAi),
             &Record {
-                version: Version::parse(version),
+                version: ClientVersion::parse(version),
                 checked: 0,
             },
         )
@@ -1990,7 +1992,13 @@ async fn subscription_cache_routing_matches_the_stable_body_key_only_for_subscri
             .all(|event| event.is_ok())
     );
     let new = connect("0.170.0");
-    for provider in [&old, &new] {
+    let mut pinned = OpenAiProvider::from_endpoint(&ResolvedEndpoint {
+        client_version: ClientVersion::parse("0.167.0"),
+        ..endpoint(new.credential.clone(), CHATGPT_BASE_URL)
+    })
+    .unwrap();
+    pinned.url.clone_from(&new.url);
+    for provider in [&old, &new, &pinned] {
         assert!(
             provider
                 .stream(&second)
@@ -2001,8 +2009,14 @@ async fn subscription_cache_routing_matches_the_stable_body_key_only_for_subscri
         );
     }
     let requests = server.requests.lock().unwrap();
-    assert_eq!(requests.len(), 3);
-    assert_eq!(http::body(&requests[1]), http::body(&requests[2]));
+    assert_eq!(requests.len(), 4);
+    for request in &requests[2..] {
+        assert_eq!(http::body(&requests[1]), http::body(request));
+        assert_eq!(
+            http::header_lines(&requests[1]),
+            http::header_lines(request)
+        );
+    }
     let mut keys = Vec::new();
     for sent in requests.iter() {
         let headers: BTreeMap<_, _> = http::header_lines(sent).into_iter().collect();
@@ -3061,13 +3075,22 @@ fn openai_body_rejects_foreign_provider_models() {
     assert_eq!(err.kind, ErrorKind::InvalidRequest);
 }
 
-#[test]
-fn the_model_list_url_uses_the_codex_client_version_only_for_subscriptions() {
+#[tokio::test]
+async fn the_model_list_url_uses_the_codex_client_version_only_for_subscriptions() {
     let subscription = signed_in("synthetic-profile");
     let client = subscription.client_version.as_ref().unwrap();
     assert!(client.latest.is_some());
-    for version in [client.version, Version::parse("0.170.0").unwrap()] {
-        let url = reqwest::Url::parse(&subscription.models_url(Some(version)).unwrap()).unwrap();
+    let pin = ClientVersion::parse("0.170.0").unwrap();
+    let pinned = OpenAiProvider::from_endpoint(&ResolvedEndpoint {
+        client_version: Some(pin),
+        ..endpoint(subscription.credential.clone(), CHATGPT_BASE_URL)
+    })
+    .unwrap();
+    let row = pinned.client_version.as_ref().unwrap();
+    let reported = client_version::resolve(row, None, ProviderKind::OpenAi).await;
+    assert_eq!(reported, pin);
+    for (provider, version) in [(&subscription, client.version), (&pinned, reported)] {
+        let url = reqwest::Url::parse(&provider.models_url(Some(version)).unwrap()).unwrap();
         assert_eq!(url.path(), "/backend-api/codex/models");
         assert_eq!(
             url.query_pairs().collect::<Vec<_>>(),
