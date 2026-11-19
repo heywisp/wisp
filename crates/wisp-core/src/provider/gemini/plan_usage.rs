@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use wisp_protocol::plan_usage::{
     Percent, PlanUsage, PlanUsageError, UsageScope, UsageSource, UsageWindow, valid_timestamp,
+    valid_window_name,
 };
 
 use super::GeminiProvider;
@@ -64,16 +65,7 @@ async fn fetch(
     parse_models_quota(&raw, now)
 }
 
-const MAX_LABEL_BYTES: usize = 96;
 const QUOTA_PERCENT_PRECISION: f64 = 1_000_000_000.0;
-
-fn valid_window_key(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= MAX_LABEL_BYTES
-        && id
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"-_. ".contains(&c))
-}
 
 pub(super) fn parse_models_quota(raw: &Value, now: i64) -> Result<PlanUsage, PlanUsageError> {
     let parsed: AvailableModelsResponse =
@@ -81,7 +73,7 @@ pub(super) fn parse_models_quota(raw: &Value, now: i64) -> Result<PlanUsage, Pla
     let mut quotas = Vec::new();
     for (raw_id, entry) in parsed.models {
         let id = raw_id.strip_prefix("models/").unwrap_or(&raw_id);
-        if !super::is_gemini_model(id, &entry) || !valid_window_key(id) {
+        if !super::is_gemini_model(id, &entry) || !valid_window_name(id) {
             continue;
         }
         let Some(quota) = &entry.quota_info else {

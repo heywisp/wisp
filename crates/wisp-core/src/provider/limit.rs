@@ -104,7 +104,7 @@ mod tests {
         );
         retry_guard(&mut detail, "example");
         assert!(detail.limit_reached.is_none());
-        for len in [96, 97] {
+        for (len, valid) in [(96, true), (97, true), (128, true), (129, false)] {
             let model = "m".repeat(len);
             reached(
                 &mut detail,
@@ -118,7 +118,7 @@ mod tests {
             assert!(guard.is_retry_guard());
             assert_eq!(
                 guard.scope,
-                if len == 96 {
+                if valid {
                     UsageScope::Model(model)
                 } else {
                     UsageScope::All

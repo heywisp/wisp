@@ -1393,6 +1393,11 @@ fn late_redactions_omit_only_affected_usage_windows_and_keep_retry_records_reada
         ]
     };
     let mut expected = Vec::from(events(detail.clone()));
+    for len in [96, 97, 128] {
+        let mut scoped = detail.clone();
+        scoped.limit_reached.as_mut().unwrap().scope = UsageScope::Model("m".repeat(len));
+        expected.extend(events(scoped));
+    }
     for event in &expected {
         assert_eq!(log.record(event.clone()), None);
     }
