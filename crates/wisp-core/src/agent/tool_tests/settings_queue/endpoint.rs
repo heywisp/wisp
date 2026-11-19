@@ -327,8 +327,18 @@ async fn an_account_only_switch_adjusts_effort_but_named_choices_still_refuse() 
             "{next_account} {saved_model:?} {flagged:?}"
         );
         assert_eq!(
-            pick!(&events, AgentEvent::SettingsChanged { model, effort, .. } => (model.as_str(), *effort)),
-            [("gemini-4-carbon-high", Effort::High)]
+            pick!(&events, AgentEvent::SettingsChanged { model, effort, cache, changes, .. } => (
+                model.as_str(),
+                *effort,
+                cache.clone(),
+                changes.iter().find(|c| c.target.spec().name == "effort").and_then(|c| c.cache.clone()),
+            )),
+            [(
+                "gemini-4-carbon-high",
+                Effort::High,
+                rebuilt(RebuildReason::ModelSwitch),
+                Some(rebuilt(RebuildReason::ModelSwitch)),
+            )]
         );
         live.end().await;
     }
@@ -756,6 +766,25 @@ async fn account_choices_are_remembered_and_only_valid_manual_moves_use_them() {
             pick!(&events, AgentEvent::SettingsChanged { model, effort, .. } => (model.as_str(), *effort)),
             [(expected, level)]
         );
+        let batch_caches = match (account, model, effort) {
+            (Some("direct"), Some(_), Some(_)) => vec![
+                ("effort", Some(rebuilt(RebuildReason::ModelSwitch))),
+                ("endpoint", Some(CacheEffect::Kept)),
+                ("model", Some(rebuilt(RebuildReason::ModelSwitch))),
+            ],
+            (Some("work"), None, Some(_)) => vec![
+                ("effort", Some(rebuilt(RebuildReason::EndpointSwitch))),
+                ("endpoint", Some(rebuilt(RebuildReason::EndpointSwitch))),
+            ],
+            _ => Vec::new(),
+        };
+        if !batch_caches.is_empty() {
+            assert_eq!(
+                pick!(&events, AgentEvent::SettingsChanged { changes, .. } => changes.iter()
+                    .map(|c| (c.target.spec().name, c.cache.clone())).collect::<Vec<_>>()),
+                [batch_caches]
+            );
+        }
         assert_eq!(
             remembered.of(account.unwrap_or("work")),
             Some(Remembered {
