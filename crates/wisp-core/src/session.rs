@@ -1458,15 +1458,19 @@ impl Redactions {
                 })
                 .flat_map(|s| {
                     let mask = mask(&s);
-                    let debug = format!("{s:?}");
-                    let extra = debug
-                        .strip_prefix('"')
-                        .and_then(|d| d.strip_suffix('"'))
-                        .filter(|escaped| *escaped != s)
-                        .map(str::to_owned);
+                    let escaped_spelling = |quoted: String| {
+                        quoted
+                            .strip_prefix('"')
+                            .and_then(|text| text.strip_suffix('"'))
+                            .filter(|text| *text != s)
+                            .map(str::to_owned)
+                    };
+                    let debug = escaped_spelling(format!("{s:?}"));
+                    let json = serde_json::to_string(&s).ok().and_then(escaped_spelling);
                     let encoded = (mask && maskable(&s)).then(|| base64_forms(&s));
                     std::iter::once(s)
-                        .chain(extra)
+                        .chain(debug)
+                        .chain(json)
                         .chain(encoded.into_iter().flatten())
                         .map(move |value| Redaction { value, mask })
                 }),

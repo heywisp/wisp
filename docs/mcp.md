@@ -60,6 +60,8 @@ other than ASCII letters, digits, `_` and `-` replaced by `_`. Names that collid
 or exceed the host's tool-name limit are refused, never routed ambiguously.
 Text and structured results become result text; images, audio and embedded
 binary resources become typed attachments, unless this call received a value in the secret box: then all attachments are withheld before media processing. Error results remain error results.
+A text block that only repeats the structured content's JSON is left out, so the model reads that content once, masked like any structured content.
+A call's arguments reach the server exactly as the model wrote them; the server checks them against its own schema.
 An initial argument refusal before any form round triggers a new tools listing and returns the fresh parameter schema; a later refusal uses the fixed completion-failure sentence.
 A stopped MCP call ends as cancelled; its call-level deadline ends as timed out, with or without a card.
 

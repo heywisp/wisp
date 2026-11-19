@@ -915,6 +915,7 @@ async fn mcp_session(native: bool) {
     .await;
     let store = MemoryStore::default();
     let service = saved_mcp(&env).await;
+    fs::write(env.work().join("structured"), "yes").unwrap();
     let mut kit = found_kit(&server, &env, &store, native);
     kit.mcp = service.clone();
     let registry = registry(Tools::Default);
@@ -942,7 +943,10 @@ async fn mcp_session(native: bool) {
     );
     let agent = session.end().await;
     assert!(result_text(&body(&server, 1), "mcp_search").contains("mcp__local__z_echo"));
-    assert!(result_text(&body(&server, 2), "mcp_call").contains("MCP result"));
+    assert_eq!(
+        result_text(&body(&server, 2), "mcp_call"),
+        json!([{"type":"text","text":r#"{"a":[1],"b":2}"#}]).to_string()
+    );
     for n in 1..5 {
         kept_prefix(&server, n - 1, n);
     }

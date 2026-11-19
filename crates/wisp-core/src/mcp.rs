@@ -1811,6 +1811,13 @@ fn content(
         Ok(())
     };
     for block in result.content {
+        if let ContentBlock::Text(block) = &block
+            && let Some(structured) = &result.structured_content
+            && serde_json::from_str::<serde_json::Value>(&block.text)
+                .is_ok_and(|value| value == *structured)
+        {
+            continue;
+        }
         if let Some(body) = block_text(&block) {
             text.push(redactions.scrub(body));
             continue;
