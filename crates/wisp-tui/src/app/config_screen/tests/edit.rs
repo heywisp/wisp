@@ -1063,6 +1063,10 @@ fn the_plugins_section_lists_each_plugin_and_switches_it_by_path() {
     let mut screen = Screen::opening(RequestId(1), "");
     let mut shot = snapshot(defaults(), Vec::new(), ok());
     shot.plugins = bundle();
+    let job = &mut shot.plugins[0].tools[1];
+    assert_eq!(job.name, "job");
+    job.on = false;
+    job.held = true;
     assert!(screen.answered(&shot, &Display::default()));
     screen.selected = Some(Spot::Open(Page::Plugins));
     assert_eq!(press(&mut screen, KeyCode::Enter), Act::Stay);

@@ -61,6 +61,7 @@ fn catalog(tools: &[(&str, Option<&str>)]) -> Catalog {
                 .map(|(name, follows)| crate::plugin::ToolEntry {
                     name: (*name).into(),
                     on: true,
+                    held: false,
                     default_on: true,
                     native: false,
                     follows: follows.map(str::to_owned),

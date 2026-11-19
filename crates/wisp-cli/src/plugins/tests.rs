@@ -65,6 +65,7 @@ fn hostile_plugin_strings_are_sanitised_in_the_list() {
         tools: vec![wisp_protocol::plugin::ToolEntry {
             name: "t\u{1b}[31m".into(),
             on: true,
+            held: false,
             default_on: true,
             native: false,
             follows: None,

@@ -1029,6 +1029,10 @@ impl Agent {
             .chain([WEB_SEARCH.to_owned()])
             .collect();
         let search_waits = self.search_waits();
+        let findable = self
+            .toolbox
+            .provider_of(SEARCH_CAPABILITY)
+            .map(|_| self.index_allowed());
         let mut changed = false;
         for tool in self
             .catalog
@@ -1044,8 +1048,14 @@ impl Agent {
             };
             let waits =
                 decision.waiting.contains(&tool.name) || (search_waits && tool.name == WEB_SEARCH);
-            changed |= tool.on != on || tool.waits != waits;
+            let held = !on
+                && findable
+                    .as_ref()
+                    .is_some_and(|names| names.contains(&tool.name))
+                && self.toolbox.held_tool(&tool.name).is_some();
+            changed |= tool.on != on || tool.waits != waits || tool.held != held;
             tool.on = on;
+            tool.held = held;
             tool.waits = waits;
         }
         changed

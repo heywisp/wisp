@@ -52,6 +52,7 @@ pub(crate) enum Switch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Decided {
     Done(Switch, String),
+    Unchanged(String),
     Ask {
         question: String,
         then: Switch,
@@ -97,8 +98,11 @@ impl Switching {
             by_agent,
         };
         match change.action {
-            Action::Off if self.listed.contains(&name) || self.tools_off.contains(&name) => {
-                Decided::Refused(text::already(&name, false))
+            Action::Off
+                if self.listed.contains(&name)
+                    || (change.kind == Kind::Tool && self.tools_off.contains(&name)) =>
+            {
+                Decided::Unchanged(text::already(&name, false))
             }
             Action::Off
                 if (change.kind == Kind::Skill && skills.contains(&name))
@@ -158,7 +162,7 @@ impl Switching {
                     || (change.kind == Kind::Skill && skills.contains(&name))
                     || (change.kind == Kind::Server && servers.contains(&name)) =>
             {
-                Decided::Refused(text::already(&name, true))
+                Decided::Unchanged(text::already(&name, true))
             }
             Action::On => Decided::Refused(text::nothing_named(kind, &name)),
             Action::Add | Action::Remove => Decided::Refused(text::nothing_named(kind, &name)),
@@ -299,6 +303,7 @@ impl Manage for PluginHost {
             }
             match self.kernel.decide_switch(&change) {
                 Decided::Refused(refusal) => Err(refusal),
+                Decided::Unchanged(done) => Ok(done),
                 Decided::Done(switch, done) => {
                     self.kernel.switched(switch);
                     Ok(done)

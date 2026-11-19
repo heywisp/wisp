@@ -237,15 +237,16 @@ fn manage_input(action: &str, kind: &str, name: &str) -> String {
 #[test]
 fn manage_asks_the_host_and_its_row_reads_the_switch() {
     use wisp_plugin_api::manage::{Action as Switched, Change, Kind as Named};
+    let missing = manage::nothing_named("tool", "show_diff");
     for (reply, outcome) in [
         (
             Ok("show_diff is off in this chat from the next message".to_owned()),
             ToolRun::completed().with_result("show_diff is off in this chat from the next message"),
         ),
         (
-            Err("show_diff is already off".to_owned()),
+            Err(missing.clone()),
             ToolRun::new(Outcome::Failed(Failure {
-                message: "show_diff is already off".to_owned(),
+                message: missing,
                 before_start: false,
             })),
         ),

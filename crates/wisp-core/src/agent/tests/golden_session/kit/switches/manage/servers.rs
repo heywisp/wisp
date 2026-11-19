@@ -94,6 +94,11 @@ async fn manage_add_finds_and_runs_the_new_server_in_the_same_turn_without_reset
             1400,
             vec![manage("on_local", "on", "server", "local")],
         ),
+        calls(
+            "msg_server_on_again",
+            1450,
+            vec![manage("on_again", "on", "server", "local")],
+        ),
         says("msg_on_done", 1500, "On."),
         says("msg_last", 1600, "Done."),
     ])
@@ -240,6 +245,11 @@ async fn manage_add_finds_and_runs_the_new_server_in_the_same_turn_without_reset
     assert!(!result_text(&body(&child_server, 3), "child_search_off").contains("mcp__local__"));
     assert!(result_text(&body(&child_server, 4), "child_off").contains("Turned off"));
     let on = session.turn("u4", "Finish.").await;
+    let already = body(&server, 12);
+    let result = &already["messages"].as_array().unwrap().last().unwrap()["content"][0];
+    assert_eq!(result["tool_use_id"], "on_again");
+    assert_eq!(result["content"][0]["text"], "local is already on");
+    assert!(result.get("is_error").is_none());
     child.turn("child-u2", "Find and call local again.").await;
     child.end().await;
     assert!(result_text(&body(&child_server, 6), "child_search_on").contains("mcp__local__z_echo"));
@@ -267,7 +277,7 @@ async fn manage_add_finds_and_runs_the_new_server_in_the_same_turn_without_reset
             .turned_off(&agent.settings.session)
             .contains("show_diff")
     );
-    for n in 0..12 {
+    for n in 0..13 {
         appends(&server, n);
     }
     rebuilds(&store, &agent).await;
