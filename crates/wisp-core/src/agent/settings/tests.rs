@@ -366,7 +366,15 @@ impl Rig {
     async fn cache_of(&mut self, model: Option<&str>, effort: Option<Effort>) -> CacheEffect {
         let events = self.change(model, effort).await;
         match events.as_slice() {
-            [AgentEvent::SettingsChanged { cache, .. }] => cache.clone(),
+            [AgentEvent::SettingsChanged { cache, changes, .. }] => {
+                if effort.is_some() {
+                    let applied = changes
+                        .iter()
+                        .find(|c| c.target.spec().name == names::EFFORT);
+                    assert_eq!(applied.and_then(|c| c.cache.as_ref()), Some(cache));
+                }
+                cache.clone()
+            }
             other => panic!("{other:?}"),
         }
     }

@@ -10,7 +10,7 @@ use wisp_protocol::settings::{
 };
 use wisp_protocol::subscription_auth::Way;
 use wisp_protocol::{
-    AgentEvent, CacheEffect, Effort, PluginEntry, RebuildReason, RequestId, SearchForm, shown_model,
+    AgentEvent, CacheEffect, Effort, PluginEntry, RequestId, SearchForm, shown_model,
 };
 
 use super::Pending;
@@ -706,13 +706,11 @@ impl Agent {
 
     fn change_cache(&self, spec: &SettingSpec, target: &Pending) -> CacheEffect {
         match spec.name {
-            names::ENDPOINT if target.endpoint != self.endpoint => CacheEffect::Rebuilt {
-                reason: RebuildReason::EndpointSwitch,
-            },
-            names::MODEL if target.model != self.session.model => CacheEffect::Rebuilt {
-                reason: RebuildReason::ModelSwitch,
-            },
-            names::EFFORT => self.cache_effect(self.endpoint, &self.session.model, target.effort),
+            names::ENDPOINT => {
+                self.cache_effect(target.endpoint, &self.session.model, self.session.effort)
+            }
+            names::MODEL => self.cache_effect(self.endpoint, &target.model, self.session.effort),
+            names::EFFORT => self.cache_effect(target.endpoint, &target.model, target.effort),
             _ => CacheEffect::Kept,
         }
     }

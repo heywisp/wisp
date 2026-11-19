@@ -279,12 +279,16 @@ fn a_correction_falls_back_and_shift_tab_says_why() {
 fn shift_tab_never_acts_on_a_model_without_per_message_effort() {
     let mut f = facts(Endpoint::Official, CacheTtl::OneHour);
     f.model = "claude-opus-4-8".to_owned();
-    let mut t = Tracker::new(&f);
-    feed(
-        &mut t,
-        &f,
-        &[step(first_request(10_000, 0)), step(later_request(12_000))],
-    );
+    let warmed = |f: &Facts| {
+        let mut t = Tracker::new(f);
+        feed(
+            &mut t,
+            f,
+            &[step(first_request(10_000, 0)), step(later_request(12_000))],
+        );
+        t
+    };
+    let t = warmed(&f);
     assert_eq!(
         t.cycle(&f, s(2), UNI).unwrap_err(),
         "Changing effort on opus-4-8 rebuilds the cache (up to ~$0.12). Use /effort to choose."
@@ -293,6 +297,24 @@ fn shift_tab_never_acts_on_a_model_without_per_message_effort() {
     let t = Tracker::new(&f);
     let why = t.cycle(&f, s(0), UNI).unwrap_err();
     assert!(why.starts_with("Changing effort on gateway-model"), "{why}");
+
+    let base = f.model_facts("claude-opus-4-8").unwrap().clone();
+    for (effort, rate) in [(Effort::Medium, 5.0), (Effort::High, 2.0)] {
+        let mut sibling = base.clone();
+        sibling.id = format!("effort-variant-{}", effort.as_str());
+        sibling.variant = Some(wisp_protocol::settings::EffortVariant {
+            family: "effort-variant".into(),
+            effort,
+        });
+        sibling.rates.as_mut().unwrap().input_per_mtok = rate;
+        f.models.push(sibling);
+    }
+    f.model = "effort-variant-medium".into();
+    let t = warmed(&f);
+    assert_eq!(
+        t.cycle(&f, s(2), UNI).unwrap_err(),
+        "Changing effort on effort-variant-medium rebuilds the cache (up to ~$0.048). Use /effort to choose."
+    );
 }
 
 #[test]

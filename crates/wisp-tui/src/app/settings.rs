@@ -4,7 +4,7 @@ use std::time::Duration;
 use wisp_protocol::log::FeatureState;
 use wisp_protocol::settings::{
     AppliedChange, OverrideScope, PROVIDER_ANTHROPIC, PROVIDER_GEMINI, PROVIDER_OPENAI, Restored,
-    SettingTarget, SettingValue, SwitchTarget, Withdrawal, names, takes_no_effort,
+    SettingTarget, SettingValue, SwitchTarget, Withdrawal, names,
 };
 use wisp_protocol::{
     AgentEvent, BlockKind, CacheEffect, CacheTtl, Effort, Feature, NoSearch, RebuildReason,
@@ -685,25 +685,19 @@ impl Tracker {
         let sep = format!(" {} ", glyphs.separator);
         let wanted = self.wanted();
         let short = short_model(&wanted.model);
-        let amount = || {
-            self.rebuild(facts, &wanted.model, Scope::UpTo, at)
+        let amount = |to: Option<Effort>| {
+            let model = to
+                .and_then(|level| facts.sibling(&wanted.model, level))
+                .unwrap_or(&wanted.model);
+            self.rebuild_on(facts, &wanted.endpoint, model, Scope::UpTo, at)
                 .amount(set)
         };
         let caps = facts
             .model_facts(&wanted.model)
             .and_then(|m| m.caps.as_ref());
         let Some(caps) = caps else {
-            return Err(copy::effort_rebuilds(&short, &amount()));
+            return Err(copy::effort_rebuilds(&short, &amount(None)));
         };
-        if takes_no_effort(Some(&caps.efforts)) {
-            return Err(copy::no_effort_levels(&short));
-        }
-        match self.pair(facts, &wanted.model) {
-            Pair::Documented | Pair::Proven => {}
-            Pair::Unknown => return Err(copy::gateway_unproven(&amount())),
-            Pair::FallenBack => return Err(copy::gateway_fell_back(&short, &amount())),
-            Pair::NotPerMessage => return Err(copy::effort_rebuilds(&short, &amount())),
-        }
         let at_level = wanted
             .effort
             .and_then(|e| caps.efforts.iter().position(|l| *l == e));
@@ -714,6 +708,12 @@ impl Tracker {
         let Some(to) = to else {
             return Err(copy::no_effort_levels(&short));
         };
+        match self.pair(facts, &wanted.model) {
+            Pair::Documented | Pair::Proven => {}
+            Pair::Unknown => return Err(copy::gateway_unproven(&amount(Some(to)))),
+            Pair::FallenBack => return Err(copy::gateway_fell_back(&short, &amount(Some(to)))),
+            Pair::NotPerMessage => return Err(copy::effort_rebuilds(&short, &amount(Some(to)))),
+        }
         let effect = self.effort_effect(facts, &wanted.model, to, at).text(set);
         let from = wanted.effort.map_or("?", Effort::as_str);
         let hint = copy::effort_cycled(glyphs.arrow, from, to.as_str(), &sep, &effect);
