@@ -10,9 +10,9 @@ use crate::markdown::Layout;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::motion::{
-    MotionCtx, REVEAL, REVEAL_STEP_MS, picture_pulse, reveal, tree_glow, tree_pulse,
+    FRAME_MIN, MotionCtx, REVEAL, REVEAL_STEP_MS, ms, picture_pulse, reveal, tree_glow, tree_pulse,
 };
-use crate::picture::{Dot, Light, Mark, Ring, Scene, smooth};
+use crate::picture::{Dot, Light, Mark, Ring, Scene};
 use crate::styled::{Look, StyledLine, StyledSpan};
 use crate::text::{WidthMode, fit_end, spans_padded, spans_width, width};
 use crate::theme::glyphs::{self, Glyphs};
@@ -50,8 +50,7 @@ const LEGEND_DOT: f32 = 0.4;
 const GAP_LESS: f32 = 4.0 / 9.0;
 const PAGE_DOT: f32 = 7.5 / 9.0;
 const LONE_GAP: usize = 6;
-const CELLS_A_SECOND: u64 = 40;
-const FLIGHT_MS: (u64, u64) = (600, 1200);
+const FLIGHT_FRAMES: (u64, u64) = (12, 36);
 const IN_FLIGHT: usize = 3;
 const LIGHT: Token = Token::Gleam;
 const LIGHT_RANK: u8 = 1;
@@ -410,8 +409,8 @@ fn draw(
             None => grid.text(at, glyph, wire()),
         }
     }
-    for (path, along) in lit.lights.iter().filter(|_| !view.pictures) {
-        light(&mut grid, &trace(path, &wires), *along, view.cx);
+    for (path, h) in lit.lights.iter().filter(|_| !view.pictures) {
+        light(&mut grid, &trace(path, &wires), *h, view.cx);
     }
     if let Some(root) = placed.root.filter(|_| !view.pictures) {
         grid.text(root, glyphs.wisp, Look::fg(Token::Accent));
@@ -505,16 +504,21 @@ fn across(dots: &[Pip], i: usize, head: bool) -> u8 {
     bits
 }
 
-fn light(grid: &mut Canvas, dots: &[Pip], along: f32, cx: MotionCtx) {
-    let Some(last) = dots.len().checked_sub(1) else {
+fn light(grid: &mut Canvas, dots: &[Pip], h: usize, cx: MotionCtx) {
+    let Some(head) = (0..dots.len())
+        .filter(|&i| dots.get(i + 1).is_none_or(|next| next.0 != dots[i].0))
+        .nth(h)
+    else {
         return;
     };
-    let head = ((along * dots.len() as f32) as usize).min(last);
     if cx.ascii {
         grid.text(dots[head].0, ASCII_LIGHT, Look::fg(LIGHT));
         return;
     }
-    let first = head.saturating_sub(1);
+    let first = head
+        .checked_sub(1)
+        .filter(|&i| dots[i].0 == dots[head].0)
+        .unwrap_or(head);
     let mut behind: Vec<(usize, usize)> = dots[..first].iter().map(|d| d.0).collect();
     behind.dedup();
     let behind = behind.into_iter().rev().filter(|&at| at != dots[first].0);
@@ -730,10 +734,13 @@ fn scene(
     let drawn: Vec<Dot> = root.into_iter().chain(dots).collect();
     let (left, top) = (window.at.0 as f32, window.at.1 as f32);
     let shift = |(x, y): (f32, f32)| (x - left, y - top);
-    let lights = lit.lights.into_iter().map(|(path, along)| Light {
-        path: path.into_iter().map(|cell| shift(centre(cell))).collect(),
-        along,
-        radius: window.dot,
+    let lights = lit.lights.into_iter().map(|(path, h)| {
+        let along = (h + 1) as f32 / route_len(&path) as f32;
+        Light {
+            path: path.into_iter().map(|cell| shift(centre(cell))).collect(),
+            along,
+            radius: window.dot,
+        }
     });
     let rings = lit.rings.into_iter().filter_map(|(cell, open)| {
         let at = window.inside(cell)?;
@@ -794,8 +801,14 @@ fn route(
     Some(out)
 }
 
+fn route_len(path: &[(usize, usize)]) -> usize {
+    path.windows(2)
+        .map(|w| w[0].0.abs_diff(w[1].0) + w[0].1.abs_diff(w[1].1))
+        .sum()
+}
+
 struct Flights {
-    lights: Vec<(Vec<(usize, usize)>, f32)>,
+    lights: Vec<(Vec<(usize, usize)>, usize)>,
     rings: Vec<((usize, usize), Duration)>,
 }
 
@@ -829,24 +842,27 @@ fn flights(view: &Topology<'_>, tree: &Tree, placed: &Placed) -> Flights {
         let Some(path) = ends.and_then(|ends| route(tree, placed, ends)) else {
             continue;
         };
-        let cells: usize = (path.windows(2))
-            .map(|w| w[0].0.abs_diff(w[1].0) + w[0].1.abs_diff(w[1].1))
-            .sum();
-        let time = (cells as u64 * 1000 / CELLS_A_SECOND).clamp(FLIGHT_MS.0, FLIGHT_MS.1);
-        let time = time * view.cx.slowdown();
-        flying.retain(|&lands| lands > flow.at_ms);
-        let flies = cells > 0 && flying.len() < IN_FLIGHT;
-        let lands = flow.at_ms + if flies { time } else { 0 };
-        if flies {
-            flying.push(lands);
-        }
         let Some(&to) = path.last() else {
             continue;
         };
-        if flies && view.now_ms < lands {
-            let age = view.now_ms.saturating_sub(flow.at_ms);
-            lights.push((path, smooth(age as f32 / time as f32)));
-        }
+        let n = route_len(&path).saturating_sub(1) as u64;
+        flying.retain(|&lands| lands > flow.at_ms);
+        let flies = n > 0 && flying.len() < IN_FLIGHT;
+        let lands = if flies {
+            let k = n.div_ceil(FLIGHT_FRAMES.1);
+            let f = FLIGHT_FRAMES.0.div_ceil(n);
+            let step = f * ms(FRAME_MIN) * view.cx.slowdown();
+            let lands = flow.at_ms + n.div_ceil(k) * step;
+            flying.push(lands);
+            if view.now_ms < lands {
+                let age = view.now_ms.saturating_sub(flow.at_ms);
+                let h = (k * (age / step)) as usize;
+                lights.push((path, h));
+            }
+            lands
+        } else {
+            flow.at_ms
+        };
         let open = view.now_ms.checked_sub(lands).map(Duration::from_millis);
         if let Some(open) = open.filter(|open| *open < REVEAL) {
             rings.push((to, open));

@@ -287,16 +287,16 @@ fn ticks_follow_working_nodes_and_elapsed_facts_in_view() {
         ..still
     };
     for pictures in [false, true] {
-        assert_eq!(drawn(&mut side, 1100, pictures), flying, "33 ms frames");
-        assert_eq!(drawn(&mut side, 1879, pictures), flying, "its ring");
-        assert_eq!(drawn(&mut side, 1880, pictures), still, "gone");
+        assert_eq!(drawn(&mut side, 1198, pictures), flying, "33 ms frames");
+        assert_eq!(drawn(&mut side, 1675, pictures), flying, "its ring");
+        assert_eq!(drawn(&mut side, 1676, pictures), still, "gone");
     }
     let both = vec![entry("aa/list", true), entry("aa/usage", true)];
     side.event(&catalog(vec![plugin("aa", true, both)]));
     side.event(&listed("aa/list", 60));
     let on = side.on(&none);
     let lit = Frame {
-        now_ms: 1100,
+        now_ms: 1198,
         ..frame
     };
     side.draw(&on, lit);

@@ -13,7 +13,7 @@ use wisp_render::chrome::{
     agents_tree, beside, chat_header, clocks_next_change, list_width, panel_rows, releasable,
 };
 use wisp_render::markdown::Layout;
-use wisp_render::motion::FRAME_MIN;
+use wisp_render::motion::{FRAME_MIN, PULSE_STEP};
 use wisp_render::picture::Scene;
 use wisp_render::styled::{StyledLine, StyledSpan};
 use wisp_render::theme::Token;
@@ -30,7 +30,7 @@ use crate::app::endpoint_card::endpoint_facts_of;
 use crate::app::help::first_keys;
 use crate::app::inputs::Applied;
 use crate::app::keymap::{Action, Context, action};
-use crate::app::sidebar::{AGENTS_SECTION, PULSE_STEP, section_off};
+use crate::app::sidebar::{AGENTS_SECTION, section_off};
 use crate::term::{Key, KeyCode, Mouse};
 
 pub(super) struct AgentsList {

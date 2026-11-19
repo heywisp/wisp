@@ -418,6 +418,13 @@ fn a_flying_light_changes_only_the_tiles_around_it_and_a_ring_keeps_to_its_room(
     assert!(changed.iter().all(|r| r.y == 1 && r.x < 8), "{changed:?}");
 
     let grid = (f32::from(CELL.0), f32::from(CELL.1));
+    let sparks = sparks(&flying(0.75).lights[0], grid);
+    assert_eq!(
+        sparks.last().unwrap().0,
+        at(grid, (7.5, 1.5)),
+        "cell pace across a bend"
+    );
+
     let ring = |on: Dot, scene: &Scene| landing(scene, &Ring { on, open: 1.0 }, grid);
     let start = |on: Dot| edge(&on, grid) + LAND_GAP;
     let top = ring(main, &scene) + LAND_WIDTH / 2.0;
