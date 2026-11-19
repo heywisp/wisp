@@ -710,11 +710,10 @@ fn plugin_item(plugin: &PluginEntry, snapshot: &SettingsSnapshot) -> Item {
 }
 
 pub(super) fn tool_state(tool: &ToolEntry, plugin: &PluginEntry) -> String {
-    let state = match (&tool.unavailable, plugin.enabled, tool.on) {
-        (Some(why), _, _) => format!("off ({})", sanitize(why)),
-        (None, false, _) => PLUGIN_OFF.to_owned(),
-        (None, true, true) => "on".to_owned(),
-        (None, true, false) => "off".to_owned(),
+    let state = match (&tool.unavailable, plugin.enabled) {
+        (Some(why), _) => format!("off ({})", sanitize(why)),
+        (None, false) => PLUGIN_OFF.to_owned(),
+        (None, true) => on_off(tool.on || tool.held).to_owned(),
     };
     let state = if tool.waits {
         format!("{state}{SEP}{}", pending(NEW_CHATS))

@@ -5010,6 +5010,7 @@ fn catalog_tool(name: &str, follows: Option<&str>) -> wisp_protocol::plugin::Too
     wisp_protocol::plugin::ToolEntry {
         name: name.into(),
         on: true,
+        held: false,
         default_on: true,
         native: false,
         follows: follows.map(Into::into),

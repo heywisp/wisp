@@ -93,6 +93,7 @@ the kernel decides from the facts it writes at each turn opening:
 
 - only the main chat of a full-screen session switches; a child or a `-p` run is refused;
 - a provider's own tool (`web_search`) is refused, since switching it rebuilds the cache;
+- an `on` for what is on, or an `off` for what is off, changes nothing and completes with `NAME is already on` (or `off`);
 - an `on` that would rebuild (the chat's requests can't carry the tool back) is refused before anything is asked;
 - turning off `search`, `use` or `manage`, or turning on what the person's settings have off (the Turned off list or the Tools list), asks him on today's question card (`Approve`, `Not now`), within a 10-minute limit; where no one can be asked it is refused with where to change it;
 - anything else is done at once: an `off` adds the name to this chat's `turned_off`, an `on` removes a name the agent itself added.

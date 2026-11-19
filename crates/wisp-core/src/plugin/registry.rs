@@ -715,6 +715,7 @@ impl Registry {
                     .map(|tool| CatalogTool {
                         name: tool.name.clone(),
                         on: installed && !left_out && on_tools.contains(&tool.name),
+                        held: false,
                         default_on: tool.default == Switch::On,
                         native: tool.native.is_some(),
                         follows: tool.follows.clone(),

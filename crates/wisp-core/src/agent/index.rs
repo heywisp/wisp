@@ -23,7 +23,7 @@ impl Agent {
         self.gather_entries(events).await;
     }
 
-    fn index_allowed(&self) -> std::collections::BTreeSet<String> {
+    pub(super) fn index_allowed(&self) -> std::collections::BTreeSet<String> {
         let allowed = self.permitted_tools().unwrap_or_else(|| {
             let mut allowed = self.toolbox.enabled().clone();
             if self.toolbox.provider_of(SEARCH_CAPABILITY).is_some()

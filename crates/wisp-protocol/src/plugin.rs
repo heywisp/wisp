@@ -119,6 +119,8 @@ impl PluginEntry {
 pub struct ToolEntry {
     pub name: String,
     pub on: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub held: bool,
     pub default_on: bool,
     pub native: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -59,6 +59,7 @@ pub(crate) fn catalog_tool(name: &str, follows: Option<&str>, default_on: bool) 
     ToolEntry {
         name: name.to_owned(),
         on: default_on,
+        held: false,
         default_on,
         native: false,
         follows: follows.map(str::to_owned),

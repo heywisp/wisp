@@ -2059,7 +2059,7 @@ fn change(
 fn a_switch_is_decided_from_the_chats_facts_alone() {
     use manage::{Decided, Switch};
     use wisp_plugin_api::manage::Action;
-    use wisp_plugin_api::manage::Kind::{Skill, Tool};
+    use wisp_plugin_api::manage::Kind::{Server, Skill, Tool};
     use wisp_tool_text::manage as text;
     let skills = names(&["machine-load"]);
     let listed = |name: &str, off, by_agent| Switch::Listed {
@@ -2093,11 +2093,23 @@ fn a_switch_is_decided_from_the_chats_facts_alone() {
         ),
         (
             change(Action::Off, Tool, "linear"),
-            Decided::Refused(text::already("linear", false)),
+            Decided::Unchanged(text::already("linear", false)),
         ),
         (
             change(Action::Off, Tool, "edit_file"),
-            Decided::Refused(text::already("edit_file", false)),
+            Decided::Unchanged(text::already("edit_file", false)),
+        ),
+        (
+            change(Action::Off, Skill, "edit_file"),
+            Decided::Refused(text::nothing_named("skill", "edit_file")),
+        ),
+        (
+            change(Action::Off, Server, "stuck"),
+            Decided::Refused(text::nothing_named("server", "stuck")),
+        ),
+        (
+            change(Action::Off, Server, "edit_file"),
+            Decided::Done(listed("edit_file", true, true), text::now_off("edit_file")),
         ),
         (
             change(Action::Off, Skill, "machine-load"),
@@ -2166,11 +2178,15 @@ fn a_switch_is_decided_from_the_chats_facts_alone() {
         ),
         (
             change(Action::On, Tool, "use"),
-            Decided::Refused(text::already("search", true)),
+            Decided::Unchanged(text::already("search", true)),
         ),
         (
             change(Action::On, Skill, "machine-load"),
-            Decided::Refused(text::already("machine-load", true)),
+            Decided::Unchanged(text::already("machine-load", true)),
+        ),
+        (
+            change(Action::On, Server, "local"),
+            Decided::Unchanged(text::already("local", true)),
         ),
         (
             change(Action::On, Skill, "nothing"),
@@ -2178,9 +2194,10 @@ fn a_switch_is_decided_from_the_chats_facts_alone() {
         ),
     ];
     let facts = switching();
+    let servers = names(&["local", "edit_file"]);
     for (asked, decided) in cases {
         assert_eq!(
-            facts.decide(&skills, &BTreeSet::new(), &asked),
+            facts.decide(&skills, &servers, &asked),
             decided,
             "{asked:?}"
         );
@@ -2303,7 +2320,7 @@ async fn manage_asks_through_its_own_call_and_counts_only_an_approval_that_beats
     );
     assert_eq!(
         Manage::manage(&search, off(), &ctx).await,
-        Err(text::already("show_diff", false))
+        Ok(text::already("show_diff", false))
     );
     assert_eq!(
         kernel.take_switches(),

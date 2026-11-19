@@ -151,6 +151,20 @@ async fn an_unlisted_model_searches_and_uses_without_any_tool_message() {
     let events = session.turn("u1", "Find the tool and show a diff.").await;
     let agent = session.end().await;
     assert!(changed(&events).is_empty());
+    assert!(
+        agent
+            .catalog
+            .tools()
+            .any(|tool| tool.name == "show_diff" && !tool.on && tool.held)
+    );
+    assert!(!agent.toolbox.web_search());
+    assert!(agent.toolbox.held_tool("web_search").is_none());
+    assert!(
+        agent
+            .catalog
+            .tools()
+            .any(|tool| tool.native && tool.name == "web_search" && !tool.on && !tool.held)
+    );
     assert!(result_text(&body(&server, 1), "found_search").contains("run it with use"));
     for n in 0..3 {
         assert_eq!(loaded(&body(&server, n)), 0);

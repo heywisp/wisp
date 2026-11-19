@@ -4,6 +4,7 @@ fn tool(name: &str, follows: Option<&str>, default_on: bool) -> ToolEntry {
     ToolEntry {
         name: name.into(),
         on: default_on,
+        held: false,
         default_on,
         native: false,
         follows: follows.map(Into::into),
