@@ -689,6 +689,11 @@ fn the_idle_core_breathes_to_full_depth_every_6_s() {
 
 #[test]
 fn calm_idles_half_as_fast_and_half_as_deep() {
+    assert_eq!(
+        [399, 400, 800, 1200, 1600].map(|ms| picture_frame(d(ms), CALM)),
+        [0, 1, 2, 3, 0]
+    );
+    assert_eq!(picture_frame(d(200), FULL), 1);
     assert_eq!(ring(idle(d(1500), CALM)), ('\u{288E}', '\u{2810}'));
     assert_eq!(ring(idle(d(1600), CALM)), ('\u{288E}', '\u{2830}'));
     let (_, _, depth) = blend(idle(d(6000), CALM).core());
@@ -713,6 +718,8 @@ fn the_idle_writes_at_most_ten_frames_a_second() {
 
 #[test]
 fn without_blends_the_comet_still_turns_and_reduced_or_ascii_stay_still() {
+    assert_eq!(picture_frame(d(600), REDUCED), 0);
+    assert_eq!(picture_frame(d(600), ASCII), picture_frame(d(600), FULL));
     for cx in [REDUCED, ASCII] {
         assert!(!idles(cx));
         assert_eq!(idle_next_change(d(0), cx), None);

@@ -686,7 +686,7 @@ fn the_legend_names_every_known_state_once() {
 }
 
 #[test]
-fn a_breathing_step_changes_only_the_working_dots_own_tiles() {
+fn a_sprite_step_changes_only_the_working_marks_own_tiles() {
     let nodes = scene("a=w b=d a/c=w a/d=o");
     let at = |ms| {
         let view = Topology {
@@ -698,12 +698,17 @@ fn a_breathing_step_changes_only_the_working_dots_own_tiles() {
         panel(&view).scenes.remove(0)
     };
     let cell = (9, 19);
-    let (before, after) = (at(0), at(600));
-    assert_eq!(tiles(&at(0), cell), tiles(&at(150), cell), "a 200 ms grid");
+    let (before, after) = (at(199), at(200));
+    assert_eq!(tiles(&at(0), cell), tiles(&before, cell), "a 200 ms grid");
+    assert_eq!(
+        tiles(&before, (4, 8)),
+        tiles(&after, (4, 8)),
+        "still pluses"
+    );
     let working: Vec<(usize, usize)> = before
         .dots
         .iter()
-        .filter(|d| d.halo && d.mark == Mark::State(NodeState::Working))
+        .filter(|d| d.radius != LEGEND_DOT && d.mark == Mark::State(NodeState::Working))
         .map(|d| (d.at.0 as usize, d.at.1 as usize))
         .collect();
     assert_eq!(working.len(), 2);
@@ -793,38 +798,11 @@ fn a_hovered_dot_s_name_sits_under_it_inside_the_picture() {
     let left = painted(label("a"));
     let right = painted(label("d"));
     let y = left.dots[1].at.1 as usize + 1;
-    let range = |scene: &Scene, i: usize| {
+    for (scene, i) in [(&left, 1), (&right, 4)] {
         let x = scene.dots[i].at.0 as usize;
-        let cells = x - 1..=x + 1;
-        assert!(cells.clone().all(|x| scene.text_cells.contains(&(x, y))));
-        cells
-    };
-    let (a, d) = (range(&left, 1), range(&right, 4));
-    let (left, right) = (tiles(&left, cell), tiles(&right, cell));
-    let near = |r: Rect, x: &std::ops::RangeInclusive<usize>| {
-        r.y.abs_diff(y) <= 1 && r.x <= x.end() + 1 && r.x + r.cells >= *x.start()
-    };
-    let changed = |from: &[(Rect, u64)], to: &[(Rect, u64)]| {
-        from.iter()
-            .filter(|t| !to.contains(t))
-            .chain(to.iter().filter(|t| !from.contains(t)))
-            .map(|t| t.0)
-            .collect::<Vec<_>>()
-    };
-    let added = changed(&bare, &left);
-    assert!(
-        !added.is_empty() && added.iter().all(|&r| near(r, &a)),
-        "{added:?}"
-    );
-    let moved = changed(&left, &right);
-    assert!(
-        moved.iter().any(|&r| near(r, &a)) && moved.iter().any(|&r| near(r, &d)),
-        "{moved:?}"
-    );
-    assert!(
-        moved.iter().all(|&r| near(r, &a) || near(r, &d)),
-        "{moved:?}"
-    );
+        assert!((x - 1..=x + 1).all(|x| scene.text_cells.contains(&(x, y))));
+        assert_eq!(tiles(scene, cell), bare, "the label is outside the drawing");
+    }
 }
 
 #[test]
@@ -914,7 +892,10 @@ fn the_page_s_picture_is_cut_like_its_lines_with_dots_sized_from_their_gap() {
     assert!(legend.clone().all(|d| d.at.1 as usize == rows.len() - 1));
     assert_eq!(legend.count(), 6);
     let (_, twenty) = pictured(TWENTY, "resume-list-speed/coder", (40, 30));
-    let agent = twenty.dots.iter().find(|d| d.halo && d.mark != Mark::Root);
+    let agent = twenty
+        .dots
+        .iter()
+        .find(|d| d.radius != LEGEND_DOT && d.mark != Mark::Root);
     let two_cells = 1.0 - GAP_LESS;
     assert_eq!(
         agent.map(|d| d.radius),
@@ -962,18 +943,30 @@ fn a_light_steps_along_the_lines_from_sender_to_receiver_and_rings_there_for_280
     let [light] = &start.lights[..] else {
         panic!("{:?}", start.lights);
     };
-    assert_eq!(light.path.len(), 4, "over the crossbar, not up to a");
-    assert_eq!((light.path[0], light.path[3]), (dot(2), dot(3)));
-    assert_eq!((light.path[1].0, light.path[2].0), (dot(2).0, dot(3).0));
-    for h in 0..21 {
-        let along = (h + 1) as f32 / 22.0;
+    assert_eq!(light.path.len(), 2, "the sender and the first line cell");
+    let bar = start
+        .lines
+        .iter()
+        .flatten()
+        .find(|&&(x, y)| x == dot(2).0 && y < dot(2).1 && y > dot(1).1)
+        .unwrap()
+        .1;
+    let line = [dot(2), (dot(2).0, bar), (dot(3).0, bar), dot(3)];
+    let route = cells(&line.map(|(x, y)| (x as usize, y as usize)));
+    assert_eq!(route.len(), 23, "over the crossbar, not up to a");
+    for h in 0..21_u64 {
         let step = 1000 + h * 33;
-        assert_eq!(at(step).lights[0].along, along, "at step {h}");
+        let head = h as usize + 1;
+        let stretch: Vec<_> = route[head.saturating_sub(TRAIL)..=head]
+            .iter()
+            .copied()
+            .map(centre)
+            .collect();
+        assert_eq!(at(step).lights[0].path, stretch, "at step {h}");
         assert_eq!(
-            at(step + 32).lights[0].along,
-            along,
-            "before step {}",
-            h + 1
+            at(step + 32).lights[0].path,
+            stretch,
+            "before the next step"
         );
     }
     let landed = at(1693);
@@ -982,22 +975,42 @@ fn a_light_steps_along_the_lines_from_sender_to_receiver_and_rings_there_for_280
         landed.rings,
         [Ring {
             on: start.dots[3],
-            open: 0.0
+            step: 0
         }]
     );
-    assert_eq!(at(1833).rings[0].open, 0.5);
+    assert_eq!(at(1833).rings[0].step, 1);
+    assert_eq!(at(1880).rings[0].step, 2);
+    assert_eq!(
+        tiles(&landed, (9, 19)),
+        tiles(&at(1786), (9, 19)),
+        "one ring step"
+    );
     assert!(!at(1973).moving(), "gone after REVEAL");
     let report = [flow(Some("a/c"), None, 1000)];
-    let up = &lit(family, &report, 1000, MotionPolicy::Full).lights[0];
-    assert_eq!(up.path.first(), Some(&dot(3)));
-    assert_eq!(up.path.last(), Some(&dot(0)), "to main");
+    let up = |now| lit(family, &report, now, MotionPolicy::Full);
+    assert_eq!(up(1000).lights[0].path.first(), Some(&dot(3)));
+    let last = (1000..2200)
+        .step_by(33)
+        .map(up)
+        .take_while(|s| !s.lights.is_empty())
+        .last()
+        .unwrap();
+    assert_eq!(
+        last.lights[0].path.last(),
+        Some(&(dot(0).0, dot(0).1 + 1.0)),
+        "to main"
+    );
     let calm = |ms| lit(family, &siblings, ms, MotionPolicy::Calm);
     assert_eq!(
-        calm(1065).lights[0].along,
-        1.0 / 22.0,
+        calm(1065).lights[0].path,
+        light.path,
         "Calm waits two frames"
     );
-    assert_eq!(calm(1066).lights[0].along, 2.0 / 22.0, "the first step");
+    assert_eq!(
+        calm(1066).lights[0].path.last(),
+        Some(&centre(route[2])),
+        "the first step"
+    );
     let still = lit(family, &siblings, 1300, MotionPolicy::Reduced);
     assert!(!still.moving(), "Reduced draws no light and no ring");
     let to_self = [flow(Some("a/b"), Some("a/b"), 1000)];
@@ -1007,7 +1020,7 @@ fn a_light_steps_along_the_lines_from_sender_to_receiver_and_rings_there_for_280
         same.rings,
         [Ring {
             on: start.dots[2],
-            open: 0.0
+            step: 0
         }]
     );
 
@@ -1054,7 +1067,7 @@ fn folded_ends_land_on_their_fold_and_past_three_in_flight_a_flow_only_rings() {
     assert_eq!(busy.rings.len(), 1, "the fourth rings its receiver");
     let ringing = busy.rings[0].on.at;
     assert!(busy.lights.iter().all(|l| l.path.last() != Some(&ringing)));
-    assert!(busy.rings[0].open > 0.0, "since its at-ms");
+    assert_eq!(busy.rings[0].step, 1, "since its at-ms");
     let later = flow(Some("task-a/coder/helper"), Some("merge"), 5000);
     let after = lit(
         &spec,
@@ -1317,43 +1330,4 @@ fn each_colour_tier_draws_the_bump_and_only_full_colour_fades_its_trail() {
     };
     let half = look_at(&panel(&ringing).lines, (16, 3)).and_then(|look| look.fg);
     assert_eq!(half, Some(Ink::from(Token::Gleam)), "the light's ink");
-}
-
-#[test]
-fn working_dots_glow_on_the_page_after_their_light_lands_and_only_from_256_colours() {
-    let nodes = scene(SIX);
-    let flows = [flow(Some("agent-viz/coder"), Some("agent-viz"), 1000)];
-    let tint = |u| Some(Ink::mix(Token::HueCool, Token::Bg, u, Token::Bg));
-    let glows = |ms: u64, depth| {
-        let topology = Topology {
-            nodes: &nodes,
-            picked: Some("agent-viz/coder"),
-            layout: Layout::new(120, GlyphSet::Unicode),
-            ..lit_at(&flows, 1000 + ms, GlyphSet::Unicode, depth)
-        };
-        let lines = page(&topology, 40 - CHROME_ROWS).lines;
-        (58..=62)
-            .map(|x| look_at(&lines, (x, 13)).and_then(|l| l.bg))
-            .collect::<Vec<_>>()
-    };
-    let lit = vec![None, tint(0.125), tint(0.25), tint(0.125), None];
-    assert_eq!(glows(5000, Depth::TrueColor), lit);
-    assert_eq!(glows(5000, Depth::Ansi256), lit);
-    assert_eq!(glows(5000, Depth::Ansi16), [None; 5]);
-    assert_eq!(glows(500, Depth::TrueColor), [None; 5], "the light first");
-    let panel_bg = |depth| {
-        let topology = Topology {
-            nodes: &nodes,
-            ..lit_at(&[], 0, GlyphSet::Unicode, depth)
-        };
-        (panel(&topology).lines.iter()).any(|l| l.spans.iter().any(|s| s.look.bg.is_some()))
-    };
-    assert!(!panel_bg(Depth::TrueColor), "never in the box");
-    let cx = |policy| MotionCtx::new(policy, GlyphSet::Unicode, Depth::TrueColor);
-    let second = Duration::from_secs(1);
-    assert_eq!(tree_glow(second, cx(MotionPolicy::Full)), Some(0.15));
-    assert_eq!(tree_glow(second * 2, cx(MotionPolicy::Calm)), Some(0.2));
-    assert_eq!(tree_glow(second, cx(MotionPolicy::Reduced)), Some(0.25));
-    let dim = MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::Ansi16);
-    assert_eq!(tree_glow(second, dim), None);
 }

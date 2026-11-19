@@ -316,7 +316,7 @@ fn the_palette_ramps_each_colour_in_16_steps_and_holds_the_picture() {
                     assert!(
                         off.iter().all(|&d| d <= 21),
                         "{mode:?} on {ground:?}: {p:?} is far from {near:?} in {:?} {:?}",
-                        scene.lights.first().map(|l| l.along),
+                        scene.lights.first().and_then(|l| l.path.last()),
                         scene.rings.first().map(|r| r.on.mark),
                     );
                 }

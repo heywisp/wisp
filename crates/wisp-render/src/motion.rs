@@ -804,7 +804,6 @@ pub fn caret(before: &str, core: Ink, cx: MotionCtx) -> StyledSpan {
 pub const TREE_PULSE: Duration = Duration::from_millis(2000);
 const TREE_PULSE_DEPTH: f64 = 0.4;
 pub const PULSE_STEP: Duration = Duration::from_millis(100);
-const TREE_GLOW: (f64, f64) = (0.15, 0.25);
 
 fn swell(t: Duration, cx: MotionCtx) -> f64 {
     let period = ms(TREE_PULSE).saturating_mul(cx.k());
@@ -823,19 +822,12 @@ pub fn tree_pulse(role: Token, t: Duration, cx: MotionCtx) -> Ink {
     )
 }
 
-pub fn tree_glow(t: Duration, cx: MotionCtx) -> Option<f64> {
-    let (low, high) = TREE_GLOW;
-    let swell = if cx.blends() {
-        swell(t, cx) * cx.amp()
-    } else {
-        0.0
-    };
-    cx.blend.then_some(high - (high - low) * swell)
-}
-
-pub fn picture_pulse(role: Token, t: Duration, cx: MotionCtx) -> Ink {
-    let step = quantise(ms(t), 2 * ms(PULSE_STEP));
-    tree_pulse(role, Duration::from_millis(step), cx)
+pub fn picture_frame(t: Duration, cx: MotionCtx) -> u8 {
+    if cx.reduced() {
+        return 0;
+    }
+    let step = 2 * ms(PULSE_STEP) * cx.k();
+    (ms(t) / step % 4) as u8
 }
 
 pub const COMET_STEP: Duration = Duration::from_millis(150);

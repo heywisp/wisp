@@ -12,7 +12,7 @@ fn dot(x: usize, y: usize, mark: Mark, token: Token) -> Dot {
         mark,
         radius: 0.5,
         ink: Ink::from(token),
-        halo: true,
+        frame: 0,
         picked: false,
     }
 }
@@ -26,7 +26,7 @@ fn one(dots: Vec<Dot>, width: usize, height: usize) -> Scene {
     }
 }
 
-fn busy(along: f32) -> Scene {
+fn busy(head: f32, step: u8) -> Scene {
     let mut dots = vec![
         dot(4, 2, Mark::Root, Token::Accent),
         dot(12, 2, Mark::State(NodeState::Working), Token::Working),
@@ -44,14 +44,14 @@ fn busy(along: f32) -> Scene {
         vec![dots[1].at, (12.5, 5.5), dots[4].at],
     ];
     let lights = vec![Light {
-        path: lines[0].clone(),
-        along,
-        radius: 0.5,
+        path: vec![
+            (head - 3.0, 4.5),
+            (head - 2.0, 4.5),
+            (head - 1.0, 4.5),
+            (head, 4.5),
+        ],
     }];
-    let rings = vec![Ring {
-        on: dots[1],
-        open: 0.7,
-    }];
+    let rings = vec![Ring { on: dots[1], step }];
     let text_cells = [(13, 2), (14, 2)]
         .into_iter()
         .chain((0..20).map(|x| (x, 0)))
@@ -67,7 +67,7 @@ fn busy(along: f32) -> Scene {
 
 #[test]
 fn a_narrowed_tile_draws_what_the_whole_scene_draws() {
-    for scene in [busy(0.3), busy(0.7)] {
+    for scene in [busy(5.5, 0), busy(12.5, 2)] {
         for cell in [CELL, (4, 40)] {
             let grid = (f32::from(cell.0), f32::from(cell.1));
             for y in scene.rows.clone() {
@@ -76,9 +76,9 @@ fn a_narrowed_tile_draws_what_the_whole_scene_draws() {
                         let tile = Rect { x, y, cells };
                         assert_eq!(
                             raster(&scene, &THEME, cell, tile, None),
-                            draw(&scene, &scene, &THEME, cell, tile, None),
-                            "{cell:?}, {tile:?}, light at {}",
-                            scene.lights[0].along,
+                            draw(&scene, &THEME, cell, tile, None),
+                            "{cell:?}, {tile:?}, {:?}",
+                            scene.lights[0],
                         );
                     }
                 }
@@ -96,6 +96,7 @@ fn a_narrowed_tile_draws_what_the_whole_scene_draws() {
                 far.dots.is_empty()
                     && far.lines.is_empty()
                     && far.lights.is_empty()
+                    && far.rings.is_empty()
                     && far.text_cells.is_empty()
             );
         }
@@ -104,10 +105,9 @@ fn a_narrowed_tile_draws_what_the_whole_scene_draws() {
 
 #[test]
 fn tiles_hash_only_the_slots_something_reaches() {
-    for scene in [busy(0.3), busy(0.7)] {
+    for scene in [busy(5.5, 0), busy(12.5, 2)] {
         for cell in [CELL, (4, 40)] {
             let grid = (f32::from(cell.0), f32::from(cell.1));
-            let shared = Shared::of(&scene, grid);
             let mut reference = Vec::new();
             for y in scene.rows.clone() {
                 for x in (0..scene.width).step_by(2) {
@@ -120,7 +120,7 @@ fn tiles_hash_only_the_slots_something_reaches() {
                             y,
                             cells: free.len(),
                         };
-                        if let Some(h) = hash(&scene, grid, rect, &shared) {
+                        if let Some(h) = hash(&scene, grid, rect) {
                             reference.push((rect, h));
                         }
                     }
@@ -129,39 +129,14 @@ fn tiles_hash_only_the_slots_something_reaches() {
             assert_eq!(
                 tiles(&scene, cell),
                 reference,
-                "{cell:?}, light at {}",
-                scene.lights[0].along
+                "{cell:?}, {:?}",
+                scene.lights[0]
             );
         }
     }
-    let counted = busy(0.3);
-    let uncounted = Scene {
-        text_cells: counted
-            .text_cells
-            .iter()
-            .copied()
-            .filter(|&(_, y)| y != 2)
-            .collect(),
-        ..counted.clone()
-    };
-    let grid = (f32::from(CELL.0), f32::from(CELL.1));
-    let rect = Rect {
-        x: 10,
-        y: 2,
-        cells: 2,
-    };
-    assert_eq!(
-        near_text(&counted, grid, rect).collect::<Vec<_>>(),
-        near_text(&uncounted, grid, rect).collect::<Vec<_>>()
-    );
-    assert_ne!(
-        hash(&counted, grid, rect, &Shared::of(&counted, grid)),
-        hash(&uncounted, grid, rect, &Shared::of(&uncounted, grid)),
-        "a distant count changes the landing radius, not the tile's text"
-    );
     let scene = one(vec![dot(150, 40, Mark::Root, Token::Accent)], 300, 80);
     let grid = (f32::from(CELL.0), f32::from(CELL.1));
-    assert!(slots(&scene, grid, &Shared::of(&scene, grid)).len() <= 9);
+    assert!(slots(&scene, grid).len() <= 9);
 }
 
 fn pixel(rgba: &[u8], cells: usize, (x, y): (usize, usize)) -> [u8; 4] {
@@ -191,31 +166,33 @@ fn every_state_has_its_shape_and_colour_and_empty_pixels_stay_clear() {
         .enumerate()
         .map(|(i, &(s, t))| dot(4 * i, 1, Mark::State(s), t))
         .collect();
-    dots.push(dot(20, 1, Mark::Root, Token::Accent));
+    dots.push(Dot {
+        radius: 0.4,
+        ..dot(20, 1, Mark::Root, Token::Accent)
+    });
     let scene = one(dots, 24, 3);
     let centre = (4, 9);
     for (i, &(state, token)) in states.iter().enumerate() {
         let drawn = cell_of(&scene, 4 * i, 1);
         let at = |x, y| pixel(&drawn, 1, (x, y));
         let want = opaque(THEME.rgb(token));
-        match state {
-            NodeState::Waiting => {
-                assert_eq!(at(4, 9)[3], 0, "a waiting dot is hollow");
-                assert_eq!(at(0, 9), want, "its ring");
-            }
-            NodeState::Done => {
-                assert_eq!(at(4, 13), want, "the disc under the tick");
-                assert!(at(4, 11)[3] < 128, "the tick is cut out: {:?}", at(4, 11));
-            }
-            NodeState::Failed => {
-                assert_eq!(at(4, 9), want, "the cross");
-                assert_eq!(at(4, 6)[3], 0, "no disc between the arms");
-            }
-            _ => assert_eq!(at(centre.0, centre.1), want, "{state:?}"),
-        }
-        if state != NodeState::Working {
-            assert_eq!(at(0, 0)[3], 0, "{state:?}'s empty corner");
-        }
+        assert!(
+            drawn
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| *p == want || *p == [0; 4]),
+            "{state:?}"
+        );
+        let (solid, clear) = match state {
+            NodeState::Waiting | NodeState::Unknown => ((1, 9), centre),
+            NodeState::Working => ((4, 6), (2, 7)),
+            NodeState::Done => ((3, 11), centre),
+            NodeState::Stopped => ((2, 7), (1, 6)),
+            NodeState::Failed => ((1, 6), (4, 6)),
+        };
+        assert_eq!(at(solid.0, solid.1), want, "{state:?}");
+        assert_eq!(at(clear.0, clear.1), [0; 4], "{state:?}");
     }
     let bg = THEME.rgb(Token::Surface);
     let done = raster(
@@ -234,17 +211,30 @@ fn every_state_has_its_shape_and_colour_and_empty_pixels_stay_clear() {
         "opaque on a background"
     );
     assert_eq!(pixel(&done, 1, (0, 0)), opaque(bg), "the empty corner");
-    assert_eq!(pixel(&done, 1, (4, 13)), opaque(THEME.rgb(Token::Ok)));
+    assert_eq!(pixel(&done, 1, (3, 11)), opaque(THEME.rgb(Token::Ok)));
     let main = cell_of(&scene, 20, 1);
-    assert_eq!(pixel(&main, 1, (4, 13)), opaque(THEME.rgb(Token::Accent)));
-    let core = pixel(&main, 1, centre);
-    let light = opaque(crate::theme::mix(
-        THEME.rgb(Token::Gleam),
-        THEME.rgb(Token::Accent),
-        0.9,
-    ));
-    let near = core.iter().zip(light).all(|(a, b)| a.abs_diff(b) <= 1);
-    assert!(near, "{core:?} against {light:?}");
+    let main = main.as_chunks::<4>().0;
+    let orb = [Token::OrbRing, Token::Accent].map(|token| opaque(THEME.rgb(token)));
+    assert!(main.iter().all(|p| *p == [0; 4] || orb.contains(p)));
+    assert!(orb.iter().all(|ink| main.contains(ink)));
+    assert_eq!(main.iter().filter(|p| p[3] != 0).count(), 11);
+    let plus = cell_of(&scene, 0, 1);
+    let mut star = scene;
+    star.dots[0].frame = 2;
+    let star = cell_of(&star, 0, 1);
+    assert_ne!(plus, star);
+    let working = opaque(THEME.rgb(Token::Working));
+    for frame in [&plus, &star] {
+        assert!((1..=7).all(|x| pixel(frame, 1, (x, 9)) == working));
+        assert!((6..=12).all(|y| pixel(frame, 1, (4, y)) == working));
+        assert!(
+            frame
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| *p == working || *p == [0; 4])
+        );
+    }
     let inks = [Token::Ok, Token::Error];
     let stacked = (0..SQUARES_PER_ROW).map(|k| Dot {
         at: (0.5, (k as f32 + 0.5) / SQUARES_PER_ROW as f32),
@@ -276,15 +266,6 @@ fn every_state_has_its_shape_and_colour_and_empty_pixels_stay_clear() {
 }
 
 #[test]
-fn main_s_halo_fades_out_at_the_top_edge_of_the_picture() {
-    let main = |y| one(vec![dot(0, y, Mark::Root, Token::Accent)], 1, 3);
-    let top = pixel(&cell_of(&main(0), 0, 0), 1, (4, 0));
-    let inside = pixel(&cell_of(&main(1), 0, 1), 1, (4, 0));
-    assert!(top[3] <= 2, "faded at the edge: {top:?}");
-    assert!(inside[3] > 10 * top[3].max(1), "{inside:?} against {top:?}");
-}
-
-#[test]
 fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
     let folded = Dot {
         radius: 0.4,
@@ -310,7 +291,11 @@ fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
         text_cells: [scene.text_cells.clone(), vec![(5, 1)]].concat(),
         ..scene.clone()
     };
-    assert_eq!(super::tiles(&far_text, CELL), tiles, "text beyond the fade");
+    assert_eq!(
+        super::tiles(&far_text, CELL),
+        tiles,
+        "text outside the tiles"
+    );
     let failed = Scene {
         dots: vec![Dot {
             mark: Mark::State(NodeState::Failed),
@@ -339,7 +324,7 @@ fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
     };
     let before = super::tiles(&pair, CELL);
     let near_text = Scene {
-        text_cells: vec![(4, 1)],
+        text_cells: vec![(2, 1)],
         ..pair
     };
     let after = super::tiles(&near_text, CELL);
@@ -361,7 +346,7 @@ fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
 }
 
 #[test]
-fn a_picked_dot_sits_on_a_tinted_disc_under_an_accent_ring_and_widens_its_tiles() {
+fn a_picked_mark_gets_accent_brackets_and_widens_its_tiles() {
     let waiting = dot(1, 1, Mark::State(NodeState::Waiting), Token::TextMuted);
     let picked = Dot {
         picked: true,
@@ -369,46 +354,57 @@ fn a_picked_dot_sits_on_a_tinted_disc_under_an_accent_ring_and_widens_its_tiles(
     };
     let scene = one(vec![picked], 3, 3);
     let drawn = cell_of(&scene, 1, 1);
-    let at = |y| pixel(&drawn, 1, (4, y));
-    let tint = opaque(THEME.rgb(Token::AccentTint));
     let accent = opaque(THEME.rgb(Token::Accent));
-    assert_eq!(at(9), tint, "the hollow dot shows the disc");
-    assert_eq!(at(15), tint, "6 px out, between the dot and the ring");
-    assert_eq!(at(17), accent, "the ring 3.5 px beyond the dot");
-    let left = cell_of(&scene, 0, 1);
     assert_eq!(
-        pixel(&left, 1, (8, 9)),
-        tint,
-        "the disc reaches the next cell"
+        pixel(&drawn, 1, (4, 9)),
+        [0; 4],
+        "no tint in the hollow mark"
     );
+    assert_eq!(pixel(&drawn, 1, (0, 5)), accent, "left bracket's lip");
+    assert_eq!(pixel(&drawn, 1, (8, 13)), accent, "right bracket's lip");
     assert_eq!(
-        pixel(&left, 1, (0, 9))[3],
-        0,
-        "and ends 6 px beyond the dot"
+        pixel(&drawn, 1, (0, 9)),
+        [0; 4],
+        "the gap inside the bracket"
     );
+    assert_eq!(pixel(&cell_of(&scene, 2, 1), 1, (0, 9)), accent);
     assert_eq!(tiles(&one(vec![waiting], 3, 3), CELL).len(), 1);
-    assert_eq!(tiles(&scene, CELL).len(), 6);
+    assert_eq!(tiles(&scene, CELL).len(), 2);
+
+    let wide = Dot {
+        at: (3.0, 1.5),
+        radius: 7.5 / 9.0,
+        ..picked
+    };
+    let scene = one(vec![wide], 6, 3);
+    let edge = cell_of(&scene, 4, 1);
+    assert_eq!(pixel(&edge, 1, (0, 9)), accent);
+    assert_eq!(pixel(&edge, 1, (1, 9)), accent, "two-pixel bar");
+    assert_eq!(pixel(&edge, 1, (2, 9)), [0; 4]);
+    let inside = cell_of(&scene, 3, 1);
+    assert_eq!(pixel(&inside, 1, (7, 9)), [0; 4]);
+    assert_eq!(pixel(&inside, 1, (8, 9)), [0; 4], "two-pixel gap");
+    assert_eq!(
+        tiles(&scene, CELL)
+            .iter()
+            .filter(|(rect, _)| rect.y == 1)
+            .count(),
+        3
+    );
 }
 
 #[test]
-fn a_flying_light_changes_only_the_tiles_around_it_and_a_ring_keeps_to_its_room() {
-    let main = Dot {
-        radius: 0.5 + 1.4 / 9.0,
-        ..dot(9, 0, Mark::Root, Token::Accent)
-    };
+fn a_flying_light_lights_three_cells_behind_its_head_and_changes_only_their_tiles() {
     let kid = dot(1, 4, Mark::State(NodeState::Waiting), Token::TextMuted);
-    let path = vec![kid.at, (1.5, 1.5), (9.5, 1.5), main.at];
-    let scene = one(vec![main, kid], 12, 6);
-    let flying = |along| Scene {
+    let path = vec![kid.at, (1.5, 1.5), (9.5, 1.5), (9.5, 0.5)];
+    let flying = |head| Scene {
         lights: vec![Light {
-            path: path.clone(),
-            along,
-            radius: 0.5,
+            path: (0..=3).rev().map(|i| (head - i as f32, 1.5)).collect(),
         }],
         lines: vec![path.clone()],
-        ..scene.clone()
+        ..one(vec![kid], 12, 6)
     };
-    let (before, after) = (tiles(&flying(0.65), CELL), tiles(&flying(0.7), CELL));
+    let (before, after) = (tiles(&flying(5.5), CELL), tiles(&flying(6.5), CELL));
     assert_eq!(before.len(), after.len());
     let changed: Vec<Rect> = (before.iter().zip(&after))
         .filter(|(a, b)| a != b)
@@ -417,37 +413,78 @@ fn a_flying_light_changes_only_the_tiles_around_it_and_a_ring_keeps_to_its_room(
     assert!(!changed.is_empty());
     assert!(changed.iter().all(|r| r.y == 1 && r.x < 8), "{changed:?}");
 
-    let grid = (f32::from(CELL.0), f32::from(CELL.1));
-    let sparks = sparks(&flying(0.75).lights[0], grid);
+    let bend = Scene {
+        lights: vec![Light {
+            path: vec![(4.0, 3.0), (4.0, 2.0), (4.0, 1.0), (5.0, 1.0)],
+        }],
+        ..Scene::default()
+    };
+    let at = |x: usize, y: usize| {
+        let (w, h) = (usize::from(CELL.0), usize::from(CELL.1));
+        pixel(&cell_of(&bend, x / w, y / h), 1, (x % w, y % h))
+    };
+    let [head, near, far] = lit_colours(&THEME).map(opaque);
+    assert_eq!(at(39, 19), head, "the horizontal leg");
     assert_eq!(
-        sparks.last().unwrap().0,
-        at(grid, (7.5, 1.5)),
-        "cell pace across a bend"
+        at(35, 19),
+        head,
+        "the snapped corner belongs to the outgoing leg"
+    );
+    assert_eq!(at(35, 27), near, "the first vertical leg");
+    assert_eq!(at(35, 43), far, "the last vertical leg");
+    assert!(
+        (17..21).all(|y| (43..47).all(|x| at(x, y) == head)),
+        "the head block"
     );
 
-    let ring = |on: Dot, scene: &Scene| landing(scene, &Ring { on, open: 1.0 }, grid);
-    let start = |on: Dot| edge(&on, grid) + LAND_GAP;
-    let top = ring(main, &scene) + LAND_WIDTH / 2.0;
-    assert!(top <= 9.5, "main's ring stays in its row: {top}");
-    assert!(ring(main, &scene) > start(main), "and grows a little");
-    assert_eq!(ring(kid, &scene), start(kid) + LAND_GROWTH, "room to grow");
-    let count = Scene {
-        text_cells: vec![(2, 4)],
-        ..scene.clone()
-    };
-    assert_eq!(ring(kid, &count), start(kid), "cut where it has no room");
-    let picked = Dot {
-        picked: true,
-        ..dot(3, 4, Mark::State(NodeState::Working), Token::Working)
-    };
-    let pair = Scene {
-        dots: vec![kid, picked],
-        ..scene.clone()
-    };
-    let gap = 2.0 * f32::from(CELL.0) - edge(&picked, grid);
-    assert_eq!(
-        ring(kid, &pair),
-        gap - LAND_WIDTH / 2.0,
-        "up to a picked neighbour's ring"
+    let left_bend = [(1.5, 0.5), (1.5, 1.5), (0.5, 1.5)];
+    assert!(
+        dots_along(&left_bend, (12.0, 24.0), 2.0)
+            .filter(|&(at, _)| at == (20.0, 36.0))
+            .eq([((20.0, 36.0), 1)])
     );
+
+    let on = dot(3, 2, Mark::State(NodeState::Waiting), Token::TextMuted);
+    let landed = one(vec![on], 6, 5);
+    let draw_rows = |scene: &Scene| {
+        scene
+            .rows
+            .clone()
+            .flat_map(|y| {
+                raster(
+                    scene,
+                    &THEME,
+                    CELL,
+                    Rect {
+                        x: 0,
+                        y,
+                        cells: scene.width,
+                    },
+                    None,
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let bare = draw_rows(&landed);
+    for (step, dots) in [16, 24, 32].into_iter().enumerate() {
+        let scene = Scene {
+            rings: vec![Ring {
+                on,
+                step: step as u8,
+            }],
+            ..landed.clone()
+        };
+        let pixels = draw_rows(&scene);
+        let pixels = pixels.as_chunks::<4>().0;
+        let ink = [head, near, far][step];
+        assert_eq!(pixels.iter().filter(|&&p| p == ink).count(), 4 * dots);
+        assert!(
+            bare.as_chunks::<4>()
+                .0
+                .iter()
+                .zip(pixels)
+                .all(|(before, after)| before[3] == 0 || before == after),
+            "step {step} preserves the receiver"
+        );
+    }
 }

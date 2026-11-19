@@ -774,7 +774,7 @@ fn square_scene(
         mark: Mark::Square,
         radius: SQUARE_RADIUS,
         ink,
-        halo: false,
+        frame: 0,
         picked: false,
     });
     Scene {

@@ -160,7 +160,7 @@ for glyph-only tokens. A dash means decorative, with no floor.
 | `mark.5` | `#DCDCAA` | `#94436D` | An account's mark `●`, in pale yellow (dark) or pink (light) | 3.0 |
 | `mark.6` | `#29B8DB` | `#007290` | An account's mark `●`, in sky | 3.0 |
 | `working` | `#9CDCFE` | `#2466A5` | A working agent's dot in the agents box, its picture and `/agents`, and in the sidebar's trees for a working node with no role: light blue | 3.0 |
-| `gleam` | `#E4F4FF` | `#061633` | Main's core in the agents box's picture, drawn at 0.9 over `accent`: near-white pale blue (dark), deep navy that shows on the light background and on `accent` (light) | 3.0 |
+| `gleam` | `#E4F4FF` | `#061633` | The head of a mail's light: near-white pale blue (dark), deep navy (light) | 3.0 |
 | `mark.gone` | = `text.muted` | | A gone account's `○` | |
 | `secret` | `#CE9178` | `#945206` | A secret's mask: its start, stars, last 4 and length | 4.5 |
 
