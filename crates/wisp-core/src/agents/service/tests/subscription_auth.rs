@@ -108,17 +108,28 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
         matches!(inner(event, "/busy"), Some(AgentEvent::TurnStarted { .. }))
     })
     .await;
+    let root = service_of(&kernels).handle(AgentPath::root());
+    plan.push([gated(uses(&[report_call("r3b", "more")]), &gate)]);
+    root.send("explicit", "more".to_owned(), true).unwrap();
+    run.until("explicit works again", |event| {
+        matches!(
+            inner(event, "/explicit"),
+            Some(AgentEvent::TurnStarted { turn: 2, .. })
+        )
+    })
+    .await;
     let AuthOutcome::Failed { message, .. } =
         auth(&mut run, crate::endpoints::testing::logout(110, "plan")).await
     else {
-        panic!("a working agent refuses the sign-out")
+        panic!("working agents refuse the sign-out")
     };
     assert_eq!(
         message,
-        "busy is working on plan. Try again once it's done."
+        "busy and explicit are working on plan. Try again once they're done."
     );
-    gate.add_permits(1);
+    gate.add_permits(2);
     run.child_ended("/busy").await;
+    run.child_ended("/explicit").await;
     for path in ["/explicit", "/preset", "/busy"] {
         assert_eq!(
             super::endpoints::spawned_entry(&run, path)
@@ -236,7 +247,6 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
         gone.contains(&crate::agents::endpoints::gone_text("plan")),
         "{gone}"
     );
-    let root = service_of(&kernels).handle(AgentPath::root());
     assert!(root.send("explicit", "more".to_owned(), false).is_ok());
     let refused = root.send("preset", "more".to_owned(), false).unwrap_err();
     assert!(

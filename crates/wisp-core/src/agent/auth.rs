@@ -237,6 +237,21 @@ impl Departure {
     }
 }
 
+fn working_on_each(names: &[String], agents: &[&OnAccount]) -> Option<String> {
+    let lines: Vec<String> = names
+        .iter()
+        .filter_map(|name| {
+            let on: Vec<String> = agents
+                .iter()
+                .filter(|a| a.account == *name)
+                .map(|a| a.agent.clone())
+                .collect();
+            (!on.is_empty()).then(|| working_on(&on, name))
+        })
+        .collect();
+    (!lines.is_empty()).then(|| lines.join(" "))
+}
+
 impl Agent {
     pub(super) fn billing_of(&self, name: &str) -> Option<wisp_protocol::Billing> {
         let connection = self.connections.iter().find(|c| c.name == name);
@@ -379,6 +394,7 @@ impl Agent {
         .await;
         let mut moved = Vec::new();
         let mut stay = Vec::new();
+        let mut blocked = Vec::new();
         for (index, (agent, has_way, kept, _)) in asked.iter().enumerate() {
             let stayed = |busy| Stayed {
                 agent: agent.agent.clone(),
@@ -391,13 +407,11 @@ impl Agent {
                 Some(Ok(Ok(Left::Moved(followed)))) => moved.push(followed.clone()),
                 Some(Ok(Ok(Left::Stayed))) => stay.push(stayed(false)),
                 _ if elsewhere => stay.push(stayed(*has_way)),
-                _ => {
-                    return Err(working_on(
-                        std::slice::from_ref(&agent.agent),
-                        &agent.account,
-                    ));
-                }
+                _ => blocked.push(*agent),
             }
+        }
+        if let Some(line) = working_on_each(names, &blocked) {
+            return Err(line);
         }
         if let Some(name) = &plan.leaving {
             self.leave(dest.as_deref(), name, events).await;
@@ -458,8 +472,8 @@ impl Agent {
                 )
                 .await;
         }
-        if let Some(agent) = plan.agents.iter().find(|a| a.working) {
-            let line = working_on(std::slice::from_ref(&agent.agent), &agent.account);
+        let working: Vec<&OnAccount> = plan.agents.iter().filter(|a| a.working).collect();
+        if let Some(line) = working_on_each(&names, &working) {
             return self
                 .auth_refused(request, AuthFailureKind::ChildReference, line, events)
                 .await;
@@ -1011,6 +1025,47 @@ mod tests {
         agent.sync_catalog(&events).await;
         assert!(agent.find_endpoint("plan").is_ok());
         assert!(!agent.gone.iter().any(|(name, _)| name == "plan"));
+    }
+
+    #[tokio::test]
+    async fn a_sign_out_names_every_agent_that_answers_busy_once_per_account() {
+        let mut agent = Agent::new(Fake::new([]), crate::agent::default_session());
+        let mut leaves = Vec::new();
+        let mut on = |name: &str, account: &str| {
+            let (leave, asked) = mpsc::unbounded_channel();
+            leaves.push(asked);
+            OnAccount {
+                agent: name.to_owned(),
+                account: account.to_owned(),
+                provider: None,
+                working: false,
+                leave: Some(leave),
+            }
+        };
+        let plan = Departure {
+            leaving: None,
+            agents: vec![
+                on("coder", "team"),
+                on("reviewer", "plan"),
+                on("worker", "plan"),
+            ],
+            dest: None,
+            ways: Vec::new(),
+            from: None,
+        };
+        let busy = futures::future::join_all(leaves.iter_mut().map(async |asked| {
+            let leave = asked.recv().await.unwrap();
+            leave.reply.send(Left::Busy).unwrap();
+        }));
+        let (events, _received) = mpsc::channel(8);
+        let names = ["plan".to_owned(), "team".to_owned()];
+        let (refused, _) = tokio::join!(agent.depart(&names, &plan, &[], false, &events), busy);
+        assert_eq!(
+            refused.err().as_deref(),
+            Some(
+                "reviewer and worker are working on plan. Try again once they're done. coder is working on team. Try again once it's done."
+            )
+        );
     }
     #[tokio::test]
     async fn logout_and_root_selection_cannot_both_claim_the_same_generation() {
