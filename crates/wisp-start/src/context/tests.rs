@@ -545,6 +545,7 @@ fn unshipped_gemini_model_warns_at_start_and_resolves_antigravity_default_model(
     use wisp_core::provider::gemini::GeminiProvider;
 
     let ep = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("antigravity").unwrap(),
         provider: ProviderKind::Gemini,
         credential: Credential::Subscription {
@@ -637,6 +638,7 @@ fn unshipped_gemini_model_warns_at_start_and_resolves_antigravity_default_model(
     )
     .unwrap();
     let resume_ep = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("antigravity").unwrap(),
         provider: ProviderKind::Gemini,
         credential: Credential::Subscription {
@@ -741,6 +743,7 @@ async fn start_warnings_and_model_switch_share_one_listed_only_warning() {
 
     let dir = tempfile::tempdir().unwrap();
     let ep = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("antigravity").unwrap(),
         provider: ProviderKind::Gemini,
         credential: Credential::Subscription {

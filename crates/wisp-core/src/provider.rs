@@ -1,7 +1,7 @@
 pub mod anthropic;
 mod body;
 pub mod classify;
-pub(crate) mod client_version;
+pub mod client_version;
 pub mod credential;
 mod foreign;
 pub mod forms;

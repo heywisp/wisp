@@ -796,6 +796,7 @@ async fn a_refused_switch_of_this_chats_provider_keeps_its_native_request_prefix
     let store = MemoryStore::default();
     let mut kit = switching(&server, &env, &store);
     let endpoint = crate::endpoints::ResolvedEndpoint {
+        client_version: None,
         name: crate::test_guard::name("g1"),
         provider: crate::endpoints::ProviderKind::Gemini,
         credential: Credential::ApiKey("CANARY_GEMINI_GOLDEN".into()),

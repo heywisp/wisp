@@ -9,7 +9,7 @@ use wisp_protocol::settings::{
 };
 use wisp_protocol::{NOT_A_MODEL_ID, NOT_SHOWN, NoSearch, PluginEntry, VariableName, model_hidden};
 use wisp_render::chrome::account::ACCOUNT_TITLE;
-use wisp_render::chrome::{KeyHint, endpoint_card, model_line, short_model};
+use wisp_render::chrome::{Credential, KeyHint, endpoint_card, model_line, short_model};
 use wisp_render::text::sanitize;
 use wisp_render::transcript::copy::{ENTER_KEY, NEXT_TURN};
 
@@ -763,6 +763,7 @@ pub(super) const ENDPOINT_FIELDS: &[&str] = &[
     names::AUTH,
     names::PRICING,
     names::MAX_IN_FLIGHT,
+    names::CLIENT_VERSION,
     names::KEY,
     names::URL,
     names::KEY_STORE,
@@ -892,10 +893,13 @@ fn field_row(
 pub fn endpoint_rows(snapshot: &SettingsSnapshot, name: &str) -> Vec<Row> {
     let summary = summary_of(snapshot, name);
     let stored = store_of(snapshot, name).is_some();
-    ENDPOINT_FIELDS
-        .iter()
-        .filter_map(|field| wisp_protocol::settings::find(field))
+    endpoint_specs()
         .filter(|spec| match spec.name {
+            names::CLIENT_VERSION => summary
+                .and_then(|summary| summary.credential.as_ref())
+                .and_then(Credential::of)
+                .and_then(Credential::plan)
+                .is_some(),
             names::KEY_STORE => stored,
             names::KEY_ENV | names::URL_ENV => !stored,
             _ => true,
@@ -935,6 +939,25 @@ pub fn endpoint_rows(snapshot: &SettingsSnapshot, name: &str) -> Vec<Row> {
             row
         })
         .collect()
+}
+
+pub(super) fn endpoint_specs() -> impl Iterator<Item = &'static SettingSpec> {
+    let mut specs: Vec<_> = SETTINGS
+        .iter()
+        .filter(|s| {
+            s.is_built()
+                && s.has_site(Site::Endpoint)
+                && !s.has_site(Site::Global)
+                && !OFF_SCREEN.contains(&s.name)
+        })
+        .collect();
+    specs.sort_by_key(|s| {
+        ENDPOINT_FIELDS
+            .iter()
+            .position(|field| *field == s.name)
+            .unwrap_or(ENDPOINT_FIELDS.len())
+    });
+    specs.into_iter()
 }
 
 pub(super) fn model_specs() -> impl Iterator<Item = &'static SettingSpec> {

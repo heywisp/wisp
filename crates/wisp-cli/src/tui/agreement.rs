@@ -1310,6 +1310,7 @@ async fn gemini_call_signatures_replay_without_transcript_rows() {
         format!("{SSE_HEAD}data: {reply}\n\n")
     }));
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("gemini-test").unwrap(),
         provider: ProviderKind::Gemini,
         credential: Credential::ApiKey("CANARY_GEMINI_KEY".into()),

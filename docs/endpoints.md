@@ -83,6 +83,7 @@ background_tokens = 40000            # how far below the point it starts (the de
 | `pricing` | `list` gives estimates at known model list prices (a gateway may charge differently); `none` shows tokens only, and the log still records the estimate (`list_usd`, `docs/session-log.md`). Subscription modes show the API-equivalent estimate marked `~`, not a charge; `none` keeps tokens only |
 | `background_compaction`, `background_tokens` | Optional. This endpoint's background compaction setting and band, below its model tables and above `[context]` ([docs/context.md](context.md#background-compaction)) |
 | `max_in_flight` | Optional, a whole number from 1 to 64, or `"none"` for no limit; by default 12 on a Claude subscription and 8 on every other account. How many requests the whole agent tree may have open on this account at once; the rest wait their turn ([Busy endpoints](#busy-endpoints)). Set it with `wisp config set endpoints.NAME.max_in_flight 4`, `--set endpoints.NAME.max_in_flight=4` or `/config`. Applies from the next session |
+| `client_version` | Optional. A subscription's public client release number, such as `"0.168.0"`. By default Wisp uses the latest release it found. Applies at the next connection ([Client versions](#client-versions)) |
 | `mark` | Optional, a whole number from 1 to 6: the account's colour on every screen ([What you see](#what-you-see)). Only you write it; any other value is ignored, the colour is picked, and `wisp doctor` warns. `[endpoints.env]`'s colours the keys-file account. A config holding `mark` doesn't load on a build from before marks, which refuses a field it doesn't know |
 | `native_web_search` | Optional, `true` (the default) or `false`. Send the provider's own web search tool through this endpoint, to every model whose resolved `web_search` list has a version, whatever the origin; `false` sends it to none, on the provider's own origin too. Set it with `wisp config set endpoints.NAME.native_web_search off` or `/config`. Applies from the next session ([Web search](#web-search)) |
 | `[instructions]` | Optional table for project instructions ([docs/instructions.md](instructions.md)), with three optional keys. `source`: `auto` loads the project's `AGENTS.md`, or your default when it has none; `default` only your default; `none` no instruction file. `--instructions` wins over it. `warn_tokens`: the size above which instructions get the `large` warning, an integer or a string such as `"8k"` or `"1M"` (default 8000); `--instructions-warn-tokens` wins over it. Nothing is ever cut. `extra`: `none` (the default) or `autonomous`, built-in instructions that go before the instruction files ([Extra instructions](instructions.md#extra-instructions)); `--instructions-extra` wins over it. Any other key in the table is an error |
@@ -1215,32 +1216,52 @@ Choosing a model absent from a loaded account list, through a startup model flag
 A connection reads its account's list when it is made and takes from a newer one only entries for models it has no entry for and has sent no request for, so no byte a connection sends changes: a model the chat uses, or any name a request has already carried, keeps its facts until the connection is replaced (a new sign-in, an `/account` edit, or a change seen from another window) or the next start. A connection made with no list keeps none, and its account shows no rows from the list until the next start. What a connection adds reaches `/model` through the endpoints event. `/context` and `wisp doctor` name a listed window's source: `subscription` or `API`.
 
 `wisp account models NAME` fetches the list live on any account and prints its IDs, shown entries first; when the answer isn't a full list (a gateway that sends only IDs, or a list with nothing shown), it prints each entry's `id`, sorted.
+Add `--latest` to record the latest subscription client release and then list models with it (or with the version set by hand). This does not force a save of the model list.
 
 ## Client versions
 
-When a signed-in ChatGPT, Claude or Antigravity subscription sends a model-list
-request to its own origin, Wisp can check the latest stable release of Codex,
-Claude Code or Antigravity CLI on GitHub. It checks only once the list request's
-access token is ready. API keys, bearers, gateways and Antigravity on another
-origin do not check. Neither inference nor `wisp doctor --check` checks releases.
+An unpinned ChatGPT, Claude or Antigravity subscription can automatically check
+for the latest stable release of Codex, Claude Code or Antigravity CLI on
+GitHub. It checks when fetching the model list from its own origin, after the
+list request's access token is ready. API keys, bearers, gateways and Antigravity
+on another origin do not check. Neither inference nor `wisp doctor --check`
+checks releases.
 
 Each client has a record in `models/client-<provider>.json` with the last version
 found and the last attempt time. The process holding the client's lock saves
 the attempt before it makes the request. Other processes use the record without
-waiting. There is at most one attempt per client per hour per shared models
-folder, even after failure. An hour is the minimum gap between attempts, not a
-promise of when a new release will be found: an idle Wisp may send no list.
+waiting. Automatic attempts are at least an hour apart per client and shared
+models folder, even after failure. An idle Wisp may send no list request at all.
 
-The release request times out after three seconds. It goes directly to GitHub,
-without a proxy, redirect or credentials, and sends Wisp's own user agent, not
-an account's identity. If offline or the check fails, the list uses the last
-version found, even if it is older than the shipped fallback. If none has been
-found, or there is no data folder, Wisp uses the shipped version.
+Both automatic checks and `--latest` time out after three seconds. The request
+goes directly to GitHub, without a proxy, redirect or credentials, and sends
+Wisp's own user agent, not an account's identity. If an automatic check fails,
+the list uses the last version found, even if older than the shipped fallback.
+If none has been found, or there is no data folder, it uses the shipped version.
 
 A list can use a newly found version immediately. Inference and other requests
 keep the version read when their connection was made. Client versions do not
 change prompt bytes or cache keys. If a provider refuses a version, Wisp reports
 the request error as usual; it does not roll back automatically.
+
+### Looking up now
+
+`wisp account models NAME --latest` checks before it fetches the list request's
+access token, even if the last attempt was less than an hour ago. It uses the
+same lock and doesn't wait if another Wisp holds it. If the release can't be
+looked up or saved, it doesn't fetch the list.
+
+For an account with a list already loaded, a running Wisp can see newly
+available models the next time it fetches that list: in a background refresh
+when due, or when you pick a model by name that isn't in the loaded list. An
+account without a loaded list waits until the next start. A new session reads
+the release for its connection, uses its saved list while fresh, and reports
+the release on its next list fetch. An open connection keeps its version for
+other requests.
+
+### Setting it by hand
+
+Set `endpoints.NAME.client_version` to the public release number of the subscription's client, such as `0.168.0`. Use `wisp config set`, `--set endpoints.NAME.client_version=0.168.0` for one run, or **Client version** on the account's `/config` page. Clear it with `wisp config unset` or `d` there. Only the provider receives that version, never the release host. It takes effect at the next connection and skips automatic release lookups for that account. `--latest` still records a release for the other accounts of that provider.
 
 ## Busy endpoints
 

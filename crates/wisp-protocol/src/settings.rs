@@ -40,8 +40,8 @@ pub use registry::{
     provider_plugin, quoted_or, resolve_preload, row_name, word_of,
 };
 pub use value::{
-    MICROS_PER_USD, SettingValue, TokensOrPercent, parse_bool, parse_tokens, parse_usd, thousands,
-    usd_shown, usd_text,
+    ClientVersion, MICROS_PER_USD, SettingValue, TokensOrPercent, parse_bool, parse_tokens,
+    parse_usd, thousands, usd_shown, usd_text,
 };
 pub use wire::{
     AccountModel, AppliedChange, By, CompactionQuote, Consequence, CredentialKind, EndpointSummary,

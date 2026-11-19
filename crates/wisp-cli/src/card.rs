@@ -43,4 +43,24 @@ pub(crate) fn setup(sources: &Sources, ctx: &Context<'_>) -> CardSetup {
 }
 
 #[cfg(test)]
+pub(crate) fn test_context<'a>(
+    root: &std::path::Path,
+    config: &'a std::path::Path,
+    keychain: &'a crate::keychain::Keychain,
+) -> Context<'a> {
+    Context {
+        set: &[],
+        env_file: None,
+        config: Some(config),
+        model: "claude-sonnet-5-5",
+        caps: crate::prompt_caps(&wisp_tui::term::SavedDisplay::default()),
+        claude_usage: true,
+        xdg_config_home: None,
+        home: Some(root.to_owned()),
+        keychain,
+        models: None,
+    }
+}
+
+#[cfg(test)]
 mod tests;

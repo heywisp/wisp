@@ -1,4 +1,3 @@
-use std::fmt;
 use std::ops::Range;
 use std::path::Path;
 use std::time::Duration;
@@ -6,57 +5,15 @@ use std::time::Duration;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use toml::de::DeValue;
+use wisp_protocol::settings::ClientVersion;
 
-use crate::endpoints::ProviderKind;
+use crate::endpoints::{ProviderKind, ResolvedEndpoint};
 use crate::models::list::{ListWait, REFRESH_AFTER};
-use crate::models::{RowError, bad_value, table_of};
+use crate::models::{ModelTable, RowError, bad_value, table_of};
 use crate::plan_usage::record::{self, Claim};
 
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(3);
 const RELEASE_LIMIT: usize = 1024 * 1024;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub(crate) struct Version([u32; 3]);
-
-impl Version {
-    pub(crate) fn parse(version: &str) -> Option<Self> {
-        let mut parts = version.split('.');
-        let mut numbers = [0; 3];
-        for number in &mut numbers {
-            let part = parts.next()?;
-            if !(1..=9).contains(&part.len())
-                || (part.len() > 1 && part.starts_with('0'))
-                || !part.bytes().all(|byte| byte.is_ascii_digit())
-            {
-                return None;
-            }
-            *number = part.parse().ok()?;
-        }
-        parts.next().is_none().then_some(Self(numbers))
-    }
-}
-
-impl fmt::Display for Version {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let [major, minor, patch] = self.0;
-        write!(f, "{major}.{minor}.{patch}")
-    }
-}
-
-impl TryFrom<String> for Version {
-    type Error = &'static str;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::parse(&value).ok_or("invalid client version")
-    }
-}
-
-impl From<Version> for String {
-    fn from(version: Version) -> Self {
-        version.to_string()
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Latest {
@@ -66,8 +23,9 @@ pub(crate) struct Latest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Client {
-    pub version: Version,
+    pub version: ClientVersion,
     pub latest: Option<Latest>,
+    pub pinned: Option<ClientVersion>,
 }
 
 impl Client {
@@ -84,7 +42,10 @@ impl Client {
         else {
             return Err(bad());
         };
-        let version = version.as_str().and_then(Version::parse).ok_or_else(bad)?;
+        let version = version
+            .as_str()
+            .and_then(ClientVersion::parse)
+            .ok_or_else(bad)?;
         let tag_prefix = match tag_prefix {
             Some(value) => value
                 .as_str()
@@ -117,20 +78,60 @@ impl Client {
                 })
             })
             .transpose()?;
-        Ok(Self { version, latest })
+        Ok(Self {
+            version,
+            latest,
+            pinned: None,
+        })
     }
+}
 
-    pub(super) fn for_origin(mut self, official: bool) -> Self {
-        if !official {
-            self.latest = None;
-        }
-        self
-    }
+pub(super) fn for_account(
+    row: &Client,
+    subscription: bool,
+    official: bool,
+    pinned: Option<ClientVersion>,
+) -> Option<Client> {
+    subscription.then(|| Client {
+        version: row.version,
+        latest: row.latest.as_ref().filter(|_| official).cloned(),
+        pinned,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lookup {
+    NoRelease,
+    Busy,
+    Unrecorded(Option<ClientVersion>),
+    Kept(ClientVersion),
+    Found(ClientVersion),
+}
+
+pub(super) fn account_client(endpoint: &ResolvedEndpoint) -> Option<Client> {
+    ModelTable::shared()
+        .provider(endpoint.provider)
+        .and_then(|row| row.client.as_ref())
+        .and_then(|row| {
+            for_account(
+                row,
+                endpoint.credential.subscription().is_some(),
+                endpoint.official(),
+                endpoint.client_version,
+            )
+        })
+}
+
+pub async fn check_account(endpoint: &ResolvedEndpoint, folder: Option<&Path>) -> Lookup {
+    let Some(client) = account_client(endpoint) else {
+        return Lookup::NoRelease;
+    };
+    check(&client, folder, endpoint.provider).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct Record {
-    pub(super) version: Option<Version>,
+    pub(super) version: Option<ClientVersion>,
     pub(super) checked: i64,
 }
 
@@ -138,47 +139,83 @@ pub(super) fn record_alias(kind: ProviderKind) -> String {
     format!("client-{}", kind.as_str())
 }
 
-pub(super) fn current(client: &Client, folder: Option<&Path>, kind: ProviderKind) -> Version {
-    folder
-        .and_then(|folder| record::read::<Record>(folder, &record_alias(kind)))
-        .and_then(|record| record.version)
+pub(super) fn current(client: &Client, folder: Option<&Path>, kind: ProviderKind) -> ClientVersion {
+    client
+        .pinned
+        .or_else(|| {
+            folder
+                .and_then(|folder| record::read::<Record>(folder, &record_alias(kind)))
+                .and_then(|record| record.version)
+        })
         .unwrap_or(client.version)
 }
 
-pub(super) async fn resolve(client: &Client, folder: Option<&Path>, kind: ProviderKind) -> Version {
-    let (Some(folder), Some(latest)) = (folder, &client.latest) else {
-        return current(client, folder, kind);
+pub(super) async fn resolve(
+    client: &Client,
+    folder: Option<&Path>,
+    kind: ProviderKind,
+) -> ClientVersion {
+    if let Some(version) = client.pinned {
+        return version;
+    }
+    match attempt(client, folder, kind, false).await {
+        Lookup::Found(version) | Lookup::Kept(version) | Lookup::Unrecorded(Some(version)) => {
+            version
+        }
+        _ => current(client, folder, kind),
+    }
+}
+
+async fn check(client: &Client, folder: Option<&Path>, kind: ProviderKind) -> Lookup {
+    attempt(client, folder, kind, true).await
+}
+
+async fn attempt(
+    client: &Client,
+    folder: Option<&Path>,
+    kind: ProviderKind,
+    force: bool,
+) -> Lookup {
+    let Some(latest) = &client.latest else {
+        return Lookup::NoRelease;
+    };
+    let Some(folder) = folder else {
+        return Lookup::Unrecorded(None);
     };
     let alias = record_alias(kind);
-    let Claim::Held(_lock) = record::claim(folder, &alias) else {
-        return current(client, Some(folder), kind);
+    let _lock = match record::claim(folder, &alias) {
+        Claim::Held(lock) => lock,
+        Claim::Busy => return Lookup::Busy,
+        Claim::Unshared => return Lookup::Unrecorded(None),
     };
     let now = jiff::Timestamp::now().as_second();
     let Ok(saved) = record::try_read::<Record>(folder, &alias) else {
-        return client.version;
+        return Lookup::Unrecorded(None);
     };
     let version = saved.and_then(|saved| saved.version);
     let fallback = version.unwrap_or(client.version);
-    if saved.is_some_and(|saved| now.saturating_sub(saved.checked) < REFRESH_AFTER) {
-        return fallback;
+    if !force && saved.is_some_and(|saved| now.saturating_sub(saved.checked) < REFRESH_AFTER) {
+        return Lookup::Kept(fallback);
     }
     let mut attempt = Record {
         version,
         checked: now,
     };
     if record::write(folder, &alias, &attempt).is_err() {
-        return fallback;
+        return Lookup::Unrecorded(None);
     }
     ListWait::reserve_for_release(LOOKUP_TIMEOUT);
     let Some(found) = lookup(latest).await else {
-        return fallback;
+        return Lookup::Kept(fallback);
     };
     attempt.version = Some(found);
-    let _ = record::write(folder, &alias, &attempt);
-    found
+    match record::write(folder, &alias, &attempt) {
+        Ok(()) => Lookup::Found(found),
+        Err(_) => Lookup::Unrecorded(Some(found)),
+    }
 }
 
-pub(crate) async fn lookup(latest: &Latest) -> Option<Version> {
+pub(crate) async fn lookup(latest: &Latest) -> Option<ClientVersion> {
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -214,11 +251,11 @@ struct Release {
     prerelease: bool,
 }
 
-fn tag_version(release: &Release, prefix: &str) -> Option<Version> {
+fn tag_version(release: &Release, prefix: &str) -> Option<ClientVersion> {
     if release.draft || release.prerelease || release.tag_name.len() > 64 {
         return None;
     }
-    Version::parse(release.tag_name.strip_prefix(prefix)?)
+    ClientVersion::parse(release.tag_name.strip_prefix(prefix)?)
 }
 
 #[cfg(test)]

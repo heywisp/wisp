@@ -150,6 +150,7 @@ fn every_setting_is_kept_or_dropped_exactly_once() {
 fn only_display_and_account_sets_are_kept() {
     let sets = [
         "display.theme=light",
+        "endpoints.work.client_version=1.2.3",
         "effort=low",
         "model=claude-sonnet-5-5",
         "log=false",
@@ -158,7 +159,14 @@ fn only_display_and_account_sets_are_kept() {
         "not a setting",
     ]
     .map(str::to_owned);
-    assert_eq!(kept_sets(&sets), ["display.theme=light", "keychain=off"]);
+    assert_eq!(
+        kept_sets(&sets),
+        [
+            "display.theme=light",
+            "endpoints.work.client_version=1.2.3",
+            "keychain=off"
+        ]
+    );
 }
 
 #[test]

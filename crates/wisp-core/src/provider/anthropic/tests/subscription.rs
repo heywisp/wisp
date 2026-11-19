@@ -4,6 +4,7 @@ use std::time::Duration;
 use futures::StreamExt;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
+use wisp_protocol::settings::ClientVersion;
 use wisp_protocol::{Billing, CacheTtl, ContentBlock, ErrorKind, Message};
 
 use super::{
@@ -16,7 +17,7 @@ use crate::provider::anthropic::subscription::{Profile, SYSTEM_IDENTITY, data};
 use crate::provider::anthropic::{
     AnthropicProvider, ConfigError, DEFAULT_BASE_URL, MESSAGE_THREADS_BETA, Marks, encode, layout,
 };
-use crate::provider::client_version::{Record, Version, record_alias};
+use crate::provider::client_version::{Record, record_alias};
 use crate::provider::credential::{Credential, SubscriptionKind};
 use crate::provider::{
     Assembler, Provider, ProviderEvent, Request, RequestOptions, TailMarker, Thread, TokenCount,
@@ -76,6 +77,7 @@ fn subscription_mode_is_explicit_and_provider_specific() {
             &credential,
             DEFAULT_BASE_URL,
             None,
+            None,
         )
         .unwrap();
         assert_eq!(provider.profile, Profile::Api);
@@ -86,6 +88,7 @@ fn subscription_mode_is_explicit_and_provider_specific() {
         super::super::header(&credential).unwrap(),
         &credential,
         DEFAULT_BASE_URL,
+        None,
         None,
     )
     .unwrap_err();
@@ -291,11 +294,11 @@ fn profile_prefix_and_actual_sent_body_stay_equal_across_turns_and_token_changes
 
 #[tokio::test]
 async fn a_newer_client_version_reaches_only_new_connections() {
-    let (base, seen) = mock_server(vec![http::sse(THINKING_AND_TEXT); 3]).await;
+    let (base, seen) = mock_server(vec![http::sse(THINKING_AND_TEXT); 4]).await;
     let dir = tempfile::tempdir().unwrap();
     let connect = |version| {
         let record = Record {
-            version: Version::parse(version),
+            version: ClientVersion::parse(version),
             checked: 0,
         };
         record::write(dir.path(), &record_alias(ProviderKind::Anthropic), &record).unwrap();
@@ -322,8 +325,15 @@ async fn a_newer_client_version_reaches_only_new_connections() {
             .all(|event| event.is_ok())
     );
     let new = connect("2.1.999");
+    let mut account =
+        super::list::account(credential("CANARY_CLAUDE_CLIENT_VERSION"), DEFAULT_BASE_URL);
+    account.client_version = ClientVersion::parse("2.1.997");
+    let mut pinned = AnthropicProvider::from_endpoint(&account)
+        .unwrap()
+        .with_client_version(Some(dir.path()));
+    pinned.url = format!("{base}/v1/messages");
     let second = request(&messages[..]);
-    for provider in [&old, &new] {
+    for provider in [&old, &new, &pinned] {
         assert!(
             provider
                 .stream(&second)
@@ -334,15 +344,18 @@ async fn a_newer_client_version_reaches_only_new_connections() {
         );
     }
     let requests = seen.lock().unwrap();
-    assert_eq!(requests.len(), 3);
-    for (sent, version) in requests.iter().zip(["2.1.998", "2.1.998", "2.1.999"]) {
+    assert_eq!(requests.len(), 4);
+    for (sent, version) in requests
+        .iter()
+        .zip(["2.1.998", "2.1.998", "2.1.999", "2.1.997"])
+    {
         assert_eq!(
             headers(sent)["user-agent"],
             format!("claude-cli/{version} (external, sdk-cli)")
         );
     }
     let bodies: Vec<_> = requests.iter().map(|request| http::body(request)).collect();
-    assert_eq!(bodies[1], bodies[2]);
+    assert!(bodies[1..].windows(2).all(|pair| pair[0] == pair[1]));
     crate::test_guard::prefix::assert_prefix_stable(
         &bodies[..2]
             .iter()
@@ -350,18 +363,20 @@ async fn a_newer_client_version_reaches_only_new_connections() {
             .collect::<Vec<_>>(),
         None,
     );
-    assert_eq!(
-        old.prefix_bytes(&second).unwrap(),
-        new.prefix_bytes(&second).unwrap()
-    );
-    assert_eq!(
-        old.cache_prefix(&second).unwrap(),
-        new.cache_prefix(&second).unwrap()
-    );
-    assert_eq!(
-        old.wire_print(&second).unwrap(),
-        new.wire_print(&second).unwrap()
-    );
+    for provider in [&new, &pinned] {
+        assert_eq!(
+            old.prefix_bytes(&second).unwrap(),
+            provider.prefix_bytes(&second).unwrap()
+        );
+        assert_eq!(
+            old.cache_prefix(&second).unwrap(),
+            provider.cache_prefix(&second).unwrap()
+        );
+        assert_eq!(
+            old.wire_print(&second).unwrap(),
+            provider.wire_print(&second).unwrap()
+        );
+    }
 }
 
 #[test]

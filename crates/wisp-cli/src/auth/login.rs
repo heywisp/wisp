@@ -1128,7 +1128,6 @@ pub(crate) fn login(
         None,
         keychain,
         wisp_core::secrets::keyring::Budget::Fresh(wisp_core::secrets::keyring::TERMINAL_DEADLINE),
-        &[],
     );
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

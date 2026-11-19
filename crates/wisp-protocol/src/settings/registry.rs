@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use super::names;
-use super::value::{SettingValue, TokensOrPercent, parse_bool, parse_tokens, parse_usd, thousands};
+use super::value::{
+    ClientVersion, SettingValue, TokensOrPercent, parse_bool, parse_tokens, parse_usd, thousands,
+};
 use super::wire::CredentialKind;
 use crate::agents::config_relative;
 use crate::filter::Query;
@@ -68,6 +70,7 @@ pub enum Kind {
     VoiceName,
     Language,
     Path,
+    ClientVersion,
 }
 
 impl Kind {
@@ -604,6 +607,16 @@ pub static SETTINGS: &[SettingSpec] = &[
         "Read Claude subscription allowance usage when displayed. On by default; claude_usage = false turns it off.",
         Kind::Bool,
     ).mid().applies(Applies::Now).default(Default::Const("on")),
+    spec(
+        names::CLIENT_VERSION,
+        Section::Endpoints,
+        "Client version",
+        "The version to report.",
+        Kind::ClientVersion,
+    )
+    .sites(ENDPOINT)
+    .default(Default::Rule("latest release"))
+    .owner(Owner::Host),
     spec(
         names::COMPACT_AT,
         Section::Compaction,
@@ -1677,6 +1690,11 @@ impl SettingSpec {
             }
             (Kind::Language, Form::File | Form::Docs) => LANGUAGE_RULE.to_owned(),
             (Kind::Language, Form::Rule | Form::Unit) => format!("needs {LANGUAGE_RULE}"),
+            (Kind::ClientVersion, Form::File) => {
+                r#"three dot-separated numbers, such as "1.2.3""#.to_owned()
+            }
+            (Kind::ClientVersion, Form::Docs | Form::Unit) => "a version such as 1.2.3".to_owned(),
+            (Kind::ClientVersion, Form::Rule) => "needs the form 1.2.3".to_owned(),
             (Kind::Path, Form::File) => {
                 concat!("a file path, ", config_relative!()).replace('`', "")
             }
@@ -1746,6 +1764,9 @@ impl SettingSpec {
                     Err(bad())
                 }
             }
+            Kind::ClientVersion => ClientVersion::parse(trimmed)
+                .map(|version| SettingValue::Text(version.to_string()))
+                .ok_or_else(bad),
             Kind::Path => {
                 if !trimmed.is_empty() && !trimmed.chars().any(char::is_control) {
                     Ok(SettingValue::Text(trimmed.to_owned()))

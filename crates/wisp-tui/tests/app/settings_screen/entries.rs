@@ -189,6 +189,7 @@ async fn right_on_an_account_lists_its_fields_and_esc_goes_back() {
         let rows = stage.until(|r| shows(r, "Account direct")).await;
         assert!(shows(&rows, "set \u{b7} credentials.json"), "{rows:#?}");
         assert!(shows(&rows, "the provider's URL"), "{rows:#?}");
+        assert!(!shows(&rows, "Client version"), "{rows:#?}");
         stage.key(KeyCode::Esc);
         let rows = stage.until(|r| !shows(r, "Account direct")).await;
         assert!(selected(&rows).starts_with("direct"), "{rows:#?}");
@@ -218,7 +219,11 @@ async fn a_subscription_account_shows_its_own_requests_in_flight() {
             .key(KeyCode::Enter);
         stage.until(|r| selected(r).contains("manifest")).await;
         stage.key(KeyCode::Right);
-        stage.until(|r| shows(r, "Account manifest")).await;
+        let rows = stage.until(|r| shows(r, "Account manifest")).await;
+        assert!(
+            line_of(&rows, "Client version").contains("latest release"),
+            "{rows:#?}"
+        );
         stage.char('/').typed("max_in_flight").key(KeyCode::Enter);
         let rows = stage
             .until(|r| shows(r, "Wisp's own: 12") && shows(r, "d back to 12"))
@@ -226,6 +231,64 @@ async fn a_subscription_account_shows_its_own_requests_in_flight() {
         assert!(
             selected(&rows).contains("Requests in flight  4"),
             "{rows:#?}"
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn an_invalid_client_version_stays_in_the_editor_without_saving() {
+    staged(WIDE, |mut stage| async move {
+        on_entry(&mut stage, on_subscription, "manifest").await;
+        stage.key(KeyCode::Right);
+        stage.until(|r| shows(r, "Account manifest")).await;
+        stage.char('/').typed("client_version").key(KeyCode::Enter);
+        stage.until(|r| marked(r) == "Client version").await;
+        stage
+            .key(KeyCode::Enter)
+            .ctrl('u')
+            .typed("0.168")
+            .key(KeyCode::Enter);
+        let rows = stage.until(|r| shows(r, "needs the form 1.2.3")).await;
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("New value") && r.contains("0.168")),
+            "{rows:#?}"
+        );
+        stage.nothing_sent().await;
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn d_on_another_subscriptions_client_version_clears_that_accounts_value() {
+    fn saved(request: RequestId) -> SettingsSnapshot {
+        let mut out = on_subscription(request);
+        out.saved
+            .push(at_endpoint("direct", "client_version", "0.168.0", 16));
+        out
+    }
+    staged(WIDE, |mut stage| async move {
+        on_entry(&mut stage, saved, "direct").await;
+        stage.key(KeyCode::Right);
+        stage.until(|r| shows(r, "Account direct")).await;
+        stage.char('/').typed("client_version").key(KeyCode::Enter);
+        stage.until(|r| shows(r, "d back to latest release")).await;
+        stage.char('d');
+        let command = stage.next().await;
+        let ClientCommand::ChangeSettings { changes, save, .. } = command else {
+            panic!("expected ChangeSettings, got {command:?}");
+        };
+        assert!(save);
+        assert_eq!(
+            changes,
+            [SettingChange {
+                target: SettingTarget::Path(SitePath::new(
+                    Place::Endpoint("direct".into()),
+                    find("client_version").unwrap()
+                )),
+                value: None,
+            }]
         );
     })
     .await;

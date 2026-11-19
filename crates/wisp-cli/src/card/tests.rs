@@ -1,7 +1,7 @@
 use wisp_core::endpoints::ProviderKind;
 use wisp_tui::app::endpoint_card::endpoint_facts_of;
 
-use super::{catalogue, setup};
+use super::{catalogue, setup, test_context};
 use crate::endpoints::{self, Flags, Sources};
 use crate::keychain::Keychain;
 use crate::resume::tests::{connection, listed};
@@ -128,17 +128,7 @@ fn the_card_names_the_given_configs_credentials_without_a_path() {
         set: &[],
     };
     let sources = Sources::load(&flags, None, Some(root.clone()));
-    let ctx = crate::manage::Context {
-        env_file: None,
-        config: Some(&config),
-        model: "claude-sonnet-5-5",
-        caps: crate::prompt_caps(&wisp_tui::term::SavedDisplay::default()),
-        claude_usage: true,
-        xdg_config_home: None,
-        home: Some(root.clone()),
-        keychain: &keychain,
-        models: None,
-    };
+    let ctx = test_context(root, &config, &keychain);
     let card = setup(&sources, &ctx);
     assert_eq!(
         card.credentials_shown,

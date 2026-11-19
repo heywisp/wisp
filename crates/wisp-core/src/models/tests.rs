@@ -1,7 +1,7 @@
 use serde_json::Value;
+use wisp_protocol::settings::ClientVersion;
 
 use super::*;
-use crate::provider::client_version::Version;
 
 const ON_DEMAND: &str =
     "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand";
@@ -152,7 +152,7 @@ fn subscription_identity_data_renders_in_order_and_rejects_invalid_rows() {
         .provider(ProviderKind::Anthropic)
         .unwrap();
     let version = original.client.as_ref().unwrap().version;
-    let changed_version = Version::parse("1.2.3").unwrap();
+    let changed_version = ClientVersion::parse("1.2.3").unwrap();
     let template = original.claude_code.as_ref().unwrap();
     let identity = template.rendered(changed_version).unwrap();
     let original = template.rendered(version).unwrap();
@@ -1073,7 +1073,7 @@ fn antigravity_identity_data_renders_and_rejects_invalid_rows() {
         identity.base_url,
         "https://daily-cloudcode-pa.googleapis.com"
     );
-    let version = Version::parse("1.2.3").unwrap();
+    let version = ClientVersion::parse("1.2.3").unwrap();
     assert_eq!(
         identity.user_agent(version).as_deref(),
         Some("antigravity/cli/1.2.3")
@@ -1347,7 +1347,7 @@ fn models_requiring_newer_codex(
     json: &str,
     shipped_version: &str,
 ) -> Result<Vec<(String, String)>, String> {
-    let shipped = Version::parse(shipped_version)
+    let shipped = ClientVersion::parse(shipped_version)
         .ok_or_else(|| format!("invalid shipped Codex version: {shipped_version:?}"))?;
     let catalog: Value = serde_json::from_str(json).map_err(|err| err.to_string())?;
     let models = catalog
@@ -1364,7 +1364,7 @@ fn models_requiring_newer_codex(
             .get("minimal_client_version")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("{slug}: expected a minimal_client_version string"))?;
-        let minimum = Version::parse(version)
+        let minimum = ClientVersion::parse(version)
             .ok_or_else(|| format!("{slug}: invalid minimal_client_version {version:?}"))?;
         if minimum > shipped {
             incompatible.push((slug.to_owned(), version.to_owned()));

@@ -12,6 +12,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wisp_protocol::plan_usage::{PlanUsage, PlanUsageError};
+use wisp_protocol::settings::ClientVersion;
 use wisp_protocol::{
     CacheTtl, ContentBlock, ErrorKind, FailurePhase, ImageSource, RenderingForm, Role, StopReason,
     ToolRef, Usage, VariableName,
@@ -22,7 +23,7 @@ use super::classify::{
     self, Carries, ErrorObject, body_error, error_object, header_request_id, overflows,
     refuse_attachment, refuse_foreign_search, refuse_search, suspect_search,
 };
-use super::client_version::{self, Client, Version};
+use super::client_version::{self, Client};
 pub use super::credential::{Credential, EnvFile, Source};
 use super::forms::{Layout, native};
 use super::sse::{
@@ -215,6 +216,7 @@ pub(crate) fn implicit_endpoint(
         None => UrlSource::Official,
     };
     let endpoint = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::keys_file(true),
         provider: ProviderKind::Anthropic,
         credential: settings.credential,
@@ -325,6 +327,7 @@ impl AnthropicProvider {
             &endpoint.credential,
             &endpoint.base_url,
             subscription::data(),
+            endpoint.client_version,
         )?;
         provider.list_key = provider
             .official
@@ -358,6 +361,7 @@ impl AnthropicProvider {
             credential,
             base_url,
             subscription::data(),
+            None,
         )
     }
 
@@ -366,13 +370,25 @@ impl AnthropicProvider {
         credential: &Credential,
         base_url: &str,
         identity: Option<(&subscription::Identity, &Client)>,
+        pinned: Option<ClientVersion>,
     ) -> Result<Self, ConfigError> {
         let profile = Profile::for_credential(credential)?;
         profile.check_origin(base_url)?;
+        let official = crate::endpoints::is_official(ProviderKind::Anthropic, base_url);
+        let client_version = identity.and_then(|(_, row)| {
+            client_version::for_account(row, profile.subscription(), official, pinned)
+        });
         let rendered = if profile.subscription() {
             Some(
                 identity
-                    .and_then(|(identity, client)| identity.rendered(client.version))
+                    .zip(client_version.as_ref())
+                    .and_then(|((identity, _), row)| {
+                        identity.rendered(client_version::current(
+                            row,
+                            None,
+                            ProviderKind::Anthropic,
+                        ))
+                    })
                     .ok_or(ConfigError::SubscriptionIdentity)?,
             )
         } else {
@@ -382,7 +398,6 @@ impl AnthropicProvider {
             .connect_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
             .build()?;
-        let official = crate::endpoints::is_official(ProviderKind::Anthropic, base_url);
         let base = base_url.trim_end_matches('/');
         Ok(Self {
             client,
@@ -391,9 +406,7 @@ impl AnthropicProvider {
             credential: credential.clone(),
             profile,
             rendered,
-            client_version: identity
-                .filter(|_| profile.subscription())
-                .map(|(_, client)| client.clone()),
+            client_version,
             models_folder: None,
             official,
             threads: official,
@@ -448,7 +461,7 @@ impl AnthropicProvider {
 
     fn list_request(
         &self,
-        subscription: Option<(Version, HeaderValue)>,
+        subscription: Option<(ClientVersion, HeaderValue)>,
     ) -> reqwest::RequestBuilder {
         let mut headers = self.base_headers("application/json");
         if let Some((version, authorization)) = subscription {

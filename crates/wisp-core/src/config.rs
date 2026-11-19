@@ -430,6 +430,7 @@ pub fn from_toml(spec: &SettingSpec, value: &DeValue<'_>) -> Option<SettingValue
         | Kind::VarName
         | Kind::VoiceName
         | Kind::Language
+        | Kind::ClientVersion
         | Kind::Path
         | Kind::PluginId => value.as_str().and_then(|text| spec.parse(text).ok()),
         Kind::Secret => None,
@@ -499,6 +500,7 @@ pub fn expects_string(spec: &SettingSpec) -> bool {
             | Kind::VarName
             | Kind::VoiceName
             | Kind::Language
+            | Kind::ClientVersion
             | Kind::Path
             | Kind::PluginId
     )

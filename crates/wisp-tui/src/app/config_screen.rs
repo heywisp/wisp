@@ -230,9 +230,9 @@ fn names(changes: &[AppliedChange]) -> impl Iterator<Item = (&'static str, &When
 
 pub fn named_settings() -> impl Iterator<Item = &'static wisp_protocol::settings::SettingSpec> {
     placed().map(|(_, spec)| spec).chain(
-        [names::CONTEXT_WINDOW, names::PRICING]
-            .into_iter()
-            .filter_map(wisp_protocol::settings::find),
+        ENTRY_PANES
+            .iter()
+            .filter_map(|name| wisp_protocol::settings::find(name)),
     )
 }
 

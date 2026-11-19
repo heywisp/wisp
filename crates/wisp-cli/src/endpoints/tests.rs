@@ -999,6 +999,7 @@ fn lists_are_due_when_missing_hourly_after_success_and_next_round_after_failure(
     let folder = dir.root.join("models");
     let ready = |name: &str, provider, credential, base_url: &str| {
         let endpoint = ResolvedEndpoint {
+            client_version: None,
             name: EndpointName::parse(name).unwrap(),
             provider,
             credential,
@@ -1186,6 +1187,7 @@ fn check_summary_derives_request_and_cost_by_provider_and_credential_without_sli
     use wisp_core::provider::anthropic::DEFAULT_BASE_URL;
     use wisp_core::provider::credential::{Credential, Source, SubscriptionKind};
     let make_ep = |name: &str, provider, credential, base_url: &str, url_source| ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse(name).unwrap(),
         provider,
         credential,

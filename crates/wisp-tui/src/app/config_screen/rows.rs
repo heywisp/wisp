@@ -77,22 +77,7 @@ pub const EVERYDAY: &[&str] = &[
     names::DISPLAY_THEME,
 ];
 
-pub const ENTRY_PANES: &[&str] = &[
-    names::CONTEXT_WINDOW,
-    names::PRICING,
-    names::ALIASES,
-    names::AUTH,
-    names::KEY_ENV,
-    names::KEY_STORE,
-    names::MAX_IN_FLIGHT,
-    names::MAX_OUTPUT,
-    names::NATIVE_COMPACTION,
-    names::PRICE_CACHE_READ,
-    names::PRICE_INPUT,
-    names::PRICE_OUTPUT,
-    names::PROVIDER,
-    names::URL_ENV,
-];
+pub const ENTRY_PANES: &[&str] = &[names::CONTEXT_WINDOW, names::PRICING];
 
 pub const OFF_SCREEN: &[&str] = &[names::NATIVE_WEB_SEARCH, names::WEB_SEARCH];
 

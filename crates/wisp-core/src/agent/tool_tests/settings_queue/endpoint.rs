@@ -354,6 +354,7 @@ async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_onl
     )
     .unwrap();
     let sub_ep = ResolvedEndpoint {
+        client_version: None,
         name: EndpointName::parse("antigravity").unwrap(),
         provider: ProviderKind::Gemini,
         credential: Credential::Subscription {

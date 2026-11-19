@@ -461,6 +461,7 @@ mod tests {
         let body = serde_json::json!({ "data": entries }).to_string();
         let list = wisp_core::models::list::anthropic::parse(body.as_bytes()).unwrap();
         let endpoint = ResolvedEndpoint {
+            client_version: None,
             name: EndpointName::parse("claude-api").unwrap(),
             provider: ProviderKind::Anthropic,
             credential: Credential::ApiKey("fixture-key".into()),

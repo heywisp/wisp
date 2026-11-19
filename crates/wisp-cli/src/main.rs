@@ -862,7 +862,7 @@ fn config_facts(args: &Args, setup: &Setup, keychain: &keychain::Keychain) -> Co
 
 fn manage_context<'a>(
     args: &'a Args,
-    setup: &Setup,
+    setup: &'a Setup,
     model: &'a str,
     keychain: &'a keychain::Keychain,
 ) -> manage::Context<'a> {
@@ -870,6 +870,7 @@ fn manage_context<'a>(
     manage::Context {
         env_file: args.env_file.as_deref(),
         config: args.config.as_deref(),
+        set: &setup.flags,
         model,
         caps: prompt_caps(&saved_display(
             &setup.flags,
@@ -1564,7 +1565,6 @@ async fn build_session(
         opened.setup.endpoint.as_deref(),
         Arc::clone(keychain),
         Budget::Short,
-        &opened.setup.flags,
     );
     let host: start::Host = Box::new(move |catalog| {
         host.catalog = Some(catalog);
@@ -1578,8 +1578,9 @@ async fn build_session(
             unusable: accounts.unusable(),
             reaches: Box::new(move |name| auth::login::reaches(name, &accounts)),
         });
+    let card = card::setup(&opened.sources, &ctx);
     let mut built = start::build(opened, Some(host), accounts).await?;
-    built.opening.card = card::setup(&built.sources, &ctx);
+    built.opening.card = card;
     built
         .opening
         .start
@@ -2070,7 +2071,6 @@ async fn setup_session(
         setup.endpoint.as_deref(),
         Arc::clone(keychain),
         Budget::Fresh(TERMINAL_DEADLINE),
-        &setup.flags,
     );
     let (commands, server_commands) = tokio::sync::mpsc::channel(16);
     let (server_events, events) = tokio::sync::mpsc::channel(64);
