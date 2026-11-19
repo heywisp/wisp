@@ -26,12 +26,11 @@ Before a pull request is ready to merge, these checks must pass locally on the c
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo nextest run -p <package>
 ```
 
-The tests of the code a change touched are the package tests of every workspace package containing a changed file, plus every test named by the plan, approach note or a reviewer. Files outside every package add no package tests. No Rust file may hold a comment line; CI's `no_comments` test (`crates/wisp-protocol/tests/no_comments.rs`) also checks WIT files.
+No Rust file may hold a comment line. When guarded files change, the source guards (`wisp-core`'s `source_guards` in `crates/wisp-core/tests/source_guards/` and `wisp-protocol`'s `no_comments` in `crates/wisp-protocol/tests/no_comments.rs`, which also checks WIT files) also run locally.
 
-CI (`.github/workflows/ci.yml`) is the one full run of the exact tree that merges, including `cargo nextest run --workspace`, except clippy and the tests on a pull request whose every changed file is on the safe list in its `changes` job; a merge needs its `ci-ok` check and the title check of `.github/workflows/title.yml`, which reads the types above.
+Routine test suites (`cargo nextest run --workspace`) run on the pull request in CI (`.github/workflows/ci.yml`), the one full run of the exact tree that merges, except clippy and the tests on a pull request whose every changed file is on the safe list in its `changes` job; a merge needs its `ci-ok` check and the title check of `.github/workflows/title.yml`, which reads the types above. Targeted local runs (`cargo nextest run -p <package> <filter>`) remain optional, for example for a test named by a plan, approach note or reviewer, or a live or smoke run CI cannot do.
 
 CI's clippy job also runs `cargo clippy --target wasm32-wasip2 -p wasm-fixture -p board -- -D warnings`, the lint of the WASM guests, and `cargo clippy -p wisp-cli --no-default-features -- -D warnings`, the CLI without its `wasm` feature.
 
