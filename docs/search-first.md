@@ -109,11 +109,10 @@ only the agent's own names come back on without asking, after a resume too.
 found or used. A listed name is left out of the start set, the search index and
 the nudge; `use` of it answers that it is in Turned off.
 
-A main agent's server add makes only the new server's tools available, held and
-undeclared, before its next step. It gathers entries without resetting the turn's
-management facts. Other changed tool definitions wait for the next opening.
-Children keep their fixed declared tools and leave ordered server-change notes
-for the main chat; their searchable entries can refresh after a tool call.
+Held server tools follow a listing before the next step and stay undeclared.
+Changed loaded definitions wait for the next opening. A child follows only the
+servers present when it starts or resumes, keeps its fixed declared tools, and leaves ordered
+server-change notes for the main chat.
 
 A no-shell main chat asks before changing saved servers; a no-shell child names
 the call its parent should make. Sign-in starts in Wisp, and its link is an

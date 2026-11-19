@@ -71,6 +71,7 @@ struct Inner {
     store: Mutex<Option<crate::secrets::StoreKind>>,
     cwd: PathBuf,
     revision: AtomicU64,
+    changes: AtomicU64,
     known: Mutex<BTreeMap<String, (String, String)>>,
     off: Mutex<BTreeSet<String>>,
     notes: Mutex<Vec<Note>>,
@@ -96,6 +97,7 @@ struct Server {
 struct Snapshot {
     list: Option<List>,
     state: State,
+    fresh: bool,
 }
 
 struct Connection {
@@ -210,7 +212,11 @@ impl Service {
                     redactions: Mutex::default(),
                     name_problem,
                     saved,
-                    snapshot: Mutex::new(Snapshot { list, state }),
+                    snapshot: Mutex::new(Snapshot {
+                        list,
+                        state,
+                        fresh: false,
+                    }),
                     connection: tokio::sync::Mutex::new(None),
                     pending: tokio::sync::Mutex::new(None),
                     challenge: Arc::default(),
@@ -226,6 +232,7 @@ impl Service {
             store: Mutex::default(),
             cwd,
             revision: AtomicU64::new(0),
+            changes: AtomicU64::new(0),
             known: Mutex::default(),
             off: Mutex::default(),
             notes: Mutex::default(),
@@ -234,12 +241,13 @@ impl Service {
             awaited: Mutex::default(),
             forms: AtomicBool::new(false),
         }));
-        service.remember_names();
+        service.remember_names(|| {});
         service
     }
 
-    fn remember_names(&self) {
+    fn remember_names(&self, publish: impl FnOnce()) {
         let mut known = self.0.known.lock().unwrap_or_else(PoisonError::into_inner);
+        publish();
         known.extend(self.catalog().into_iter().filter_map(
             |(name, tools)| match tools.as_slice() {
                 [(server, tool)] => Some((name, (server.clone(), tool.name.clone()))),
@@ -443,8 +451,11 @@ impl Service {
         let count =
             u32::try_from(list.as_ref().map_or(0, |list| list.tools.len())).unwrap_or(u32::MAX);
         let config = server.config.clone();
-        self.servers().insert(name.into(), Arc::new(server));
-        self.remember_names();
+        self.remember_names(|| {
+            let mut servers = self.servers();
+            servers.insert(name.into(), Arc::new(server));
+            self.0.changes.fetch_add(1, Ordering::AcqRel);
+        });
         self.0.revision.fetch_add(1, Ordering::AcqRel);
         if let Some(by) = &by {
             self.note(Note::Changed {
@@ -632,6 +643,7 @@ impl Service {
         if *off != names {
             *off = names;
             self.0.revision.fetch_add(1, Ordering::AcqRel);
+            self.0.changes.fetch_add(1, Ordering::AcqRel);
         }
     }
 
@@ -644,13 +656,17 @@ impl Service {
     }
 
     pub(crate) fn tools_turned_off(&self, names: &BTreeSet<String>) -> BTreeSet<String> {
+        self.tools_of(names).into_keys().collect()
+    }
+
+    fn tools_of(&self, servers: &BTreeSet<String>) -> BTreeMap<String, String> {
         self.0
             .known
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .filter(|(_, (server, _))| names.contains(server))
-            .map(|(name, _)| name.clone())
+            .filter(|(_, (server, _))| servers.contains(server))
+            .map(|(name, (server, _))| (name.clone(), server.clone()))
             .collect()
     }
 
@@ -661,19 +677,15 @@ impl Service {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let mut entries: BTreeMap<_, _> = self
-            .0
-            .known
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .filter(|(_, (server, _))| off.contains(server))
-            .map(|(name, (server, _))| (name.clone(), server.clone()))
-            .collect();
+        self.entries_of(&off)
+    }
+
+    pub(crate) fn entries_of(&self, servers: &BTreeSet<String>) -> BTreeMap<String, String> {
+        let mut entries = self.tools_of(servers);
         for (server, state) in self
             .servers()
             .iter()
-            .filter(|(server, _)| off.contains(*server))
+            .filter(|(server, _)| servers.contains(*server))
         {
             let snapshot = state.snapshot();
             if let Some(list) = &snapshot.list {
@@ -692,6 +704,19 @@ impl Service {
         entries
     }
 
+    pub(crate) fn unconfirmed_entries(&self) -> BTreeMap<String, String> {
+        let unconfirmed = self
+            .servers()
+            .iter()
+            .filter(|(name, server)| {
+                let snapshot = server.snapshot();
+                !self.is_off(name) && snapshot.list.is_some() && !snapshot.fresh
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        self.entries_of(&unconfirmed)
+    }
+
     pub(crate) fn owns_tool(&self, server: &str, name: &str) -> bool {
         self.0
             .known
@@ -703,6 +728,10 @@ impl Service {
 
     pub fn revision(&self) -> u64 {
         self.0.revision.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn changes(&self) -> u64 {
+        self.0.changes.load(Ordering::Acquire)
     }
 
     pub fn rows(&self) -> Vec<Row> {
@@ -1113,13 +1142,15 @@ impl Service {
     }
 
     fn remember(&self, server: &Server, list: List) {
-        let mut snapshot = server.snapshot();
-        if snapshot.list.as_ref().is_none_or(|old| list.differs(old)) {
-            self.0.revision.fetch_add(1, Ordering::AcqRel);
-        }
-        snapshot.list = Some(list);
-        drop(snapshot);
-        self.remember_names();
+        self.remember_names(|| {
+            let mut snapshot = server.snapshot();
+            if snapshot.list.as_ref().is_none_or(|old| list.differs(old)) {
+                self.0.revision.fetch_add(1, Ordering::AcqRel);
+            }
+            snapshot.list = Some(list);
+            snapshot.fresh = true;
+            self.0.changes.fetch_add(1, Ordering::AcqRel);
+        });
     }
 
     pub fn prompts(&self) -> Vec<Prompt> {

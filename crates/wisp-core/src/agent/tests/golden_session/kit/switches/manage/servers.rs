@@ -241,6 +241,20 @@ async fn manage_add_finds_and_runs_the_new_server_in_the_same_turn_without_reset
             .all(|entry| !entry.name.starts_with("mcp__local__"))
     );
     assert!(child_host.index_parameters("mcp__local__z_echo").is_none());
+    let generation = service.changes();
+    let _ = service
+        .call(
+            "mcp__other__z_echo",
+            json!({"exit":true}),
+            Duration::from_secs(1),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+    service.connect("other").await.unwrap();
+    assert!(
+        service.changes() > generation,
+        "other relisted while local was off"
+    );
     child.turn("child-u1", "Find and call local.").await;
     assert!(!result_text(&body(&child_server, 3), "child_search_off").contains("mcp__local__"));
     assert!(result_text(&body(&child_server, 4), "child_off").contains("Turned off"));
@@ -281,6 +295,65 @@ async fn manage_add_finds_and_runs_the_new_server_in_the_same_turn_without_reset
         appends(&server, n);
     }
     rebuilds(&store, &agent).await;
+}
+
+#[tokio::test]
+async fn following_a_listing_does_not_apply_a_pending_shell_switch_to_server_approval() {
+    let env = Env::new("manage-listing-before-shell-switch");
+    let service = Service::new(
+        BTreeMap::from([("other".into(), local())]),
+        env.work(),
+        None,
+    );
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let server = Server::start(vec![
+        calls(
+            "msg_add",
+            400,
+            vec![adding("add_local", "local", Some(&from(&local())))],
+        )
+        .gated(&gate),
+        says("msg_done", 500, "Done."),
+    ])
+    .await;
+    let store = MemoryStore::default();
+    let mut kit = configured(&server, &env, &store, without("bash"));
+    kit.mcp = service.clone();
+    kit.start_layers
+        .flags
+        .push(crate::plugin::testing::hook_flag("mcp", "list", false));
+    let agent = kit
+        .build(on(CAPABLE, kit::Start::Fresh))
+        .await
+        .unwrap()
+        .agent;
+    let mut session = Session::start(agent);
+    session.send(ClientCommand::send("u1", "Add local.")).await;
+    session
+        .until(|e| matches!(e, AgentEvent::StepStarted { step: 1 }))
+        .await;
+    assert_eq!(
+        answered(&session.tools(2, every_default()).await).0,
+        When::NextTurn
+    );
+    service.connect("other").await.unwrap();
+    gate.add_permits(1);
+    let events = session
+        .until(|e| {
+            matches!(
+                e,
+                AgentEvent::QuestionAsked { .. } | AgentEvent::TurnEnded { .. }
+            )
+        })
+        .await;
+    assert_eq!(asked(&events), [text::ask_add("local", &from(&local()))]);
+    session.send(answer_first("add_local")).await;
+    session
+        .until(|e| matches!(e, AgentEvent::TurnEnded { .. }))
+        .await;
+    session.end().await;
+    assert!(result_text(&body(&server, 1), "add_local").contains("local added"));
+    kept_prefix(&server, 0, 1);
 }
 
 #[tokio::test]
@@ -392,6 +465,15 @@ async fn child_server_changes_are_fixed_for_the_child_and_logged_once_in_call_or
         ),
         searching_server("search_child", "local"),
         calls(
+            "msg_skill",
+            550,
+            vec![call(
+                "find_skill",
+                "search",
+                json!({"query":"review code", "kind":"skill", "limit":1}),
+            )],
+        ),
+        calls(
             "msg_remove",
             600,
             vec![manage("remove_local", "remove", "server", "local")],
@@ -421,6 +503,10 @@ async fn child_server_changes_are_fixed_for_the_child_and_logged_once_in_call_or
     child.end().await;
     assert!(result_text(&body(&server, 1), "add_local").contains(text::CHILD_ADDED));
     assert!(!result_text(&body(&server, 2), "search_child").contains("mcp__local__"));
+    assert!(!result_text(&body(&server, 3), "find_skill").contains("mcp__local__prompt"));
+    for n in 1..6 {
+        kept_prefix(&server, n - 1, n);
+    }
     let mut session = Session::start(
         kit.build(on(CAPABLE, kit::Start::Fresh))
             .await
@@ -1130,6 +1216,7 @@ async fn manage_skips_inherited_and_kept_keys_but_replacement_asks_each_name_and
         )
         .await
         .unwrap();
+    let generation = service.changes();
     let server = Server::start(vec![
         calls(
             "msg_key",
@@ -1171,6 +1258,10 @@ async fn manage_skips_inherited_and_kept_keys_but_replacement_asks_each_name_and
         .until(|event| matches!(event, AgentEvent::TurnEnded { .. }))
         .await;
     session.end().await;
+    assert!(
+        service.changes() > generation,
+        "publishing the replacement advances the tree generation"
+    );
     assert_eq!(service.rows()[0].state, crate::mcp::State::Ready);
     assert!(
         result_text(&body(&server, 1), "set_keys")

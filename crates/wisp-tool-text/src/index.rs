@@ -5,6 +5,16 @@ use wisp_plugin_api::index::Entry;
 pub const SEARCH_OFF: &str =
     "search is off, so the model can't find these: turn it on in /config, Tools";
 
+pub const SAVED_LIST: &str = "(saved list; may be out of date)";
+
+pub fn from_saved_list(summary: &str) -> String {
+    if summary.is_empty() {
+        SAVED_LIST.to_owned()
+    } else {
+        format!("{summary} {SAVED_LIST}")
+    }
+}
+
 pub fn hit_line(entry: &Entry, next: &str) -> String {
     format!(
         "{} {} — {} — {next}",

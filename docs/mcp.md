@@ -142,14 +142,23 @@ fails with `<server> no longer has <tool>`. A start failure says
 
 ## Catalog changes
 
-A connect refreshes the saved list. At the next turn the running plugin describes
-its tools again from the saved lists, without replacing its state or starting
-a server. Each opening compares the canonical definitions; an unchanged catalog
+Wisp keeps a server's tools, prompts and resources in four places: the saved
+list on disk, written by each complete listing and when an added or re-keyed
+server is committed; the chat tree's copy, read from the saved list at start and
+replaced by every listing; each agent's definitions, where held ones follow the
+tree's copy before the agent's next tool call and loaded ones change only at the
+next message, by the rule below; and the search index, gathered again with the
+held definitions. A server is listed by the main chat's background hook at chat
+start, if the server is on; at each new connection (its first call, skill or
+document read in this run, a sign-in, a new key or a reconnect); and after an
+argument refusal. Until a server has been listed in this run, search hits for
+its tools, skills and documents end their summary with `(saved list; may be out
+of date)`. A child follows only the servers present when it starts or resumes.
+
+Each opening compares the canonical definitions; an unchanged catalog
 appends nothing to the request. A changed loaded definition is
 sent by value only on an established inline-tools connection; otherwise the
 loaded version stays for this session. Earlier request bytes never change.
-A configured server without a saved list gets one background listing at session
-start and can be found from the next turn; a cached empty list starts nothing.
 The session-start check appears in the expanded hook history, including on
 resume; it adds no line to the normal transcript or provider input.
 A skill's full search name is `mcp__<mapped-server>__prompt:<original-name>`. A document's is `mcp__<mapped-server>__resource:<URI>`. Original prompt names and resource URIs are kept unchanged after the prefix.
@@ -218,8 +227,8 @@ same way. Neither `name` nor `from` may carry a key. Rows, notes and results nev
 repeat `from` or a saved server table.
 
 An add starts and lists the server before saving its table and list, as `/mcp add`
-does. The main agent can find and use its new tools in the same reply; other
-changed definitions wait until the next message. A remove stops it at once and
+does. The main agent can find and use its new tools in the same reply; changed
+loaded definitions wait until the next message. A remove stops it at once and
 removes its settings and list. Both write the user's settings for every chat.
 
 An agent with a shell, loaded or held, may add or remove. A main chat without one
@@ -228,7 +237,7 @@ shows a new server's command line after checking for keys. Retrying a waiting
 sign-in validates any supplied `from` but never shows or runs it; the card names
 the sign-in instead. A remove's card names the server only.
 A child without a shell is refused with the call its parent should make. A child
-that adds a server keeps its fixed tools; agents started after it have the server.
+that adds a server keeps its fixed tools; agents started or resumed after it have the server.
 Its additions and removals are shown once, in call order, in the main chat.
 
 `off` and `on` take effect at the next message. An off server is off throughout

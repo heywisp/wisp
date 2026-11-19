@@ -297,34 +297,50 @@ impl Agent {
         self.log_reloaded(&reloaded, self.turns, events).await;
     }
 
-    pub(super) async fn added_servers(&mut self, events: &mpsc::Sender<AgentEvent>) {
-        let Some(host) = self.root_host() else {
+    pub(super) async fn follow_servers(&mut self, events: &mpsc::Sender<AgentEvent>) {
+        let Some(host) = self.hooks.host.clone() else {
             return;
         };
-        let added = host.take_added_servers();
-        if added.is_empty() {
+        if self.hooks.switches.off.contains(MCP_PLUGIN) {
             return;
         }
-        if let Some(registry) = &self.hooks.registry {
-            let described = self
+        if let Some(generation) = host.mcp_pending()
+            && let Some(registry) = &self.hooks.registry
+        {
+            let mut described = self
                 .describe_running(registry, &BTreeSet::from([MCP_PLUGIN.to_owned()]))
                 .await;
-            let held = described
-                .held
-                .into_iter()
-                .filter(|tool| {
-                    self.toolbox.definition(&tool.spec().name).is_none()
-                        && added
-                            .iter()
-                            .any(|server| host.mcp().owns_tool(server, &tool.spec().name))
-                })
-                .collect();
-            self.toolbox.add_held(held);
+            if described.problems.is_empty() {
+                if let Some(servers) = host.mcp_scope() {
+                    let mcp = host.mcp();
+                    let search = self
+                        .toolbox
+                        .provider_of(crate::tool::SEARCH_CAPABILITY)
+                        .is_some();
+                    described.held.retain(|tool| {
+                        search
+                            && servers
+                                .iter()
+                                .any(|server| mcp.owns_tool(server, &tool.spec().name))
+                    });
+                }
+                self.toolbox.replace_held(MCP_PLUGIN, described.held);
+                host.mcp_described(generation);
+            }
+            host.index_changed();
+            self.gather_entries(events).await;
         }
-        host.index_changed();
-        self.gather_entries(events).await;
-        let notes = self.server_notes().await;
-        self.log_reloaded(&notes, self.turns, events).await;
+        if !self.is_child() && !host.take_added_servers().is_empty() {
+            let notes = self.server_notes().await;
+            self.log_reloaded(&notes, self.turns, events).await;
+        }
+    }
+
+    pub(super) fn share_server_switches(&self) {
+        if let Some(host) = self.root_host() {
+            host.mcp()
+                .turned_off(self.turned_off(&self.settings.session));
+        }
     }
 
     pub(super) async fn reload_plugins(
@@ -334,10 +350,7 @@ impl Agent {
         if self.is_child() {
             return None;
         }
-        if let Some(host) = &self.hooks.host {
-            host.mcp()
-                .turned_off(self.turned_off(&self.settings.session));
-        }
+        self.share_server_switches();
         let applied = self.hooks.registry.clone()?;
         let service_notes = self.server_notes().await;
         let disk = match self.hooks.live.clone() {

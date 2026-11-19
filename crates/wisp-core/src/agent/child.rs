@@ -194,6 +194,9 @@ impl Agent {
     pub fn with_parent(mut self, link: ParentLink) -> Self {
         self.processes.set_child();
         self.parent = Some(link);
+        if let Some(host) = &self.hooks.host {
+            host.scope_mcp();
+        }
         self.note_deferred();
         self
     }

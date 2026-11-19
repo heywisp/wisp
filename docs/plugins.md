@@ -976,7 +976,8 @@ Both are world 0.4.0 imports owned by `mcp`; state includes `needs-sign-in`.
 The sign-in link stays out of command answers and the session log.
 The service owns the connections; tools are tagged as reading untrusted text and
 using the network, and server text is never put in a system instruction.
-A changed catalog asks the index to refresh. At each opening the kernel describes
+A changed catalog asks the index to refresh. Between openings, held MCP tools
+follow a new listing before the next tool call. At each opening the kernel describes
 the running dynamic plugin from saved lists and compares canonical tool specs;
 an unchanged catalog changes no request byte, and a describe failure keeps its
 current tools. It applies the existing update rule: changed loaded definitions go
