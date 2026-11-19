@@ -42,7 +42,7 @@ fn view<'a>(nodes: &'a [SlotTopologyNode], flows: &'a [SlotFlow], ms: u64) -> To
         at: Duration::from_millis(ms),
         now_ms: ms,
         cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
-        pictures: true,
+        pictures: Some(9),
     }
 }
 

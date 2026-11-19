@@ -214,7 +214,7 @@ fn the_sidebar_cuts_a_long_cjk_title() {
                 },
                 layout,
                 whole: false,
-                pictures: false,
+                pictures: None,
             });
             assert!(!panel.lines.is_empty());
             fits("sidebar", &panel.lines, layout);

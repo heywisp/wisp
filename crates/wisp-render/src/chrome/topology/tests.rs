@@ -8,7 +8,7 @@ use crate::canvas::Mark as Cell;
 use crate::motion::MotionPolicy;
 use crate::picture::Mark;
 use crate::picture::{Rect, tiles};
-use crate::testing::trimmed;
+use crate::testing::{crowded_agents, trimmed};
 use crate::theme::glyphs::GlyphSet;
 use crate::theme::{Depth, Mode, Theme};
 
@@ -19,6 +19,8 @@ const STILL: MotionCtx = MotionCtx {
     blend: false,
 };
 const NOBODY: &str = "nobody";
+
+const TWELVE: &str = "helper=d merge=w task-a=w task-a/w1=w task-a/w2=o task-a/w3=d task-a/w4=w task-a/w5=d task-a/w6=w task-a/w7=o task-a/w8=w task-a/w9=d";
 
 const SIX: &str = "agent-viz=w agent-viz/planner=d agent-viz/plan-review-a=d agent-viz/plan-review-b=s agent-viz/coder=w agent-viz/helper=d";
 
@@ -290,18 +292,12 @@ const SIX_120_ASCII: &str = r#"
 
 const BOX: &str = r#"
                  ⠶
-  ⡖⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⠒⠒⡖⠒⠓⠒⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⠒⡆
-  ⡇   ⡇        ⡇       ⡇       ⡇
-  ●   ○        ●       ✓+30    ○
-           ⡖⠒⠒⠒⡗⠒⡖⠒⡆          ⡖⠓⠒⡆
-           ⡇   ⡇ ⡇ ⡇          ⡇  ⡇
-           ●   ✓ ● ○          ○  ✓
-           ⡇
-           ⡇
-           ●
-          ⡖⠓⡆
-          ⡇ ⡇
-          ● ✓
+   ⡖⠒⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⠒⠓⠒⠒⠒⠒⠒⡆
+   ⡇     ⡇             ⡇
+   ✓     ●             ●
+             ⡖⠒⠒⡖⠒⡖⠒⠒⡖⠒⡗⠒⠒⡖⠒⡖⠒⠒⡖⠒⡆
+             ⡇  ⡇ ⡇  ⡇ ⡇  ⡇ ⡇  ⡇ ⡇
+             ●  ○ ✓  ● ✓  ● ○  ● ✓
 
 ⠶ main  ● working  ○ waiting
 ✓ done  ■ stopped  ⨯ failed
@@ -309,18 +305,12 @@ const BOX: &str = r#"
 
 const BOX_ASCII: &str = r#"
                  *
-  .---.--------.-'-----.-------.
-  |   |        |       |       |
-  @   o        @       ++30    o
-           .---|-.-.          .'-.
-           |   | | |          |  |
-           @   + @ o          o  +
-           |
-           |
-           @
-          .'.
-          | |
-          @ +
+   .-----.-------'-----.
+   |     |             |
+   +     @             @
+             .--.-.--.-|--.-.--.-.
+             |  | |  | |  | |  | |
+             @  o +  @ +  @ o  @ +
 
 * main  @ working  o waiting
 + done  = stopped  x failed
@@ -328,31 +318,32 @@ const BOX_ASCII: &str = r#"
 
 const BOX_40: &str = r#"
                   ⠶
-  ⡖⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⠒⠒⡖⠒⠒⠓⠒⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⠒⡆
-  ⡇   ⡇        ⡇        ⡇       ⡇
-  ●   ○        ●        ✓+30    ○
-           ⡖⠒⠒⠒⡗⠒⠒⡖⠒⡆          ⡖⠓⠒⡆
-           ⡇   ⡇  ⡇ ⡇          ⡇  ⡇
-           ●   ✓  ● ○          ○  ✓
-           ⡇
-           ⡇
-           ●
-          ⡖⠓⡆
-          ⡇ ⡇
-          ● ✓
+   ⡖⡖⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⡖⠒⠓⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⡆
+   ✓●    ●      ○      ✓      ●
+      ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆
+      ●○✓●■● ⨯✓●○✓● ■●⨯✓●○ ✓●■●⨯✓
 
 ⠶ main  ● working  ○ waiting
 ✓ done  ■ stopped  ⨯ failed
 "#;
 
-const BOX_C_FAILS: &str = r#"
+const BOX_CLOSE: &str = r#"
                  ⠶
- ⡖⠒⠒⡖⠒⠒⡖⠒⠒⠒⡖⠒⠒⠒⠒⠒⠓⠒⠒⠒⠒⠒⠒⠒⡆
- ⡇  ⡇  ⡇   ⡇             ⡇
- ●  ○  ●+7 ✓+30          ○
-                 ⡖⠒⡖⠒⡖⠒⡖⠒⡗⠒⡖⠒⡖⠒⡖⠒⡆
-                 ⡇ ⡇ ⡇ ⡇ ⡇ ⡇ ⡇ ⡇ ⡇
-                 ○ ✓ ○ ○ ⨯ ○ ○ ○ ○
+  ⡖⡖⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⡖⠒⠓⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⡆
+  ✓●    ●      ○      ✓      ●
+     ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆
+     ●○✓●■● ⨯✓●○✓● ■●⨯✓●○ ✓●■●⨯✓
+
+⠶ main  ● working  ○ waiting
+✓ done  ■ stopped  ⨯ failed
+"#;
+
+const BOX_CUT: &str = r#"
+                             ⠶
+⡖⡖⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⡖⠒⠒⠒⠒⠒⠒⡖⠒⠓⠒⠒⠒⠒
+✓●    ●      ○      ✓      ●      ▸
+   ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖⡗⡖⡆ ⡖⡖⡖
+   ●○✓●■● ⨯✓●○✓● ■●⨯✓●○ ✓●■●⨯✓ ●○✓
 
 ⠶ main  ● working  ○ waiting
 ✓ done  ■ stopped  ⨯ failed
@@ -395,7 +386,7 @@ fn view<'a>(
         at: Duration::ZERO,
         now_ms: 0,
         cx: STILL,
-        pictures: false,
+        pictures: None,
     }
 }
 
@@ -420,9 +411,8 @@ fn paged(spec: &str, picked: &str, (width, height): (usize, usize), set: GlyphSe
     text(&page(&view(&nodes, picked, width, set), height - CHROME_ROWS).lines)
 }
 
-fn boxed(spec: &str, width: usize, set: GlyphSet) -> Vec<String> {
-    let nodes = scene(spec);
-    text(&panel(&view(&nodes, NOBODY, width, set)).lines)
+fn boxed(nodes: &[SlotTopologyNode], width: usize, set: GlyphSet) -> Vec<String> {
+    text(&panel(&view(nodes, NOBODY, width, set)).lines)
 }
 
 fn has(rows: &[String], glyph: char) -> bool {
@@ -562,24 +552,23 @@ fn the_cells_beside_every_dot_are_blank_so_the_brackets_always_fit() {
 }
 
 fn f1(changes: &str) -> String {
-    let b: String = (0..30).map(|i| format!(" task-b/c{i:02}=d")).collect();
     format!(
-        "helper=w merge=o task-a=w task-a/coder=w task-a/coder/helper=w task-a/coder/helper/a=w task-a/coder/helper/b=d task-a/helper=d task-a/planner=w task-a/review=o task-b=d{b} task-c=o task-c/coder=o task-c/review=d {changes}"
+        "helper=w merge=o task-a=w task-a/coder=w task-a/coder/helper=w task-a/coder/helper/a=w task-a/coder/helper/b=d task-a/helper=d task-a/planner=w task-a/review=o task-b=d task-b/c01=d task-b/c02=d task-c=o task-c/coder=o task-c/review=d {changes}"
     )
-}
-
-fn busy(changes: &str) -> String {
-    let c: String = (1..7).map(|i| format!(" task-c/r{i}=o")).collect();
-    f1(&format!("task-c/planner=d task-c/review=o{c} {changes}"))
 }
 
 #[test]
 fn the_box_puts_main_on_the_first_row_and_each_generation_three_rows_down() {
-    assert_eq!(boxed(&f1(""), 35, GlyphSet::Unicode), want(BOX));
-    assert_eq!(boxed(&f1(""), 36, GlyphSet::Unicode), want(BOX_40));
-    assert_eq!(boxed(&f1(""), 35, GlyphSet::Ascii), want(BOX_ASCII));
+    let tall = scene(TALL);
+    for (width, rows) in [(35, [0, 3, 6, 9, 12, 15]), (6, [0, 2, 4, 6, 8, 10])] {
+        let box_rows = boxed(&tall, width, GlyphSet::Unicode);
+        assert!(box_rows[0].contains('⠶'));
+        for row in &rows[1..] {
+            assert!(box_rows[*row].contains('●'), "{box_rows:?}");
+        }
+    }
     for width in [20, 35, 120] {
-        let rows = boxed(SIX, width, GlyphSet::Unicode);
+        let rows = boxed(&scene(SIX), width, GlyphSet::Unicode);
         let legend = &rows[rows.len() - 2..];
         assert_eq!(legend[0].matches(['⠶', '●', '○']).count(), 3, "{rows:#?}");
         assert!(legend[1].starts_with("✓ done"), "{rows:#?}");
@@ -587,54 +576,37 @@ fn the_box_puts_main_on_the_first_row_and_each_generation_three_rows_down() {
 }
 
 #[test]
-fn a_family_wider_than_the_box_folds_the_quietest_first_and_only_while_needed() {
-    let looks = |spec: &str, width, row: usize, token| -> String {
-        let nodes = scene(spec);
-        let lines = panel(&view(&nodes, NOBODY, width, GlyphSet::Unicode)).lines;
-        let spans = lines[row]
-            .spans
-            .iter()
-            .filter(|s| s.look == Look::fg(token));
-        spans.map(|s| s.text.as_str()).collect()
-    };
-    assert_eq!(looks(&f1(""), 35, 3, Token::Ok), "✓+30");
-    assert_eq!(
-        boxed(&f1(""), 35, GlyphSet::Unicode)[3].chars().nth(27),
-        Some(' ')
-    );
-    assert_eq!(boxed(&f1("task-b/c07=f"), 35, GlyphSet::Unicode), want(BOX));
-    assert_eq!(looks(&f1("task-b/c07=f"), 35, 3, Token::Error), "+30");
-    let before = boxed(&busy(""), 35, GlyphSet::Unicode);
-    assert!(
-        before[3].contains("✓+30") && before[3].contains("○+9"),
-        "{before:#?}"
-    );
-    let after = boxed(&busy("task-c/r3=f"), 35, GlyphSet::Unicode);
-    assert_eq!(after, want(BOX_C_FAILS));
-    assert_eq!(before.len() - after.len(), 6);
-    let leaves = |f: &str, n: usize, state: &str| -> String {
-        (0..n).map(|i| format!(" {f}/{i}={state}")).collect()
-    };
-    let cases = [
-        (3, "d", 12, "   ●    ●+3", 3),
-        (4, "d", 14, "  ●+4     ●", 3),
-        (2, "w", 10, "  ●   ●+3", 2),
-    ];
-    for (a, b, width, folded, open) in cases {
-        let spec = format!("a=w{} b=w{}", leaves("a", a, "d"), leaves("b", 3, b));
-        let rows = boxed(&spec, width, GlyphSet::Unicode);
-        assert_eq!(rows[3], folded, "{rows:#?}");
-        assert_eq!(rows[6].matches(['✓', '●']).count(), open, "{rows:#?}");
+fn a_family_wider_than_the_box_packs_closer_and_past_that_is_cut_with_a_mark() {
+    let twelve = scene(TWELVE);
+    let thirty = crowded_agents(4);
+    let fifty_eight = crowded_agents(8);
+    for (nodes, width, set, frame) in [
+        (&twelve, 35, GlyphSet::Unicode, BOX),
+        (&twelve, 35, GlyphSet::Ascii, BOX_ASCII),
+        (&thirty, 35, GlyphSet::Unicode, BOX_CLOSE),
+        (&thirty, 36, GlyphSet::Unicode, BOX_40),
+        (&fifty_eight, 35, GlyphSet::Unicode, BOX_CUT),
+    ] {
+        assert_eq!(boxed(nodes, width, set), want(frame));
     }
-    let nested = format!(
-        "a=d a/x=d{} a/x/5=f b=w{}",
-        leaves("a/x", 5, "d"),
-        leaves("b", 6, "w")
+    let cut = panel(&view(&fifty_eight, NOBODY, 35, GlyphSet::Unicode));
+    assert_eq!(
+        look_at(&cut.lines, (34, 2)),
+        Some(Look::fg(Token::TextFaint))
     );
-    assert!(boxed(&nested, 14, GlyphSet::Unicode)[6].contains("✓+6"));
-    assert_eq!(looks(&nested, 14, 6, Token::Error), "+6");
-    let root = boxed(SIX, 4, GlyphSet::Unicode);
-    assert_eq!(root[..2], [" ⠶+6", ""]);
+    let family = scene("a=w a/0=d a/1=w a/2=d b=w b/0=w");
+    let rows = boxed(&family, 7, GlyphSet::Unicode);
+    let working = |y: usize| {
+        rows[y]
+            .match_indices('●')
+            .map(|(i, _)| rows[y][..i].chars().count())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        working(2),
+        working(4),
+        "odd and only children centre under their parent"
+    );
 }
 
 #[test]
@@ -646,9 +618,15 @@ fn ascii_draws_the_lines_with_bars_dashes_dots_and_quotes() {
     let nodes = scene(SIX);
     for (set, braille) in [(GlyphSet::Unicode, true), (GlyphSet::Ascii, false)] {
         let tree = Tree::new(&nodes);
-        let placed = Placed::page(&tree, true, 40, 0);
+        let placed = Placed::page(&tree, true, 40, 0, false, usize::MAX);
         let view = view(&nodes, NOBODY, 40, set);
-        let mut drawn = draw(&placed, &view, &flights(&view, &tree, &placed), None);
+        let mut drawn = draw(
+            &placed,
+            &view,
+            &flights(&view, &tree, &placed),
+            None,
+            placed.width,
+        );
         let wires: Vec<Cell> = (0..placed.height)
             .flat_map(|y| (0..placed.width).map(move |x| (x, y)))
             .filter_map(|at| drawn.cell_mut(at).copied().flatten())
@@ -690,7 +668,7 @@ fn a_sprite_step_changes_only_the_working_marks_own_tiles() {
     let nodes = scene("a=w b=d a/c=w a/d=o");
     let at = |ms| {
         let view = Topology {
-            pictures: true,
+            pictures: Some(9),
             at: Duration::from_millis(ms),
             cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
             ..view(&nodes, NOBODY, 30, GlyphSet::Unicode)
@@ -779,7 +757,7 @@ fn a_hovered_dot_s_name_sits_under_it_inside_the_picture() {
     let painted = |label| {
         page(
             &Topology {
-                pictures: true,
+                pictures: Some(9),
                 layout: Layout {
                     width: 100,
                     ..view.layout
@@ -852,7 +830,7 @@ fn the_page_s_picture_is_cut_like_its_lines_with_dots_sized_from_their_gap() {
     let pictured = |spec: &str, picked, (width, height)| {
         let nodes = scene(spec);
         let topology = Topology {
-            pictures: true,
+            pictures: Some(9),
             ..view(&nodes, picked, width, GlyphSet::Unicode)
         };
         let Drawing { lines, scenes, .. } = page(&topology, height - CHROME_ROWS);
@@ -906,6 +884,12 @@ fn the_page_s_picture_is_cut_like_its_lines_with_dots_sized_from_their_gap() {
     let nodes = scene(CROWD).len() + 1 + 6;
     assert!(crowd.dots.len() < nodes, "{} of {nodes}", crowd.dots.len());
     assert!(crowd.dots.iter().all(|d| d.at.0 > 0.0 && d.at.0 < 40.0));
+    assert!(
+        crowd
+            .dots
+            .iter()
+            .any(|d| d.at.0 == 39.5 && d.mark == Mark::State(NodeState::Waiting))
+    );
     let y = rows.iter().position(|r| r.contains('▸')).unwrap();
     assert!(
         crowd.text_cells.contains(&(39, y)),
@@ -926,7 +910,7 @@ fn lit(spec: &str, flows: &[SlotFlow], now_ms: u64, policy: MotionPolicy) -> Sce
     let view = Topology {
         flows,
         now_ms,
-        pictures: true,
+        pictures: Some(9),
         cx: MotionCtx::new(policy, GlyphSet::Unicode, Depth::TrueColor),
         ..view(&nodes, NOBODY, 35, GlyphSet::Unicode)
     };
@@ -1029,7 +1013,7 @@ fn a_light_steps_along_the_lines_from_sender_to_receiver_and_rings_there_for_280
         let topology = Topology {
             flows: &siblings,
             now_ms,
-            pictures: true,
+            pictures: Some(9),
             cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
             ..view(&nodes, "a/b", 80, GlyphSet::Unicode)
         };
@@ -1044,20 +1028,8 @@ fn a_light_steps_along_the_lines_from_sender_to_receiver_and_rings_there_for_280
 }
 
 #[test]
-fn folded_ends_land_on_their_fold_and_past_three_in_flight_a_flow_only_rings() {
+fn past_three_in_flight_a_flow_only_rings() {
     let spec = f1("");
-    let folded = lit(&spec, &[], 0, MotionPolicy::Full);
-    let fold = folded.dots.iter().find(|d| d.radius == DOT - FOLDED_LESS);
-    let b = fold.unwrap().at;
-    let from_fold = [flow(Some("task-b/c05"), Some("helper"), 1000)];
-    let light = &lit(&spec, &from_fold, 1000, MotionPolicy::Full).lights[0];
-    assert_eq!(light.path[0], b, "from task-b's folded dot");
-    let inside = [flow(Some("task-b/c01"), Some("task-b/c02"), 1000)];
-    let one_dot = lit(&spec, &inside, 1100, MotionPolicy::Full);
-    assert!(one_dot.lights.is_empty());
-    assert_eq!(one_dot.rings.len(), 1, "a one-dot flow rings at once");
-    assert_eq!(one_dot.rings[0].on.at, b);
-
     let ends = ["helper", "merge", "task-a", "task-c"];
     let crowd: Vec<SlotFlow> = (ends.iter())
         .map(|&to| flow(Some("task-a/coder/helper"), Some(to), 1000))
@@ -1115,7 +1087,7 @@ fn film(spec: &str, sent: SlotFlow, (x, y, w): (usize, usize, usize), group: usi
             flows: &flows,
             now_ms: 1000 + k * ms(FRAME_MIN),
             cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
-            ..view(&nodes, NOBODY, 35, GlyphSet::Unicode)
+            ..view(&nodes, NOBODY, 34, GlyphSet::Unicode)
         };
         let rows = text(&panel(&topology).lines);
         let cut = |row: &String| -> String {
@@ -1238,36 +1210,18 @@ fn on_the_page_a_ring_covers_the_picked_brackets_and_they_return() {
 }
 
 #[test]
-fn rings_give_way_to_counts_and_a_shared_cell_shows_the_right_dot_s_ring() {
-    let ringing = |spec: &str, flows: &[SlotFlow], ms, y: usize| -> String {
-        let nodes = scene(spec);
-        let topology = Topology {
-            nodes: &nodes,
-            ..lit_at(flows, ms, GlyphSet::Unicode, Depth::TrueColor)
-        };
-        text(&panel(&topology).lines)[y].clone()
-    };
-    let folds = [
-        flow(None, Some("task-a/coder"), 1000),
-        flow(None, Some("task-b/c05"), 868),
+fn a_ring_never_covers_a_neighbour_s_mark_and_a_shared_cell_shows_the_right_dot_s_ring() {
+    let nodes = scene("a=w a/0=d a/1=o b=w b/0=d b/1=d");
+    let flows = [
+        flow(Some("a/1"), Some("a/1"), 1000),
+        flow(Some("b/0"), Some("b/0"), 1000),
     ];
-    let busy = busy("task-c/r3=f");
-    assert_eq!(
-        ringing(&busy, &folds, 1636, 3),
-        " ●  ○ ⢎●+7⢎✓+30          ○"
-    );
-    let siblings = [
-        flow(Some("task-a"), Some("task-a/helper"), 1000),
-        flow(Some("task-a"), Some("task-a/planner"), 1000),
-    ];
-    let family = ringing(&f1(""), &siblings, 1636, 6);
-    assert_eq!(family, "           ●  ⢎✓⢎●⡰○          ○  ✓");
-    let ends = ["helper", "merge", "task-a", "task-c"];
-    let crowd: Vec<SlotFlow> = (ends.iter())
-        .map(|&to| flow(Some("task-a/coder/helper"), Some(to), 1000))
-        .collect();
-    let overflow = ringing(&f1(""), &crowd, 1100, 3);
-    assert_eq!(overflow.chars().nth(32), Some('⡰'), "{overflow}");
+    let drawing = panel(&Topology {
+        nodes: &nodes,
+        layout: Layout::new(7, GlyphSet::Unicode),
+        ..lit_at(&flows, 1240, GlyphSet::Unicode, Depth::TrueColor)
+    });
+    assert_eq!(text(&drawing.lines)[4], " ✓○⢎✓✓");
 }
 
 #[test]
@@ -1279,6 +1233,7 @@ fn each_colour_tier_draws_the_bump_and_only_full_colour_fades_its_trail() {
         let theme = Theme::new(Mode::Dark, depth);
         let topology = Topology {
             nodes: &nodes,
+            layout: Layout::new(34, GlyphSet::Unicode),
             ..lit_at(&review, 1264, GlyphSet::Unicode, depth)
         };
         let lines = panel(&topology).lines;
@@ -1315,7 +1270,7 @@ fn each_colour_tier_draws_the_bump_and_only_full_colour_fades_its_trail() {
     }
     let ascii = Topology {
         nodes: &nodes,
-        layout: Layout::new(35, GlyphSet::Ascii),
+        layout: Layout::new(34, GlyphSet::Ascii),
         ..lit_at(&review, 1264, GlyphSet::Ascii, Depth::TrueColor)
     };
     assert_eq!(text(&panel(&ascii).lines)[4].chars().nth(16), Some('#'));
@@ -1326,6 +1281,7 @@ fn each_colour_tier_draws_the_bump_and_only_full_colour_fades_its_trail() {
     assert_eq!(&text(&panel(&landed).lines)[3][14..17], "(@)");
     let ringing = Topology {
         nodes: &nodes,
+        layout: Layout::new(34, GlyphSet::Unicode),
         ..lit_at(&review, 1636, GlyphSet::Unicode, Depth::TrueColor)
     };
     let half = look_at(&panel(&ringing).lines, (16, 3)).and_then(|look| look.fg);

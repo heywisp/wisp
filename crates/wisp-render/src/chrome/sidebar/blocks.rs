@@ -42,7 +42,7 @@ pub(super) struct Ctx {
     pub(super) now_ms: u64,
     pub(super) cx: MotionCtx,
     pub(super) meter_max: usize,
-    pub(super) pictures: bool,
+    pub(super) pictures: Option<u16>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -653,7 +653,11 @@ pub(super) fn fill_groups(fill: &SlotFill, ctx: &Ctx) -> Vec<Vec<Line>> {
         .into_iter()
         .filter(|&part| tokens(part) > 0)
         .collect();
-    let (rows, scene, markers) = match ctx.pictures.then(|| cells(BAR_ROWS * SQUARES_PER_ROW)) {
+    let (rows, scene, markers) = match ctx
+        .pictures
+        .is_some()
+        .then(|| cells(BAR_ROWS * SQUARES_PER_ROW))
+    {
         Some(Some(cells)) => {
             let marks = shown
                 .iter()

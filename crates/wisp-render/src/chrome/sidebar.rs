@@ -104,7 +104,7 @@ pub struct PanelView<'a> {
     pub cx: MotionCtx,
     pub layout: Layout,
     pub whole: bool,
-    pub pictures: bool,
+    pub pictures: Option<u16>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -613,7 +613,7 @@ pub fn fill_scenes(
         now_ms: 0,
         cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
         meter_max: usize::MAX,
-        pictures: true,
+        pictures: Some(9),
     };
     let groups = blocks::fill_groups(fill, &ctx);
     let mut scenes: Vec<_> = groups

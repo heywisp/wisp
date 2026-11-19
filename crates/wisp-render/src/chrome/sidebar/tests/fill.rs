@@ -309,7 +309,7 @@ fn every_figure_ends_in_one_column_at_the_right_edge() {
             now_ms: NOW,
             cx: FULL,
             meter_max: usize::MAX,
-            pictures: false,
+            pictures: None,
         };
         let mut lines = vec![blocks::title(
             "Blocks",
@@ -348,7 +348,7 @@ fn every_figure_ends_in_one_column_at_the_right_edge() {
 fn pictured(fill: SlotFill, width: usize) -> Panel {
     let bar = sidebar(vec![(USAGE, "Context", usage(fill))]);
     let mut look = Look::new(&bar, width, 30);
-    look.pictures = true;
+    look.pictures = Some(9);
     draw(&bar, &look)
 }
 

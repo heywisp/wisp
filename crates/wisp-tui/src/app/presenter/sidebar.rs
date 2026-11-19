@@ -398,7 +398,7 @@ impl Presenter {
             cx: self.cx(),
             layout: Layout::new(band + RULE, self.glyphs),
             whole,
-            pictures: self.pictures.is_some(),
+            pictures: self.pictures.map(|(_, cell)| cell.0),
         };
         let mut lines = self.sidebar.draw(&on, frame).lines.clone();
         let below = StyledLine::new(vec![rail(self.glyphs, whole && !lines.is_empty())]);

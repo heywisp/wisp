@@ -95,7 +95,7 @@ pub struct Frame {
     pub cx: MotionCtx,
     pub layout: Layout,
     pub whole: bool,
-    pub pictures: bool,
+    pub pictures: Option<u16>,
 }
 
 #[derive(Debug, Default)]
@@ -195,7 +195,7 @@ impl Side {
             ),
             layout: Layout::new(BAND_MAX, wisp_render::theme::glyphs::GlyphSet::Unicode),
             whole: false,
-            pictures: false,
+            pictures: None,
         };
         let panel = self.model.draw(&view);
         panel.rows.iter().any(|r| matches!(r, Some(RowOf::Body(_))))

@@ -28,6 +28,30 @@ mod rng;
 )]
 pub(crate) use rng::Rng;
 
+pub(crate) fn crowded_agents(tasks: usize) -> Vec<wisp_protocol::slot::SlotTopologyNode> {
+    use wisp_protocol::slot::{NodeState::*, SlotTopologyNode};
+    let states = [
+        Working, Waiting, Done, Working, Stopped, Working, Failed, Done,
+    ];
+    let node = |key, parent, state| SlotTopologyNode { key, parent, state };
+    let mut nodes = vec![
+        node("helper".into(), None, Done),
+        node("merge".into(), None, Working),
+    ];
+    for t in 0..tasks {
+        let key = format!("task-{t}");
+        nodes.push(node(key.clone(), None, states[t % 3]));
+        nodes.extend((0..6).map(|w| {
+            node(
+                format!("{key}/{w}"),
+                Some(key.clone()),
+                states[(6 * t + w) % states.len()],
+            )
+        }));
+    }
+    nodes
+}
+
 pub(crate) fn grammars() -> Arc<Grammars> {
     static G: OnceLock<Arc<Grammars>> = OnceLock::new();
     G.get_or_init(|| Arc::new(Grammars::load().unwrap()))

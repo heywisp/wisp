@@ -377,7 +377,7 @@ impl Presenter {
             at,
             now_ms: self.now_ms(),
             cx: self.cx(),
-            pictures: self.pictures.is_some(),
+            pictures: self.pictures.map(|(_, cell)| cell.0),
         }
     }
 

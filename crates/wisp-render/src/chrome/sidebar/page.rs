@@ -64,7 +64,7 @@ impl Sidebar {
             now_ms: view.now_ms,
             cx: STILL,
             meter_max: PAGE_METER,
-            pictures: false,
+            pictures: None,
         };
         let page_width = view.layout.width;
         let content = self.page_content(&entry.name);

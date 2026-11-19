@@ -790,7 +790,7 @@ fn the_largest_braille_light_frame_at_120_by_40() {
                 cx,
                 layout: Layout::new(band(usize::from(width)) + RULE, GlyphSet::Unicode),
                 whole: false,
-                pictures: false,
+                pictures: None,
             },
         );
         let mut buffer = Buffer::empty(Rect::new(0, 0, width, height));
@@ -872,7 +872,7 @@ fn the_agents_page_at_200_by_60_with_30_agents() {
                 at: Duration::from_millis(ms),
                 now_ms: ms,
                 cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
-                pictures: true,
+                pictures: Some(cell.0),
             },
             60,
         );
@@ -1095,7 +1095,7 @@ fn a_pulsing_docked_panel_beside_streaming_at_120_by_40() {
                 cx,
                 layout: Layout::new(band + RULE, GlyphSet::Unicode),
                 whole: false,
-                pictures: false,
+                pictures: None,
             },
         );
         for (y, line) in (0..rows).zip(panel.lines.iter()) {

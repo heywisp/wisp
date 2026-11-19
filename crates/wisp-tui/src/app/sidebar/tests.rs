@@ -234,7 +234,7 @@ fn ticks_follow_working_nodes_and_elapsed_facts_in_view() {
         ),
         layout: Layout::new(37, wisp_render::theme::glyphs::GlyphSet::Unicode),
         whole: false,
-        pictures: false,
+        pictures: None,
     };
     side.draw(&on, frame);
     assert_eq!(
@@ -286,7 +286,7 @@ fn ticks_follow_working_nodes_and_elapsed_facts_in_view() {
         flight: true,
         ..still
     };
-    for pictures in [false, true] {
+    for pictures in [None, Some(9)] {
         assert_eq!(drawn(&mut side, 1198, pictures), flying, "33 ms frames");
         assert_eq!(drawn(&mut side, 1675, pictures), flying, "its ring");
         assert_eq!(drawn(&mut side, 1676, pictures), still, "gone");
@@ -350,7 +350,7 @@ fn the_position_is_kept_from_each_drawing_so_a_shrink_clamps_it() {
         ),
         layout: Layout::new(38, wisp_render::theme::glyphs::GlyphSet::Unicode),
         whole: false,
-        pictures: false,
+        pictures: None,
     };
     side.draw(&on, frame);
     assert!(side.scroll(Step::End));

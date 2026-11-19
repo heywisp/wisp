@@ -47,6 +47,7 @@ pub struct Ring {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Scene {
     pub width: usize,
+    pub thin: bool,
     pub rows: Range<usize>,
     pub dots: Vec<Dot>,
     pub lines: Vec<Vec<(f32, f32)>>,
@@ -96,6 +97,7 @@ fn extent(dot: &Dot, grid: Grid) -> ((i32, i32), f32) {
     match dot.mark {
         Mark::Root => ((6, 4), (d / 6.0).round().max(1.0)),
         Mark::Square => ((1, 1), d.min(SQUARE_FIT * grid.1 / SQUARES_PER_ROW as f32)),
+        Mark::State(_) if d < 3.0 => ((2, 2), 1.0),
         Mark::State(_) => {
             let n = if d >= 7.0 {
                 7
@@ -146,12 +148,16 @@ fn tips(dot: &Dot, grid: Grid) -> u8 {
     [0, 1, 2, 1][usize::from(dot.frame % 4)].min(n as u8 / 2 - 1)
 }
 
-fn dot_side(grid: Grid) -> f32 {
-    (DOT * grid.0 / BASE_CELL).round().max(1.0)
+fn dot_side(scene: &Scene, grid: Grid) -> f32 {
+    if scene.thin {
+        1.0
+    } else {
+        (DOT * grid.0 / BASE_CELL).round().max(1.0)
+    }
 }
 
-fn reach(grid: Grid) -> f32 {
-    4.0 * dot_side(grid)
+fn reach(side: f32) -> f32 {
+    4.0 * side
 }
 
 fn snap(v: f32, pitch: f32) -> f32 {
@@ -198,16 +204,15 @@ fn dots_along(
     })
 }
 
-fn ring_square(ring: &Ring, grid: Grid) -> Bounds {
-    let side = dot_side(grid);
+fn ring_square(ring: &Ring, grid: Grid, side: f32) -> Bounds {
     let half = ring.on.radius * grid.0 + (1.0 + 2.0 * f32::from(ring.step)) * side;
     let (l, t, r, b) = around(at(grid, ring.on.at), half);
     let on_pitch = |v| snap(v, 2.0 * side);
     (on_pitch(l), on_pitch(t), on_pitch(r), on_pitch(b))
 }
 
-fn ring_box(ring: &Ring, grid: Grid) -> Bounds {
-    inset(ring_square(ring, grid), -reach(grid))
+fn ring_box(ring: &Ring, grid: Grid, side: f32) -> Bounds {
+    inset(ring_square(ring, grid, side), -reach(side))
 }
 
 fn tile_box(grid: Grid, rect: Rect) -> Bounds {
@@ -220,8 +225,8 @@ fn intersects((l, t, r, b): Bounds, (x0, y0, x1, y1): Bounds) -> bool {
     l < x1 && r > x0 && t < y1 && b > y0
 }
 
-fn segments(line: &[(f32, f32)], grid: Grid) -> impl Iterator<Item = Bounds> {
-    let reach = reach(grid);
+fn segments(line: &[(f32, f32)], grid: Grid, side: f32) -> impl Iterator<Item = Bounds> {
+    let reach = reach(side);
     line.windows(2).map(move |pair| {
         let ((ax, ay), (bx, by)) = (at(grid, pair[0]), at(grid, pair[1]));
         (
@@ -234,6 +239,7 @@ fn segments(line: &[(f32, f32)], grid: Grid) -> impl Iterator<Item = Bounds> {
 }
 
 fn hash(scene: &Scene, grid: Grid, rect: Rect) -> Option<u64> {
+    let side = dot_side(scene, grid);
     let bounds = tile_box(grid, rect);
     let hit = |b| intersects(b, bounds);
     let mut h = DefaultHasher::new();
@@ -247,29 +253,34 @@ fn hash(scene: &Scene, grid: Grid, rect: Rect) -> Option<u64> {
         h.write(format!("{seen:?}").as_bytes());
         hit_any |= visible;
     }
-    for line in scene.lines.iter().filter(|l| segments(l, grid).any(hit)) {
+    for line in scene
+        .lines
+        .iter()
+        .filter(|l| segments(l, grid, side).any(hit))
+    {
         h.write(format!("{line:?}").as_bytes());
         hit_any = true;
     }
     for light in scene
         .lights
         .iter()
-        .filter(|l| segments(&l.path, grid).any(hit))
+        .filter(|l| segments(&l.path, grid, side).any(hit))
     {
         h.write(format!("{light:?}").as_bytes());
         hit_any = true;
     }
-    for ring in scene.rings.iter().filter(|r| hit(ring_box(r, grid))) {
-        let landing = (ring_square(ring, grid), ring.step);
+    for ring in scene.rings.iter().filter(|r| hit(ring_box(r, grid, side))) {
+        let landing = (ring_square(ring, grid, side), ring.step);
         h.write(format!("{landing:?}").as_bytes());
         hit_any = true;
     }
-    let frame = (rect, grid, scene.width, &scene.rows);
+    let frame = (rect, grid, scene.width, scene.thin, &scene.rows);
     h.write(format!("{frame:?}").as_bytes());
     hit_any.then(|| h.finish())
 }
 
 fn slots(scene: &Scene, grid: Grid) -> BTreeSet<(usize, usize)> {
+    let side = dot_side(scene, grid);
     let mut out = BTreeSet::new();
     let mut mark = |(l, t, r, b): Bounds| {
         let left = (l / grid.0).floor().max(0.0) as usize / 2 * 2;
@@ -285,22 +296,28 @@ fn slots(scene: &Scene, grid: Grid) -> BTreeSet<(usize, usize)> {
     for dot in &scene.dots {
         mark(paint_box(dot, grid));
     }
-    for segment in scene.lines.iter().flat_map(|l| segments(l, grid)) {
+    for segment in scene.lines.iter().flat_map(|l| segments(l, grid, side)) {
         mark(segment);
     }
-    for segment in scene.lights.iter().flat_map(|l| segments(&l.path, grid)) {
+    for segment in scene
+        .lights
+        .iter()
+        .flat_map(|l| segments(&l.path, grid, side))
+    {
         mark(segment);
     }
     for ring in &scene.rings {
-        mark(ring_box(ring, grid));
+        mark(ring_box(ring, grid, side));
     }
     out
 }
 
 fn narrow(scene: &Scene, grid: Grid, rect: Rect) -> Scene {
+    let side = dot_side(scene, grid);
     let hit = |b| intersects(b, tile_box(grid, rect));
     Scene {
         width: scene.width,
+        thin: scene.thin,
         rows: scene.rows.clone(),
         dots: scene
             .dots
@@ -311,19 +328,19 @@ fn narrow(scene: &Scene, grid: Grid, rect: Rect) -> Scene {
         lines: scene
             .lines
             .iter()
-            .filter(|l| segments(l, grid).any(hit))
+            .filter(|l| segments(l, grid, side).any(hit))
             .cloned()
             .collect(),
         lights: scene
             .lights
             .iter()
-            .filter(|l| segments(&l.path, grid).any(hit))
+            .filter(|l| segments(&l.path, grid, side).any(hit))
             .cloned()
             .collect(),
         rings: scene
             .rings
             .iter()
-            .filter(|r| hit(ring_box(r, grid)))
+            .filter(|r| hit(ring_box(r, grid, side)))
             .copied()
             .collect(),
         text_cells: Vec::new(),
@@ -410,7 +427,7 @@ fn draw(
     };
     let origin = corner(grid, tile.x, tile.y);
     let shift = Transform::from_translate(-origin.0, -origin.1);
-    let side = dot_side(grid);
+    let side = dot_side(scene, grid);
     let wire = crisp(theme.rgb(Token::Line));
     for points in &scene.lines {
         for (at, _) in dots_along(points, grid, side) {
@@ -418,13 +435,13 @@ fn draw(
         }
     }
     for trail in &scene.lights {
-        light(&mut pixmap, trail, theme, grid, shift);
+        light(&mut pixmap, trail, theme, grid, side, shift);
     }
     for dot in &scene.dots {
         stamp(&mut pixmap, dot, theme, grid, shift);
     }
     for landing in &scene.rings {
-        ring(&mut pixmap, landing, theme, grid, shift);
+        ring(&mut pixmap, landing, theme, grid, side, shift);
     }
     let all = tiny_skia::Rect::from_xywh(0.0, 0.0, width as f32, f32::from(cell.1));
     if let (Some(rgb), Some(all)) = (behind, all) {
@@ -469,11 +486,17 @@ fn blot(pixmap: &mut Pixmap, (x, y): (f32, f32), side: f32, paint: &Paint<'_>, s
     fill(pixmap, (l, t, l + side, t + side), paint, shift);
 }
 
-fn light(pixmap: &mut Pixmap, light: &Light, theme: &Theme, grid: Grid, shift: Transform) {
+fn light(
+    pixmap: &mut Pixmap,
+    light: &Light,
+    theme: &Theme,
+    grid: Grid,
+    side: f32,
+    shift: Transform,
+) {
     let Some(&head) = light.path.last() else {
         return;
     };
-    let side = dot_side(grid);
     let inks = lit_colours(theme).map(crisp);
     for (at, leg) in dots_along(&light.path, grid, side) {
         let back = light.path.len() - 2 - leg;
@@ -484,10 +507,9 @@ fn light(pixmap: &mut Pixmap, light: &Light, theme: &Theme, grid: Grid, shift: T
     blot(pixmap, at(grid, head), 2.0 * side, &inks[0], shift);
 }
 
-fn ring(pixmap: &mut Pixmap, ring: &Ring, theme: &Theme, grid: Grid, shift: Transform) {
-    let (l, t, r, b) = ring_square(ring, grid);
+fn ring(pixmap: &mut Pixmap, ring: &Ring, theme: &Theme, grid: Grid, side: f32, shift: Transform) {
+    let (l, t, r, b) = ring_square(ring, grid, side);
     let corners = [(l, t), (r, t), (r, b), (l, b), (l, t)];
-    let side = dot_side(grid);
     let ink = crisp(lit_colours(theme)[usize::from(ring.step.min(2))]);
     for (at, _) in dots_along(&corners, (1.0, 1.0), side) {
         blot(pixmap, at, side, &ink, shift);
@@ -579,6 +601,10 @@ fn stamp(pixmap: &mut Pixmap, dot: &Dot, theme: &Theme, grid: Grid, shift: Trans
         if let Some(path) = square(at(grid, dot.at), px / 2.0) {
             pixmap.fill_path(&path, &paint(ink), FillRule::Winding, shift, None);
         }
+        return;
+    }
+    if n == 2 {
+        fill(pixmap, bounds, &crisp(ink), shift);
         return;
     }
     fill(pixmap, inset(bounds, -px), &mask(BlendMode::Clear), shift);
