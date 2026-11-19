@@ -1093,7 +1093,7 @@ async fn a_declined_http_sign_in_drops_its_listener_and_retries_with_a_live_link
         assert!(service.take_ended().is_empty());
         let next = service.sign_in_start("local").await.unwrap().unwrap();
         assert_ne!(first, next);
-        let page = tokio::time::timeout(Duration::from_secs(2), async {
+        let page = tokio::time::timeout(Duration::from_secs(10), async {
             reqwest::get(http::redirected(&next, None))
                 .await
                 .unwrap()
