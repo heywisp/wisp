@@ -40,7 +40,7 @@ jobs:
           fi
   fmt:
     runs-on: *runner
-    container: &rust rust:1.99.1
+    container: &rust rust:1.99.1@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07
     timeout-minutes: 15
     steps:
       - *checkout
@@ -173,5 +173,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - env:
-          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
-        run: test "$FAILED" = false
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          jq -es '
+            length == 1 and (.[0]
+              | (.changes.outputs.safe == "true") as $safe
+              | .changes.result == "success" and .fmt.result == "success"
+                and all(.[]; .result == "success" or ($safe and .result == "skipped")))
+          ' <<< "$NEEDS_JSON"
