@@ -974,6 +974,7 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
                 }
                 Import::UsageAccounts => assert!(host.usage().accounts().is_empty()),
                 Import::ChatRename => assert_eq!(mcp.chat().rename("Strada".into()), Err(text::OUTSIDE.into())),
+                Import::ProjectKey => assert!(mcp.project().key().is_none()),
                 Import::ManageManage => {
                     let search = PluginHost::new(manage::SEARCH_PLUGIN, "0.4.0", &[], kernel.clone());
                     let change = change(
@@ -1127,6 +1128,131 @@ async fn data_dir_gives_each_plugin_its_own_private_folder_and_none_in_a_slot_re
     assert_eq!(old.data_dir(), Err(NO_DATA_FOLDER.to_owned()));
     let rendered = rendering(async { board.data_dir() }).await;
     assert_eq!(rendered, Err(IN_RENDER.to_owned()));
+}
+
+#[tokio::test]
+async fn project_key_answers_a_0_4_0_plugin_outside_renders_only() {
+    use std::collections::BTreeSet;
+    use std::sync::Mutex;
+
+    use futures::FutureExt;
+    use wisp_plugin_api::manifest::CORE_ID;
+    use wisp_plugin_api::tools::{BuildContext, ClientTool, Prepared, ToolDef, ToolKind};
+    use wisp_plugin_api::types::ToolRun;
+
+    use crate::plugin::{Make, PluginConfig, Registry, testing};
+
+    struct Probe {
+        host: Arc<dyn Host>,
+        seen: Arc<Mutex<Vec<Option<String>>>>,
+        prepared: Arc<Mutex<Option<String>>>,
+    }
+
+    impl Plugin for Probe {
+        fn describe<'a>(&'a self, _ctx: &'a BuildContext) -> BoxFuture<'a, Vec<ToolDef>> {
+            self.seen.lock().unwrap().push(self.host.project().key());
+            let host = self.host.clone();
+            let seen = self.seen.clone();
+            Box::pin(async move {
+                seen.lock().unwrap().push(host.project().key());
+                vec![ToolDef {
+                    name: "probe".to_owned(),
+                    kind: ToolKind::Client(ClientTool {
+                        description: "Probe tool.".to_owned(),
+                        input_schema: r#"{"type":"object"}"#.to_owned(),
+                        meta: testing::meta(1_000, Some(1_000)),
+                    }),
+                    system_line: None,
+                    context_line: None,
+                }]
+            })
+        }
+
+        fn prepare<'a>(
+            &'a self,
+            _tool: &'a str,
+            _input: &'a str,
+        ) -> BoxFuture<'a, Result<Box<dyn Prepared>, String>> {
+            *self.prepared.lock().unwrap() = self.host.project().key();
+            Box::pin(std::future::ready(Err("probe".to_owned())))
+        }
+
+        fn run<'a>(
+            &'a self,
+            _call: Box<dyn Prepared>,
+            _ctx: &'a dyn CallContext,
+        ) -> BoxFuture<'a, ToolRun> {
+            futures::future::ready(ToolRun::completed()).boxed()
+        }
+    }
+
+    let scratch = crate::test_guard::ScratchDir::new("wisp-project-key-", "host");
+    let data = scratch.root.join("plugin-data");
+    let kernel = Arc::new(KernelHost::new());
+    let host = PluginHost::new("probe", "0.4.0", &[], kernel.clone());
+    kernel.set_data_dir(Some(data.clone()));
+    assert!(host.project().key().is_none());
+
+    let workspace = scratch.workspace();
+    crate::instructions::make_repository(&workspace.root).unwrap();
+    kernel.bind(&Processes::default(), &workspace);
+    assert!(rendering(async { host.project().key().is_none() }).await);
+    assert!(
+        Caller::rendering(Render::Start)
+            .scope(async { host.project().key().is_none() })
+            .await
+    );
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let prepared = Arc::new(Mutex::new(None));
+    let make: Make = {
+        let seen = seen.clone();
+        let prepared = prepared.clone();
+        Arc::new(move |plugin_host: Arc<dyn Host>| {
+            seen.lock().unwrap().push(plugin_host.project().key());
+            Arc::new(Probe {
+                host: plugin_host,
+                seen: seen.clone(),
+                prepared: prepared.clone(),
+            }) as Arc<dyn Plugin>
+        })
+    };
+    let manifest = testing::manifest("probe", &["probe".to_owned()], &[])
+        .replace(r#"world = "0.2.0""#, r#"world = "0.4.0""#);
+    let (registry, problems) =
+        Registry::from_sources(vec![(manifest, make)], &PluginConfig::default());
+    assert!(problems.is_empty(), "{problems:?}");
+    let on: BTreeSet<String> = ["probe".to_owned()].into_iter().collect();
+    let context = registry.build_context(&on);
+    let started = registry.start(&on, kernel.clone()).await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+    let redescribed = registry
+        .redescribe(&on, &context, &started.hooks.plugins, &kernel)
+        .await;
+    assert!(
+        redescribed.problems.is_empty(),
+        "{:?}",
+        redescribed.problems
+    );
+    let copied = registry.describe_with(&on, &context, &kernel).await;
+    assert!(copied.contains_key("probe"));
+    {
+        let during_describe = seen.lock().unwrap();
+        assert_eq!(during_describe.len(), 8);
+        assert!(during_describe.iter().all(Option::is_none));
+    }
+    assert!(!data.join(CORE_ID).exists());
+
+    let _ = started.hooks.plugins["probe"].prepare("probe", "{}").await;
+    let from_tool = prepared.lock().unwrap().clone();
+    let key = host.project().key();
+    assert!(key.is_some());
+    assert!(from_tool == key);
+    assert!(key == crate::workspace::project_key(&workspace.root, &data));
+    let old = PluginHost::new("probe", "0.3.0", &[], kernel.clone());
+    assert!(old.project().key().is_none());
+    kernel.set_data_dir(None);
+    assert!(host.project().key().is_none());
 }
 
 #[test]

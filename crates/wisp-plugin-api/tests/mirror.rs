@@ -31,6 +31,7 @@ use wisp_plugin_api::manifest::CORE_POINTS;
 use wisp_plugin_api::mcp::{self, Mcp};
 use wisp_plugin_api::model::{self, Model};
 use wisp_plugin_api::pricing::{self, Pricing, SpendTotals};
+use wisp_plugin_api::project::Project;
 use wisp_plugin_api::prompt::{
     self, At, EnvironmentFacts, JobNews, News, Prior, Rendered, WorkspaceFacts,
 };
@@ -56,7 +57,7 @@ const WIT_0_3_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.3.0")
 
 const WIT_0_4_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.4.0");
 
-const ADDED_IN_0_4_0: [&str; 5] = ["chat", "manage", "mcp", "model", "usage"];
+const ADDED_IN_0_4_0: [&str; 6] = ["chat", "manage", "mcp", "model", "project", "usage"];
 
 const ADDED_IN_0_2_0: [&str; 17] = [
     "slot-types",
@@ -2537,6 +2538,10 @@ probe!(chat_methods, impl Chat {
     fn rename(&self, _name: String) -> Result<String, String> { Ok(String::new()) }
 });
 
+probe!(project_methods, impl Project {
+    fn key(&self) -> Option<String> { None }
+});
+
 probe!(manage_methods, impl Manage {
     fn manage<'a>(&'a self, _change: manage::Change, _ctx: &'a dyn CallContext) -> BoxFuture<'a, Result<String, String>> { ready(Ok(String::new())) }
 });
@@ -2660,6 +2665,7 @@ fn traits() -> Vec<Trait> {
     };
     vec![
         import("Chat", &[("chat", None)], chat_methods),
+        import("Project", &[("project", None)], project_methods),
         import("Mcp", &[("mcp", None)], mcp_methods),
         import("Manage", &[("manage", None)], manage_methods),
         import("Model", &[("model", None)], model_methods),
@@ -3325,6 +3331,7 @@ fn each_folder_holds_one_package_and_each_later_one_only_its_delta() {
             "manage.wit",
             "mcp.wit",
             "model.wit",
+            "project.wit",
             "todos.wit",
             "usage.wit",
             "world.wit"
@@ -3616,6 +3623,7 @@ fn world_0_4_0_includes_every_item_of_0_3_0_from_its_folder() {
                     "wisp:plugin/manage@0.4.0",
                     "wisp:plugin/mcp@0.4.0",
                     "wisp:plugin/model@0.4.0",
+                    "wisp:plugin/project@0.4.0",
                     "wisp:plugin/todos@0.4.0",
                     "wisp:plugin/usage@0.4.0"
                 ]

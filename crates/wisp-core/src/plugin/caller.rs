@@ -26,6 +26,7 @@ pub struct Caller {
     pub depth: u8,
     pub at: At,
     pub quiet_jobs: bool,
+    pub describing: bool,
 }
 
 tokio::task_local! {
@@ -35,12 +36,9 @@ tokio::task_local! {
 impl Caller {
     pub fn call(cancel: CancellationToken, deadline: Option<tokio::time::Instant>) -> Self {
         Self {
-            render: None,
             cancel: Some(cancel),
             deadline,
-            depth: 0,
-            at: At::default(),
-            quiet_jobs: false,
+            ..Self::default()
         }
     }
 
@@ -60,6 +58,13 @@ impl Caller {
     pub fn rendering(render: Render) -> Self {
         Self {
             render: Some(render),
+            ..Self::default()
+        }
+    }
+
+    pub fn describing() -> Self {
+        Self {
+            describing: true,
             ..Self::default()
         }
     }

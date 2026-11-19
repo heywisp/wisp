@@ -673,10 +673,7 @@ pub fn lock_noting(
 
 pub fn work_tree(folder: &Path) -> Option<(PathBuf, PathBuf)> {
     let real = std::fs::canonicalize(folder).ok()?;
-    let repo = real
-        .ancestors()
-        .find(|a| crate::instructions::is_repository(a, &crate::instructions::Disk))?
-        .to_owned();
+    let repo = crate::instructions::repository(&real, &crate::instructions::Disk)?;
     Some((real, repo))
 }
 
@@ -714,10 +711,22 @@ pub(crate) fn replace_atomic(
     mode: u32,
     before_rename: impl FnOnce() -> io::Result<()>,
 ) -> io::Result<()> {
-    let folder = folder_of(target);
+    let temp = staged(target, bytes, mode)?;
+    before_rename()?;
+    temp.persist(target).map_err(|e| e.error)?;
+    synced(target)
+}
+
+pub(crate) fn create_atomic(target: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
+    let temp = staged(target, bytes, mode)?;
+    temp.persist_noclobber(target).map_err(|e| e.error)?;
+    synced(target)
+}
+
+fn staged(target: &Path, bytes: &[u8], mode: u32) -> io::Result<tempfile::NamedTempFile> {
     let mut temp = tempfile::Builder::new()
         .prefix(TEMP_PREFIX)
-        .tempfile_in(&folder)?;
+        .tempfile_in(folder_of(target))?;
     temp.write_all(bytes)?;
     #[cfg(unix)]
     {
@@ -728,11 +737,23 @@ pub(crate) fn replace_atomic(
     #[cfg(not(unix))]
     let _ = mode;
     temp.as_file().sync_all()?;
-    before_rename()?;
-    temp.persist(target).map_err(|e| e.error)?;
+    Ok(temp)
+}
+
+fn synced(target: &Path) -> io::Result<()> {
     #[cfg(unix)]
-    File::open(&folder)?.sync_all()?;
+    File::open(folder_of(target))?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = target;
     Ok(())
+}
+
+pub(crate) fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut bytes = [0; N];
+    for chunk in bytes.chunks_mut(16) {
+        chunk.copy_from_slice(&uuid::Uuid::new_v4().as_bytes()[..chunk.len()]);
+    }
+    bytes
 }
 
 #[cfg(unix)]

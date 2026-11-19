@@ -22,6 +22,7 @@ os-keyring = [
 async-trait.workspace = true
 base64.workspace = true
 futures.workspace = true
+hmac-sha256.workspace = true
 keyring-core = { workspace = true, optional = true }
 jiff = { workspace = true, features = ["tz-system", "tzdb-zoneinfo", "tzdb-bundle-platform"] }
 opus.workspace = true

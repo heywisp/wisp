@@ -242,10 +242,8 @@ fn check_text(name: &str, extension: &str, text: &str) {
 
 impl Home {
     fn golden_command(&self, program: &str) -> Command {
-        if let Some(repo) = self
-            .0
-            .ancestors()
-            .find(|dir| wisp_core::instructions::is_repository(dir, &wisp_core::instructions::Disk))
+        if let Some(repo) =
+            wisp_core::instructions::repository(&self.0, &wisp_core::instructions::Disk)
         {
             panic!(
                 "{} is inside a repository at {}, whose AGENTS.md would change the requests; point TMPDIR outside any repository",

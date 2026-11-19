@@ -4,6 +4,7 @@ world plugin {
   include wisp:plugin/plugin@0.3.0;
   import chat;
   import model;
+  import project;
   import usage;
   import mcp;
   import manage;

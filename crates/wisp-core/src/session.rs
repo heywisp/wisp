@@ -867,8 +867,8 @@ fn open_existing(path: &Path) -> io::Result<File> {
 }
 
 #[cfg(unix)]
-fn check_existing(file: &File, what: &str) -> io::Result<()> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+pub(crate) fn check_regular_owned(file: &File, what: &str) -> io::Result<()> {
+    use std::os::unix::fs::MetadataExt;
     let meta = file.metadata()?;
     if !meta.is_file() {
         return Err(io::Error::other(format!("{what} is not a regular file")));
@@ -879,16 +879,32 @@ fn check_existing(file: &File, what: &str) -> io::Result<()> {
             format!("{what} is owned by another user"),
         ));
     }
-    file.set_permissions(fs::Permissions::from_mode(0o600))
+    Ok(())
 }
 
 #[cfg(not(unix))]
-fn check_existing(file: &File, what: &str) -> io::Result<()> {
+pub(crate) fn check_regular_owned(file: &File, what: &str) -> io::Result<()> {
     if file.metadata()?.is_file() {
         Ok(())
     } else {
         Err(io::Error::other(format!("{what} is not a regular file")))
     }
+}
+
+pub(crate) fn tighten_file(file: &File) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    let _ = file;
+    Ok(())
+}
+
+fn check_existing(file: &File, what: &str) -> io::Result<()> {
+    check_regular_owned(file, what)?;
+    tighten_file(file)
 }
 
 #[cfg(unix)]
@@ -971,7 +987,7 @@ pub(crate) fn open_regular(path: &Path, what: &str) -> io::Result<File> {
     Ok(file)
 }
 
-fn open_read_nofollow(path: &Path) -> io::Result<File> {
+pub(crate) fn open_read_nofollow(path: &Path) -> io::Result<File> {
     let mut o = OpenOptions::new();
     o.read(true);
     #[cfg(unix)]
@@ -983,7 +999,7 @@ fn open_read_nofollow(path: &Path) -> io::Result<File> {
     o.open(path)
 }
 
-fn refuse_link(path: &Path, home: Option<&Path>) -> io::Result<()> {
+pub(crate) fn refuse_link(path: &Path, home: Option<&Path>) -> io::Result<()> {
     let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -1010,9 +1026,9 @@ fn read_capped(file: File) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn private_blob_dir(dir: &Path, home: Option<&Path>) -> io::Result<()> {
+pub(crate) fn private_dir(dir: &Path, home: Option<&Path>, what: &str) -> io::Result<()> {
     refuse_link(dir, home)?;
-    create_private_dir(dir)?;
+    crate::secrets::create_folder(dir)?;
     let meta = fs::symlink_metadata(dir)?;
     if !meta.is_dir() {
         return Err(io::Error::other(format!(
@@ -1022,14 +1038,17 @@ fn private_blob_dir(dir: &Path, home: Option<&Path>) -> io::Result<()> {
     }
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
         if meta.uid() != rustix::process::geteuid().as_raw() {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                "the attachments folder is owned by another user",
+                format!("{what} is owned by another user"),
             ));
         }
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     }
+    #[cfg(not(unix))]
+    let _ = what;
     Ok(())
 }
 
@@ -1169,7 +1188,7 @@ impl SessionStore for JsonlStore {
     fn put_blob(&mut self, sha256: &str, media_type: &Mime, bytes: &[u8]) -> io::Result<()> {
         check_blob(sha256, bytes)?;
         let home = self.home.as_deref();
-        private_blob_dir(&self.attachments, home)?;
+        private_dir(&self.attachments, home, "the attachments folder")?;
         let path = self.attachment_path(sha256, media_type);
         if existing_blob_verifies(&path, sha256, home)? {
             return Ok(());

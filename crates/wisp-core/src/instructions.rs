@@ -12,8 +12,8 @@ use wisp_protocol::{
 use crate::pricing::{self, ModelInfo};
 
 pub use wisp_instructions::{
-    BYTES_PER_TOKEN, DEFAULT_WARN_TOKENS, FILE_NAME, Holder, MAX_DEPTH, Paths, config_home,
-    estimate_tokens, is_repository,
+    BYTES_PER_TOKEN, DEFAULT_WARN_TOKENS, FILE_NAME, GITFILE, Holder, MAX_DEPTH, Paths,
+    config_home, estimate_tokens, is_git_dir, is_repository, pointed, repository,
 };
 pub use wisp_protocol::settings::{parse_tokens, thousands};
 
@@ -70,14 +70,27 @@ impl Files for Disk {
     }
 
     fn read(&self, path: &Path) -> io::Result<Option<Vec<u8>>> {
-        let mut file = open_nonblocking(path)?;
-        if !file.metadata()?.is_file() {
+        let Some(mut file) = open_regular(path)? else {
             return Ok(None);
-        }
+        };
         let mut raw = Vec::new();
         file.read_to_end(&mut raw)?;
         Ok(Some(raw))
     }
+
+    fn read_capped(&self, path: &Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
+        let Some(file) = open_regular(path)? else {
+            return Ok(None);
+        };
+        let mut raw = Vec::new();
+        file.take(limit).read_to_end(&mut raw)?;
+        Ok(Some(raw))
+    }
+}
+
+fn open_regular(path: &Path) -> io::Result<Option<File>> {
+    let file = open_nonblocking(path)?;
+    Ok(file.metadata()?.is_file().then_some(file))
 }
 
 fn meta_of(meta: &std::fs::Metadata) -> Meta {

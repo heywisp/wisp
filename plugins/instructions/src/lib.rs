@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -71,6 +71,17 @@ impl Files for HostFiles<'_> {
             return Ok(None);
         }
         std::fs::read(path).map(Some)
+    }
+
+    fn read_capped(&self, path: &Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
+        if self.host.kind_of(&path.display().to_string()) != Some(FileKind::Regular) {
+            return Ok(None);
+        }
+        let mut raw = Vec::new();
+        std::fs::File::open(path)?
+            .take(limit)
+            .read_to_end(&mut raw)?;
+        Ok(Some(raw))
     }
 }
 

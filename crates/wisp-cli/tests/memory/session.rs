@@ -51,10 +51,8 @@ pub(crate) fn on_stack<F: Future<Output = ()>>(work: impl FnOnce() -> F + Send) 
 
 fn scratch(name: &str) -> ScratchDir {
     let scratch = ScratchDir::new("wisp-memory-", name);
-    if let Some(repo) = scratch
-        .root
-        .ancestors()
-        .find(|dir| wisp_core::instructions::is_repository(dir, &wisp_core::instructions::Disk))
+    if let Some(repo) =
+        wisp_core::instructions::repository(&scratch.root, &wisp_core::instructions::Disk)
     {
         panic!(
             "{} is inside a repository at {}; point TMPDIR outside any repository",
