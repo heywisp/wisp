@@ -242,6 +242,10 @@ pub(crate) fn log_path() -> Option<String> {
 }
 
 pub(crate) fn run(role: &str) {
+    assert_eq!(
+        wisp_tui::term::host::wsl_root().as_path(),
+        std::path::Path::new(crate::term_env::ISOLATED_WSL_ROOT),
+    );
     if role.starts_with("app:long:") {
         let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {

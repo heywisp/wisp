@@ -291,7 +291,6 @@ fn base64_matches_the_standard_alphabet_and_padding() {
             "{input:?}"
         );
     }
-    assert_eq!(wisp_media::encode_base64(&utf16le(WSL_SCRIPT)), WSL_ENCODED);
 }
 
 #[test]
@@ -409,8 +408,30 @@ fn tools_are_found_on_the_given_path_and_powershell_at_its_fallback() {
 }
 
 #[test]
+fn wsl_root_limits_kernel_detection_and_the_windows_fallback() {
+    let fakes = Fakes::new("wsl-root", &[]);
+    let root = &fakes.dir.root;
+    let env = env(&[]);
+    let tools = Tools {
+        path: None,
+        ..Tools::at_wsl_root(root)
+    };
+    assert!(!Host::at_wsl_root(&env, root).wsl);
+    assert_eq!(tools.find(POWERSHELL), None);
+    let release = root.join("proc/sys/kernel/osrelease");
+    std::fs::create_dir_all(release.parent().unwrap()).unwrap();
+    std::fs::write(&release, "6.6-microsoft-standard-WSL2").unwrap();
+    let fallback = root.join(POWERSHELL_FALLBACK.trim_start_matches('/'));
+    std::fs::create_dir_all(fallback.parent().unwrap()).unwrap();
+    fake_tool::install(&fallback, RECORD);
+    assert!(Host::at_wsl_root(&env, root).wsl);
+    assert_eq!(tools.find(POWERSHELL), Some(fallback));
+}
+
+#[test]
 fn each_writer_gets_its_fixed_argv_and_the_text_on_stdin() {
     let text = "héllo\nworld $(rm -rf /) `x` ; | &";
+    let encoded = wisp_media::encode_base64(&utf16le(WSL_SCRIPT));
     let cases: [(Native, &str, Vec<Vec<&str>>, &str); 4] = [
         (
             Native::Windows,
@@ -419,7 +440,7 @@ fn each_writer_gets_its_fixed_argv_and_the_text_on_stdin() {
                 "-NoProfile",
                 "-NonInteractive",
                 "-EncodedCommand",
-                WSL_ENCODED,
+                &encoded,
             ]],
             "Windows clipboard",
         ),
@@ -694,6 +715,123 @@ fn results(copier: &Copier, count: usize) -> Vec<Done> {
     std::thread::sleep(Duration::from_millis(200));
     all.extend(copier.take());
     all
+}
+
+fn windows_copier(fakes: &Fakes, timeout: Duration) -> Copier {
+    fake_tool::install(
+        &fakes.dir.root.join(POWERSHELL),
+        include_str!("../../../tests/support/windows-clipboard.sh"),
+    );
+    Copier::new(
+        false,
+        vec![Native::Windows],
+        Tools {
+            timeout,
+            ..fakes.tools()
+        },
+        Arc::new(Notify::new()),
+    )
+}
+
+fn windows_helper_pid(fakes: &Fakes, index: usize) -> i32 {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(line) = fakes.read("helpers").split_inclusive('\n').nth(index)
+            && line.ends_with('\n')
+        {
+            return line.trim().parse().unwrap();
+        }
+        assert!(Instant::now() < deadline, "helper {index} did not start");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn windows_copier_starts_early_and_reuses_its_helper_for_framed_copies() {
+    let fakes = Fakes::new("warm-windows", &[]);
+    fakes.touch("startup", "");
+    let mut copier = windows_copier(&fakes, TIMEOUT);
+    let pid = windows_helper_pid(&fakes, 0);
+    let texts = ["first\r\n🫠\n", "  日本語\n\n"];
+    for text in texts {
+        assert_eq!(copier.start(text.to_owned(), Purpose::Selection), None);
+        if fakes.dir.root.join("startup").exists() {
+            std::thread::sleep(Duration::from_millis(100));
+            assert!(copier.take().is_empty(), "copied before the ACK");
+            assert!(!fakes.dir.root.join("fallback").exists());
+            std::fs::remove_file(fakes.dir.root.join("startup")).unwrap();
+        }
+        assert_eq!(
+            results(&copier, 1)[0].outcome,
+            Outcome::Copied(vec![Destination::Native(Native::Windows)])
+        );
+    }
+    let frames: Vec<_> = texts
+        .map(|t| wisp_media::encode_base64(t.as_bytes()))
+        .into();
+    assert_eq!(
+        fakes.read("windows-copied").lines().collect::<Vec<_>>(),
+        frames
+    );
+    assert_eq!(fakes.read("helpers").lines().count(), 1);
+    assert!(!fakes.dir.root.join("fallback").exists());
+    drop(copier);
+    reaped([Some(pid), None]);
+    assert!(!alive(pid));
+}
+
+#[test]
+fn windows_copier_falls_back_on_eof_bad_ack_and_timeout() {
+    for mode in ["dead", "bad", "hold", "fail"] {
+        let fakes = Fakes::new(mode, &[]);
+        fakes.touch(mode, "");
+        if mode == "fail" {
+            fakes.touch("bad", "");
+        }
+        let timeout = if mode == "hold" {
+            Duration::from_secs(2)
+        } else {
+            TIMEOUT
+        };
+        let mut copier = windows_copier(&fakes, timeout);
+        let old = windows_helper_pid(&fakes, 0);
+        let text = "the original 🧪\r\n";
+        assert_eq!(copier.start(text.to_owned(), Purpose::Selection), None);
+        let outcome = &results(&copier, 1)[0].outcome;
+        if mode == "fail" {
+            assert!(
+                matches!(outcome, Outcome::Failed(why) if why.contains(POWERSHELL)),
+                "{mode}: {outcome:?}"
+            );
+        } else {
+            assert_eq!(
+                *outcome,
+                Outcome::Copied(vec![Destination::Native(Native::Windows)]),
+                "{mode}"
+            );
+        }
+        assert_eq!(fakes.read("fallback"), text, "{mode}");
+        assert!(
+            !alive(old),
+            "{mode}: failed helper wasn't reaped before fallback"
+        );
+        if mode == "hold" {
+            let next = windows_helper_pid(&fakes, 1);
+            assert_ne!(old, next);
+            std::fs::remove_file(fakes.dir.root.join("hold")).unwrap();
+            let follow_up = "take two";
+            assert_eq!(copier.start(follow_up.to_owned(), Purpose::Selection), None);
+            assert_eq!(
+                results(&copier, 1)[0].outcome,
+                Outcome::Copied(vec![Destination::Native(Native::Windows)])
+            );
+            assert_eq!(fakes.read("fallback"), text);
+            assert_eq!(
+                fakes.read("windows-copied").trim_end(),
+                wisp_media::encode_base64(follow_up.as_bytes())
+            );
+        }
+    }
 }
 
 #[test]
