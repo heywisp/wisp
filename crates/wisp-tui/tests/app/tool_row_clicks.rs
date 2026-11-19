@@ -483,10 +483,7 @@ async fn a_click_on_a_code_blocks_top_border_copies_its_code_and_its_folded_bott
                     assert_eq!(border_word(&s, top), "copying");
                     fake.release();
                     assert!(eventually(|| border_word(&s, top) == "copied").await);
-                    assert_eq!(
-                        fake.copies(),
-                        vec![code.trim_end().to_owned(), next.to_owned()]
-                    );
+                    assert_eq!(fake.copies(), vec![code, next.to_owned()]);
                     assert!(s.screen.sent_to_clipboard().is_empty());
                     return;
                 }

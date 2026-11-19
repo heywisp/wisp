@@ -822,7 +822,7 @@ pub(super) fn windows_stops(root: &Path, path: &OsStr) -> WindowsStops {
 }
 
 pub(super) fn windows_stops_now() -> WindowsStops {
-    let root = std::env::var_os("WISP_WSL_ROOT").map_or_else(|| PathBuf::from("/"), PathBuf::from);
+    let root = wisp_tui::term::host::wsl_root();
     windows_stops(&root, &std::env::var_os("PATH").unwrap_or_default())
 }
 

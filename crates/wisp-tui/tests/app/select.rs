@@ -40,7 +40,10 @@ impl Fake {
     }
 
     pub(super) fn install_windows(&self) {
-        fake_tool::install(&self.dir.root.join(POWERSHELL), PBCOPY);
+        fake_tool::install(
+            &self.dir.root.join(POWERSHELL),
+            include_str!("../support/windows-clipboard.sh"),
+        );
     }
 
     pub(super) fn clipboard(&self) -> Clipboard {
@@ -62,6 +65,11 @@ impl Fake {
         let all = std::fs::read_to_string(self.dir.root.join("copied")).unwrap_or_default();
         let mut copies: Vec<String> = all.split("\n--\n").map(str::to_owned).collect();
         copies.pop();
+        if let Ok(windows) = std::fs::read_to_string(self.dir.root.join("windows-copied")) {
+            copies.extend(windows.lines().map(|frame| {
+                String::from_utf8(wisp_media::decode_base64(frame).unwrap()).unwrap()
+            }));
+        }
         copies
     }
 

@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
@@ -17,6 +17,7 @@ use wisp_render::transcript::CopyLabel;
 use wisp_render::transcript::copy::{self, grouped};
 
 use super::caps::{Choice, Env};
+use super::host::wsl_root;
 
 pub const SELECT_KEY: &str = "shift-drag";
 pub const SELECT_KEY_REMOTE: &str = "shift-drag (option-drag on macOS)";
@@ -26,7 +27,7 @@ const OSC52_WRITER: &str = "OSC 52, sent to your terminal";
 pub const POWERSHELL: &str = "powershell.exe";
 pub const POWERSHELL_FALLBACK: &str =
     "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
-pub const WSL_SCRIPT: &str = "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; Set-Clipboard -Value ([Console]::In.ReadToEnd())";
+const WSL_SCRIPT: &str = "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; Set-Clipboard -Value ([Console]::In.ReadToEnd()) -ErrorAction Stop";
 pub const STDOUT_CAP: u64 = 64 * 1024;
 const TEXT_BUSY: i32 = 26;
 const SPAWN_TRIES: u32 = 5;
@@ -63,7 +64,11 @@ impl Host {
     }
 
     pub fn current(env: &Env) -> Host {
-        let release = std::fs::read_to_string("/proc/sys/kernel/osrelease").ok();
+        Host::at_wsl_root(env, &wsl_root())
+    }
+
+    fn at_wsl_root(env: &Env, root: &Path) -> Host {
+        let release = std::fs::read_to_string(root.join("proc/sys/kernel/osrelease")).ok();
         Host::of(env, release.as_deref(), cfg!(target_os = "macos"))
     }
 }
@@ -203,9 +208,13 @@ fn executable(path: &Path) -> bool {
 
 impl Tools {
     pub fn current() -> Tools {
+        Tools::at_wsl_root(&wsl_root())
+    }
+
+    fn at_wsl_root(root: &Path) -> Tools {
         Tools {
             path: std::env::var_os("PATH"),
-            powershell: vec![PathBuf::from(POWERSHELL_FALLBACK)],
+            powershell: vec![root.join(POWERSHELL_FALLBACK.trim_start_matches('/'))],
             setsid: system_setsid(),
             timeout: TIMEOUT,
         }
@@ -256,20 +265,15 @@ impl Tools {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Writer {
-    pub program: &'static str,
-    pub args: &'static [&'static str],
-    pub also: Option<&'static [&'static str]>,
+struct Writer {
+    program: &'static str,
+    args: &'static [&'static str],
+    also: Option<&'static [&'static str]>,
 }
 
 const WINDOWS: [Writer; 1] = [Writer {
     program: POWERSHELL,
-    args: &[
-        "-NoProfile",
-        "-NonInteractive",
-        "-EncodedCommand",
-        WSL_ENCODED,
-    ],
+    args: &[],
     also: None,
 }];
 const MAC: [Writer; 1] = [Writer {
@@ -295,9 +299,11 @@ const X11: [Writer; 2] = [
     },
 ];
 
-pub const WSL_ENCODED: &str = "WwBDAG8AbgBzAG8AbABlAF0AOgA6AEkAbgBwAHUAdABFAG4AYwBvAGQAaQBuAGcAIAA9ACAAWwBTAHkAcwB0AGUAbQAuAFQAZQB4AHQALgBFAG4AYwBvAGQAaQBuAGcAXQA6ADoAVQBUAEYAOAA7ACAAUwBlAHQALQBDAGwAaQBwAGIAbwBhAHIAZAAgAC0AVgBhAGwAdQBlACAAKABbAEMAbwBuAHMAbwBsAGUAXQA6ADoASQBuAC4AUgBlAGEAZABUAG8ARQBuAGQAKAApACkA";
+fn powershell_args(encoded: &str) -> [&str; 4] {
+    ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+}
 
-pub fn writers(native: Native) -> &'static [Writer] {
+fn writers(native: Native) -> &'static [Writer] {
     match native {
         Native::Windows => &WINDOWS,
         Native::Mac => &MAC,
@@ -415,16 +421,8 @@ fn kill_all(leader: Option<Pid>, child: &mut std::process::Child) {
     drop(child.wait());
 }
 
-pub(crate) fn run_raw(
-    program: &Path,
-    args: &[&str],
-    input: Option<&[u8]>,
-    capture: Option<u64>,
-    tools: &Tools,
-    running: &Running,
-) -> Raw {
-    let timeout = tools.timeout;
-    let mut command = match &tools.setsid {
+fn grouped_command(program: &Path, tools: &Tools) -> Command {
+    match &tools.setsid {
         Some(setsid) => {
             let mut command = Command::new(setsid);
             command.arg(program);
@@ -435,7 +433,41 @@ pub(crate) fn run_raw(
             command.process_group(0);
             command
         }
+    }
+}
+
+fn spawn_group(command: &mut Command, running: &Running) -> Result<(Child, Option<Pid>), Raw> {
+    let mut tries = 0;
+    let mut group = running.lock();
+    if running.stopped.load(Ordering::SeqCst) {
+        return Err(Raw::Unstarted("Wisp is exiting".to_owned()));
+    }
+    let child = loop {
+        match command.spawn() {
+            Ok(child) => break child,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Raw::Missing),
+            Err(e) if e.raw_os_error() == Some(TEXT_BUSY) && tries < SPAWN_TRIES => {
+                tries += 1;
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => return Err(Raw::Unstarted(e.to_string())),
+        }
     };
+    let leader = i32::try_from(child.id()).ok().and_then(Pid::from_raw);
+    *group = leader;
+    Ok((child, leader))
+}
+
+pub(crate) fn run_raw(
+    program: &Path,
+    args: &[&str],
+    input: Option<&[u8]>,
+    capture: Option<u64>,
+    tools: &Tools,
+    running: &Running,
+) -> Raw {
+    let timeout = tools.timeout;
+    let mut command = grouped_command(program, tools);
     command
         .args(args)
         .stdin(if input.is_some() {
@@ -449,25 +481,10 @@ pub(crate) fn run_raw(
             Stdio::null()
         })
         .stderr(Stdio::null());
-    let mut tries = 0;
-    let mut group = running.lock();
-    if running.stopped.load(Ordering::SeqCst) {
-        return Raw::Unstarted("Wisp is exiting".to_owned());
-    }
-    let mut child = loop {
-        match command.spawn() {
-            Ok(child) => break child,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Raw::Missing,
-            Err(e) if e.raw_os_error() == Some(TEXT_BUSY) && tries < SPAWN_TRIES => {
-                tries += 1;
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(e) => return Raw::Unstarted(e.to_string()),
-        }
+    let (mut child, leader) = match spawn_group(&mut command, running) {
+        Ok(spawned) => spawned,
+        Err(raw) => return raw,
     };
-    let leader = i32::try_from(child.id()).ok().and_then(Pid::from_raw);
-    *group = leader;
-    drop(group);
     if let (Some(mut stdin), Some(input)) = (child.stdin.take(), input) {
         let input = input.to_vec();
         drop(
@@ -639,20 +656,32 @@ fn native(
     native: Native,
     tools: &Tools,
     running: &Running,
+    windows: &mut Option<windows::Helper<'_>>,
 ) -> Result<(), Option<String>> {
+    if native == Native::Windows {
+        if windows
+            .as_mut()
+            .is_some_and(|helper| helper.copy(text, tools.timeout))
+        {
+            return Ok(());
+        }
+        drop(windows.take());
+    }
     let mut tried = None;
     for writer in writers(native) {
         let Some(program) = tools.find(writer.program) else {
             continue;
         };
-        let ran = run_in(
-            &program,
-            writer.args,
-            Some(text.as_bytes()),
-            false,
-            tools,
-            running,
-        );
+        let encoded;
+        let args;
+        let args = if native == Native::Windows {
+            encoded = wisp_media::encode_base64(&utf16le(WSL_SCRIPT));
+            args = powershell_args(&encoded);
+            &args
+        } else {
+            writer.args
+        };
+        let ran = run_in(&program, args, Some(text.as_bytes()), false, tools, running);
         if ran.ok() {
             if let Some(also) = writer.also {
                 drop(run_in(
@@ -752,7 +781,14 @@ fn tmux(text: &str, tools: &Tools, running: &Running) -> Result<Destination, Str
 }
 
 pub fn copy_local(text: &str, tmux_too: bool, natives: &[Native], tools: &Tools) -> Outcome {
-    copy_in(text, tmux_too, natives, tools, &Running::default())
+    copy_in(
+        text,
+        tmux_too,
+        natives,
+        tools,
+        &Running::default(),
+        &mut None,
+    )
 }
 
 pub fn copy_once(
@@ -763,7 +799,9 @@ pub fn copy_once(
 ) -> Outcome {
     match &clipboard.route {
         Route::Blocked(why) => Outcome::Failed((*why).to_owned()),
-        Route::Local { tmux, natives } => copy_in(text, *tmux, natives, &clipboard.tools, running),
+        Route::Local { tmux, natives } => {
+            copy_in(text, *tmux, natives, &clipboard.tools, running, &mut None)
+        }
         Route::Terminal => match Osc52::new(text) {
             Ok(osc) => match out.write_all(osc.bytes()) {
                 Ok(()) => Outcome::Sent,
@@ -801,6 +839,7 @@ fn copy_in(
     natives: &[Native],
     tools: &Tools,
     running: &Running,
+    windows: &mut Option<windows::Helper<'_>>,
 ) -> Outcome {
     let mut to: Vec<Destination> = vec![];
     let mut why: Option<String> = None;
@@ -812,7 +851,7 @@ fn copy_in(
     }
     let mut first_missing = None;
     for n in natives {
-        match native(text, *n, tools, running) {
+        match native(text, *n, tools, running, windows) {
             Ok(()) => {
                 to.push(Destination::Native(*n));
                 break;
@@ -876,6 +915,7 @@ struct Shared {
     queue: Mutex<Queue>,
     ready: Condvar,
     running: Running,
+    windows: Running,
 }
 
 impl Shared {
@@ -914,7 +954,7 @@ pub struct Copier {
 
 impl Copier {
     pub fn new(tmux: bool, natives: Vec<Native>, tools: Tools, wake: Arc<Notify>) -> Copier {
-        Copier {
+        let mut copier = Copier {
             tmux,
             natives,
             tools: Arc::new(tools),
@@ -922,7 +962,11 @@ impl Copier {
             wake,
             working: false,
             started: 0,
+        };
+        if copier.natives.contains(&Native::Windows) {
+            drop(copier.start_worker());
         }
+        copier
     }
 
     pub fn started(&self) -> u64 {
@@ -943,18 +987,8 @@ impl Copier {
                     purpose,
                 });
         }
-        let shared = Arc::clone(&self.shared);
-        let tools = Arc::clone(&self.tools);
-        let wake = Arc::clone(&self.wake);
-        let (tmux, natives) = (self.tmux, self.natives.clone());
-        let spawned = std::thread::Builder::new()
-            .name("wisp-clipboard".to_owned())
-            .spawn(move || work(&shared, tmux, &natives, &tools, &wake));
-        match spawned {
-            Ok(_) => {
-                self.working = true;
-                None
-            }
+        match self.start_worker() {
+            Ok(()) => None,
             Err(e) => {
                 self.shared.lock().pending = None;
                 Some(Done {
@@ -966,6 +1000,18 @@ impl Copier {
         }
     }
 
+    fn start_worker(&mut self) -> std::io::Result<()> {
+        let shared = Arc::clone(&self.shared);
+        let tools = Arc::clone(&self.tools);
+        let wake = Arc::clone(&self.wake);
+        let (tmux, natives) = (self.tmux, self.natives.clone());
+        std::thread::Builder::new()
+            .name("wisp-clipboard".to_owned())
+            .spawn(move || work(&shared, tmux, &natives, &tools, &wake))?;
+        self.working = true;
+        Ok(())
+    }
+
     pub fn take(&self) -> Vec<Done> {
         std::mem::take(&mut self.shared.lock().results)
     }
@@ -973,6 +1019,7 @@ impl Copier {
 
 impl Drop for Copier {
     fn drop(&mut self) {
+        self.shared.windows.stopped.store(true, Ordering::SeqCst);
         self.shared.lock().closed = true;
         self.shared.ready.notify_all();
         self.shared.running.stop();
@@ -980,6 +1027,13 @@ impl Drop for Copier {
 }
 
 fn work(shared: &Shared, tmux: bool, natives: &[Native], tools: &Tools, wake: &Notify) {
+    let warm_windows = || {
+        natives
+            .contains(&Native::Windows)
+            .then(|| windows::Helper::start(tools, &shared.windows))
+            .flatten()
+    };
+    let mut windows = warm_windows();
     loop {
         let (text, purpose) = {
             let mut queue = shared.lock();
@@ -997,7 +1051,7 @@ fn work(shared: &Shared, tmux: bool, natives: &[Native], tools: &Tools, wake: &N
             }
         };
         let chars = text.chars().count();
-        let outcome = copy_in(&text, tmux, natives, tools, &shared.running);
+        let outcome = copy_in(&text, tmux, natives, tools, &shared.running, &mut windows);
         {
             let mut queue = shared.lock();
             queue.results.push(Done {
@@ -1007,10 +1061,14 @@ fn work(shared: &Shared, tmux: bool, natives: &[Native], tools: &Tools, wake: &N
             });
         }
         wake.notify_one();
+        if windows.is_none() {
+            windows = warm_windows();
+        }
     }
 }
 
 pub mod reader;
+mod windows;
 
 #[cfg(test)]
 #[path = "../../tests/support/fake_tool.rs"]

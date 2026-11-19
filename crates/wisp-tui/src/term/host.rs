@@ -1,8 +1,13 @@
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::caps::Env;
+
+pub fn wsl_root() -> PathBuf {
+    std::env::var_os("WISP_WSL_ROOT").map_or_else(|| PathBuf::from("/"), PathBuf::from)
+}
 
 pub const TMUX_PATIENCE: Duration = Duration::from_secs(1);
 
