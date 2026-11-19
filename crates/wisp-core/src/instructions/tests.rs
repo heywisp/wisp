@@ -96,11 +96,17 @@ fn the_disk_never_blocks_on_a_fifo() {
         0,
     )
     .unwrap();
-    let read = within_a_second(move || Disk.read(&path).unwrap());
-    assert_eq!(read, None);
+    let read = within_a_second(move || {
+        (
+            Disk.read(&path).unwrap(),
+            Disk.read_capped(&path, 8).unwrap(),
+        )
+    });
+    assert_eq!(read, (None, None));
     let file = dir.path().join("plain.md");
     std::fs::write(&file, "plain\n").unwrap();
     assert_eq!(Disk.read(&file).unwrap(), Some(b"plain\n".to_vec()));
+    assert_eq!(Disk.read_capped(&file, 3).unwrap(), Some(b"pla".to_vec()));
     assert_eq!(Disk.metadata(&file).unwrap().kind, Kind::File);
     assert_eq!(Disk.metadata(dir.path()).unwrap().kind, Kind::Directory);
 }

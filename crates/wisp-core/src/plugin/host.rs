@@ -1372,6 +1372,17 @@ impl Chat for PluginHost {
     }
 }
 
+impl wisp_plugin_api::project::Project for PluginHost {
+    fn key(&self) -> Option<String> {
+        if self.refuses(Import::ProjectKey) {
+            return None;
+        }
+        let data = locked(&self.kernel.data_dir).clone()?;
+        let root = self.kernel.workspace()?.root;
+        crate::workspace::project_key(&root, &data)
+    }
+}
+
 impl Log for PluginHost {
     fn write(&self, _level: Level, _line: &str) {}
 }
@@ -1694,6 +1705,10 @@ impl Host for PluginHost {
         } else {
             &()
         }
+    }
+
+    fn project(&self) -> &dyn wisp_plugin_api::project::Project {
+        self
     }
 
     fn model(&self) -> &dyn wisp_plugin_api::model::Model {

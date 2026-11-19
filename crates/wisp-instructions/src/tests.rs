@@ -310,6 +310,42 @@ fn only_a_real_git_directory_or_gitdir_file_marks_a_repository() {
     t.write("proj/huge/.git", &huge);
     assert!(!is_repository(&t.base.join("proj/huge"), &Disk));
 
+    struct Underreported {
+        raw: Vec<u8>,
+        caps: std::cell::RefCell<Vec<u64>>,
+    }
+    impl Files for Underreported {
+        fn metadata(&self, _: &Path) -> io::Result<Meta> {
+            Ok(Meta {
+                kind: Kind::File,
+                len: 16,
+                mtime: None,
+            })
+        }
+        fn exists(&self, _: &Path) -> bool {
+            true
+        }
+        fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+            Ok(path.to_owned())
+        }
+        fn read(&self, _: &Path) -> io::Result<Option<Vec<u8>>> {
+            Ok(Some(self.raw.clone()))
+        }
+        fn read_capped(&self, _: &Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
+            self.caps.borrow_mut().push(limit);
+            let cap = usize::try_from(limit).unwrap_or(usize::MAX);
+            Ok(Some(self.raw[..self.raw.len().min(cap)].to_vec()))
+        }
+    }
+    let underreported = Underreported {
+        raw: [huge.as_bytes(), b"extra"].concat(),
+        caps: std::cell::RefCell::new(Vec::new()),
+    };
+    assert!(!is_repository(Path::new("fake"), &underreported));
+    assert!(pointed(Path::new("fake/.git"), GITFILE, &underreported).is_none());
+    assert!(pointed(Path::new("fake/commondir"), b"", &underreported).is_none());
+    assert_eq!(*underreported.caps.borrow(), vec![GITFILE_MAX_BYTES + 1; 3]);
+
     t.write("proj/other/.git", "not a gitfile\n");
     std::fs::create_dir_all(t.base.join("proj/other/sub")).unwrap();
     assert!(!is_repository(&t.base.join("proj/other"), &Disk));

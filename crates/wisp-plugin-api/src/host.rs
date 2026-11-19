@@ -698,6 +698,10 @@ pub trait Host:
         &()
     }
 
+    fn project(&self) -> &dyn crate::project::Project {
+        &()
+    }
+
     fn manage(&self) -> &dyn crate::manage::Manage {
         &()
     }

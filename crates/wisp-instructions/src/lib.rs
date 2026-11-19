@@ -80,6 +80,17 @@ pub trait Files {
     fn exists(&self, path: &Path) -> bool;
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
     fn read(&self, path: &Path) -> io::Result<Option<Vec<u8>>>;
+    fn read_capped(&self, path: &Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
+        let Some(mut raw) = self.read(path)? else {
+            return Ok(None);
+        };
+        if let Ok(cap) = usize::try_from(limit)
+            && raw.len() > cap
+        {
+            raw.truncate(cap);
+        }
+        Ok(Some(raw))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -197,28 +208,44 @@ pub fn total_bytes(summary: &Summary) -> u64 {
 }
 
 pub fn project_root(start: &Path, files: &dyn Files) -> PathBuf {
+    repository(start, files).unwrap_or_else(|| start.to_owned())
+}
+
+pub fn repository(start: &Path, files: &dyn Files) -> Option<PathBuf> {
     start
         .ancestors()
         .find(|dir| is_repository(dir, files))
-        .unwrap_or(start)
-        .to_owned()
+        .map(Path::to_owned)
 }
 
+pub const GITFILE: &[u8] = b"gitdir:";
 const GITFILE_MAX_BYTES: u64 = 1 << 20;
 
 pub fn is_repository(dir: &Path, files: &dyn Files) -> bool {
     let marker = dir.join(".git");
-    match files.metadata(&marker).map(|meta| (meta.kind, meta.len)) {
-        Ok((Kind::Directory, _)) => ["HEAD", "objects", "refs"]
-            .iter()
-            .all(|entry| files.exists(&marker.join(entry))),
-        Ok((Kind::File, len)) if len <= GITFILE_MAX_BYTES => files
-            .read(&marker)
-            .ok()
-            .flatten()
-            .is_some_and(|raw| raw.starts_with(b"gitdir:")),
+    match files.metadata(&marker).map(|meta| meta.kind) {
+        Ok(Kind::Directory) => is_git_dir(&marker, files),
+        Ok(Kind::File) => pointed(&marker, GITFILE, files).is_some(),
         _ => false,
     }
+}
+
+pub fn is_git_dir(dir: &Path, files: &dyn Files) -> bool {
+    ["HEAD", "objects", "refs"]
+        .iter()
+        .all(|entry| files.exists(&dir.join(entry)))
+}
+
+pub fn pointed(file: &Path, prefix: &[u8], files: &dyn Files) -> Option<Vec<u8>> {
+    let meta = files.metadata(file).ok()?;
+    if meta.kind != Kind::File || meta.len > GITFILE_MAX_BYTES {
+        return None;
+    }
+    let raw = files.read_capped(file, GITFILE_MAX_BYTES + 1).ok()??;
+    if u64::try_from(raw.len()).unwrap_or(u64::MAX) > GITFILE_MAX_BYTES {
+        return None;
+    }
+    Some(raw.strip_prefix(prefix)?.to_vec())
 }
 
 pub fn mtime(modified: std::time::SystemTime) -> Option<i64> {

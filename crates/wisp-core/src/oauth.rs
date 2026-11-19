@@ -222,10 +222,7 @@ impl fmt::Debug for PendingLogin {
 }
 
 fn random_secret() -> String {
-    let mut bytes = Vec::with_capacity(32);
-    bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-    bytes.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
-    URL_SAFE_NO_PAD.encode(bytes)
+    URL_SAFE_NO_PAD.encode(crate::secrets::random_bytes::<32>())
 }
 
 fn now() -> u64 {

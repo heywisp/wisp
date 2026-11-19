@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use crate::secrets::detect::wsl2_release;
 pub use wisp_protocol::shorten_path;
 
+mod project;
 mod resources;
+
+pub use project::project_key;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {

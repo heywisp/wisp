@@ -93,6 +93,7 @@ pub enum Import {
     ManageManage,
     ModelAsk,
     UsageAccounts,
+    ProjectKey,
     McpPrompts,
     McpGetPrompt,
     McpResources,
@@ -116,7 +117,7 @@ pub enum Inside {
     NeedsCall,
 }
 
-pub const ALL: [Import; 102] = [
+pub const ALL: [Import; 103] = [
     Import::SessionCurrent,
     Import::WorkspaceRoot,
     Import::WorkspaceHome,
@@ -206,6 +207,7 @@ pub const ALL: [Import; 102] = [
     Import::ManageManage,
     Import::ModelAsk,
     Import::UsageAccounts,
+    Import::ProjectKey,
     Import::McpPrompts,
     Import::McpGetPrompt,
     Import::McpResources,
@@ -313,6 +315,7 @@ impl Import {
             Self::ManageManage => "manage.manage",
             Self::ModelAsk => "model.ask",
             Self::UsageAccounts => "usage.accounts",
+            Self::ProjectKey => "project.key",
             Self::McpPrompts => "mcp.prompts",
             Self::McpGetPrompt => "mcp.get-prompt",
             Self::McpResources => "mcp.resources",
@@ -396,6 +399,7 @@ impl Import {
             | Self::JobsCapture
             | Self::WorkspaceFactsEnvironment
             | Self::WorkspaceFactsDataDir
+            | Self::ProjectKey
             | Self::WorkspaceFactsTerminal
             | Self::JobNewsOpening
             | Self::PointsFire
@@ -446,6 +450,7 @@ impl Import {
             | Self::ManageManage
             | Self::ModelAsk
             | Self::UsageAccounts
+            | Self::ProjectKey
             | Self::McpPrompts
             | Self::McpGetPrompt
             | Self::McpResources
@@ -501,6 +506,7 @@ impl Import {
             None if caller.quiet_jobs && matches!(self, Self::JobsAll | Self::JobInfo) => {
                 Inside::Quiet
             }
+            None if caller.describing && self == Self::ProjectKey => Inside::Unavailable,
             None => Inside::Allowed,
         }
     }

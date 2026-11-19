@@ -244,4 +244,17 @@ fn a_quiet_jobs_call_lists_jobs_quietly_and_leaves_every_other_import_allowed() 
             .sync_scope(|| Import::JobsAll.current()),
         Inside::Allowed
     );
+    let describing = Caller::describing().sync_scope(|| {
+        ALL.iter()
+            .map(|import| (*import, import.current()))
+            .collect::<Vec<_>>()
+    });
+    for (import, inside) in describing {
+        let expected = if import == Import::ProjectKey {
+            Inside::Unavailable
+        } else {
+            Inside::Allowed
+        };
+        assert_eq!(inside, expected, "{}", import.wit());
+    }
 }

@@ -5964,6 +5964,7 @@ dependencies = [
  "base64 0.23.1",
  "fancy-regex",
  "futures",
+ "hmac-sha256",
  "image",
  "insta",
  "jiff",

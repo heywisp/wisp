@@ -991,7 +991,7 @@ impl Registry {
     ) -> StartedSet {
         let mut set = StartedSet::default();
         for (id, loaded) in self.plugins.iter().filter(|(id, _)| ids.contains(*id)) {
-            let started = Caller::default().scope(start_one(id, loaded, context, tools, host));
+            let started = Caller::describing().scope(start_one(id, loaded, context, tools, host));
             match started.await {
                 Ok(mut one) => {
                     set.entries.append(&mut one.entries);
@@ -1024,7 +1024,7 @@ impl Registry {
             let (Some(loaded), Some(plugin)) = (self.plugins.get(id), instances.get(id)) else {
                 continue;
             };
-            let result = Caller::default()
+            let result = Caller::describing()
                 .scope(describe_one(
                     id,
                     loaded,
@@ -1096,11 +1096,15 @@ impl Registry {
             .iter()
             .filter(|(_, l)| l.manifest.tools.iter().any(|t| names.contains(&t.name)));
         for (id, loaded) in owners {
-            let Some(plugin) = make_plugin(id, loaded, host) else {
+            let Some(plugin) = Caller::describing().sync_scope(|| make_plugin(id, loaded, host))
+            else {
                 continue;
             };
-            let defs = Caller::default()
-                .scope(async { Contained::new(plugin.describe(context)).await })
+            let defs = Caller::describing()
+                .scope(async {
+                    let future = contain(|| plugin.describe(context)).ok()?;
+                    Contained::new(future).await.ok()
+                })
                 .await
                 .unwrap_or_default();
             for def in defs.into_iter().filter(|d| names.contains(&d.name)) {

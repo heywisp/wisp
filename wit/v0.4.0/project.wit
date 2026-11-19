@@ -1,0 +1,5 @@
+package wisp:plugin@0.4.0;
+
+interface project {
+  key: func() -> option<string>;
+}

@@ -129,6 +129,10 @@ impl Files for CachedFiles<'_> {
         self.files.canonicalize(path)
     }
 
+    fn read_capped(&self, path: &Path, limit: u64) -> io::Result<Option<Vec<u8>>> {
+        self.files.read_capped(path, limit)
+    }
+
     fn read(&self, path: &Path) -> io::Result<Option<Vec<u8>>> {
         let meta = self.files.metadata(path)?;
         if let Some(read) = self.reads.borrow().get(path)
