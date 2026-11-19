@@ -6,6 +6,7 @@ instructions = "<flow>/roles/main.md"
 description = "Runs one task's whole flow: plans, reviews, fixes, verifies, hands over to merge"
 effort = "xhigh"
 instructions = "<flow>/roles/coordinator.md"
+worker = false
 
 [agents.presets.planner]
 description = "Writes a task's plan from the real code and research; no code"
@@ -36,9 +37,11 @@ description = "Reads files for its parent; notes, cleanup and health checks for 
 effort = "medium"
 spawn = false
 instructions = "<flow>/roles/helper.md"
+worker = false
 
 [agents.presets.merge-agent]
 description = "The only agent that commits, verifies and merges MRs"
 effort = "medium"
 spawn = false
 instructions = "<flow>/roles/merge-agent.md"
+worker = false

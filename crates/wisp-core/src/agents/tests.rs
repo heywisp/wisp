@@ -824,3 +824,22 @@ fn a_fallback_list_is_read_and_checked_like_the_presets_own_choice() {
         );
     }
 }
+
+#[test]
+fn shipped_projects_presets_mark_directors_and_helpers_non_workers() {
+    let all = presets(include_str!("../../../../flows/projects/presets.toml"));
+    assert!(all.off().is_empty(), "{:?}", all.off());
+    let non_workers: Vec<&str> = all
+        .usable()
+        .into_iter()
+        .filter(|p| p.worker == Some(false))
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(non_workers, ["coordinator", "helper", "merge-agent"]);
+    assert!(
+        all.usable()
+            .into_iter()
+            .filter(|p| !non_workers.contains(&p.name.as_str()))
+            .all(|p| p.worker.is_none())
+    );
+}
