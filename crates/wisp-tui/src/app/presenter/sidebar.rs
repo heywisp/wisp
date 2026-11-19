@@ -9,7 +9,7 @@ use wisp_protocol::{AgentEvent, ClientCommand, TermSize};
 use wisp_render::chrome::sidebar::{RowOf, Step, rail};
 use wisp_render::chrome::{KeyHint, WIDE_FROM, up_down};
 use wisp_render::markdown::Layout;
-use wisp_render::motion::FRAME_MIN;
+use wisp_render::motion::{FRAME_MIN, PULSE_STEP};
 use wisp_render::picture::{self, Scene};
 use wisp_render::styled::{StyledLine, StyledSpan};
 use wisp_render::theme::glyphs::Glyphs;
@@ -19,7 +19,7 @@ use wisp_render::transcript::copy;
 use super::Presenter;
 use crate::app::selection::Click;
 use crate::app::sidebar::{
-    AGENTS_SECTION, Frame, NO_SUCH_SECTION, NOTHING_NOW, NOTHING_YET, OPEN_ARG, PULSE_STEP, RULE,
+    AGENTS_SECTION, Frame, NO_SUCH_SECTION, NOTHING_NOW, NOTHING_YET, OPEN_ARG, RULE,
     SECTIONS_UNKNOWN, band, no_section_named, none_on, overlay_band, overlay_whole, section_off,
     sidebar_usage, transcript_width,
 };

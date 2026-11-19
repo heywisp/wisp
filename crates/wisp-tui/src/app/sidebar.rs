@@ -24,7 +24,6 @@ pub const NOTHING_NOW: &str = "Nothing to show now";
 pub const OPEN_ARG: &str = "open";
 pub const NO_SUCH_SECTION: &str = "No sidebar section by that name";
 pub const SECTIONS_UNKNOWN: &str = "The sidebar's sections aren't known yet";
-pub const PULSE_STEP: Duration = Duration::from_millis(100);
 const DRAWN_ROWS: usize = 10_000;
 
 pub fn sidebar_usage() -> String {

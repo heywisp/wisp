@@ -953,7 +953,7 @@ fn lit(spec: &str, flows: &[SlotFlow], now_ms: u64, policy: MotionPolicy) -> Sce
 }
 
 #[test]
-fn a_light_eases_along_the_lines_from_sender_to_receiver_and_rings_there_for_280_ms() {
+fn a_light_steps_along_the_lines_from_sender_to_receiver_and_rings_there_for_280_ms() {
     let family = "a=w a/b=w a/c=d";
     let siblings = [flow(Some("a/b"), Some("a/c"), 1000)];
     let at = |ms| lit(family, &siblings, ms, MotionPolicy::Full);
@@ -965,14 +965,18 @@ fn a_light_eases_along_the_lines_from_sender_to_receiver_and_rings_there_for_280
     assert_eq!(light.path.len(), 4, "over the crossbar, not up to a");
     assert_eq!((light.path[0], light.path[3]), (dot(2), dot(3)));
     assert_eq!((light.path[1].0, light.path[2].0), (dot(2).0, dot(3).0));
-    assert_eq!(light.along, 0.0);
-    assert_eq!(
-        at(1150).lights[0].along,
-        smooth(0.25),
-        "600 ms for a short line"
-    );
-    assert_eq!(at(1300).lights[0].along, 0.5);
-    let landed = at(1600);
+    for h in 0..21 {
+        let along = (h + 1) as f32 / 22.0;
+        let step = 1000 + h * 33;
+        assert_eq!(at(step).lights[0].along, along, "at step {h}");
+        assert_eq!(
+            at(step + 32).lights[0].along,
+            along,
+            "before step {}",
+            h + 1
+        );
+    }
+    let landed = at(1693);
     assert!(landed.lights.is_empty());
     assert_eq!(
         landed.rings,
@@ -981,16 +985,31 @@ fn a_light_eases_along_the_lines_from_sender_to_receiver_and_rings_there_for_280
             open: 0.0
         }]
     );
-    assert_eq!(at(1740).rings[0].open, 0.5);
-    assert!(!at(1880).moving(), "gone after REVEAL");
+    assert_eq!(at(1833).rings[0].open, 0.5);
+    assert!(!at(1973).moving(), "gone after REVEAL");
     let report = [flow(Some("a/c"), None, 1000)];
     let up = &lit(family, &report, 1000, MotionPolicy::Full).lights[0];
     assert_eq!(up.path.first(), Some(&dot(3)));
     assert_eq!(up.path.last(), Some(&dot(0)), "to main");
-    let calm = lit(family, &siblings, 1600, MotionPolicy::Calm);
-    assert_eq!(calm.lights[0].along, 0.5, "Calm doubles the flight");
+    let calm = |ms| lit(family, &siblings, ms, MotionPolicy::Calm);
+    assert_eq!(
+        calm(1065).lights[0].along,
+        1.0 / 22.0,
+        "Calm waits two frames"
+    );
+    assert_eq!(calm(1066).lights[0].along, 2.0 / 22.0, "the first step");
     let still = lit(family, &siblings, 1300, MotionPolicy::Reduced);
     assert!(!still.moving(), "Reduced draws no light and no ring");
+    let to_self = [flow(Some("a/b"), Some("a/b"), 1000)];
+    let same = lit(family, &to_self, 1000, MotionPolicy::Full);
+    assert!(same.lights.is_empty(), "no line cells to fly over");
+    assert_eq!(
+        same.rings,
+        [Ring {
+            on: start.dots[2],
+            open: 0.0
+        }]
+    );
 
     let nodes = scene(family);
     let paged = |now_ms| {
@@ -1048,29 +1067,29 @@ fn folded_ends_land_on_their_fold_and_past_three_in_flight_a_flow_only_rings() {
 
 const BEND: &str = r#"
         ●          ●          ●          ●          ●          ●          ●          ●          ●          ●
-       ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⣆     ⠒⡗⠒⡖⠒⣦     ⠒⡗⠒⡖⠒⡷     ⠒⡗⠒⡖⠗⡆
-        ⡇ ⡇ ⣇      ⡇ ⡇ ⣇      ⡇ ⡇ ⣇      ⡇ ⡇ ⣧      ⡇ ⡇ ⡷      ⡇ ⡇ ⡟      ⡇ ⡇ ⡏      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇
+       ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡷     ⠒⡗⠒⡖⠒⡷     ⠒⡗⠒⡖⠗⡆     ⠒⡗⠒⡖⠗⡆     ⠒⡗⠒⡗⠒⡆     ⠒⡗⠒⡗⠒⡆     ⠒⡗⠗⡖⠒⡆     ⠒⡗⠗⡖⠒⡆
+        ⡇ ⡇ ⡟      ⡇ ⡇ ⡟      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇
         ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓
 
-        ●          ●          ●          ●          ●          ●          ●          ●          ●⠐         ●⠐
-       ⠒⡗⠒⡾⠒⡆     ⠒⡗⠒⡗⠒⡆     ⠒⡗⠺⡖⠒⡆     ⠒⡗⠗⡖⠒⡆     ⠒⡿⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡟⠒⡖⠒⡆     ⠒⡟⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆
+        ●          ●          ●⠐         ●⠐         ●⠰         ●⡰        ⢀●⡰        ⢄●⡰        ⢄●⡰        ⢆●⡰
+       ⠒⡟⠒⡖⠒⡆     ⠒⡟⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆
         ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇
         ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓
 
-        ●⠰         ●⡰        ⢀●⡰        ⢄●⡰        ⢆●⡰        ⢆●⡰        ⢎●⡰         ●
+       ⢎●⡰         ●          ●          ●          ●          ●          ●          ●
        ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆     ⠒⡗⠒⡖⠒⡆
         ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇      ⡇ ⡇ ⡇
         ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓      ✓ ● ✓
 "#;
 
 const DROP: &str = r#"
-        ●      ●      ●      ●      ●      ●      ●      ●      ●      ●      ●      ●      ●      ●
-        ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⣇      ⣇      ⣧      ⣧      ⡷
-        ⣇      ⣇      ⣇      ⣇      ⣧      ⣧      ⡷      ⡷      ⡟      ⡏      ⡏      ⡇      ⡇      ⡇
+        ●      ●      ●      ●      ●      ●      ●      ●      ●      ●      ●      ●      ●⠐     ●⠐
+        ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡟      ⡟      ⡟      ⡟      ⡟      ⡟      ⡇      ⡇
+        ⡟      ⡟      ⡟      ⡟      ⡟      ⡟      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇
         ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓
 
-        ●      ●      ●      ●      ●⠐     ●⠐     ●⠰     ●⡰    ⢀●⡰    ⢄●⡰    ⢆●⡰    ⢆●⡰    ⢎●⡰     ●
-        ⡷      ⡟      ⡟      ⡟      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇
+        ●⠰     ●⡰    ⢀●⡰    ⢄●⡰    ⢄●⡰    ⢆●⡰    ⢎●⡰     ●      ●      ●      ●      ●      ●      ●
+        ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇
         ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇      ⡇
         ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓      ✓
 "#;
@@ -1081,7 +1100,7 @@ fn film(spec: &str, sent: SlotFlow, (x, y, w): (usize, usize, usize), group: usi
     let shot = |k: u64| {
         let topology = Topology {
             flows: &flows,
-            now_ms: 1000 + (k * 100 + 1) / 3,
+            now_ms: 1000 + k * ms(FRAME_MIN),
             cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
             ..view(&nodes, NOBODY, 35, GlyphSet::Unicode)
         };
@@ -1109,7 +1128,7 @@ fn film(spec: &str, sent: SlotFlow, (x, y, w): (usize, usize, usize), group: usi
 }
 
 #[test]
-fn a_bump_slides_a_dot_at_a_time_round_corners_and_a_ring_opens_on_landing() {
+fn a_light_moves_a_whole_cell_a_step_round_corners_and_a_ring_opens_on_landing() {
     let review = flow(Some("task-a/review"), Some("task-a"), 1000);
     let spec = f1("task-a/review=d task-a/coder/helper=d");
     let bend = film(&spec, review, (14, 3, 8), 10);
@@ -1135,6 +1154,41 @@ fn lit_at(flows: &[SlotFlow], now_ms: u64, set: GlyphSet, depth: Depth) -> Topol
 }
 
 #[test]
+fn a_long_route_moves_the_same_cells_every_frame_and_lands_within_1_2_s() {
+    let nodes = scene(FLAT);
+    let flows = [flow(
+        Some(&nodes.first().unwrap().key),
+        Some(&nodes.last().unwrap().key),
+        1000,
+    )];
+    let (width, rows) = (200, 8);
+    let set = GlyphSet::Unicode;
+    let mut prev = None;
+    for age in (0..=1200).step_by(33).chain([1200]) {
+        let topology = Topology {
+            nodes: &nodes,
+            layout: Layout::new(width, set),
+            ..lit_at(&flows, 1000 + age, set, Depth::TrueColor)
+        };
+        let lines = page(&topology, rows + 1).lines;
+        let heads: Vec<_> = (1..rows - 1)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .filter(|&at| look_at(&lines, at).and_then(|look| look.fg) == Some(LIGHT.into()))
+            .collect();
+        if age < 1056 {
+            let &[(x, y)] = heads.as_slice() else {
+                panic!("one bright cell at {age} ms, got {heads:?}");
+            };
+            if let Some((px, py)) = prev.replace((x, y)) {
+                assert_eq!(x.abs_diff(px) + y.abs_diff(py), 6, "at {age} ms");
+            }
+        } else {
+            assert!(heads.is_empty(), "no head after landing at {age} ms");
+        }
+    }
+}
+
+#[test]
 fn on_the_page_a_ring_covers_the_picked_brackets_and_they_return() {
     let nodes = scene(SIX);
     let flows = [flow(Some("agent-viz"), Some("agent-viz/coder"), 1000)];
@@ -1153,19 +1207,19 @@ fn on_the_page_a_ring_covers_the_picked_brackets_and_they_return() {
         row.trim_end().to_owned()
     };
     let head = |ms, set| text(&at(ms, set).lines)[14].chars().nth(60);
-    assert_eq!(head(0, GlyphSet::Unicode), Some('⡏'));
+    assert_eq!(head(0, GlyphSet::Unicode), Some('⣧'));
     assert_eq!(head(0, GlyphSet::Ascii), Some('#'));
-    assert_eq!(row(600, GlyphSet::Unicode, 16), " ⡖⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠺⠒");
-    assert_eq!(row(600, GlyphSet::Ascii, 16), " .---------------------#-");
-    assert_eq!(row(1440, GlyphSet::Unicode, 20), "⢎●⡰");
-    assert_eq!(row(1440, GlyphSet::Ascii, 20), "(@)");
-    assert_eq!(row(1500, GlyphSet::Unicode, 20), "[●]");
-    let Drawing { lines, moving, .. } = at(1440, GlyphSet::Unicode);
+    assert_eq!(row(600, GlyphSet::Unicode, 16), " ⡖⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠒⠗⠒⠒⠒⠒⠒⠒⠒⠒⠒");
+    assert_eq!(row(600, GlyphSet::Ascii, 16), " .-------------#---------");
+    assert_eq!(row(1131, GlyphSet::Unicode, 20), "⢎●⡰");
+    assert_eq!(row(1131, GlyphSet::Ascii, 20), "(@)");
+    assert_eq!(row(1171, GlyphSet::Unicode, 20), "[●]");
+    let Drawing { lines, moving, .. } = at(1131, GlyphSet::Unicode);
     let band = look_at(&lines, (11, 20)).and_then(|look| look.bg);
     assert_eq!(band, Some(Ink::from(Token::AccentTint)), "the band stays");
     assert!(moving);
     assert!(
-        !at(1500, GlyphSet::Unicode).moving,
+        !at(1171, GlyphSet::Unicode).moving,
         "no frames once the ring has gone"
     );
 }
@@ -1182,18 +1236,18 @@ fn rings_give_way_to_counts_and_a_shared_cell_shows_the_right_dot_s_ring() {
     };
     let folds = [
         flow(None, Some("task-a/coder"), 1000),
-        flow(None, Some("task-b/c05"), 1000),
+        flow(None, Some("task-b/c05"), 868),
     ];
     let busy = busy("task-c/r3=f");
     assert_eq!(
-        ringing(&busy, &folds, 1840, 3),
+        ringing(&busy, &folds, 1636, 3),
         " ●  ○ ⢎●+7⢎✓+30          ○"
     );
     let siblings = [
         flow(Some("task-a"), Some("task-a/helper"), 1000),
         flow(Some("task-a"), Some("task-a/planner"), 1000),
     ];
-    let family = ringing(&f1(""), &siblings, 1840, 6);
+    let family = ringing(&f1(""), &siblings, 1636, 6);
     assert_eq!(family, "           ●  ⢎✓⢎●⡰○          ○  ✓");
     let ends = ["helper", "merge", "task-a", "task-c"];
     let crowd: Vec<SlotFlow> = (ends.iter())
@@ -1212,7 +1266,7 @@ fn each_colour_tier_draws_the_bump_and_only_full_colour_fades_its_trail() {
         let theme = Theme::new(Mode::Dark, depth);
         let topology = Topology {
             nodes: &nodes,
-            ..lit_at(&review, 1433, GlyphSet::Unicode, depth)
+            ..lit_at(&review, 1264, GlyphSet::Unicode, depth)
         };
         let lines = panel(&topology).lines;
         assert_eq!(text(&lines)[4].chars().nth(16), Some('⠗'), "{depth:?}");
@@ -1249,17 +1303,17 @@ fn each_colour_tier_draws_the_bump_and_only_full_colour_fades_its_trail() {
     let ascii = Topology {
         nodes: &nodes,
         layout: Layout::new(35, GlyphSet::Ascii),
-        ..lit_at(&review, 1433, GlyphSet::Ascii, Depth::TrueColor)
+        ..lit_at(&review, 1264, GlyphSet::Ascii, Depth::TrueColor)
     };
     assert_eq!(text(&panel(&ascii).lines)[4].chars().nth(16), Some('#'));
     let landed = Topology {
-        now_ms: 1840,
+        now_ms: 1636,
         ..ascii
     };
     assert_eq!(&text(&panel(&landed).lines)[3][14..17], "(@)");
     let ringing = Topology {
         nodes: &nodes,
-        ..lit_at(&review, 1840, GlyphSet::Unicode, Depth::TrueColor)
+        ..lit_at(&review, 1636, GlyphSet::Unicode, Depth::TrueColor)
     };
     let half = look_at(&panel(&ringing).lines, (16, 3)).and_then(|look| look.fg);
     assert_eq!(half, Some(Ink::from(Token::Gleam)), "the light's ink");

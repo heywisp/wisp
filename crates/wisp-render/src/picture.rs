@@ -173,7 +173,18 @@ fn walk(points: &[(f32, f32)], by: f32) -> (f32, f32) {
 
 fn sparks(light: &Light, grid: Grid) -> Vec<Glow> {
     let points: Vec<(f32, f32)> = light.path.iter().map(|&p| at(grid, p)).collect();
-    let head = light.along * points.windows(2).map(|w| span(w[0], w[1])).sum::<f32>();
+    let mut cells = light.along * light.path.windows(2).map(|w| span(w[0], w[1])).sum::<f32>();
+    let mut head = 0.0;
+    for (line, px) in light.path.windows(2).zip(points.windows(2)) {
+        let length = span(line[0], line[1]);
+        let pixels = span(px[0], px[1]);
+        if cells < length {
+            head += pixels * (cells / length);
+            break;
+        }
+        cells -= length;
+        head += pixels;
+    }
     let r = light.radius * grid.0;
     let mut out: Vec<Glow> = (0..=TAIL_STEPS)
         .filter_map(|i| {
@@ -641,7 +652,7 @@ fn edge_fade(scene: &Scene, grid: Grid, at: (f32, f32)) -> f32 {
     smooth((clearance(scene, grid, at) / (FADE * grid.1)).clamp(0.0, 1.0))
 }
 
-pub(crate) fn smooth(u: f32) -> f32 {
+fn smooth(u: f32) -> f32 {
     u * u * (3.0 - 2.0 * u)
 }
 
