@@ -160,6 +160,21 @@ async fn a_call_preserves_text_attachments_errors_and_current_parameters() {
         .unwrap_err();
     assert!(error.contains("current parameters:"), "{error}");
     assert!(error.contains(r#""type":"integer""#), "{error}");
+
+    fs::write(scratch.root.join("structured"), "yes").unwrap();
+    let run = mcp
+        .call(
+            "mcp__local__z_echo",
+            json!({"distinct": true}),
+            Duration::from_secs(2),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        run.result.unwrap(),
+        concat!(r#"{"summary": true}"#, "\n", r#"{"a":[1],"b":2}"#)
+    );
 }
 
 #[tokio::test]
@@ -1546,6 +1561,19 @@ async fn key_is_scrubbed(mcp: &Service, server: &str) {
         assert_eq!(run.attachments[0].bytes, b"x");
         assert!(matches!(run.outcome, ToolOutcome::Completed { is_error, .. } if is_error == fail));
     }
+    let run = mcp
+        .call(
+            &tool_name(server, "has-key"),
+            json!({"escaped": true}),
+            Duration::from_secs(2),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        run.result.unwrap(),
+        json!({"named":{"[redacted]":["[redacted]"]}}).to_string()
+    );
     let messages = mcp
         .get_prompt(&format!("{}prompt:review.code", tool_name(server, "")))
         .await
@@ -2101,6 +2129,7 @@ async fn form_secrets_and_bounds() {
             ("pdf", "CANARY-server-form-secret"),
             ("mime", "canary-server-form-secret"),
             ("escaped", r#"CANARY-a"b\c"#),
+            ("unicode", "CANARY-e\u{301}\"b\\c"),
         ] {
             let scratch = ScratchDir::new("wisp-mcp-", "form-secret");
             let mcp = form_service(&scratch, mode, json!({
@@ -2116,6 +2145,7 @@ async fn form_secrets_and_bounds() {
                 fs::write(scratch.root.join("echo-form"), "yes").unwrap();
             }
             fs::write(scratch.root.join("echo-attachment"), leak).unwrap();
+            fs::write(scratch.root.join("escaped"), "yes").unwrap();
             let (tx, mut rx) = tokio::sync::mpsc::channel(2);
             let numeric_canaries = ["73129684", "8.514e9", "42869173", "6.715e8"];
             let answer = tokio::spawn(async move {
@@ -2193,6 +2223,8 @@ async fn form_secrets_and_bounds() {
             assert_no_form_secret(&format!("{run:?}"), canary, &numeric_canaries);
             let result = run.result.unwrap();
             assert_no_form_secret(&result, canary, &numeric_canaries);
+            assert!(!result.contains(r"\u0043ANARY") && !result.contains(r"\u0063anary"));
+            assert_eq!(result.matches(r#""by_name""#).count(), 1);
             assert!(result.contains("[redacted]"));
             assert!(result.contains("Wisp withheld linear's attachments, since this call received a value typed in the secret box."));
             assert_eq!(

@@ -291,8 +291,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 output.flush()?;
                 continue;
             }
+            "tools/call" if Path::new("structured").exists() => {
+                let mut content = vec![json!({"type":"text","text":r#"{"b":2,"a":[1]}"#})];
+                if message["params"]["arguments"]["distinct"] == true {
+                    content.push(json!({"type":"text","text":r#"{"summary": true}"#}));
+                }
+                json!({"content":content,"structuredContent":{"a":[1],"b":2}})
+            }
             "tools/call" if mode == "key" => {
-                if message["params"]["arguments"]["echo-key"] == true {
+                if message["params"]["arguments"]["escaped"] == true {
+                    let key = std::env::var(&key_name)?;
+                    let escaped = escaped_json_string(&key);
+                    let text = format!(r#"{{"named":{{{escaped}:[{escaped}]}}}}"#);
+                    json!({"content":[{"type":"text","text":text}],"structuredContent":{"named":{(&key):[key]}}})
+                } else if message["params"]["arguments"]["echo-key"] == true {
                     let key = std::env::var(&key_name)?;
                     json!({"content":[
                         {"type":"text","text":format!("key {key}")},
@@ -394,6 +406,39 @@ fn form_output(mut summary: Value, echo: &str) -> Value {
             ));
             summary["content"] = json!([{"type":"text","text":echo},{"type":"resource","resource":{"uri":"test:///echo","text":echo}},{"type":"resource","resource":{"uri":"test:///receipt","mimeType":mime,"blob":blob}}]);
         }
+        if Path::new("escaped").exists()
+            && let Ok(Value::Object(answers)) = serde_json::from_str(echo)
+        {
+            let by_name = answers
+                .values()
+                .map(|answer| {
+                    let name = answer
+                        .as_str()
+                        .map_or_else(|| answer.to_string(), str::to_owned);
+                    format!("{}:true", escaped_json_string(&name))
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let structured = summary["structuredContent"].to_string();
+            let text = format!(r#"{{"by_name":{{{by_name}}},{}"#, &structured[1..]);
+            if let Ok(structured) = serde_json::from_str(&text)
+                && let Some(content) = summary["content"].as_array_mut()
+            {
+                content.push(json!({"type":"text","text":text}));
+                summary["structuredContent"] = structured;
+            }
+        }
     }
     summary
+}
+
+fn escaped_json_string(value: &str) -> String {
+    let Some((first, tail)) = value.split_at_checked(1) else {
+        return json!(value).to_string();
+    };
+    format!(
+        r#""\u{:04x}{}"#,
+        first.as_bytes()[0],
+        &json!(tail).to_string()[1..]
+    )
 }
