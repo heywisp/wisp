@@ -236,9 +236,11 @@ impl TryFrom<Snapshot> for PlanUsage {
 
 pub const MAX_USAGE_WINDOWS: usize = 64;
 
+const MAX_WINDOW_NAME: usize = 96;
+
 pub fn valid_window_name(value: &str) -> bool {
     !value.is_empty()
-        && value.len() <= 96
+        && value.len() <= MAX_WINDOW_NAME
         && value
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || b"-_. ".contains(&c))
@@ -297,8 +299,9 @@ impl UsageWindow {
                 .is_none_or(|seconds| seconds > 0 && seconds <= 31_622_400)
             && match &self.scope {
                 UsageScope::All => true,
-                UsageScope::Model(model) | UsageScope::ModelFamily(model) => {
-                    model.len() <= 96 && crate::check_model_id(model).is_ok()
+                UsageScope::Model(model) => crate::valid_model_id(model),
+                UsageScope::ModelFamily(model) => {
+                    model.len() <= MAX_WINDOW_NAME && crate::valid_model_id(model)
                 }
             }
     }
@@ -417,6 +420,25 @@ mod tests {
             serde_json::from_str::<crate::ErrorDetail>(&encoded).unwrap(),
             detail
         );
+        for (scope, valid) in [
+            (UsageScope::Model("m".repeat(96)), true),
+            (UsageScope::Model("m".repeat(97)), true),
+            (UsageScope::Model("m".repeat(128)), true),
+            (UsageScope::Model("m".repeat(129)), false),
+            (UsageScope::ModelFamily("m".repeat(96)), true),
+            (UsageScope::ModelFamily("m".repeat(97)), false),
+        ] {
+            detail.limit_reached.as_mut().unwrap().scope = scope;
+            let encoded = serde_json::to_string(&detail).unwrap();
+            let decoded = serde_json::from_str::<crate::ErrorDetail>(&encoded);
+            let scope = &detail.limit_reached.as_ref().unwrap().scope;
+            if valid {
+                let decoded = decoded.unwrap_or_else(|err| panic!("{scope:?}: {err}"));
+                assert_eq!(decoded, detail);
+            } else {
+                assert!(decoded.is_err(), "{scope:?}");
+            }
+        }
         assert!(UsageScope::ModelFamily("claude-opus".into()).applies_to("claude-opus-5-5"));
         assert!(!UsageScope::ModelFamily("claude-opus".into()).applies_to("claude-sonnet-5-5"));
     }

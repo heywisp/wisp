@@ -1152,6 +1152,9 @@ pub(super) async fn http_error(
             && let Some(model) = model
         {
             window.scope = UsageScope::Model(model.to_owned());
+            if !window.valid() {
+                detail.limit_reached = None;
+            }
         }
     }
     let raw_message = object
@@ -1889,7 +1892,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn an_antigravity_used_up_quota_is_a_limit_on_its_model_with_its_reset() {
-        use wisp_protocol::RetryClass;
+        use wisp_protocol::{ErrorDetail, RetryClass};
         let now = 1_800_000_000;
         let reset = now + 508_200;
         let timestamp = jiff::Timestamp::from_second(reset).unwrap().to_string();
@@ -1951,10 +1954,29 @@ pub(crate) mod tests {
             ));
         }
         cases.push((403, json!({"error": {"code": 403, "status": "PERMISSION_DENIED", "details": [{"reason": "QUOTA_EXHAUSTED"}]}}).to_string(), None, ErrorKind::RateLimit, RetryClass::Never, Some(None)));
+        let models = [
+            Some("gemini-4-carbon".to_owned()),
+            Some("m".repeat(96)),
+            Some("m".repeat(97)),
+            Some("m".repeat(128)),
+            Some("m".repeat(129)),
+            None,
+        ];
+        let scoped_cases: Vec<_> = cases
+            .iter()
+            .flat_map(|case @ (status, _, _, _, _, limit)| {
+                let models = if *status == 429 && limit.is_some() {
+                    &models[..]
+                } else {
+                    &models[..1]
+                };
+                models.iter().map(move |model| (case, model.as_deref()))
+            })
+            .collect();
         let server = http::serve(
-            cases
+            scoped_cases
                 .iter()
-                .map(|(status, body, header, ..)| {
+                .map(|((status, body, header, ..), _)| {
                     let headers = header
                         .map(|value| vec![("retry-after", value)])
                         .unwrap_or_default();
@@ -1963,32 +1985,37 @@ pub(crate) mod tests {
                 .collect(),
         )
         .await;
-        for (status, body, _, kind, retry, limit) in cases {
+        for ((status, body, _, kind, retry, limit), model) in scoped_cases {
             let response = reqwest::get(&server.url).await.unwrap();
-            let error = http_error(
-                response,
-                true,
-                Some("gemini-4-carbon"),
-                now,
-                Carries::default(),
-            )
-            .await;
-            assert_eq!(error.kind, kind, "{status} {body}");
-            assert_eq!(error.detail.retry, retry, "{status} {body}");
+            let error = http_error(response, true, model, now, Carries::default()).await;
+            assert_eq!(error.kind, *kind, "{status} {body}");
+            assert_eq!(error.detail.retry, *retry, "{status} {body}");
+            let expected = if model.is_some_and(|id| id.len() == 129) {
+                None
+            } else {
+                *limit
+            };
             assert_eq!(
                 error
                     .detail
                     .limit_reached
                     .as_ref()
                     .map(|window| window.resets_at),
-                limit,
-                "{status} {body}"
+                expected,
+                "{status} {body} {model:?}"
             );
-            if let Some(window) = error.detail.limit_reached {
-                assert_eq!(window.scope, UsageScope::Model("gemini-4-carbon".into()));
+            if let Some(window) = error.detail.limit_reached.as_deref() {
+                assert_eq!(
+                    window.scope,
+                    model.map_or(UsageScope::All, |id| UsageScope::Model(id.into()))
+                );
                 assert_eq!(window.observed_at, now);
                 assert_eq!(window.source, UsageSource::ErrorBody);
             }
+            let encoded = serde_json::to_string(&error.detail).unwrap();
+            let decoded = serde_json::from_str::<ErrorDetail>(&encoded)
+                .unwrap_or_else(|err| panic!("{status} {model:?}: {err}"));
+            assert_eq!(decoded, *error.detail);
         }
         let reason = json!({"error": {"details": [{"reason": "QUOTA_EXHAUSTED"}]}});
         assert_eq!(
