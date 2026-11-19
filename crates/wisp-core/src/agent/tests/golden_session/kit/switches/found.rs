@@ -907,10 +907,17 @@ fn mcp_search_for(id: &'static str, query: &str) -> Reply {
 }
 
 fn mcp_call(native: bool) -> Reply {
+    mcp_call_with(native, json!({}))
+}
+
+fn mcp_call_with(native: bool, arguments: Value) -> Reply {
     let (tool, input) = if native {
-        ("mcp__local__z_echo", json!({}))
+        ("mcp__local__z_echo", arguments)
     } else {
-        ("use", json!({"name":"mcp__local__z_echo","input":{}}))
+        (
+            "use",
+            json!({"name":"mcp__local__z_echo","input":arguments}),
+        )
     };
     reply(
         "msg_mcp_call",
@@ -1211,6 +1218,46 @@ async fn a_listing_reaches_the_same_turns_next_search_without_the_saved_list_not
     kept_prefix(&server, 0, 1);
     kept_prefix(&server, 1, 2);
     rebuilds(&store, &agent).await;
+}
+
+#[tokio::test]
+async fn a_servers_list_change_reaches_the_next_search() {
+    let env = Env::new("mcp-list-change");
+    let server = Server::start(vec![
+        mcp_call_with(false, json!({"announce":true})),
+        says("msg_called", 650, "Called."),
+        mcp_search(),
+        says("msg_done", 700, "Done."),
+    ])
+    .await;
+    let store = MemoryStore::default();
+    let mut kit = found_kit(&server, &env, &store, false);
+    fs::write(env.work().join("list-changed"), "yes").unwrap();
+    let service = saved_mcp(&env).await;
+    kit.mcp = service.clone();
+    let mut session = Session::start(
+        kit.build(on(CAPABLE, kit::Start::Fresh))
+            .await
+            .unwrap()
+            .agent,
+    );
+    session.turn("u1", "Call z echo.").await;
+    assert!(
+        until(|| service
+            .saved("local")
+            .is_some_and(|list| list.tools.iter().any(|tool| tool.description == "Changed")))
+        .await
+    );
+    session.turn("u2", "Find z echo.").await;
+    session.end().await;
+    let hit = result_text(&body(&server, 3), "mcp_search");
+    assert!(
+        hit.contains("mcp__local__z_echo — Changed") && !hit.contains(SAVED_LIST),
+        "{hit}"
+    );
+    for n in 1..4 {
+        kept_prefix(&server, n - 1, n);
+    }
 }
 
 #[tokio::test]

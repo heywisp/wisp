@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     std::fs::write("server.pid", std::process::id().to_string())?;
-    let mut child = if mode == "descendant" {
+    let mut child = if mode == "descendant" || Path::new("descendant").exists() {
         let child = std::process::Command::new(std::env::current_exe()?)
             .arg("child")
             .spawn()?;
@@ -41,6 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut echo = String::new();
     let mut secret_responses = 0;
     let mut asks = 0;
+    let legacy = matches!(mode.as_str(), "legacy" | "ask-legacy");
+    let mut subscription = None;
+    let mut listed = false;
 
     for line in std::io::stdin().lock().lines() {
         let message: Value = serde_json::from_str(&line?)?;
@@ -57,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let Some(id) = message.get("id") else {
             continue;
         };
-        if method == "server/discover" && matches!(mode.as_str(), "legacy" | "ask-legacy") {
+        if method == "server/discover" && legacy {
             writeln!(
                 output,
                 "{}",
@@ -65,6 +68,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )?;
             output.flush()?;
             continue;
+        }
+        if method == "subscriptions/listen" {
+            if Path::new("hang-listen").exists() {
+                continue;
+            }
+            if Path::new("change-on-listen").exists() {
+                std::fs::write("changed", "yes")?;
+            }
+            subscription = Some(id.clone());
+            let params = json!({"_meta":{"io.modelcontextprotocol/subscriptionId":id},"notifications":message["params"]["notifications"]});
+            writeln!(
+                output,
+                "{}",
+                json!({"jsonrpc":"2.0","method":"notifications/subscriptions/acknowledged","params":params})
+            )?;
+            output.flush()?;
+            continue;
+        }
+        if method == "tools/call" && message["params"]["arguments"]["announce"] == true {
+            announce(&mut output, legacy, subscription.as_ref())?;
         }
         if (method == "server/discover" && Path::new("hang-start").exists())
             || (method == "prompts/list" && Path::new("hang-prompts").exists())
@@ -191,13 +214,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             std::fs::create_dir_all(path.trim())?;
         }
-        let capabilities = if mode == "tools-only" {
+        let mut capabilities = if mode == "tools-only" {
             json!({"tools":{}})
         } else if matches!(mode.as_str(), "metadata-only" | "undeclared-tools") {
             json!({"prompts":{},"resources":{}})
         } else {
             json!({"tools":{},"prompts":{},"resources":{}})
         };
+        if Path::new("list-changed").exists() {
+            capabilities["tools"] = json!({"listChanged":true});
+        }
         let text = |placeholder: &str| {
             if mode == "key" {
                 std::env::var(&key_name).unwrap_or_default()
@@ -205,7 +231,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 placeholder.to_owned()
             }
         };
-        let result = match method {
+        let tools_start = method == "tools/list" && message["params"]["cursor"].is_null();
+        if tools_start && listed {
+            if Path::new("hang-relist").exists() {
+                std::fs::write("relist-pending", "yes")?;
+                continue;
+            }
+            if Path::new("fail-relist").exists() {
+                std::fs::remove_file("fail-relist")?;
+                announce(&mut output, legacy, subscription.as_ref())?;
+                std::thread::sleep(Duration::from_millis(150));
+                writeln!(
+                    output,
+                    "{}",
+                    json!({"jsonrpc":"2.0","id":id,"error":{"code":-32603,"message":"could not list"}})
+                )?;
+                output.flush()?;
+                continue;
+            }
+        }
+        let slow_list = tools_start && listed && Path::new("slow-list").exists();
+        let mut result = match method {
             "server/discover" => {
                 if Path::new("delay").exists() {
                     std::thread::sleep(Duration::from_millis(200));
@@ -326,18 +372,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],"structuredContent":{"job":std::env::var("WISP_JOB")?,"cwd":std::env::current_dir()?.file_name().and_then(|name| name.to_str())},"isError":message["params"]["arguments"]["fail"] == true}),
             _ => json!({}),
         };
+        if slow_list {
+            std::fs::write("slow-list-started", "yes")?;
+            std::thread::sleep(Duration::from_secs(1));
+            if let Some(tools) = result["tools"].as_array_mut() {
+                tools.push(
+                    json!({"name":"late","description":"Late","inputSchema":{"type":"object"}}),
+                );
+            }
+        }
         writeln!(
             output,
             "{}",
             json!({"jsonrpc":"2.0","id":id,"result":result})
         )?;
         output.flush()?;
+        if slow_list {
+            writeln!(log, "late-list-answered")?;
+        }
+        if tools_start && !listed {
+            listed = true;
+            if Path::new("announce-on-list").exists() {
+                announce(&mut output, legacy, subscription.as_ref())?;
+            }
+        }
     }
     if let Some(child) = child.as_mut() {
         let _ = child.kill();
         let _ = child.wait();
     }
     Ok(())
+}
+
+fn announce(
+    output: &mut impl Write,
+    legacy: bool,
+    subscription: Option<&Value>,
+) -> std::io::Result<()> {
+    std::fs::write("changed", "yes")?;
+    let params = if legacy {
+        json!({})
+    } else if let Some(id) = subscription {
+        json!({"_meta":{"io.modelcontextprotocol/subscriptionId":id}})
+    } else {
+        return Ok(());
+    };
+    writeln!(
+        output,
+        "{}",
+        json!({"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":params})
+    )?;
+    output.flush()
 }
 
 fn form_summary(response: &Value) -> Value {

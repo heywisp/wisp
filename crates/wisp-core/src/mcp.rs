@@ -3,20 +3,20 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use base64::Engine;
 use rmcp::model::{
     CallToolRequestParams, ClientCapabilities, ClientConfig, ContentBlock, GetPromptRequestParams,
     GetPromptResponse, Implementation, PaginatedRequestParams, ProtocolVersion,
-    ReadResourceRequestParams, ReadResourceResponse, ResourceContents,
+    ReadResourceRequestParams, ReadResourceResponse, ResourceContents, SubscriptionFilter,
 };
-use rmcp::service::{Peer, RoleClient, RunningService, ServiceError};
+use rmcp::service::{NotificationContext, Peer, RoleClient, RunningService, ServiceError};
 use rmcp::{ClientLifecycleMode, ClientServiceExt};
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
+use tokio_util::sync::{CancellationToken, DropGuard};
 use wisp_plugin_api::mcp::{Prompt, PromptMessage, Resource};
 use wisp_protocol::ToolOutcome;
 use wisp_tool_text::mcp as text;
@@ -59,11 +59,18 @@ const OPTIONAL_LIMIT: Duration = Duration::from_secs(START_LIMIT.as_secs() / 12)
 const SIGN_IN_REQUIRED: &str = "needs sign-in";
 const NAME_OVERLAP: &str = "has overlapping mapped tool names";
 
-#[derive(Clone, Default)]
-pub struct Service(Arc<Inner>);
+#[derive(Clone)]
+pub struct Service(Arc<Inner>, Option<Arc<DropGuard>>);
+
+impl Default for Service {
+    fn default() -> Self {
+        Self::new(BTreeMap::new(), PathBuf::new(), None)
+    }
+}
 
 #[derive(Default)]
 struct Inner {
+    closed: CancellationToken,
     servers: Mutex<BTreeMap<String, Arc<Server>>>,
     mutation: Arc<tokio::sync::Mutex<()>>,
     folder: Option<PathBuf>,
@@ -90,6 +97,7 @@ struct Server {
     saved: saved::Saved,
     snapshot: Mutex<Snapshot>,
     connection: tokio::sync::Mutex<Option<Connection>>,
+    watch: Arc<Watch>,
     pending: tokio::sync::Mutex<Option<Arc<sign_in::Pending>>>,
     challenge: Arc<Mutex<Option<String>>>,
 }
@@ -97,12 +105,74 @@ struct Server {
 struct Snapshot {
     list: Option<List>,
     state: State,
-    fresh: bool,
+    listed: Option<u64>,
+}
+
+struct Watch {
+    name: String,
+    notices: Mutex<Notices>,
+}
+
+#[derive(Default)]
+struct Notices {
+    owner: Weak<Inner>,
+    seen: u64,
+    relisting: bool,
+}
+
+impl Watch {
+    fn notices(&self) -> MutexGuard<'_, Notices> {
+        self.notices.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn bind(&self, owner: Weak<Inner>) -> u64 {
+        let mut notices = self.notices();
+        notices.owner = owner;
+        notices.seen
+    }
+
+    fn notice(self: &Arc<Self>) {
+        let mut notices = self.notices();
+        notices.seen += 1;
+        if let Some(owner) = notices
+            .owner
+            .upgrade()
+            .filter(|owner| !owner.closed.is_cancelled())
+        {
+            owner.changes.fetch_add(1, Ordering::AcqRel);
+            if !notices.relisting {
+                notices.relisting = true;
+                let watch = self.clone();
+                tokio::spawn(async move {
+                    let service = Service(owner, None);
+                    tokio::select! {
+                        biased;
+                        () = service.0.closed.cancelled() => {},
+                        () = service.relist(watch) => {},
+                    }
+                });
+            }
+        }
+    }
+
+    fn settle(&self, attempted: Option<u64>) -> bool {
+        let mut notices = self.notices();
+        if attempted.is_none() || attempted == Some(notices.seen) {
+            notices.relisting = false;
+        }
+        !notices.relisting
+    }
 }
 
 struct Connection {
     running: RunningService<RoleClient, Asking>,
     _group: Option<ProcessGroup>,
+}
+
+impl Connection {
+    fn is_live(&self) -> bool {
+        !self.running.is_closed() && !self.running.peer().is_transport_closed()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,6 +256,22 @@ impl Service {
         cwd: PathBuf,
         folder: Option<PathBuf>,
     ) -> Self {
+        let closed = CancellationToken::new();
+        let guard = Arc::new(closed.clone().drop_guard());
+        let service = Self::build(servers, cwd, folder, closed, Some(guard));
+        for server in service.servers().values() {
+            server.watch.bind(Arc::downgrade(&service.0));
+        }
+        service
+    }
+
+    fn build(
+        servers: BTreeMap<String, McpServer>,
+        cwd: PathBuf,
+        folder: Option<PathBuf>,
+        closed: CancellationToken,
+        guard: Option<Arc<DropGuard>>,
+    ) -> Self {
         let prefixes: Vec<_> = servers.keys().map(|name| tool_name(name, "")).collect();
         let servers = servers
             .into_iter()
@@ -215,32 +301,40 @@ impl Service {
                     snapshot: Mutex::new(Snapshot {
                         list,
                         state,
-                        fresh: false,
+                        listed: None,
                     }),
                     connection: tokio::sync::Mutex::new(None),
+                    watch: Arc::new(Watch {
+                        name: name.clone(),
+                        notices: Mutex::default(),
+                    }),
                     pending: tokio::sync::Mutex::new(None),
                     challenge: Arc::default(),
                 };
                 (name, Arc::new(server))
             })
             .collect();
-        let service = Self(Arc::new(Inner {
-            servers: Mutex::new(servers),
-            mutation: Arc::default(),
-            folder,
-            config: Mutex::new(None),
-            store: Mutex::default(),
-            cwd,
-            revision: AtomicU64::new(0),
-            changes: AtomicU64::new(0),
-            known: Mutex::default(),
-            off: Mutex::default(),
-            notes: Mutex::default(),
-            ended: Mutex::default(),
-            ended_signal: Arc::default(),
-            awaited: Mutex::default(),
-            forms: AtomicBool::new(false),
-        }));
+        let service = Self(
+            Arc::new(Inner {
+                closed,
+                servers: Mutex::new(servers),
+                mutation: Arc::default(),
+                folder,
+                config: Mutex::new(None),
+                store: Mutex::default(),
+                cwd,
+                revision: AtomicU64::new(0),
+                changes: AtomicU64::new(0),
+                known: Mutex::default(),
+                off: Mutex::default(),
+                notes: Mutex::default(),
+                ended: Mutex::default(),
+                ended_signal: Arc::default(),
+                awaited: Mutex::default(),
+                forms: AtomicBool::new(false),
+            }),
+            guard,
+        );
         service.remember_names(|| {});
         service
     }
@@ -301,6 +395,12 @@ impl Service {
             .ok_or_else(|| text::removed(name))
     }
 
+    fn watching(&self, watch: &Arc<Watch>) -> bool {
+        self.servers()
+            .get(&watch.name)
+            .is_some_and(|server| Arc::ptr_eq(&server.watch, watch))
+    }
+
     pub(crate) fn server_config(&self, name: &str) -> Result<McpServer, String> {
         Ok(self.server(name)?.config.clone())
     }
@@ -349,10 +449,12 @@ impl Service {
         config: &McpServer,
         keys: BTreeMap<String, wisp_protocol::Secret>,
     ) -> Self {
-        let staged = Self::new(
+        let staged = Self::build(
             BTreeMap::from([(name.into(), config.clone())]),
             self.0.cwd.clone(),
             None,
+            self.0.closed.clone(),
+            self.1.clone(),
         )
         .with_forms(self.0.forms.load(Ordering::Acquire));
         if let Ok(server) = staged.server(name) {
@@ -440,7 +542,16 @@ impl Service {
             .ok_or("the server could not be added")?;
         let mut server = Arc::try_unwrap(server).map_err(|_| "the server is still starting")?;
         server.saved = saved::Saved::new(self.0.folder.as_deref(), name, &server.config);
-        let list = server.snapshot().list.clone();
+        let (list, listed) = {
+            let snapshot = server.snapshot();
+            (snapshot.list.clone(), snapshot.listed)
+        };
+        let watch = server.watch.clone();
+        let old = self.server(name).ok();
+        let old_connection = match &old {
+            Some(old) => Some(old.connection.lock().await),
+            None => None,
+        };
         if let Some(list) = &list {
             self.check_overlaps(name, list)?;
         }
@@ -456,6 +567,13 @@ impl Service {
             servers.insert(name.into(), Arc::new(server));
             self.0.changes.fetch_add(1, Ordering::AcqRel);
         });
+        if let Some(mut connection) = old_connection {
+            *connection = None;
+        }
+        let seen = watch.bind(Arc::downgrade(&self.0));
+        if seen != 0 && listed != Some(seen) {
+            watch.notice();
+        }
         self.0.revision.fetch_add(1, Ordering::AcqRel);
         if let Some(by) = &by {
             self.note(Note::Changed {
@@ -710,7 +828,9 @@ impl Service {
             .iter()
             .filter(|(name, server)| {
                 let snapshot = server.snapshot();
-                !self.is_off(name) && snapshot.list.is_some() && !snapshot.fresh
+                !self.is_off(name)
+                    && snapshot.list.is_some()
+                    && snapshot.listed != Some(server.watch.notices().seen)
             })
             .map(|(name, _)| name.clone())
             .collect();
@@ -812,17 +932,30 @@ impl Service {
     }
 
     async fn ready(&self, name: &str) -> Result<Peer<RoleClient>, String> {
-        if self.is_off(name) {
-            return Err(wisp_tool_text::manage::turned_off(name));
+        loop {
+            if self.is_off(name) {
+                return Err(wisp_tool_text::manage::turned_off(name));
+            }
+            let server = self.server(name)?;
+            let mut connection = server.connection.lock().await;
+            if self.watching(&server.watch) {
+                return self.ready_on(name, &server, &mut connection).await;
+            }
         }
-        let server = self.server(name)?;
+    }
+
+    async fn ready_on(
+        &self,
+        name: &str,
+        server: &Server,
+        connection: &mut Option<Connection>,
+    ) -> Result<Peer<RoleClient>, String> {
         if !server.config.keys.is_empty() && is_address(&server.config.command) {
             return Err(text::ADDRESS_KEYS.into());
         }
         if let Some(reason) = server.name_problem {
             return Err(format!("{name} {reason}"));
         }
-        let mut connection = server.connection.lock().await;
         if server
             .challenge
             .lock()
@@ -833,10 +966,7 @@ impl Service {
             server.snapshot().state = State::NeedsSignIn;
         }
 
-        if let Some(connected) = connection
-            .as_ref()
-            .filter(|c| !c.running.is_closed() && !c.running.peer().is_transport_closed())
-        {
+        if let Some(connected) = connection.as_ref().filter(|c| c.is_live()) {
             return Ok(connected.running.peer().clone());
         }
         *connection = None;
@@ -860,27 +990,32 @@ impl Service {
             return Err(text::needs_key(name, &missing));
         }
         server.snapshot().state = State::Starting;
-        let _starting = Starting(&server);
-        let result = tokio::time::timeout(START_LIMIT, async {
-            let connected = if is_address(&server.config.command) {
-                self.start_http(name, &server).await?
-            } else {
-                start(
-                    &server.config,
-                    &self.0.cwd,
-                    &found,
-                    self.0.forms.load(Ordering::Acquire),
-                    server.flights.clone(),
-                )
-                .await?
-            };
-            self.refresh(name, &server, connected.running.peer())
-                .await?;
+        let _starting = Starting(server);
+        let result = async {
+            let started = tokio::time::Instant::now();
+            let connected = start_within(START_LIMIT, async {
+                if is_address(&server.config.command) {
+                    self.start_http(name, server).await
+                } else {
+                    start(
+                        &server.config,
+                        &self.0.cwd,
+                        &found,
+                        self.0.forms.load(Ordering::Acquire),
+                        server.flights.clone(),
+                        server.watch.clone(),
+                    )
+                    .await
+                }
+            })
+            .await?;
+            let remaining = START_LIMIT.saturating_sub(started.elapsed());
+            let peer = connected.running.peer();
+            listen(peer, &server.watch, &self.0.closed).await;
+            start_within(remaining, self.refresh(name, server, peer)).await?;
             Ok::<_, String>(connected)
-        })
-        .await
-        .map_err(|_| format!("did not start within {} seconds", START_LIMIT.as_secs()))
-        .and_then(|result| result);
+        }
+        .await;
         match result {
             Ok(connected) => {
                 let peer = connected.running.peer().clone();
@@ -898,6 +1033,31 @@ impl Service {
                 Err(message)
             }
         }
+    }
+
+    async fn relist(&self, watch: Arc<Watch>) {
+        while let Ok(server) = self.server(&watch.name) {
+            let connection = server.connection.lock().await;
+            if !self.watching(&watch) {
+                break;
+            }
+            let Some(connected) = connection.as_ref().filter(|c| c.is_live()) else {
+                break;
+            };
+            let seen = watch.notices().seen;
+            let _ = tokio::time::timeout(
+                START_LIMIT,
+                self.refresh_at(&watch.name, &server, connected.running.peer(), seen),
+            )
+            .await;
+            if !connected.is_live() {
+                break;
+            }
+            if watch.settle(Some(seen)) {
+                return;
+            }
+        }
+        watch.settle(None);
     }
 
     fn check_overlaps(&self, name: &str, list: &List) -> Result<(), String> {
@@ -918,6 +1078,17 @@ impl Service {
         server: &Server,
         peer: &Peer<RoleClient>,
     ) -> Result<List, String> {
+        let seen = server.watch.notices().seen;
+        self.refresh_at(name, server, peer, seen).await
+    }
+
+    async fn refresh_at(
+        &self,
+        name: &str,
+        server: &Server,
+        peer: &Peer<RoleClient>,
+        seen: u64,
+    ) -> Result<List, String> {
         peer.clear_response_cache().await;
         let (list, complete) = fetch_list(peer).await?;
         check_names(name, &list.tools)?;
@@ -925,7 +1096,7 @@ impl Service {
         if complete {
             server.saved.write(&list).await?;
         }
-        self.remember(server, list.clone());
+        self.remember(server, list.clone(), seen);
         Ok(list)
     }
 
@@ -940,6 +1111,7 @@ impl Service {
             server.challenge.clone(),
             self.0.forms.load(Ordering::Acquire),
             server.flights.clone(),
+            server.watch.clone(),
         )
         .await;
         let challenge = server
@@ -972,6 +1144,7 @@ impl Service {
             server.challenge.clone(),
             self.0.forms.load(Ordering::Acquire),
             server.flights.clone(),
+            server.watch.clone(),
         )
         .await;
         if server
@@ -1033,7 +1206,7 @@ impl Service {
             let task = tokio::spawn(async move {
                 let received = return_to.receive().await;
                 if let (Some(service), Some(pending)) = (service.upgrade(), weak.upgrade()) {
-                    let service = Service(service);
+                    let service = Service(service, None);
                     match received {
                         Ok(returned) => {
                             let result = service.complete_sign_in(&name, &pending, &returned).await;
@@ -1141,14 +1314,14 @@ impl Service {
         Ok(count)
     }
 
-    fn remember(&self, server: &Server, list: List) {
+    fn remember(&self, server: &Server, list: List, seen: u64) {
         self.remember_names(|| {
             let mut snapshot = server.snapshot();
             if snapshot.list.as_ref().is_none_or(|old| list.differs(old)) {
                 self.0.revision.fetch_add(1, Ordering::AcqRel);
             }
             snapshot.list = Some(list);
-            snapshot.fresh = true;
+            snapshot.listed = Some(seen);
             self.0.changes.fetch_add(1, Ordering::AcqRel);
         });
     }
@@ -1456,6 +1629,7 @@ async fn start(
     keys: &BTreeMap<String, wisp_protocol::Secret>,
     forms: bool,
     flights: elicit::Flights,
+    watch: Arc<Watch>,
 ) -> Result<Connection, String> {
     let mut command = Command::new(&config.command);
     command
@@ -1494,7 +1668,7 @@ async fn start(
         .take()
         .zip(group.0.stdin.take())
         .ok_or("could not open its MCP pipes")?;
-    let running = serve(transport, forms, flights).await?;
+    let running = serve(transport, forms, flights, watch).await?;
     Ok(Connection {
         running,
         _group: Some(group),
@@ -1507,6 +1681,7 @@ async fn start_http(
     challenge: Arc<Mutex<Option<String>>>,
     forms: bool,
     flights: elicit::Flights,
+    watch: Arc<Watch>,
 ) -> Result<Connection, String> {
     use rmcp::transport::streamable_http_client::{
         StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
@@ -1515,7 +1690,7 @@ async fn start_http(
         http::Http::new(address, manager, challenge)?,
         StreamableHttpClientTransportConfig::with_uri(address),
     );
-    let running = serve(transport, forms, flights).await?;
+    let running = serve(transport, forms, flights, watch).await?;
     Ok(Connection {
         running,
         _group: None,
@@ -1525,11 +1700,36 @@ async fn start_http(
 struct Asking {
     info: ClientConfig,
     flights: elicit::Flights,
+    watch: Arc<Watch>,
+}
+
+impl Asking {
+    fn legacy_notice(&self, context: NotificationContext<RoleClient>) {
+        if context
+            .peer
+            .peer_info()
+            .is_some_and(|info| info.protocol_version < ProtocolVersion::V_2026_07_28)
+        {
+            self.watch.notice();
+        }
+    }
 }
 
 impl rmcp::ClientHandler for Asking {
     fn get_info(&self) -> ClientConfig {
         self.info.clone()
+    }
+
+    async fn on_tool_list_changed(&self, context: NotificationContext<RoleClient>) {
+        self.legacy_notice(context);
+    }
+
+    async fn on_prompt_list_changed(&self, context: NotificationContext<RoleClient>) {
+        self.legacy_notice(context);
+    }
+
+    async fn on_resource_list_changed(&self, context: NotificationContext<RoleClient>) {
+        self.legacy_notice(context);
     }
 
     async fn create_elicitation(
@@ -1571,6 +1771,7 @@ async fn serve<T, E, A>(
     transport: T,
     forms: bool,
     flights: elicit::Flights,
+    watch: Arc<Watch>,
 ) -> Result<RunningService<RoleClient, Asking>, String>
 where
     T: rmcp::transport::IntoTransport<RoleClient, E, A>,
@@ -1589,6 +1790,7 @@ where
             Implementation::new("Wisp", env!("CARGO_PKG_VERSION")),
         ),
         flights,
+        watch,
     };
     client
         .serve_with_lifecycle(
@@ -1600,6 +1802,51 @@ where
         )
         .await
         .map_err(|_| "did not answer the MCP startup request".into())
+}
+
+async fn start_within<T>(
+    limit: Duration,
+    phase: impl Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    tokio::time::timeout(limit, phase)
+        .await
+        .map_err(|_| format!("did not start within {} seconds", START_LIMIT.as_secs()))?
+}
+
+async fn listen(peer: &Peer<RoleClient>, watch: &Arc<Watch>, closed: &CancellationToken) {
+    let Some(info) = peer
+        .peer_info()
+        .filter(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28)
+    else {
+        return;
+    };
+    let filter = SubscriptionFilter::builder()
+        .tools_list_changed()
+        .prompts_list_changed()
+        .resources_list_changed()
+        .build()
+        .supported_by(&info.capabilities);
+    if filter == SubscriptionFilter::default() {
+        return;
+    }
+    if let Ok(Ok(mut subscription)) =
+        tokio::time::timeout(OPTIONAL_LIMIT, peer.listen(filter)).await
+    {
+        let watch = watch.clone();
+        let closed = closed.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = closed.cancelled() => break,
+                    next = subscription.next() => match next {
+                        Ok(Some(_)) => watch.notice(),
+                        _ => break,
+                    },
+                }
+            }
+        });
+    }
 }
 
 pub(crate) fn is_address(command: &str) -> bool {

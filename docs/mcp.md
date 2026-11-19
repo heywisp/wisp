@@ -151,9 +151,14 @@ next message, by the rule below; and the search index, gathered again with the
 held definitions. A server is listed by the main chat's background hook at chat
 start, if the server is on; at each new connection (its first call, skill or
 document read in this run, a sign-in, a new key or a reconnect); and after an
-argument refusal. Until a server has been listed in this run, search hits for
-its tools, skills and documents end their summary with `(saved list; may be out
-of date)`. A child follows only the servers present when it starts or resumes.
+argument refusal or a list-change notice. Search hits for its tools, skills and
+documents end their summary with `(saved list; may be out of date)` until the first
+listing in this run and again after a notice until the new list arrives. A child
+follows only the servers present when it starts or resumes.
+
+To send notices, declare `listChanged: true` in the `tools`, `prompts` or `resources` capability and return the current items from `tools/list`, `prompts/list` or `resources/list`.
+On 2026-07-28, acknowledge Wisp's one `subscriptions/listen` stream per connection and send `notifications/tools/list_changed` (or the matching notice for prompts or resources) on it with its subscription id.
+On 2025-11-25 and older, send the notice on the session: stdout for a local server or the GET stream for HTTP.
 
 Each opening compares the canonical definitions; an unchanged catalog
 appends nothing to the request. A changed loaded definition is
