@@ -10,6 +10,7 @@ use super::{ConfigError, DEFAULT_BASE_URL, Request, beta_header};
 use crate::endpoints::ProviderKind;
 use crate::models::{ModelTable, RowError, bad_value, table_of};
 use crate::provider::classify::{kind_of, status_kind};
+use crate::provider::client_version::Version;
 use crate::provider::credential::{Credential, SubscriptionKind};
 use crate::provider::{ProviderError, ProviderEvent, Refused, is_token_char};
 
@@ -23,7 +24,7 @@ pub(crate) const OAUTH_REFRESH_SKEW: Duration = Duration::from_secs(60);
 
 pub(super) const SYSTEM_IDENTITY: &str =
     "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
-const IDENTITY_FIELDS: [&str; 4] = ["version", "usage_user_agent", "betas", "headers"];
+const IDENTITY_FIELDS: [&str; 3] = ["usage_user_agent", "betas", "headers"];
 pub(crate) static IDENTITY_ALLOWED: LazyLock<String> = LazyLock::new(|| {
     format!(
         "a table of {} with valid identity headers and usage betas",
@@ -33,38 +34,36 @@ pub(crate) static IDENTITY_ALLOWED: LazyLock<String> = LazyLock::new(|| {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Identity {
-    pub headers: Vec<(HeaderName, HeaderValue)>,
-    pub usage_headers: Vec<(HeaderName, HeaderValue)>,
+    headers: Vec<(HeaderName, String)>,
+    usage_user_agent: String,
+    usage_beta: HeaderValue,
     pub betas: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Rendered {
+    pub headers: Vec<(HeaderName, HeaderValue)>,
+    pub usage_headers: [(HeaderName, HeaderValue); 3],
+}
+
+impl Rendered {
+    pub(super) fn extend_headers(&self, headers: &mut HeaderMap) {
+        for (name, value) in &self.headers {
+            headers.insert(name.clone(), value.clone());
+        }
+    }
 }
 
 impl Identity {
     pub(crate) fn parse(at: &Range<usize>, value: &DeValue<'_>) -> Result<Self, RowError> {
         let bad = || bad_value("claude_code", &IDENTITY_ALLOWED, at);
-        let [Some(version), Some(usage_agent), Some(betas), Some(headers)] =
+        let [Some(usage_agent), Some(betas), Some(headers)] =
             table_of(IDENTITY_FIELDS, value, &bad)?
         else {
             return Err(bad());
         };
-        let version = version
-            .as_str()
-            .filter(|version| !version.is_empty())
-            .ok_or_else(bad)?;
-        let render = |value: &str| {
-            let value = value
-                .replace("{version}", version)
-                .replace("{arch}", stainless_arch())
-                .replace("{os}", stainless_os());
-            if value.is_empty() || value.contains(['{', '}']) {
-                return Err(bad());
-            }
-            HeaderValue::from_str(&value).map_err(|_| bad())
-        };
-        let mut identity = Self {
-            headers: Vec::new(),
-            usage_headers: Vec::new(),
-            betas: Vec::new(),
-        };
+        let usage_user_agent = usage_agent.as_str().ok_or_else(bad)?.to_owned();
+        let mut templates = Vec::new();
         for pair in headers.as_array().ok_or_else(bad)? {
             let pair = pair.get_ref().as_array().ok_or_else(bad)?;
             let [name, value] = pair.as_ref() else {
@@ -72,24 +71,13 @@ impl Identity {
             };
             let name = name.get_ref().as_str().ok_or_else(bad)?;
             let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| bad())?;
-            if identity.headers.iter().any(|(seen, _)| seen == name) {
+            if templates.iter().any(|(seen, _)| seen == name) {
                 return Err(bad());
             }
-            let value = render(value.get_ref().as_str().ok_or_else(bad)?)?;
-            identity.headers.push((name, value));
+            let value = value.get_ref().as_str().ok_or_else(bad)?;
+            templates.push((name, value.to_owned()));
         }
-        let app = identity
-            .headers
-            .iter()
-            .find(|(name, _)| name == "x-app")
-            .ok_or_else(bad)?;
-        if !identity
-            .headers
-            .iter()
-            .any(|(name, _)| name == "user-agent")
-        {
-            return Err(bad());
-        }
+        let mut flags = Vec::new();
         let mut usage_betas = Vec::new();
         for beta in betas.as_array().ok_or_else(bad)? {
             let [Some(value), usage] = table_of(["value", "usage"], beta.get_ref(), &bad)? else {
@@ -102,7 +90,7 @@ impl Identity {
             if !value
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-                || identity.betas.iter().any(|seen| seen == value)
+                || flags.iter().any(|seen| seen == value)
             {
                 return Err(bad());
             }
@@ -113,31 +101,61 @@ impl Identity {
             {
                 usage_betas.push(value);
             }
-            identity.betas.push(value.to_owned());
+            flags.push(value.to_owned());
         }
         if usage_betas.is_empty() {
             return Err(bad());
         }
-        identity.usage_headers = vec![
+        Ok(Self {
+            headers: templates,
+            usage_user_agent,
+            usage_beta: HeaderValue::from_str(&usage_betas.join(",")).map_err(|_| bad())?,
+            betas: flags,
+        })
+    }
+
+    pub(crate) fn rendered(&self, version: Version) -> Option<Rendered> {
+        let version = version.to_string();
+        let render = |template: &str| {
+            let value = template
+                .replace("{version}", &version)
+                .replace("{arch}", stainless_arch())
+                .replace("{os}", stainless_os());
+            if value.is_empty() || value.contains(['{', '}']) {
+                return None;
+            }
+            HeaderValue::from_str(&value).ok()
+        };
+        let headers: Vec<_> = self
+            .headers
+            .iter()
+            .map(|(name, value)| Some((name.clone(), render(value)?)))
+            .collect::<Option<_>>()?;
+        let app = headers.iter().find(|(name, _)| name == "x-app")?.clone();
+        if !headers.iter().any(|(name, _)| name == "user-agent") {
+            return None;
+        }
+        let usage_headers = [
             (
                 HeaderName::from_static("user-agent"),
-                render(usage_agent.as_str().ok_or_else(bad)?)?,
+                render(&self.usage_user_agent)?,
             ),
-            app.clone(),
+            app,
             (
                 HeaderName::from_static("anthropic-beta"),
-                HeaderValue::from_str(&usage_betas.join(",")).map_err(|_| bad())?,
+                self.usage_beta.clone(),
             ),
         ];
-        Ok(identity)
+        Some(Rendered {
+            headers,
+            usage_headers,
+        })
     }
 }
 
-pub(super) fn data() -> Option<&'static Identity> {
-    ModelTable::shared()
-        .provider(ProviderKind::Anthropic)?
-        .claude_code
-        .as_ref()
+pub(super) fn data() -> Option<(&'static Identity, Version)> {
+    let row = ModelTable::shared().provider(ProviderKind::Anthropic)?;
+    Some((row.claude_code.as_ref()?, row.client?.version))
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -157,13 +175,6 @@ impl Profile {
             } => Ok(Self::Manifest),
             Credential::Subscription { .. } => Err(ConfigError::WrongSubscription),
         }
-    }
-
-    pub(super) fn check_identity(self, identity: Option<&Identity>) -> Result<(), ConfigError> {
-        if self.subscription() && identity.is_none() {
-            return Err(ConfigError::SubscriptionIdentity);
-        }
-        Ok(())
     }
 
     pub(super) fn subscription(self) -> bool {
@@ -198,7 +209,7 @@ impl Profile {
         if !self.subscription() {
             return ordinary;
         }
-        let Some(identity) = data() else {
+        let Some((identity, _)) = data() else {
             return ordinary;
         };
         let mut flags: Vec<_> = identity.betas.iter().map(String::as_str).collect();
@@ -208,17 +219,6 @@ impl Profile {
             }
         }
         flags.join(",")
-    }
-
-    pub(super) fn extend_headers(self, headers: &mut HeaderMap) {
-        if !self.subscription() {
-            return;
-        }
-        if let Some(identity) = data() {
-            for (name, value) in &identity.headers {
-                headers.insert(name.clone(), value.clone());
-            }
-        }
     }
 
     pub(super) fn error(self, mut error: ProviderError) -> ProviderError {

@@ -285,6 +285,7 @@ pub struct AnthropicProvider {
     auth: AuthHeader,
     credential: Credential,
     profile: Profile,
+    rendered: Option<subscription::Rendered>,
     official: bool,
     threads: bool,
     waits: Waits,
@@ -348,11 +349,19 @@ impl AnthropicProvider {
         auth: AuthHeader,
         credential: &Credential,
         base_url: &str,
-        identity: Option<&subscription::Identity>,
+        identity: Option<(&subscription::Identity, super::client_version::Version)>,
     ) -> Result<Self, ConfigError> {
         let profile = Profile::for_credential(credential)?;
         profile.check_origin(base_url)?;
-        profile.check_identity(identity)?;
+        let rendered = if profile.subscription() {
+            Some(
+                identity
+                    .and_then(|(identity, version)| identity.rendered(version))
+                    .ok_or(ConfigError::SubscriptionIdentity)?,
+            )
+        } else {
+            None
+        };
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
@@ -365,6 +374,7 @@ impl AnthropicProvider {
             auth,
             credential: credential.clone(),
             profile,
+            rendered,
             official,
             threads: official,
             waits: Waits {
@@ -404,7 +414,9 @@ impl AnthropicProvider {
 
     fn headers(&self, request: &Request<'_>) -> HeaderMap {
         let mut h = self.base_headers("text/event-stream");
-        self.profile.extend_headers(&mut h);
+        if let Some(identity) = &self.rendered {
+            identity.extend_headers(&mut h);
+        }
         let betas = self.profile.betas(request);
         if !betas.is_empty()
             && let Ok(v) = HeaderValue::from_str(&betas)
@@ -416,10 +428,10 @@ impl AnthropicProvider {
 
     async fn list_request(&self) -> Result<reqwest::RequestBuilder, ProviderError> {
         let mut headers = self.base_headers("application/json");
-        if self.profile.subscription() {
-            self.profile.extend_headers(&mut headers);
+        if let Some(identity) = &self.rendered {
+            identity.extend_headers(&mut headers);
             let betas = subscription::data()
-                .map(|identity| identity.betas.join(","))
+                .map(|(identity, _)| identity.betas.join(","))
                 .unwrap_or_default();
             if let Ok(betas) = HeaderValue::from_str(&betas) {
                 headers.insert(HeaderName::from_static("anthropic-beta"), betas);

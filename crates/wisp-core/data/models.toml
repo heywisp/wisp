@@ -29,8 +29,10 @@ account_bound_thinking = ["claude-fable-5-2", "claude-haiku-5-5", "claude-sonnet
 [providers.anthropic.weekly_limits]
 Fable = ["claude-fable-5-2", "claude-fable-5-1", "claude-fable-5"]
 
-[providers.anthropic.claude_code]
+[providers.anthropic.client]
 version = "2.1.321"
+
+[providers.anthropic.claude_code]
 usage_user_agent = "claude-code/{version}"
 betas = [
     { value = "claude-code-20250219" },
@@ -54,6 +56,7 @@ headers = [
 ]
 
 [providers.anthropic.sources]
+client = "https://github.com/anthropics/claude-code/releases"
 weekly_limits = "https://support.claude.com/en/articles/17506494-claude-fable-5-2-launch-offers, Which models does a reset cover?; https://support.claude.com/en/articles/15424964-claude-fable-models-on-your-plan"
 web_search_by_call = "Wisp: docs/endpoints.md, Web search; a fixed client function keeps the chat prefix independent of the search date"
 web_search_model = "https://platform.claude.com/docs/en/about-claude/models/overview; Wisp uses the small model for search-only requests"
@@ -80,11 +83,14 @@ write_30m = 1.25
 write_12h = 2.5
 web_search_price = 0.01
 
-[providers.openai.codex]
+[providers.openai.client]
 version = "0.169.0"
+
+[providers.openai.codex]
 window = 272000
 
 [providers.openai.sources]
+client = "https://github.com/openai/codex/releases"
 codex = "https://github.com/openai/codex/releases; the server hides models whose minimum client version exceeds the client_version sent to /codex/models; https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/models-manager/src/model_info.rs (fallback window for a model the list doesn't describe)"
 subscription_tools_after_outputs = "No model is proven after tool outputs on the ChatGPT subscription; a passing run on that subscription is required; the gateway-only live_found_tool_after_openai_outputs fills no row"
 api_tools_after_outputs = "No model is proven after tool outputs on the official OpenAI API; a passing run on that API is required; the gateway-only live_found_tool_after_openai_outputs fills no row"
@@ -100,15 +106,18 @@ default_model = "gemini-4-carbon"
 web_search_model = "gemini-3.1-flash-lite"
 web_search_price = 0.014
 
+[providers.gemini.client]
+version = "1.5.5"
+
 [providers.gemini.antigravity]
 base_url = "https://daily-cloudcode-pa.googleapis.com"
-version = "1.5.5"
 user_agent = "antigravity/cli/{version}"
 default_model = "gemini-4-carbon-medium"
 session_id = "-3750763034362895579"
 cache_idle_s = 240
 
 [providers.gemini.sources]
+client = "https://github.com/google-antigravity/antigravity-cli/releases"
 web_search_model = "https://ai.google.dev/gemini-api/docs/models"
 web_search_price = "https://ai.google.dev/gemini-api/docs/google-search"
 price = "https://ai.google.dev/gemini-api/docs/pricing"

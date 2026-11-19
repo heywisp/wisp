@@ -1194,7 +1194,7 @@ A ChatGPT subscription signed in with `wisp login`, a Claude subscription signed
 | Antigravity subscription | `POST /v1internal:fetchAvailableModels` on the account's Cloud Code PA URL | default model (`defaultAgentModelId`), window (`maxTokens`), max output (`maxOutputTokens`) | `defaultAgentModelId` first, then the tables' listed rows, thinking-capable shipped rows, other shipped rows and unshipped rows |
 | Gemini API key | `GET /v1beta/models` on Google's URL | window (`inputTokenLimit`), max output (`outputTokenLimit`) | the tables' listed rows first, then thinking-capable shipped rows, other shipped rows and unshipped rows |
 
-ChatGPT's list request sends the compatibility version in the shipped model file's `[providers.openai.codex]` table as `client_version`. The server can hide newer models from older client versions.
+ChatGPT's list request sends the compatibility version in the shipped model file's `[providers.openai.client]` table as `client_version`. The server can hide newer models from older client versions.
 
 To check the shipped version against the latest stable Codex model catalog on GitHub, run:
 
@@ -1202,7 +1202,7 @@ To check the shipped version against the latest stable Codex model catalog on Gi
 cargo nextest run -p wisp-core --lib --run-ignored ignored-only models::tests::shipped_codex_version_supports_the_latest_catalog
 ```
 
-To bump it, change only `version` in `[providers.openai.codex]` in `crates/wisp-core/data/models.toml` to the newest stable Codex release's version (without `rust-v`). Run `wisp account models NAME` on a ChatGPT subscription with the updated build to confirm the list still loads.
+To bump it, change only `version` in `[providers.openai.client]` in `crates/wisp-core/data/models.toml` to the newest stable Codex release's version (without `rust-v`). Run `wisp account models NAME` on a ChatGPT subscription with the updated build to confirm the list still loads.
 
 On a ChatGPT subscription, Wisp takes the listed default, lowered to the listed maximum if it is smaller. Values below 104,000 tokens are ignored. A `compact_at` in tokens that the default can't hold grows the window to the smallest one whose `window − reserve` reaches it, at most the listed maximum or a proved overflow (`docs/context.md`, "The point and the reserve"). Without a usable default, Wisp takes the smallest of the model's shipped window, the listed maximum (or the older saved `window` if the entry has neither new field), and the shipped fallback (`window` in `[providers.openai.codex]`). The fallback only lowers a known window: if there is neither a shipped model window nor a usable list bound, the window stays unknown. An older saved window remains only a bound until a connection loads a freshly fetched list.
 

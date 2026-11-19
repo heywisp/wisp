@@ -1,8 +1,7 @@
 use serde_json::Value;
 
 use super::*;
-use crate::provider::anthropic::subscription::IDENTITY_ALLOWED;
-use crate::provider::gemini::antigravity::IDENTITY_ALLOWED as ANTIGRAVITY_IDENTITY_ALLOWED;
+use crate::provider::client_version::Version;
 
 const ON_DEMAND: &str =
     "https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand";
@@ -149,25 +148,15 @@ fn subscription_identity_data_renders_in_order_and_rejects_invalid_rows() {
     let providers = root.get_ref()["providers"].get_ref().as_table().unwrap();
     let anthropic = providers["anthropic"].get_ref().as_table().unwrap();
     let row = anthropic["claude_code"].get_ref().as_table().unwrap();
-    let version = row["version"].get_ref().as_str().unwrap();
-    let changed = SHIPPED.replacen(
-        &format!("version = {version:?}"),
-        "version = \"test-release\"",
-        1,
-    );
-    let table = ModelTable::parse_shipped(&changed).unwrap();
-    let identity = table
-        .provider(ProviderKind::Anthropic)
-        .unwrap()
-        .claude_code
-        .as_ref()
-        .unwrap();
     let original = ModelTable::shared()
         .provider(ProviderKind::Anthropic)
-        .unwrap()
-        .claude_code
-        .as_ref()
         .unwrap();
+    let version = original.client.unwrap().version;
+    let changed_version = Version::parse("1.2.3").unwrap();
+    let template = original.claude_code.as_ref().unwrap();
+    let identity = template.rendered(changed_version).unwrap();
+    let original = template.rendered(version).unwrap();
+    let version = version.to_string();
     let pairs = row["headers"].get_ref().as_array().unwrap();
     for ((name, value), pair) in identity.headers.iter().zip(pairs) {
         let pair = pair.get_ref().as_array().unwrap();
@@ -180,17 +169,13 @@ fn subscription_identity_data_renders_in_order_and_rejects_invalid_rows() {
             .1
             .to_str()
             .unwrap();
-        assert_eq!(
-            value.to_str().unwrap(),
-            before.replace(version, "test-release")
-        );
+        assert_eq!(value.to_str().unwrap(), before.replace(&version, "1.2.3"));
     }
     assert_eq!(identity.headers.len(), pairs.len());
-    assert_eq!(identity.betas, original.betas);
     for ((name, value), (_, before)) in identity.usage_headers.iter().zip(&original.usage_headers) {
         assert_eq!(
             value.to_str().unwrap(),
-            before.to_str().unwrap().replace(version, "test-release"),
+            before.to_str().unwrap().replace(&version, "1.2.3"),
             "{name}"
         );
         if name == "x-app" {
@@ -219,7 +204,7 @@ fn subscription_identity_data_renders_in_order_and_rejects_invalid_rows() {
         .unwrap();
     assert_eq!(usage_beta.1.to_str().unwrap(), marked.join(","));
     for (before, after) in [
-        ("version =", "unknown ="),
+        ("usage_user_agent =", "version ="),
         ("{version}", "{unknown}"),
         ("usage = true", "usage = 1"),
         (", usage = true", ""),
@@ -361,7 +346,7 @@ fn the_shipped_file_refuses_unknown_keys() {
     assert_eq!(error.line, Some(2));
     assert_eq!(
         error.problem.to_string(),
-        "unknown field in a provider table; allowed: claude_code, codex, write_5m, write_1h, write_30m, write_12h, web_search_price, message_threads, weekly_limits, account_bound_thinking, default_model, web_search_model, web_search_by_call, antigravity, subscription_additional_tools, api_additional_tools, subscription_tools_after_outputs, api_tools_after_outputs, sources"
+        "unknown field in a provider table; allowed: client, claude_code, codex, write_5m, write_1h, write_30m, write_12h, web_search_price, message_threads, weekly_limits, account_bound_thinking, default_model, web_search_model, web_search_by_call, antigravity, subscription_additional_tools, api_additional_tools, subscription_tools_after_outputs, api_tools_after_outputs, sources"
     );
     assert_eq!(
         shipped_error("[providers.mistral]\nwrite_1h = 1.0\n").to_string(),
@@ -1055,9 +1040,10 @@ fn antigravity_shipped_metadata_has_no_machine_or_personal_data() {
         identity.base_url,
         "https://daily-cloudcode-pa.googleapis.com"
     );
-    let ua = identity.user_agent.as_str();
+    let shipped = gemini.client.unwrap().version;
+    let ua = identity.user_agent(shipped).unwrap();
     let version = ua.strip_prefix("antigravity/cli/").unwrap();
-    assert_eq!(version, identity.version);
+    assert_eq!(version, shipped.to_string());
     let parts: Vec<&str> = version.split('.').collect();
     assert_eq!(parts.len(), 3, "{ua}");
     assert!(
@@ -1071,22 +1057,11 @@ fn antigravity_shipped_metadata_has_no_machine_or_personal_data() {
 
 #[test]
 fn antigravity_identity_data_renders_and_rejects_invalid_rows() {
-    let root = DeTable::parse(SHIPPED).unwrap();
-    let providers = root.get_ref()["providers"].get_ref().as_table().unwrap();
-    let gemini = providers["gemini"].get_ref().as_table().unwrap();
-    let row = gemini["antigravity"].get_ref().as_table().unwrap();
-    let version = row["version"].get_ref().as_str().unwrap();
-    let changed = SHIPPED
-        .replacen(
-            &format!("version = {version:?}"),
-            "version = \"test-release\"",
-            1,
-        )
-        .replacen(
-            "base_url = \"https://daily-cloudcode-pa.googleapis.com\"",
-            "base_url = \"https://daily-cloudcode-pa.googleapis.com/\"",
-            1,
-        );
+    let changed = SHIPPED.replacen(
+        "base_url = \"https://daily-cloudcode-pa.googleapis.com\"",
+        "base_url = \"https://daily-cloudcode-pa.googleapis.com/\"",
+        1,
+    );
     let table = ModelTable::parse_shipped(&changed).unwrap();
     let identity = table
         .provider(ProviderKind::Gemini)
@@ -1098,8 +1073,11 @@ fn antigravity_identity_data_renders_and_rejects_invalid_rows() {
         identity.base_url,
         "https://daily-cloudcode-pa.googleapis.com"
     );
-    assert_eq!(identity.version, "test-release");
-    assert_eq!(identity.user_agent, "antigravity/cli/test-release");
+    let version = Version::parse("1.2.3").unwrap();
+    assert_eq!(
+        identity.user_agent(version).as_deref(),
+        Some("antigravity/cli/1.2.3")
+    );
     assert_eq!(identity.default_model, "gemini-4-carbon-medium");
     assert!(identity.session_id.is_some());
     let session_line = SHIPPED
@@ -1156,12 +1134,13 @@ fn antigravity_identity_data_renders_and_rejects_invalid_rows() {
             .is_none()
     );
 
-    let target = format!(
-        "[providers.gemini.antigravity]\nbase_url = \"https://daily-cloudcode-pa.googleapis.com\"\nversion = {version:?}\nuser_agent = \"antigravity/cli/{{version}}\"\ndefault_model = \"gemini-4-carbon-medium\""
-    );
-    assert!(SHIPPED.contains(&target));
+    let target = "[providers.gemini.antigravity]\nbase_url = \"https://daily-cloudcode-pa.googleapis.com\"\nuser_agent = \"antigravity/cli/{version}\"\ndefault_model = \"gemini-4-carbon-medium\"";
+    assert!(SHIPPED.contains(target));
     for (label, replacement) in [
-        ("unknown field", format!("{target}\nextra = \"nope\"")),
+        (
+            "old version field",
+            format!("{target}\nversion = \"1.2.3\""),
+        ),
         (
             "bad url scheme",
             target.replace(
@@ -1172,14 +1151,6 @@ fn antigravity_identity_data_renders_and_rejects_invalid_rows() {
         (
             "unparseable url",
             target.replace("https://daily-cloudcode-pa.googleapis.com", "not a url"),
-        ),
-        (
-            "empty version",
-            target.replace(&format!("version = {version:?}"), "version = \"\""),
-        ),
-        (
-            "underscore version",
-            target.replace(&format!("version = {version:?}"), "version = \"1.5_5\""),
         ),
         (
             "unexpanded placeholder",
@@ -1206,7 +1177,7 @@ fn antigravity_identity_data_renders_and_rejects_invalid_rows() {
             target.replace("gemini-4-carbon-medium", "bad model id"),
         ),
     ] {
-        let broken = SHIPPED.replacen(&target, &replacement, 1);
+        let broken = SHIPPED.replacen(target, &replacement, 1);
         assert_eq!(
             shipped_error(&broken),
             RowProblem::BadValue {
@@ -1253,34 +1224,89 @@ fn thinking_budgets_parse_and_refuse_bad_tables() {
 }
 
 #[test]
-fn codex_version_comes_from_identity_data_and_rejects_invalid_rows() {
+fn subscription_versions_come_from_client_tables_and_reject_invalid_rows() {
     let table = ModelTable::shipped().unwrap();
-    let row = table.provider(ProviderKind::OpenAi).unwrap();
-    let version = row.codex_version.as_deref().unwrap();
-    let window = row.codex_window.unwrap();
-    let codex = |entry: &str| format!("[providers.openai.codex]\n{entry}");
-    let original = codex(&format!("version = {version:?}\nwindow = {window}"));
-    assert!(SHIPPED.contains(&original));
-    let changed = SHIPPED.replace(&original, &codex("version = '1.2.3'\nwindow = 160000"));
-    let changed = ModelTable::parse_shipped(&changed).unwrap();
-    let row = changed.provider(ProviderKind::OpenAi).unwrap();
-    assert_eq!(row.codex_version.as_deref(), Some("1.2.3"));
-    assert_eq!(row.codex_window, Some(160_000));
-    for entry in [
-        "",
-        "version = 1",
-        "version = ''",
-        "version = '1.2'",
-        "version = '1..3'",
-        "version = '1.2.3&extra=1'",
-        "version = '1.2.3'\nother = 1",
+    for kind in [
+        ProviderKind::OpenAi,
+        ProviderKind::Anthropic,
+        ProviderKind::Gemini,
     ] {
-        let broken = SHIPPED.replace(&original, &codex(&format!("{entry}\nwindow = {window}")));
-        assert!(ModelTable::parse_shipped(&broken).is_err(), "{entry}");
+        let name = kind.as_str();
+        let version = table
+            .provider(kind)
+            .unwrap()
+            .client
+            .unwrap()
+            .version
+            .to_string();
+        let prefix = format!("[providers.{name}.client]");
+        let original = format!("{prefix}\nversion = {version:?}");
+        assert!(SHIPPED.contains(&original));
+        let changed = SHIPPED.replace(&original, &format!("{prefix}\nversion = '999999999.0.3'"));
+        let changed = ModelTable::parse_shipped(&changed).unwrap();
+        assert_eq!(
+            changed
+                .provider(kind)
+                .unwrap()
+                .client
+                .unwrap()
+                .version
+                .to_string(),
+            "999999999.0.3"
+        );
+        for entry in [
+            "",
+            "version = 1",
+            "version = ''",
+            "version = '1.2'",
+            "version = '1..3'",
+            "version = '1.2.3.4'",
+            "version = '01.2.3'",
+            "version = '1.2.3-alpha'",
+            "version = '+1.2.3'",
+            "version = '1. 2.3'",
+            "version = '1.5_5'",
+            "version = '1.2.1000000000'",
+            "version = '1.2.3&extra=1'",
+            "version = '1.2.3'\nother = 1",
+        ] {
+            let broken = SHIPPED.replace(&original, &format!("{prefix}\n{entry}"));
+            assert!(
+                ModelTable::parse_shipped(&broken).is_err(),
+                "{name}: {entry}"
+            );
+        }
+        if kind != ProviderKind::OpenAi {
+            let without_client = SHIPPED.replace(&original, "");
+            assert!(
+                matches!(
+                    shipped_error(&without_client),
+                    RowProblem::BadValue {
+                        field: "client",
+                        ..
+                    }
+                ),
+                "{name}"
+            );
+        }
     }
-    let version_only = SHIPPED.replace(&original, &codex("version = '1.2.3'"));
+
+    let window = table
+        .provider(ProviderKind::OpenAi)
+        .unwrap()
+        .codex_window
+        .unwrap();
+    let original = format!("[providers.openai.codex]\nwindow = {window}");
+    assert!(SHIPPED.contains(&original));
+    let changed = SHIPPED.replace(&original, "[providers.openai.codex]\nwindow = 160000");
+    let changed = ModelTable::parse_shipped(&changed).unwrap();
+    assert_eq!(
+        changed.provider(ProviderKind::OpenAi).unwrap().codex_window,
+        Some(160_000)
+    );
+    let version_only = SHIPPED.replace(&original, "[providers.openai.codex]\nversion = '1.2.3'");
     assert!(ModelTable::parse_shipped(&version_only).is_err());
-    let too_small = SHIPPED.replace(&original, &codex("version = '1.2.3'\nwindow = 103999"));
+    let too_small = SHIPPED.replace(&original, "[providers.openai.codex]\nwindow = 103999");
     assert!(matches!(
         shipped_error(&too_small),
         RowProblem::LimitTooSmall(_)
@@ -1291,7 +1317,7 @@ fn models_requiring_newer_codex(
     json: &str,
     shipped_version: &str,
 ) -> Result<Vec<(String, String)>, String> {
-    let shipped = codex_version_parts(shipped_version)
+    let shipped = Version::parse(shipped_version)
         .ok_or_else(|| format!("invalid shipped Codex version: {shipped_version:?}"))?;
     let catalog: Value = serde_json::from_str(json).map_err(|err| err.to_string())?;
     let models = catalog
@@ -1308,7 +1334,7 @@ fn models_requiring_newer_codex(
             .get("minimal_client_version")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("{slug}: expected a minimal_client_version string"))?;
-        let minimum = codex_version_parts(version)
+        let minimum = Version::parse(version)
             .ok_or_else(|| format!("{slug}: invalid minimal_client_version {version:?}"))?;
         if minimum > shipped {
             incompatible.push((slug.to_owned(), version.to_owned()));
@@ -1393,7 +1419,7 @@ async fn shipped_codex_version_supports_the_latest_catalog() {
         .expect("expected tag_name for GitHub's latest Codex release");
     assert!(
         tag.strip_prefix("rust-v")
-            .and_then(codex_version_parts)
+            .and_then(Version::parse)
             .is_some(),
         "expected a Codex release tag like rust-vX.Y.Z, got {tag:?}"
     );
@@ -1403,9 +1429,10 @@ async fn shipped_codex_version_supports_the_latest_catalog() {
     let catalog = fetch_codex_check_input(&client, &url).await;
     let shipped = ModelTable::shared()
         .provider(ProviderKind::OpenAi)
-        .and_then(|row| row.codex_version.as_deref())
-        .expect("shipped OpenAI Codex version");
-    let incompatible = models_requiring_newer_codex(&catalog, shipped)
+        .and_then(|row| row.client)
+        .expect("shipped OpenAI Codex version")
+        .version;
+    let incompatible = models_requiring_newer_codex(&catalog, &shipped.to_string())
         .unwrap_or_else(|err| panic!("could not check the Codex catalog at {tag}: {err}"));
     assert!(
         incompatible.is_empty(),

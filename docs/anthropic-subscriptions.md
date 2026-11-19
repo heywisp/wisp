@@ -93,8 +93,9 @@ handling remain in use.
 
 The shipped identity is in `[providers.anthropic.claude_code]` in
 [`crates/wisp-core/data/models.toml`](../crates/wisp-core/data/models.toml).
-It holds the Claude Code version, user-agent templates, ordered beta flags and
-compatibility headers. Wisp appends its requested feature flags without duplicates;
+It holds the user-agent templates, ordered beta flags and compatibility headers.
+The templates use the Claude Code version from `[providers.anthropic.client]`.
+Wisp appends its requested feature flags without duplicates;
 these include the message-thread flag on a thread's requests
 (`docs/context.md`, "Message threads").
 

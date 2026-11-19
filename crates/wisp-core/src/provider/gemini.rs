@@ -24,6 +24,7 @@ use wisp_protocol::{Billing, CacheTtl, ContentBlock, ErrorKind, VariableName, va
 
 use super::anthropic::{status_outcome, unexpected, unreachable};
 use super::classify::{self, Carries, error_object};
+use super::client_version::Version;
 use super::credential::{Credential, EnvFile, Source, SubscriptionKind};
 use super::sse::{IDLE_TIMEOUT, Waits};
 use super::{ModelCapabilities, PrefixBytes, Provider, ProviderError, ProviderEvent, Request};
@@ -31,6 +32,7 @@ use crate::endpoints::{
     Answer, CheckOutcome, EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, Unreachable,
     UrlSource, clean,
 };
+use crate::models::ModelTable;
 use crate::models::list::{self, ListCell, ModelList, SavedList, Unusable};
 
 pub const ID_PREFIX: &str = "gemini-";
@@ -57,10 +59,6 @@ pub fn antigravity_default_model() -> &'static str {
 
 pub fn antigravity_base_url() -> &'static str {
     antigravity::data().map_or("", |id| id.base_url.as_str())
-}
-
-pub fn antigravity_user_agent() -> &'static str {
-    antigravity::data().map_or("", |id| id.user_agent.as_str())
 }
 
 pub fn is_antigravity_origin(origin: &str) -> bool {
@@ -255,7 +253,7 @@ pub struct GeminiProvider {
     credential: Credential,
     base_url: String,
     identity: String,
-    subscription: bool,
+    user_agent: Option<String>,
     official: bool,
     project_cache: Arc<Mutex<Option<String>>>,
     onboard_poll_delay: Duration,
@@ -269,7 +267,7 @@ pub struct GeminiProvider {
 impl fmt::Debug for GeminiProvider {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GeminiProvider")
-            .field("subscription", &self.subscription)
+            .field("subscription", &self.user_agent.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -278,12 +276,15 @@ type ModelLimits = (String, Option<u64>, Option<u32>);
 
 impl GeminiProvider {
     pub fn from_endpoint(endpoint: &ResolvedEndpoint) -> Result<Self, ConfigError> {
-        Self::from_endpoint_with_identity(endpoint, antigravity::data())
+        let identity = ModelTable::shared()
+            .provider(ProviderKind::Gemini)
+            .and_then(|row| Some((row.antigravity.as_ref()?, row.client?.version)));
+        Self::from_endpoint_with_identity(endpoint, identity)
     }
 
     fn from_endpoint_with_identity(
         endpoint: &ResolvedEndpoint,
-        identity: Option<&antigravity::Identity>,
+        identity: Option<(&antigravity::Identity, Version)>,
     ) -> Result<Self, ConfigError> {
         check_credential(&endpoint.credential, endpoint.key_var())?;
         let subscription =
@@ -307,9 +308,15 @@ impl GeminiProvider {
         if subscription && !valid_antigravity_url(&endpoint.base_url) {
             return Err(ConfigError::Subscription);
         }
-        if subscription && identity.is_none() {
-            return Err(ConfigError::SubscriptionIdentity);
-        }
+        let user_agent = if subscription {
+            Some(
+                identity
+                    .and_then(|(identity, version)| identity.user_agent(version))
+                    .ok_or(ConfigError::SubscriptionIdentity)?,
+            )
+        } else {
+            None
+        };
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::none())
@@ -334,7 +341,7 @@ impl GeminiProvider {
             credential: endpoint.credential.clone(),
             base_url,
             identity,
-            subscription,
+            user_agent,
             official,
             project_cache: Arc::new(Mutex::new(initial_project)),
             onboard_poll_delay: antigravity::DEFAULT_POLL_DELAY,
@@ -374,7 +381,7 @@ impl GeminiProvider {
         }
     }
 
-    pub(crate) async fn project_id(&self) -> Result<String, ProviderError> {
+    async fn project_id(&self, user_agent: &str) -> Result<String, ProviderError> {
         if let Some(cached) = self
             .project_cache
             .lock()
@@ -400,6 +407,7 @@ impl GeminiProvider {
             &self.client,
             &self.base_url,
             &token,
+            user_agent,
             self.clock.as_ref(),
             self.onboard_poll_delay,
             self.project_timeout,
@@ -430,7 +438,7 @@ impl GeminiProvider {
     }
 
     async fn probe_inner(&self, timeout: Duration) -> CheckOutcome {
-        if self.subscription {
+        if let Some(user_agent) = self.user_agent.as_deref() {
             let Ok(token) = self.credential.access_token().await else {
                 return CheckOutcome::KeyRefused;
             };
@@ -438,6 +446,7 @@ impl GeminiProvider {
             let call = antigravity::antigravity_headers(
                 self.client.post(url).timeout(timeout).body("{}"),
                 &token,
+                user_agent,
             );
             let response = match call.send().await {
                 Ok(r) => r,
@@ -519,15 +528,16 @@ impl GeminiProvider {
         entries: Vec<ModelLimits>,
         default_model: Option<&str>,
     ) -> Result<ModelList, ProviderError> {
-        let preferred = default_model.or_else(|| self.subscription.then(antigravity_default_model));
+        let preferred =
+            default_model.or_else(|| self.user_agent.is_some().then(antigravity_default_model));
         ModelList::from_gemini_ids(entries, preferred).map_err(|u| u.error(ProviderKind::Gemini))
     }
 
     async fn fetch_model_limits(
         &self,
     ) -> Result<(Vec<ModelLimits>, Option<String>), ProviderError> {
-        if self.subscription {
-            let _ = self.project_id().await?;
+        if let Some(user_agent) = self.user_agent.as_deref() {
+            let _ = self.project_id(user_agent).await?;
             let token = self.credential.access_token().await?;
             let url = format!("{}/v1internal:fetchAvailableModels", self.base_url);
             let response = antigravity::antigravity_headers(
@@ -537,6 +547,7 @@ impl GeminiProvider {
                     .timeout(list::TIMEOUT)
                     .body("{}"),
                 &token,
+                user_agent,
             )
             .send()
             .await
@@ -683,7 +694,7 @@ impl Provider for GeminiProvider {
     }
 
     fn default_model(&self) -> String {
-        if self.subscription {
+        if self.user_agent.is_some() {
             self.list
                 .default_model()
                 .unwrap_or_else(|| antigravity_default_model().to_owned())
@@ -693,7 +704,7 @@ impl Provider for GeminiProvider {
     }
 
     fn billing(&self) -> Billing {
-        if self.subscription {
+        if self.user_agent.is_some() {
             Billing::AntigravityPlan
         } else {
             Billing::Metered
@@ -709,7 +720,8 @@ impl Provider for GeminiProvider {
     }
 
     fn cache_life(&self, ttl: CacheTtl) -> SignedDuration {
-        self.subscription
+        self.user_agent
+            .is_some()
             .then(antigravity::cache_idle)
             .flatten()
             .unwrap_or_else(|| crate::context::ttl_span(ttl))
@@ -823,9 +835,9 @@ impl GeminiProvider {
         let req_model = model.clone();
         let call = async move {
             let token = sending.credential.access_token().await?;
-            if sending.subscription {
-                let project = sending.project_id().await?;
-                let wrapped = antigravity::wrap_request(&project, &req_model, body);
+            if let Some(user_agent) = sending.user_agent.as_deref() {
+                let project = sending.project_id(user_agent).await?;
+                let wrapped = antigravity::wrap_request(&project, &req_model, body, user_agent);
                 let url = format!(
                     "{}/v1internal:streamGenerateContent?alt=sse",
                     sending.base_url
@@ -837,6 +849,7 @@ impl GeminiProvider {
                         .header("Accept", "text/event-stream")
                         .body(wrapped.to_string()),
                     &token,
+                    user_agent,
                 ))
             } else {
                 let url = format!(
@@ -855,8 +868,14 @@ impl GeminiProvider {
         let open = move |response: reqwest::Response| async move {
             if !response.status().is_success() {
                 let now = this.clock.now().as_second();
-                let error =
-                    http_error(response, this.subscription, Some(&model), now, carries).await;
+                let error = http_error(
+                    response,
+                    this.user_agent.is_some(),
+                    Some(&model),
+                    now,
+                    carries,
+                )
+                .await;
                 return (Vec::new(), Err(error));
             }
             let req_id = super::classify::header_request_id(response.headers());

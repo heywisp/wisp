@@ -354,8 +354,9 @@ impl OpenAiProvider {
         if self.subscription {
             let version = crate::models::ModelTable::shared()
                 .provider(ProviderKind::OpenAi)
-                .and_then(|row| row.codex_version.as_deref())
-                .ok_or_else(unavailable)?;
+                .and_then(|row| row.client)
+                .ok_or_else(unavailable)?
+                .version;
             Ok(format!(
                 "{CHATGPT_BASE_URL}/codex/models?client_version={version}"
             ))

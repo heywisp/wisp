@@ -3020,9 +3020,10 @@ fn the_model_list_url_uses_the_shipped_codex_version_only_for_subscriptions() {
     let version = table
         .provider(ProviderKind::OpenAi)
         .unwrap()
-        .codex_version
-        .as_deref()
-        .unwrap();
+        .client
+        .unwrap()
+        .version
+        .to_string();
     let url = reqwest::Url::parse(&signed_in("synthetic-profile").models_url().unwrap()).unwrap();
     assert_eq!(url.path(), "/backend-api/codex/models");
     assert_eq!(
