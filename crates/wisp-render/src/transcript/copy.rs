@@ -2516,10 +2516,6 @@ pub fn node_word(state: wisp_protocol::slot::NodeState) -> &'static str {
     }
 }
 
-pub fn folded(n: usize) -> String {
-    format!("+{n}")
-}
-
 pub fn agents_count(n: usize) -> String {
     match n {
         1 => "1 agent".to_owned(),

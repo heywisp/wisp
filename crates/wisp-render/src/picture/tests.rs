@@ -1,6 +1,9 @@
-use wisp_protocol::slot::NodeState;
+use wisp_protocol::slot::{NodeState, SlotFlow, SlotTopologyNode};
 
 use super::*;
+use crate::chrome::topology::{Topology, page, panel};
+use crate::markdown::Layout;
+use crate::testing::crowded_agents;
 use crate::theme::{Depth, Mode};
 
 const CELL: (u16, u16) = (9, 19);
@@ -65,9 +68,100 @@ fn busy(head: f32, step: u8) -> Scene {
     }
 }
 
+fn boxed<'a>(
+    nodes: &'a [SlotTopologyNode],
+    flows: &'a [SlotFlow],
+    w: u16,
+    now_ms: u64,
+) -> Topology<'a> {
+    Topology {
+        root: Some("main"),
+        nodes,
+        flows,
+        picked: None,
+        label: None,
+        layout: Layout::new(35, GlyphSet::Unicode),
+        at: Duration::from_millis(now_ms),
+        now_ms,
+        cx: MotionCtx::new(MotionPolicy::Full, GlyphSet::Unicode, Depth::TrueColor),
+        pictures: Some(w),
+    }
+}
+
+fn flow(from: &str, to: &str) -> SlotFlow {
+    SlotFlow {
+        from: Some(from.to_owned()),
+        to: Some(to.to_owned()),
+        at_ms: 1000,
+    }
+}
+
+#[test]
+fn the_box_s_picture_shrinks_to_show_every_agent_judged_in_pixels() {
+    let nodes = crowded_agents(16);
+    let drawn = |w, ms| panel(&boxed(&nodes, &[], w, ms)).scenes.remove(0);
+    for (w, n) in [(9, 2), (18, 5)] {
+        let scene = drawn(w, 199);
+        let grid = (f32::from(w), 19.0);
+        let agents = scene
+            .dots
+            .iter()
+            .filter(|d| d.at.1 < 7.0 && matches!(d.mark, Mark::State(_)));
+        assert_eq!(agents.clone().count(), 114);
+        assert!(
+            agents
+                .clone()
+                .all(|d| extent(d, grid).0 == (n, n) && d.at.0 + d.radius < 35.0)
+        );
+        if w == 9 {
+            let square = one(vec![*agents.clone().next().unwrap()], 35, 7);
+            let pixels = raster(
+                &square,
+                &THEME,
+                CELL,
+                Rect {
+                    x: 0,
+                    y: 3,
+                    cells: 35,
+                },
+                None,
+            );
+            assert_eq!(
+                pixels
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .filter(|p| p[3] > 0)
+                    .count(),
+                4
+            );
+            assert_eq!(tiles(&scene, CELL), tiles(&drawn(9, 200), CELL));
+        }
+    }
+    let nodes = crowded_agents(19);
+    let view = boxed(&nodes, &[], 9, 0);
+    let drawing = panel(&view);
+    let scene = &drawing.scenes[0];
+    assert_eq!(scene.width, 34);
+    assert!(scene.dots.iter().all(|d| d.at.0 + d.radius < 34.0));
+    let marker = drawing.lines[3].spans.last().unwrap();
+    assert_eq!(
+        marker,
+        &crate::styled::StyledSpan::new("▸", Token::TextFaint)
+    );
+    let page = page(&view, 24);
+    assert!(!page.scenes[0].thin);
+    assert!(page.scenes[0].dots.iter().all(|d| d.at.0.fract() == 0.5));
+}
+
 #[test]
 fn a_narrowed_tile_draws_what_the_whole_scene_draws() {
-    for scene in [busy(5.5, 0), busy(12.5, 2)] {
+    let nodes = crowded_agents(19);
+    let flows = [flow("helper", "task-0/5"), flow("task-0/0", "task-0/0")];
+    let cut = panel(&boxed(&nodes, &flows, 9, 1000)).scenes.remove(0);
+    assert_eq!((cut.lights.len(), cut.rings.len()), (1, 1));
+    assert!(tiles(&cut, CELL).iter().all(|(r, _)| r.x + r.cells <= 34));
+    for scene in [busy(5.5, 0), busy(12.5, 2), cut] {
         for cell in [CELL, (4, 40)] {
             let grid = (f32::from(cell.0), f32::from(cell.1));
             for y in scene.rows.clone() {
@@ -267,13 +361,13 @@ fn every_state_has_its_shape_and_colour_and_empty_pixels_stay_clear() {
 
 #[test]
 fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
-    let folded = Dot {
+    let legend = Dot {
         radius: 0.4,
         ..dot(0, 0, Mark::State(NodeState::Done), Token::Ok)
     };
     let scene = Scene {
         text_cells: vec![(1, 0), (2, 0), (3, 0)],
-        ..one(vec![folded], 6, 2)
+        ..one(vec![legend], 6, 2)
     };
     let tiles = tiles(&scene, CELL);
     let rects: Vec<Rect> = tiles.iter().map(|(r, _)| *r).collect();
@@ -284,7 +378,7 @@ fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
             y: 0,
             cells: 1
         }],
-        "beside +30, one cell"
+        "beside legend text, one cell"
     );
     assert_eq!(super::tiles(&scene.clone(), CELL), tiles, "the same scene");
     let far_text = Scene {
@@ -299,7 +393,7 @@ fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
     let failed = Scene {
         dots: vec![Dot {
             mark: Mark::State(NodeState::Failed),
-            ..folded
+            ..legend
         }],
         ..scene.clone()
     };
@@ -319,7 +413,7 @@ fn tiles_skip_empty_and_text_cells_and_keep_their_hashes() {
         }]
     );
     let pair = Scene {
-        dots: vec![folded, pair.dots[0]],
+        dots: vec![legend, pair.dots[0]],
         ..pair
     };
     let before = super::tiles(&pair, CELL);
@@ -419,23 +513,55 @@ fn a_flying_light_lights_three_cells_behind_its_head_and_changes_only_their_tile
         }],
         ..Scene::default()
     };
-    let at = |x: usize, y: usize| {
+    let at = |scene: &Scene, x: usize, y: usize| {
         let (w, h) = (usize::from(CELL.0), usize::from(CELL.1));
-        pixel(&cell_of(&bend, x / w, y / h), 1, (x % w, y % h))
+        pixel(&cell_of(scene, x / w, y / h), 1, (x % w, y % h))
     };
     let [head, near, far] = lit_colours(&THEME).map(opaque);
-    assert_eq!(at(39, 19), head, "the horizontal leg");
+    assert_eq!(at(&bend, 39, 19), head, "the horizontal leg");
     assert_eq!(
-        at(35, 19),
+        at(&bend, 35, 19),
         head,
         "the snapped corner belongs to the outgoing leg"
     );
-    assert_eq!(at(35, 27), near, "the first vertical leg");
-    assert_eq!(at(35, 43), far, "the last vertical leg");
+    assert_eq!(at(&bend, 35, 27), near, "the first vertical leg");
+    assert_eq!(at(&bend, 35, 43), far, "the last vertical leg");
     assert!(
-        (17..21).all(|y| (43..47).all(|x| at(x, y) == head)),
+        (17..21).all(|y| (43..47).all(|x| at(&bend, x, y) == head)),
         "the head block"
     );
+
+    let nodes = crowded_agents(8);
+    let flows = [flow("task-0/0", "task-0/5")];
+    let mut thin = panel(&boxed(&nodes, &flows, CELL.0, 1066)).scenes.remove(0);
+    assert!(thin.thin);
+    let trail = |scene: &Scene| [(18, 86), (18, 94), (18, 110)].map(|(x, y)| at(scene, x, y));
+    assert_eq!(trail(&thin), [head, near, far]);
+    thin.lights.clear();
+    assert_eq!(trail(&thin), [opaque(THEME.rgb(Token::Line)); 3]);
+
+    let nodes = crowded_agents(4);
+    let flows = [flow("task-0/0", "task-0")];
+    let view = Topology {
+        layout: Layout::new(18, GlyphSet::Unicode),
+        ..boxed(&nodes, &flows, 3, 1132)
+    };
+    let blend = panel(&view).scenes.remove(0);
+    assert_eq!(
+        blend.lights[0].path,
+        [(2.75, 6.5), (2.75, 5.5), (2.75, 4.5), (3.25, 4.5)]
+    );
+    let cell = (3, 19);
+    let at = |x: usize, y: usize| {
+        let row = Rect {
+            x: 0,
+            y: y / 19,
+            cells: blend.width,
+        };
+        let rgba = raster(&blend, &THEME, cell, row, None);
+        rgba.as_chunks::<4>().0[(y % 19) * blend.width * 3 + x]
+    };
+    assert_eq!([at(9, 85), at(8, 94), at(8, 110)], [head, near, far]);
 
     let left_bend = [(1.5, 0.5), (1.5, 1.5), (0.5, 1.5)];
     assert!(
@@ -466,25 +592,28 @@ fn a_flying_light_lights_three_cells_behind_its_head_and_changes_only_their_tile
             .collect::<Vec<_>>()
     };
     let bare = draw_rows(&landed);
-    for (step, dots) in [16, 24, 32].into_iter().enumerate() {
-        let scene = Scene {
-            rings: vec![Ring {
-                on,
-                step: step as u8,
-            }],
-            ..landed.clone()
-        };
-        let pixels = draw_rows(&scene);
-        let pixels = pixels.as_chunks::<4>().0;
-        let ink = [head, near, far][step];
-        assert_eq!(pixels.iter().filter(|&&p| p == ink).count(), 4 * dots);
-        assert!(
-            bare.as_chunks::<4>()
-                .0
-                .iter()
-                .zip(pixels)
-                .all(|(before, after)| before[3] == 0 || before == after),
-            "step {step} preserves the receiver"
-        );
+    for (thin, steps) in [(false, [64, 96, 128]), (true, [24, 32, 40])] {
+        for (step, count) in steps.into_iter().enumerate() {
+            let scene = Scene {
+                thin,
+                rings: vec![Ring {
+                    on,
+                    step: step as u8,
+                }],
+                ..landed.clone()
+            };
+            let pixels = draw_rows(&scene);
+            let pixels = pixels.as_chunks::<4>().0;
+            let ink = [head, near, far][step];
+            assert_eq!(pixels.iter().filter(|&&p| p == ink).count(), count);
+            assert!(
+                bare.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(pixels)
+                    .all(|(before, after)| before[3] == 0 || before == after),
+                "step {step} preserves the receiver"
+            );
+        }
     }
 }

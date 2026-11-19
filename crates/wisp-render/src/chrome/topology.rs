@@ -34,17 +34,9 @@ const STATES: [NodeState; 5] = [
     NodeState::Stopped,
     NodeState::Failed,
 ];
-const URGENT: [NodeState; 5] = [
-    NodeState::Failed,
-    NodeState::Working,
-    NodeState::Waiting,
-    NodeState::Stopped,
-    NodeState::Done,
-];
-const FIGURES: &str = "+0123456789";
 const LEGEND_ROW: usize = 3;
 const DOT: f32 = 0.5;
-const FOLDED_LESS: f32 = 0.8 / 9.0;
+const PIP_PX: f32 = 3.0;
 const MAIN_MORE: f32 = 1.4 / 9.0;
 const LEGEND_DOT: f32 = 0.4;
 const GAP_LESS: f32 = 4.0 / 9.0;
@@ -68,7 +60,7 @@ pub struct Topology<'a> {
     pub at: Duration,
     pub now_ms: u64,
     pub cx: MotionCtx,
-    pub pictures: bool,
+    pub pictures: Option<u16>,
 }
 
 pub fn dot(state: NodeState, glyphs: &Glyphs) -> (&'static str, Token) {
@@ -87,26 +79,10 @@ struct Tree {
     tops: Vec<usize>,
     need: Vec<usize>,
     levels: Vec<usize>,
-    hides: Vec<Tally>,
-    folded: Vec<bool>,
-    root_fold: Option<Tally>,
 }
 
-#[derive(Clone, Copy)]
-struct Tally {
-    count: usize,
-    worst: NodeState,
-}
-
-fn urgency(state: NodeState) -> usize {
-    URGENT
-        .iter()
-        .position(|s| *s == state)
-        .unwrap_or(URGENT.len())
-}
-
-fn count_cells(count: usize) -> usize {
-    copy::folded(count).len()
+fn apart(tree: &Tree, a: usize, b: usize) -> usize {
+    usize::from(!tree.kids[a].is_empty() || !tree.kids[b].is_empty())
 }
 
 impl Tree {
@@ -125,97 +101,36 @@ impl Tree {
             }
             index.entry(node.key.as_str()).or_insert(i);
         }
-        let empty = Tally {
-            count: 0,
-            worst: NodeState::Unknown,
-        };
         let mut tree = Tree {
             kids,
             up,
             tops,
             need: vec![DOT_CELLS; nodes.len()],
             levels: vec![1; nodes.len()],
-            hides: vec![empty; nodes.len()],
-            folded: vec![false; nodes.len()],
-            root_fold: None,
         };
-        for i in (0..nodes.len()).rev() {
-            tree.hides[i] = tree.tally(nodes, &tree.kids[i]);
-        }
-        tree.measure();
+        tree.measure(false);
         tree
     }
 
-    fn tally(&self, nodes: &[SlotTopologyNode], of: &[usize]) -> Tally {
-        let worst = of
-            .iter()
-            .flat_map(|&k| [nodes[k].state, self.hides[k].worst])
-            .min_by_key(|&s| urgency(s));
-        Tally {
-            count: of.iter().map(|&k| 1 + self.hides[k].count).sum(),
-            worst: worst.unwrap_or(NodeState::Unknown),
-        }
+    fn span(&self, kids: &[usize], close: bool) -> usize {
+        let cells: usize = kids.iter().map(|&k| self.need[k]).sum();
+        cells
+            + if close {
+                kids.windows(2).map(|w| apart(self, w[0], w[1])).sum()
+            } else {
+                0
+            }
     }
 
-    fn measure(&mut self) {
+    fn measure(&mut self, close: bool) {
         for i in (0..self.kids.len()).rev() {
             let kids = &self.kids[i];
-            (self.need[i], self.levels[i]) = if self.folded[i] {
-                (DOT_CELLS + count_cells(self.hides[i].count), 1)
-            } else if kids.is_empty() {
-                (DOT_CELLS, 1)
+            self.need[i] = if kids.is_empty() {
+                if close { 1 } else { DOT_CELLS }
             } else {
-                (
-                    kids.iter().map(|&k| self.need[k]).sum(),
-                    1 + kids.iter().map(|&k| self.levels[k]).max().unwrap_or(0),
-                )
+                self.span(kids, close)
             };
-        }
-    }
-
-    fn wide(&self, width: usize) -> bool {
-        self.tops.iter().map(|&t| self.need[t]).sum::<usize>() >= width
-    }
-
-    fn shown(&self) -> Vec<bool> {
-        let mut shown = vec![false; self.kids.len()];
-        self.tops.iter().for_each(|&t| shown[t] = true);
-        for i in 0..self.kids.len() {
-            if shown[i] && !self.folded[i] {
-                self.kids[i].iter().for_each(|&k| shown[k] = true);
-            }
-        }
-        shown
-    }
-
-    fn fold(&mut self, nodes: &[SlotTopologyNode], width: usize, rooted: bool) {
-        let mut made = Vec::new();
-        while self.wide(width) {
-            let shown = self.shown();
-            let saves = |i: usize| {
-                self.need[i].saturating_sub(DOT_CELLS + count_cells(self.hides[i].count))
-            };
-            let pick = (0..self.kids.len())
-                .filter(|&i| shown[i] && !self.folded[i] && saves(i) > 0)
-                .max_by_key(|&i| (urgency(self.hides[i].worst), saves(i), i));
-            let Some(i) = pick else {
-                if rooted {
-                    self.root_fold = Some(self.tally(nodes, &self.tops));
-                    self.tops.clear();
-                }
-                return;
-            };
-            self.folded[i] = true;
-            made.push(i);
-            self.measure();
-        }
-        for &i in made.iter().rev() {
-            self.folded[i] = false;
-            self.measure();
-            if self.wide(width) {
-                self.folded[i] = true;
-                self.measure();
-            }
+            self.levels[i] = 1 + self.deepest(kids);
         }
     }
 
@@ -230,63 +145,66 @@ struct Bus {
     ry: usize,
 }
 
-struct Fold {
-    at: (usize, usize),
-    tally: Tally,
-}
-
 struct Placed {
     width: usize,
     height: usize,
     pos: Vec<Option<(usize, usize)>>,
     root: Option<(usize, usize)>,
     buses: Vec<Bus>,
-    folds: Vec<Fold>,
     lanes: Vec<usize>,
     lane_row: usize,
 }
 
 impl Placed {
-    fn page(tree: &Tree, rooted: bool, width: usize, height: usize) -> Placed {
+    fn page(
+        tree: &Tree,
+        rooted: bool,
+        width: usize,
+        height: usize,
+        close: bool,
+        cap: usize,
+    ) -> Placed {
         let lift = usize::from(rooted);
         let levels = lift + tree.deepest(&tree.tops);
-        let gap =
-            (height.saturating_sub(1) / levels.saturating_sub(1).max(1)).clamp(MIN_GAP, MAX_GAP);
+        let gap = if close {
+            MIN_GAP - 1
+        } else {
+            (height.saturating_sub(1) / levels.saturating_sub(1).max(1)).clamp(MIN_GAP, MAX_GAP)
+        };
         let used = levels.saturating_sub(1) * gap + 1;
         let first = height.saturating_sub(used) / 2;
         let rows: Vec<usize> = (0..levels).map(|d| first + d * gap).collect();
-        let need: Vec<usize> = tree.tops.iter().map(|&t| tree.need[t]).collect();
-        let sum: usize = need.iter().sum();
-        let fits = sum < width;
-        let spare = if fits {
-            (width - sum) as f64 / need.len().max(1) as f64
+        let sum = tree.span(&tree.tops, close);
+        let spare = if !close && sum < width {
+            (width - sum) as f64 / tree.tops.len().max(1) as f64
         } else {
             0.0
         };
+        let width = width.max(sum + usize::from(!close));
         let mut out = Placed {
-            width: if fits { width } else { sum + 1 },
+            width,
             height: height.max(used),
             pos: vec![None; tree.need.len()],
             root: None,
             buses: Vec::new(),
-            folds: Vec::new(),
             lanes: Vec::new(),
             lane_row: first + lift * gap,
         };
-        let mut a = 0.0;
-        for (&top, n) in tree.tops.iter().zip(&need) {
-            let w = *n as f64 + spare;
+        let offset = if close { (width - sum) / 2 } else { 0 };
+        let mut a = offset as f64;
+        for (i, &top) in tree.tops.iter().enumerate() {
+            if close && i > 0 {
+                a += apart(tree, tree.tops[i - 1], top) as f64;
+            }
+            let w = tree.need[top] as f64 + spare;
             out.lanes.push(a as usize);
-            out.put(tree, top, a + w / 2.0, (a, a + w), lift, &rows);
+            out.place(tree, top, (a, a + w, a + w / 2.0), lift, &rows, close);
             a += w;
         }
         if rooted {
-            let extra = tree.root_fold.map_or(0, |t| count_cells(t.count));
-            let root = (out.width.saturating_sub(extra) / 2, first);
+            let mid = if close { offset + sum / 2 } else { width / 2 };
+            let root = (mid.min(cap), first);
             out.root = Some(root);
-            if let Some(tally) = tree.root_fold {
-                out.folds.push(Fold { at: root, tally });
-            }
             if !tree.tops.is_empty() {
                 out.join(root, &tree.tops, gap);
             }
@@ -294,51 +212,32 @@ impl Placed {
         out
     }
 
-    fn put(
-        &mut self,
-        tree: &Tree,
-        node: usize,
-        centre: f64,
-        (x0, x1): (f64, f64),
-        depth: usize,
-        rows: &[usize],
-    ) {
-        let tally = tree.hides[node];
-        let extra = if tree.folded[node] {
-            count_cells(tally.count)
-        } else {
-            0
-        };
-        let at = ((centre - extra as f64 / 2.0) as usize, rows[depth]);
-        self.pos[node] = Some(at);
-        if tree.folded[node] {
-            self.folds.push(Fold { at, tally });
-        } else {
-            self.place(tree, node, x0, x1, depth + 1, rows);
-        }
-    }
-
     fn place(
         &mut self,
         tree: &Tree,
         parent: usize,
-        x0: f64,
-        x1: f64,
+        (x0, x1, centre): (f64, f64, f64),
         depth: usize,
         rows: &[usize],
+        close: bool,
     ) {
+        let from = (centre as usize, rows[depth]);
+        self.pos[parent] = Some(from);
         let kids = &tree.kids[parent];
-        let Some(from) = self.pos[parent].filter(|_| !kids.is_empty()) else {
+        if kids.is_empty() {
             return;
-        };
-        let total = kids.iter().map(|&k| tree.need[k]).sum::<usize>() as f64;
+        }
+        let total = tree.span(kids, close) as f64;
         let mut a = x0;
-        for &kid in kids {
+        for (i, &kid) in kids.iter().enumerate() {
+            if close && i > 0 {
+                a += apart(tree, kids[i - 1], kid) as f64;
+            }
             let b = a + (x1 - x0) * tree.need[kid] as f64 / total;
-            self.put(tree, kid, (a + b) / 2.0, (a, b), depth, rows);
+            self.place(tree, kid, (a, b, (a + b) / 2.0), depth + 1, rows, close);
             a = b;
         }
-        self.join(from, kids, rows[depth] - rows[depth - 1]);
+        self.join(from, kids, rows[depth + 1] - rows[depth]);
     }
 
     fn join(&mut self, from: (usize, usize), kids: &[usize], gap: usize) {
@@ -396,27 +295,29 @@ fn draw(
     view: &Topology<'_>,
     lit: &Flights,
     picked: Option<(usize, usize)>,
+    width: usize,
 ) -> Canvas {
+    let mut grid = Canvas::new(width, placed.height);
+    if view.pictures.is_some() {
+        return grid;
+    }
     let glyphs = Glyphs::of(view.layout.glyphs);
-    let mut grid = Canvas::new(placed.width, placed.height);
     let wires = placed.wires();
-    for (&at, &flags) in wires.iter().filter(|_| !view.pictures) {
+    for (&at, &flags) in &wires {
         let glyph = wire_glyph(flags, &glyphs);
         match glyph.chars().next().and_then(canvas::braille) {
             Some(bits) => grid.bits(at, bits, WIRE_RANK, wire()),
             None => grid.text(at, glyph, wire()),
         }
     }
-    for (path, h) in lit.lights.iter().filter(|_| !view.pictures) {
+    for (path, h) in &lit.lights {
         light(&mut grid, &trace(path, &wires), *h, view.cx);
     }
-    if let Some(root) = placed.root.filter(|_| !view.pictures) {
+    if let Some(root) = placed.root {
         grid.text(root, glyphs.wisp, Look::fg(Token::Accent));
     }
-    for (node, at) in view.nodes.iter().zip(&placed.pos) {
-        let Some(at) = at.filter(|_| !view.pictures) else {
-            continue;
-        };
+    for (node, &at) in view.nodes.iter().zip(&placed.pos) {
+        let Some(at) = at else { continue };
         let (glyph, token) = dot(node.state, &glyphs);
         let ink = match node.state {
             NodeState::Working => tree_pulse(token, view.at, view.cx),
@@ -424,20 +325,10 @@ fn draw(
         };
         grid.text(at, glyph, Look::fg(ink));
     }
-    for fold in &placed.folds {
-        let look = Look::fg(dot(fold.tally.worst, &glyphs).1);
-        let (x, y) = fold.at;
-        for (i, figure) in copy::folded(fold.tally.count).char_indices() {
-            let cell = FIGURES.find(figure).and_then(|f| FIGURES.get(f..=f));
-            grid.text((x + 1 + i, y), cell.unwrap_or(" "), look);
-        }
-    }
-    if let Some((x, y)) = picked.filter(|_| !view.pictures) {
+    if let Some((x, y)) = picked {
         bracket(&mut grid, x, y);
     }
-    if !view.pictures {
-        rings(&mut grid, placed, &lit.rings, view.cx);
-    }
+    rings(&mut grid, placed, &lit.rings, view.cx);
     grid
 }
 
@@ -541,9 +432,6 @@ fn light(grid: &mut Canvas, dots: &[Pip], h: usize, cx: MotionCtx) {
 }
 
 fn rings(grid: &mut Canvas, placed: &Placed, rings: &[((usize, usize), Duration)], cx: MotionCtx) {
-    let counts: Vec<(usize, usize)> = (placed.folds.iter())
-        .flat_map(|f| (1..=count_cells(f.tally.count)).map(move |i| (f.at.0 + i, f.at.1)))
-        .collect();
     let mut rings = rings.to_vec();
     rings.sort_by_key(|&((x, y), _)| (y, x));
     for ((x, y), open) in rings {
@@ -552,10 +440,13 @@ fn rings(grid: &mut Canvas, placed: &Placed, rings: &[((usize, usize), Duration)
             (x.checked_sub(1), ring.cells[0]),
             (Some(x + 1), ring.cells[2]),
         ] {
-            let Some(at) = at.map(|x| (x, y)).filter(|at| !counts.contains(at)) else {
+            let Some(at) = at.map(|x| (x, y)) else {
                 continue;
             };
-            if let Some(slot) = grid.cell_mut(at) {
+            if placed.root != Some(at)
+                && !placed.pos.contains(&Some(at))
+                && let Some(slot) = grid.cell_mut(at)
+            {
                 let look = slot.map_or_else(Look::default, |cell| cell.look);
                 *slot = Some(Cell {
                     mark: canvas::Mark::Char(half.ch),
@@ -583,11 +474,41 @@ pub fn panel(view: &Topology<'_>) -> Drawing {
     let glyphs = Glyphs::of(view.layout.glyphs);
     let rooted = view.root.is_some();
     let mut tree = Tree::new(view.nodes);
-    tree.fold(view.nodes, view.layout.width, rooted);
-    let placed = Placed::page(&tree, rooted, view.layout.width, 0);
+    let width = view.layout.width;
+    let sum = tree.span(&tree.tops, false);
+    let close = view.pictures.is_none() && sum >= width;
+    let (mut scale, mut cap) = (1.0, usize::MAX);
+    let mut cut = None;
+    let w = f32::from(view.pictures.unwrap_or(1).max(1));
+    if close {
+        tree.measure(true);
+        if tree.span(&tree.tops, true) > width {
+            cut = Some(width.saturating_sub(1));
+            cap = width.saturating_sub(3);
+        }
+    } else if sum >= width {
+        scale = width as f32 / (sum + 1) as f32;
+        if 2.0 * scale * w < PIP_PX {
+            scale = PIP_PX / (2.0 * w);
+            cut = Some(width.saturating_sub(1));
+            cap = ((width as f32 - 3.0) / scale - 0.5) as usize;
+        }
+    }
+    let placed = Placed::page(&tree, rooted, width, 0, close, cap);
     let lit = flights(view, &tree, &placed);
     let moving = lit.any();
-    let mut out = draw(&placed, view, &lit, None).lines();
+    let mut out = draw(&placed, view, &lit, None, cut.unwrap_or(width)).lines();
+    if let Some(room) = cut.filter(|_| width > 0)
+        && let Some(line) = out.get_mut(placed.lane_row)
+    {
+        line.spans = spans_padded(
+            std::mem::take(&mut line.spans),
+            room,
+            view.layout.width_mode,
+        );
+        line.spans
+            .push(StyledSpan::new(glyphs.more_right, Token::TextFaint));
+    }
     out.push(StyledLine::default());
     let mut marks = Vec::new();
     for row in legend_entries(view, &glyphs).chunks(LEGEND_ROW) {
@@ -606,12 +527,14 @@ pub fn panel(view: &Topology<'_>) -> Drawing {
         }
         out.push(StyledLine::new(spans));
     }
-    let scene = view.pictures.then(|| {
+    let scene = view.pictures.map(|_| {
         let window = Window {
             at: (0, 0),
             size: (placed.width, placed.height),
-            dot: DOT,
+            dot: DOT.min(scale - 0.5 / w),
             picked: None,
+            scale,
+            cut,
         };
         scene(&placed, view, &out, marks, &window, lit)
     });
@@ -629,7 +552,7 @@ fn legend_mark(
     marks: &mut Vec<Dot>,
 ) {
     let mode = view.layout.width_mode;
-    if !view.pictures {
+    if view.pictures.is_none() {
         spans.push(glyph.clone());
         return;
     }
@@ -653,12 +576,25 @@ struct Window {
     size: (usize, usize),
     dot: f32,
     picked: Option<(usize, usize)>,
+    scale: f32,
+    cut: Option<usize>,
 }
 
 impl Window {
-    fn inside(&self, (x, y): (usize, usize)) -> Option<(f32, f32)> {
-        let (x, y) = (x.checked_sub(self.at.0)?, y.checked_sub(self.at.1)?);
-        (x < self.size.0 && y < self.size.1).then(|| centre((x, y)))
+    fn project(&self, (x, y): (f32, f32)) -> (f32, f32) {
+        ((x - self.at.0 as f32) * self.scale, y - self.at.1 as f32)
+    }
+
+    fn inside(&self, cell: (usize, usize), radius: f32) -> Option<(f32, f32)> {
+        let (x, y) = (
+            cell.0.checked_sub(self.at.0)?,
+            cell.1.checked_sub(self.at.1)?,
+        );
+        let at = self.project(centre(cell));
+        (x < self.size.0
+            && y < self.size.1
+            && self.cut.is_none_or(|cut| at.0 + radius < cut as f32))
+        .then_some(at)
     }
 }
 
@@ -672,10 +608,11 @@ fn scene(
 ) -> Scene {
     let glyphs = Glyphs::of(view.layout.glyphs);
     let root = placed.root.and_then(|at| {
+        let radius = window.dot.max(DOT) + MAIN_MORE;
         Some(Dot {
-            at: window.inside(at)?,
+            at: window.inside(at, radius)?,
             mark: Mark::Root,
-            radius: window.dot + MAIN_MORE,
+            radius,
             ink: Ink::from(Token::Accent),
             frame: 0,
             picked: window.picked == Some(at),
@@ -684,15 +621,10 @@ fn scene(
     let dots = view.nodes.iter().zip(&placed.pos).filter_map(|(node, at)| {
         let at = (*at)?;
         let token = dot(node.state, &glyphs).1;
-        let folded = placed.folds.iter().any(|f| f.at == at);
         Some(Dot {
-            at: window.inside(at)?,
+            at: window.inside(at, window.dot)?,
             mark: Mark::State(node.state),
-            radius: if folded {
-                window.dot - FOLDED_LESS
-            } else {
-                window.dot
-            },
+            radius: window.dot,
             ink: Ink::from(token),
             frame: if node.state == NodeState::Working {
                 picture_frame(view.at, view.cx)
@@ -703,8 +635,7 @@ fn scene(
         })
     });
     let drawn: Vec<Dot> = root.into_iter().chain(dots).collect();
-    let (left, top) = (window.at.0 as f32, window.at.1 as f32);
-    let shift = |(x, y): (f32, f32)| (x - left, y - top);
+    let shift = |at| window.project(at);
     let lights = lit.lights.into_iter().filter_map(|(path, h)| {
         let head = h + 1;
         let route = cells(&path);
@@ -714,13 +645,14 @@ fn scene(
         })
     });
     let rings = lit.rings.into_iter().filter_map(|(cell, open)| {
-        let at = window.inside(cell)?;
+        let at = shift(centre(cell));
         let on = *drawn.iter().find(|d| d.at == at)?;
         let step = (3 * ms(open) / ms(REVEAL)).min(2) as u8;
         Some(Ring { on, step })
     });
     Scene {
-        width: view.layout.width,
+        width: window.cut.unwrap_or(view.layout.width),
+        thin: window.scale < 0.5,
         rows: 0..lines.len(),
         lights: lights.collect(),
         rings: rings.collect(),
@@ -911,7 +843,7 @@ struct Paged<'a> {
 fn paged<'a>(view: &Topology<'a>, height: usize, legend: usize) -> Paged<'a> {
     let (width, canvas) = (view.layout.width, height.saturating_sub(legend).max(1));
     let tree = Tree::new(view.nodes);
-    let placed = Placed::page(&tree, view.root.is_some(), width, canvas);
+    let placed = Placed::page(&tree, view.root.is_some(), width, canvas, false, usize::MAX);
     let spots = spots(view, &placed);
     let picked = spots
         .iter()
@@ -963,7 +895,7 @@ pub fn page(view: &Topology<'_>, height: usize) -> Drawing {
     let width = view.layout.width;
     let lit = flights(view, &tree, &placed);
     let moving = lit.any();
-    let full = draw(&placed, view, &lit, picked);
+    let full = draw(&placed, view, &lit, picked, placed.width);
     let mut shown = full.crop((left, top), width, canvas);
     let faint = Look::fg(Token::TextFaint);
     let side = placed
@@ -1004,7 +936,7 @@ pub fn page(view: &Topology<'_>, height: usize) -> Drawing {
         ..mark
     });
     out.extend(legend);
-    if !view.pictures {
+    if view.pictures.is_none() {
         return Drawing {
             lines: out,
             scenes: Vec::new(),
@@ -1016,6 +948,8 @@ pub fn page(view: &Topology<'_>, height: usize) -> Drawing {
         size: (width, canvas),
         dot: page_dot(&spots),
         picked,
+        scale: 1.0,
+        cut: None,
     };
     let topology = Scene {
         rows: 0..canvas,
@@ -1049,6 +983,8 @@ pub fn step<'a>(view: &Topology<'a>, toward: Toward) -> Option<Option<&'a str>> 
         view.root.is_some(),
         view.layout.width,
         0,
+        false,
+        usize::MAX,
     );
     let spots = spots(view, &placed);
     let (fx, fy) = spots.iter().find(|(key, _)| *key == view.picked)?.1;

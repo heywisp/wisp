@@ -166,7 +166,7 @@ struct Look {
     at: Duration,
     cx: MotionCtx,
     whole: bool,
-    pictures: bool,
+    pictures: Option<u16>,
 }
 
 impl Look {
@@ -181,7 +181,7 @@ impl Look {
             at: Duration::ZERO,
             cx: FULL,
             whole: false,
-            pictures: false,
+            pictures: None,
         }
     }
 
