@@ -35,6 +35,7 @@ Ok(
             endpoint_name: Some(
                 "env",
             ),
+            provider: None,
             model: "claude-sonnet-5-5",
             effort: Medium,
             cache_ttl: OneHour,

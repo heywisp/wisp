@@ -21,8 +21,13 @@ pub struct LiveCatalog {
 pub struct CatalogReader(LiveCatalog);
 
 impl CatalogReader {
-    pub fn providers_off(&self) -> crate::plugin::registry::ProvidersOff {
-        self.0.providers_off()
+    pub(crate) fn provider_off_words(
+        &self,
+        kind: crate::endpoints::ProviderKind,
+    ) -> Option<String> {
+        let provider = kind.as_str();
+        let removed = self.0.state().off.get(provider).copied()?;
+        Some(crate::plugin::registry::off_words(provider, removed))
     }
     pub fn set_providers_off(&self, off: crate::plugin::registry::ProvidersOff) {
         self.0.set_providers_off(off);

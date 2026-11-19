@@ -1097,6 +1097,8 @@ pub enum LogEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         endpoint_name: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         endpoint: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         credential_source: Option<CredentialSource>,

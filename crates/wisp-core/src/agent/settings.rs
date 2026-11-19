@@ -970,6 +970,7 @@ impl Agent {
             effort: target.effort,
             cache: cache.clone(),
             endpoint_name: Some(endpoint.clone()),
+            provider: Some(self.provider_at(target.endpoint).kind().as_str().to_owned()),
             endpoint: context.map(|c| c.endpoint.clone()),
             credential_source: context.map(|c| c.credential_source.clone()),
             account_bound: account_bound.clone(),

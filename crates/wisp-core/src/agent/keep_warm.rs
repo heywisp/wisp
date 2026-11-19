@@ -206,6 +206,7 @@ impl Agent {
     ) {
         self.disarm_keep_warm();
         if self.warm_limit().is_none() {
+            self.announce_warm(None, Some(true), events).await;
             return;
         }
         let anchor = matches!(outcome, TurnOutcome::Completed { .. })

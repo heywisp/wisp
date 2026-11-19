@@ -129,7 +129,7 @@ host) accept any model ID so multi-provider routers can serve `claude-*`,
 
 Agents may run on any configured endpoint, whatever its provider: a preset's or
 a spawn's `endpoint` picks it, so a Claude coder and a ChatGPT reviewer can share
-one session. A child's history never moves to another provider
+one session. A child's history can move to another provider just as the main chat's does
 ([Agents](agents.md), "Model, effort and endpoint" and "Resume").
 
 The keys-file endpoint remains Anthropic-only. `OPENAI_API_KEY` and
@@ -1092,7 +1092,7 @@ Switching in the main chat moves only the main agent, and in an agent's chat
 only that agent (`docs/agents.md`, "An agent's chat"). A child agent runs on the endpoint its
 spawn or its preset names, or else on the one its parent uses when it spawns,
 chosen from the endpoints the session started with (`docs/agents.md`, "What a
-child gets"), until a client moves it within its provider (`ChangeSettings`
+child gets"), until a client moves it (`ChangeSettings`
 sent in `Child`, `docs/agents.md`, "Model, effort and endpoint"). Two endpoint names on one account are two endpoints to Wisp:
 agents on them never wait on each other's stagger, and each has its own
 `max_in_flight` limit.

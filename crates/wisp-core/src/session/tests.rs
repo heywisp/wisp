@@ -2602,6 +2602,7 @@ fn one_of_every_event() -> Vec<LogEvent> {
             effort: Effort::Low,
             cache: CacheEffect::KeptIfPassedOn,
             endpoint_name: Some("direct".into()),
+            provider: None,
             endpoint: Some("https://api.anthropic.com".into()),
             credential_source: Some(CredentialSource::Environment),
             account_bound: vec!["claude-sonnet-5-5".into()],

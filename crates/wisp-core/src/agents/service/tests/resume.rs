@@ -2024,6 +2024,142 @@ async fn a_resumed_tree_keeps_one_shared_child_prefix_and_the_roots_and_every_hi
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resumes_there() {
+    use crate::agent::testing::{B, step};
+    use crate::provider::openai::build_body;
+
+    let setup = || Setup {
+        endpoints: vec![
+            endpoint(ENV),
+            openai("gpt", wisp_protocol::Billing::Metered),
+        ],
+        digests: true,
+        ..Setup::default()
+    };
+    let mut run = start(
+        "resume-child-on-another-provider",
+        setup(),
+        vec![
+            ("/", vec![done("noted"); 3]),
+            (
+                "/w",
+                vec![step(
+                    &[
+                        B::Think("placeholder reasoning"),
+                        B::Search("search1", "prefix fixture"),
+                        B::Found("search1"),
+                        B::Call("r1", REPORT, json!({"text": "An earlier report."})),
+                    ],
+                    StopReason::ToolUse,
+                )],
+            ),
+            (
+                "gpt:/w",
+                vec![done("A later reply."), done("Another reply.")],
+            ),
+        ],
+    )
+    .await;
+    run.spawn(SpawnRequest {
+        keep_warm: true,
+        ..spawn_request("w", "A brief before the move.")
+    })
+    .await;
+    reported(&mut run, "/w").await;
+    run.child_ended("/w").await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let agents = list(&mut run).await;
+    assert_eq!(
+        entry(&agents, "/w").keep_warm,
+        Some(wisp_protocol::KeepWarm {
+            refreshes: 0,
+            limit: 8,
+            paused: false,
+        })
+    );
+    let request = run.request();
+    run.send(child(
+        "/w",
+        ClientCommand::ChangeSettings {
+            request,
+            changes: ClientCommand::shortcut_changes(Some("gpt".into()), None, Some(Effort::Low)),
+            save: false,
+        },
+    ))
+    .await;
+    run.until("the accepted switch", |e| {
+        matches!(inner(e, "/w"), Some(AgentEvent::SettingsChanged { answers: Some(r), endpoint, .. }) if *r == request && endpoint == "gpt")
+    })
+    .await;
+    run.send(child_send("/w", "on-gpt", "A message after the move."))
+        .await;
+    run.until("the turn on OpenAI to start", |e| {
+        matches!(
+            inner(e, "/w"),
+            Some(AgentEvent::TurnStarted { turn: 2, .. })
+        )
+    })
+    .await;
+    run.child_ended("/w").await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let agents = list(&mut run).await;
+    assert_eq!(
+        entry(&agents, "/w").keep_warm,
+        Some(wisp_protocol::KeepWarm {
+            refreshes: 0,
+            limit: 8,
+            paused: true,
+        })
+    );
+    run.send(child_send(
+        "/w",
+        "again-on-gpt",
+        "One more message before reopening.",
+    ))
+    .await;
+    run.child_ended("/w").await;
+    let run = run.quit().await;
+    let sent = run.requests("gpt:/w");
+    let [first, before] = sent.as_slice() else {
+        panic!("expected two OpenAI requests")
+    };
+    let first_body = build_body(&first.request()).unwrap();
+    let text = serde_json::to_string(&first_body["input"]).unwrap();
+    assert!(text.contains("A brief before the move."), "{text}");
+    assert!(text.contains("[anthropic content]"), "{text}");
+    assert!(text.contains("Page search1"), "{text}");
+    assert!(text.contains("An earlier report."), "{text}");
+    assert!(!text.contains("placeholder reasoning"), "{text}");
+    assert!(!text.contains("enc-search1"), "{text}");
+
+    let back = resume(run, setup(), vec![("gpt:/w", vec![done("Still here.")])]).await;
+    assert_eq!(back.live, ["/w"], "{:?}", back.warnings);
+    assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+    let mut run = back.run;
+    let agents = list(&mut run).await;
+    let worker = entry(&agents, "/w");
+    assert_eq!(worker.endpoint.as_deref(), Some("gpt"));
+    assert_eq!(worker.provider.as_deref(), Some("openai"));
+    assert_eq!((worker.model.as_str(), worker.effort), (GPT, Effort::Low));
+    run.send(child_send("/w", "reopened", "A message after the reopen."))
+        .await;
+    run.child_ended("/w").await;
+    let sent = run.requests("gpt:/w");
+    let after = sent.last().unwrap();
+    grows_from(after, before, "the reopened child's history");
+    let body = build_body(&before.request()).unwrap();
+    let input = body["input"].as_array().unwrap();
+    let resumed = build_body(&after.request()).unwrap();
+    let extended = resumed["input"].as_array().unwrap();
+    assert!(extended.len() > input.len());
+    assert_eq!(
+        serde_json::to_vec(&extended[..input.len()]).unwrap(),
+        serde_json::to_vec(input).unwrap(),
+    );
+    let _ = run.quit().await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_failed_child_queued_for_a_task_from_above_at_the_exit_runs_it_after_a_resume() {
     let setup = || Setup {
         limits: Limits {

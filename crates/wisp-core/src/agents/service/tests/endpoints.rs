@@ -1637,7 +1637,7 @@ async fn after_the_reset_a_new_spawn_takes_the_first_choice_again() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_fallback_on_another_provider_is_left_for_the_next_spawn() {
+async fn a_running_child_moves_to_a_fallback_on_another_provider() {
     let clock = Arc::new(ShiftedClock::at(
         jiff::Timestamp::from_second(FALLBACK_NOW).unwrap(),
         None,
@@ -1656,16 +1656,16 @@ async fn a_fallback_on_another_provider_is_left_for_the_next_spawn() {
                 "first:/review",
                 super::guarantee::failing(&gate, FALLBACK_NOW, reset),
             ),
-            ("spare:/next", vec![done("working").hanging()]),
-            ("first:/", vec![done("noted")]),
+            ("spare:/review", vec![uses(&[report_call("r1", "done")])]),
+            ("first:/", vec![done("noted"); 2]),
         ],
     )
     .await;
-    let request = |name| SpawnRequest {
+    run.spawn(SpawnRequest {
         preset: Some("reviewer".into()),
-        ..spawn_request(name, "Review.")
-    };
-    run.spawn(request("review")).await;
+        ..spawn_request("review", "Review.")
+    })
+    .await;
     run.until("the child's step", |e| {
         matches!(inner(e, "/review"), Some(AgentEvent::StepStarted { .. }))
     })
@@ -1673,29 +1673,13 @@ async fn a_fallback_on_another_provider_is_left_for_the_next_spawn() {
     super::guarantee::hold_limit(&run, &cache, "first", (FALLBACK_NOW, reset));
     gate.add_permits(1);
     run.child_ended("/review").await;
-    run.spawn(request("next")).await;
-    for from in ["/review", "/next"] {
-        run.until("the notice", |e| matches!(e, AgentEvent::InputAccepted { from: Some(by), .. } if by.agent.as_str() == from)).await;
-    }
+    super::resume::reported(&mut run, "/review").await;
+    let agents = super::resume::list(&mut run).await;
+    let review = super::resume::entry(&agents, "/review");
+    assert_eq!(review.endpoint.as_deref(), Some("spare"));
+    assert_eq!(review.provider.as_deref(), Some("openai"));
     let run = run.quit().await;
-    let reason = "first reached its usage limit, resets in 1h00m.";
-    let mail = run.mail_to("/");
-    let mail: Vec<&str> = mail
-        .iter()
-        .map(|(_, _, text)| wisp_protocol::mail_body(text))
-        .collect();
-    assert_eq!(
-        mail,
-        [
-            format!("/review failed (rate_limit): {reason}"),
-            format!("started on fallback spare with gpt-6-astra high: {reason}"),
-        ]
-    );
-    assert!(run.requests("spare:/review").is_empty());
-    assert_eq!(
-        spawned_entry(&run, "/next").endpoint.as_deref(),
-        Some("spare")
-    );
+    assert_eq!(run.requests("spare:/review").len(), 1);
 }
 
 struct WrongDefault(Arc<Fake>);

@@ -343,6 +343,7 @@ impl Agent {
             effort: self.session.effort,
             cache: CacheEffect::Kept,
             endpoint_name: Some(endpoint),
+            provider: Some(self.provider().kind().as_str().to_owned()),
             endpoint: Some(context.endpoint.clone()),
             credential_source: Some(context.credential_source.clone()),
             account_bound: Vec::new(),
