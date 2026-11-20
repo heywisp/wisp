@@ -297,6 +297,26 @@ fn gemini_wire_searches_by_default_even_with_a_saved_list_and_accepts_an_overrid
     };
     let saved = SearchFacts::resolve(&models(""), "direct", "gemini-4-carbon", gemini, Some(&row));
     assert_eq!(saved.form(true, false), SearchForm::Native);
+    for id in ["gemini-4-neon", "gemini-4-neon-xhigh"] {
+        let neon = SearchFacts::resolve(&models(""), "direct", id, gemini, None);
+        assert_eq!(neon.versions, vec!["google_search".to_owned()], "{id}");
+        assert_eq!(neon.form(true, false), SearchForm::Native, "{id}");
+        let neon_list =
+            crate::models::list::ModelList::from_gemini_ids([(id.to_owned(), None, None)], None)
+                .unwrap();
+        let neon_row = ListedRow {
+            row: neon_list.find(id).unwrap().row(gemini),
+            source: wisp_protocol::context::WindowSource::Subscription,
+            max_window: None,
+        };
+        let neon_saved = SearchFacts::resolve(&models(""), "direct", id, gemini, Some(&neon_row));
+        assert_eq!(
+            neon_saved.versions,
+            vec!["google_search".to_owned()],
+            "{id}"
+        );
+        assert_eq!(neon_saved.form(true, false), SearchForm::Native, "{id}");
+    }
     let configured = models("[models.\"gemini-4-carbon\"]\nweb_search = [\"google_search\"]\n");
     let facts = SearchFacts::resolve(&configured, "direct", "gemini-4-carbon", gemini, None);
     assert_eq!(facts.versions, vec!["google_search".to_owned()]);

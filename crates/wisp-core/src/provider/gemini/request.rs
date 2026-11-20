@@ -1090,36 +1090,41 @@ mod tests {
             );
         }
 
-        let caps_h = super::super::model_capabilities("gemini-4-hydrogen").copied();
-        for (effort, expected_level) in [(Effort::High, "HIGH"), (Effort::Xhigh, "XHIGH")] {
-            let s_h = gemini_session("gemini-4-hydrogen", effort);
-            let b_h = build_body(
-                &make_req(&s_h, &messages, &[], &[], &rendering),
-                caps_h,
-                TEST_ID,
-                true,
-            )
-            .unwrap();
-            assert_eq!(
-                b_h.body["generationConfig"]["thinkingConfig"],
-                json!({"includeThoughts": true, "thinkingLevel": expected_level})
-            );
-        }
+        for family in ["gemini-4-hydrogen", "gemini-4-neon"] {
+            let caps_f = super::super::model_capabilities(family).copied();
+            for (effort, expected_level) in [(Effort::High, "HIGH"), (Effort::Xhigh, "XHIGH")] {
+                let s_f = gemini_session(family, effort);
+                let b_f = build_body(
+                    &make_req(&s_f, &messages, &[], &[], &rendering),
+                    caps_f,
+                    TEST_ID,
+                    true,
+                )
+                .unwrap();
+                assert_eq!(
+                    b_f.body["generationConfig"]["thinkingConfig"],
+                    json!({"includeThoughts": true, "thinkingLevel": expected_level}),
+                    "{family}"
+                );
+            }
 
-        let caps_hx = super::super::model_capabilities("gemini-4-hydrogen-xhigh").copied();
-        for effort in [Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh] {
-            let s_hx = gemini_session("gemini-4-hydrogen-xhigh", effort);
-            let b_hx = build_body(
-                &make_req(&s_hx, &messages, &[], &[], &rendering),
-                caps_hx,
-                TEST_ID,
-                true,
-            )
-            .unwrap();
-            assert_eq!(
-                b_hx.body["generationConfig"]["thinkingConfig"],
-                json!({"includeThoughts": true})
-            );
+            let xhigh_id = format!("{family}-xhigh");
+            let caps_x = super::super::model_capabilities(&xhigh_id).copied();
+            for effort in [Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh] {
+                let s_x = gemini_session(&xhigh_id, effort);
+                let b_x = build_body(
+                    &make_req(&s_x, &messages, &[], &[], &rendering),
+                    caps_x,
+                    TEST_ID,
+                    true,
+                )
+                .unwrap();
+                assert_eq!(
+                    b_x.body["generationConfig"]["thinkingConfig"],
+                    json!({"includeThoughts": true}),
+                    "{xhigh_id}"
+                );
+            }
         }
 
         let s_pretier = gemini_session("gemini-4-carbon-medium", Effort::High);

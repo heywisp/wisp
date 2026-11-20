@@ -386,10 +386,16 @@ impl GeminiProvider {
         self
     }
 
+    fn preferred_default<'a>(&self, default_model: Option<&'a str>) -> Option<&'a str> {
+        default_model.or_else(|| self.user_agent.is_some().then(antigravity_default_model))
+    }
+
     #[must_use]
     pub fn with_saved_list(mut self, folder: Option<&Path>) -> Self {
         self.models_folder = folder.map(Path::to_path_buf);
         let (list, default_model) = SavedList::take_with_default(folder, self.list_key.as_deref());
+        let preferred = self.preferred_default(default_model.as_deref());
+        let list = list.map(|list| Arc::new(list.sorted_gemini(preferred)));
         self.list = ListCell::new_with_default(list, default_model);
         self
     }
@@ -561,8 +567,7 @@ impl GeminiProvider {
         entries: Vec<ModelLimits>,
         default_model: Option<&str>,
     ) -> Result<ModelList, ProviderError> {
-        let preferred =
-            default_model.or_else(|| self.user_agent.is_some().then(antigravity_default_model));
+        let preferred = self.preferred_default(default_model);
         ModelList::from_gemini_ids(entries, preferred).map_err(|u| u.error(ProviderKind::Gemini))
     }
 
@@ -1556,7 +1561,7 @@ pub(crate) mod tests {
         let ids = provider.model_ids().await.unwrap();
         assert_eq!(
             ids,
-            vec!["gemini-3-flash-preview", "gemini-3.1-pro-preview"]
+            vec!["gemini-3.1-pro-preview", "gemini-3-flash-preview"]
         );
     }
 
@@ -2319,9 +2324,48 @@ pub(crate) mod tests {
         assert_eq!(
             reopened.model_list().unwrap().ids(),
             vec![
+                "gemini-4-carbon-medium",
                 "gemini-4-carbon-high",
                 "gemini-3.8-flash-high",
-                "gemini-4-carbon-medium",
+                "gemini-3.1-flash-image",
+                "gemini-9-future-exp",
+            ]
+        );
+
+        let key = reopened.list_key().unwrap().to_owned();
+        let mut stale = SavedList::load(dir.path(), &key).unwrap();
+        let unsorted = [
+            "gemini-9-future-exp",
+            "gemini-3.1-flash-image",
+            "gemini-3.8-flash-high",
+            "gemini-4-carbon-high",
+            "gemini-4-neon-xhigh",
+            "gemini-4-neon-low",
+        ];
+        let mut raw = serde_json::to_value(&stale).unwrap();
+        let template = raw["list"][0].clone();
+        raw["list"] = json!(
+            unsorted
+                .iter()
+                .map(|id| {
+                    let mut entry = template.clone();
+                    entry["id"] = json!(id);
+                    entry
+                })
+                .collect::<Vec<_>>()
+        );
+        stale = serde_json::from_value(raw).unwrap();
+        stale.save(dir.path(), &key).unwrap();
+        let resorted = GeminiProvider::from_endpoint(&sub_ep)
+            .unwrap()
+            .with_saved_list(Some(dir.path()));
+        assert_eq!(
+            resorted.model_list().unwrap().ids(),
+            vec![
+                "gemini-4-neon-low",
+                "gemini-4-neon-xhigh",
+                "gemini-4-carbon-high",
+                "gemini-3.8-flash-high",
                 "gemini-3.1-flash-image",
                 "gemini-9-future-exp",
             ]

@@ -364,9 +364,14 @@ mod tests {
     fn model_facts_equal_the_capability_rows_and_list_every_priced_model() {
         let models = models(&[]);
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        let mut priced: Vec<&str> = pricing::model_ids().collect();
-        priced.sort_unstable();
-        assert_eq!(ids, priced);
+        let mut described: Vec<&str> = wisp_core::models::ModelTable::shared()
+            .described_ids()
+            .collect();
+        described.sort_unstable();
+        assert_eq!(ids, described);
+        for id in pricing::model_ids() {
+            assert!(ids.contains(&id), "{id}");
+        }
         for facts in &models {
             let id = &facts.id;
             let (kind, row) = shipped_capabilities(id).unwrap();
@@ -377,8 +382,12 @@ mod tests {
             assert_eq!(caps.per_message_effort, row.per_message_effort, "{id}");
             assert_eq!(caps.adaptive_thinking, row.adaptive_thinking, "{id}");
             assert_eq!(facts.selectable(), row.selectable(kind), "{id}");
+            assert_eq!(
+                facts.rates.is_some(),
+                pricing::model_info(id).is_some(),
+                "{id}"
+            );
         }
-        assert!(models.iter().all(|m| m.rates.is_some()));
         use crate::resume::tests::{connection, listed};
         let first = listed(&[
             ("gpt-6.1-sol", "list", "medium"),
@@ -491,7 +500,10 @@ mod tests {
     #[test]
     fn the_tuis_input_rate_equals_rates_for_on_each_side_of_every_threshold() {
         for model in models(&[]) {
-            let info = pricing::model_info(&model.id).unwrap();
+            let Some(info) = pricing::model_info(&model.id) else {
+                assert_eq!(model.rates, None, "{}", model.id);
+                continue;
+            };
             let rates = model.rates.unwrap();
             assert_eq!(rates.output_per_mtok, info.rates.output_per_mtok);
             let mut sizes = vec![0, 1, 1_000, 200_000, u64::MAX];

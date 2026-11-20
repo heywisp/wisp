@@ -477,20 +477,23 @@ fn model_provider(id: &str) -> Option<String> {
 }
 
 pub fn shipped_models() -> Vec<wisp_protocol::settings::ModelEntry> {
-    let table = crate::models::ModelTable::shipped().ok();
-    crate::pricing::model_ids()
+    let table = crate::models::ModelTable::shared();
+    let mut entries: Vec<_> = table
+        .described_ids()
         .map(|id| {
-            let row = table.as_ref().and_then(|t| t.find(id));
+            let row = table.find(id);
             wisp_protocol::settings::ModelEntry {
                 id: id.to_owned(),
                 shipped: true,
                 configured: false,
                 context_window: row.and_then(|r| r.context_window),
-                listed: crate::models::ModelTable::shared().listed_rank(id),
+                listed: table.listed_rank(id),
                 provider: model_provider(id),
             }
         })
-        .collect()
+        .collect();
+    entries.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+    entries
 }
 
 pub struct EndpointRow {

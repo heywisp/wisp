@@ -410,6 +410,15 @@ mod tests {
             assert_eq!(resolved.long_prompt, None, "{id}");
             assert_eq!(model_info(id), Some(&resolved), "{id}");
         }
+        for id in ["gemini-4-neon", "gemini-4-neon-xhigh"] {
+            let row = table.find(id).unwrap();
+            assert_eq!(
+                resolve([], Some(row), table, ProviderKind::Gemini),
+                None,
+                "{id}"
+            );
+            assert_eq!(model_info(id), None, "{id}");
+        }
     }
 
     #[test]

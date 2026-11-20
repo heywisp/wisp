@@ -1302,6 +1302,15 @@ impl ModelTable {
         row.and_then(|row| row.capabilities.as_ref())
     }
 
+    pub fn described_ids(&self) -> impl Iterator<Item = &str> {
+        self.rows
+            .iter()
+            .filter(|row| row.capabilities.is_some())
+            .flat_map(|row| {
+                std::iter::once(row.id.as_str()).chain(row.aliases.iter().map(String::as_str))
+            })
+    }
+
     pub fn listed_rank(&self, model: &str) -> Option<u16> {
         let row = self.find(model).filter(|row| row.listed)?;
         let rank = self

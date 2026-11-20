@@ -12,7 +12,7 @@ fn basic_search() -> Option<Vec<String>> {
     Some(vec![wisp_protocol::settings::CLAUDE_WEB_SEARCH.to_owned()])
 }
 
-const LISTED: [&str; 14] = [
+const LISTED: [&str; 15] = [
     "claude-opus-5-5",
     "claude-sonnet-5-5",
     "claude-haiku-5-5",
@@ -22,6 +22,7 @@ const LISTED: [&str; 14] = [
     "gpt-6-astra",
     "gpt-6.1-terra",
     "gpt-6-luna",
+    "gemini-4-neon",
     "gemini-4-carbon",
     "gemini-4-argon",
     "gemini-4-hydrogen",
@@ -33,7 +34,7 @@ const LISTED: [&str; 14] = [
 fn listed_models_rank_in_the_shipped_files_row_order() {
     let table = ModelTable::shipped().unwrap();
     let ranks: Vec<Option<u16>> = LISTED.iter().map(|id| table.listed_rank(id)).collect();
-    assert_eq!(ranks, (0..14).map(Some).collect::<Vec<_>>());
+    assert_eq!(ranks, (0..15).map(Some).collect::<Vec<_>>());
     assert_eq!(table.listed_rank("claude-opus-4-8"), None);
     assert_eq!(table.listed_rank("not-a-model"), None);
 }
@@ -57,7 +58,7 @@ fn config_rows(site: Site, text: &str) -> Result<Vec<ModelRow>, RowError> {
 #[test]
 fn the_shipped_file_parses() {
     let table = ModelTable::shipped().unwrap();
-    assert_eq!(table.rows().len(), 57);
+    assert_eq!(table.rows().len(), 62);
     assert!(table.find("gemini-4-carbon").unwrap().bill_tool_use_prompt);
     assert!(
         table
@@ -108,7 +109,8 @@ fn the_shipped_file_parses() {
         assert!(pairs.insert((&own.family, own.effort)), "{}", row.id);
         *families.entry(&own.family).or_insert(0) += 1;
         let caps = row.capabilities.unwrap();
-        let expected_efforts: &[Effort] = if own.family == "gemini-4-hydrogen" {
+        let four = matches!(own.family.as_str(), "gemini-4-neon" | "gemini-4-hydrogen");
+        let expected_efforts: &[Effort] = if four {
             &[Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh]
         } else {
             &[Effort::Low, Effort::Medium, Effort::High]
@@ -119,10 +121,10 @@ fn the_shipped_file_parses() {
         assert_eq!(table.own_effort(&row.id, Effort::Max), own.effort);
         assert_eq!(table.sibling(&row.id, own.effort), Some(row.id.as_str()));
     }
-    assert_eq!(pairs.len(), 13);
+    assert_eq!(pairs.len(), 17);
     assert!(families.iter().all(|(family, count)| {
-        (*family == "gemini-4-hydrogen" && *count == 4)
-            || (*family != "gemini-4-hydrogen" && *count == 3)
+        let four = matches!(family.as_str(), "gemini-4-neon" | "gemini-4-hydrogen");
+        (four && *count == 4) || (!four && *count == 3)
     }));
     let table = ModelTable::shared();
     let lists = &table
@@ -914,6 +916,13 @@ fn token_fields_in_a_model_row_take_a_number_or_a_short_form() {
 }
 
 const CATALOG_EXCEPTIONS: [&str; 1] = ["claude-mythos-preview"];
+const UNPRICED_EXCEPTIONS: [&str; 5] = [
+    "gemini-4-neon",
+    "gemini-4-neon-low",
+    "gemini-4-neon-medium",
+    "gemini-4-neon-high",
+    "gemini-4-neon-xhigh",
+];
 const OPENAI_DOCS: &str = include_str!("../../../../docs/openai.md");
 const GEMINI_DOCS: &str = include_str!("../../../../docs/gemini.md");
 
@@ -927,8 +936,9 @@ fn every_provider_prices_and_describes_exactly_its_shipped_models() {
         for id in std::iter::once(&row.id).chain(&row.aliases) {
             shipped.insert(id.as_str());
             let described = !CATALOG_EXCEPTIONS.contains(&id.as_str());
+            let expect_priced = described && !UNPRICED_EXCEPTIONS.contains(&id.as_str());
             let priced = crate::pricing::model_info(id).is_some();
-            assert_eq!(priced, described, "{id}: price");
+            assert_eq!(priced, expect_priced, "{id}: price");
             let kind = shipped_capabilities(id).map(|(kind, _)| kind);
             assert_eq!(kind, row.provider.filter(|_| described), "{id}");
             assert_eq!(model_provider(id), row.provider, "{id}");
@@ -948,8 +958,13 @@ fn every_provider_prices_and_describes_exactly_its_shipped_models() {
     }
     let priced: BTreeSet<&str> = crate::pricing::model_ids().collect();
     assert!(priced.is_subset(&shipped));
+    let described: BTreeSet<&str> = table.described_ids().collect();
     for id in CATALOG_EXCEPTIONS {
         assert!(shipped.contains(id), "{id} is not in models.toml");
+        assert!(!described.contains(id), "{id} should stay undescribed");
+    }
+    for id in UNPRICED_EXCEPTIONS {
+        assert!(described.contains(id), "{id} is not described");
     }
 }
 

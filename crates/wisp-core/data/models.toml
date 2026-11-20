@@ -746,6 +746,18 @@ min_cacheable = 1024
 source = "https://developers.openai.com/api/docs/models/gpt-5.5"
 sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-5.5", efforts = "https://developers.openai.com/api/docs/models/gpt-5.5", images = "https://developers.openai.com/api/docs/models/gpt-5.5" }
 
+[models."gemini-4-neon"]
+provider = "gemini"
+web_search = ["google_search"]
+listed = true
+context_window = 1048576
+efforts = ["low", "medium", "high", "xhigh"]
+default_effort = "high"
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
 [models."gemini-4-carbon"]
 provider = "gemini"
 bill_tool_use_prompt = true
@@ -950,6 +962,46 @@ price_input = 0.10
 price_output = 0.40
 price_cache_read = 0.01
 min_cacheable = 1024
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-neon-low"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+effort_variant = { family = "gemini-4-neon", effort = "low" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-neon-medium"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+effort_variant = { family = "gemini-4-neon", effort = "medium" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-neon-high"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+effort_variant = { family = "gemini-4-neon", effort = "high" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
+source = "https://ai.google.dev/gemini-api/docs/models"
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+
+[models."gemini-4-neon-xhigh"]
+provider = "gemini"
+web_search = ["google_search"]
+context_window = 1048576
+effort_variant = { family = "gemini-4-neon", effort = "xhigh" }
+adaptive_thinking = true
+images = { tier = "standard", per_request = 100 }
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 

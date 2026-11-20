@@ -572,3 +572,127 @@ fn a_stale_list_is_claimed_by_one_cell_with_its_attempt_saved_first_and_a_fresh_
     assert_eq!(attempt(), due + 1);
     drop(held);
 }
+
+#[test]
+fn gemini_ids_sort_listed_families_efforts_unlisted_and_unknown_deterministically() {
+    use wisp_protocol::settings::{Chat, Landing, offered};
+
+    let raw = [
+        "gemini-exp-1206",
+        "gemini-2.0-flash",
+        "gemini-9-future-exp",
+        "gemini-10-future",
+        "gemini-3.1-flash-image",
+        "gemini-2.5-flash",
+        "gemini-3.6-flash",
+        "gemini-3.8-flash-tiered",
+        "gemini-2.5-pro",
+        "gemini-3.8-flash-high",
+        "gemini-4-hydrogen-xhigh",
+        "gemini-4-hydrogen-low",
+        "gemini-4-argon-high",
+        "gemini-4-carbon-high",
+        "gemini-4-carbon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-neon-xhigh",
+        "gemini-4-neon-medium",
+        "gemini-4-neon-high",
+        "gemini-4-neon-low",
+        "gemini-4-neon",
+    ];
+    let list = ModelList::from_gemini_ids(
+        raw.iter().map(|id| ((*id).to_owned(), None, None)),
+        Some("gemini-4-carbon-medium"),
+    )
+    .unwrap();
+    let expected = [
+        "gemini-4-neon",
+        "gemini-4-neon-low",
+        "gemini-4-neon-medium",
+        "gemini-4-neon-high",
+        "gemini-4-neon-xhigh",
+        "gemini-4-carbon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-carbon-high",
+        "gemini-4-argon-high",
+        "gemini-4-hydrogen-low",
+        "gemini-4-hydrogen-xhigh",
+        "gemini-3.8-flash-high",
+        "gemini-2.5-pro",
+        "gemini-3.8-flash-tiered",
+        "gemini-3.6-flash",
+        "gemini-2.5-flash",
+        "gemini-3.1-flash-image",
+        "gemini-10-future",
+        "gemini-9-future-exp",
+        "gemini-2.0-flash",
+        "gemini-exp-1206",
+    ];
+    assert_eq!(list.ids(), expected);
+    let offers = list.offers();
+    assert_eq!(
+        offers
+            .iter()
+            .map(|m| (m.id.as_str(), m.listed))
+            .collect::<Vec<_>>(),
+        expected
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (*id, Some(u16::try_from(i).unwrap())))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        offered(
+            &[],
+            Landing::new("gemini", &offers, true, Some("gemini-4-carbon-medium")),
+            Chat {
+                provider: Some("gemini"),
+                model: "gemini-4-carbon-medium",
+            },
+        ),
+        expected
+    );
+
+    let mut reversed = list.clone();
+    reversed.0.reverse();
+    assert_eq!(
+        reversed.sorted_gemini(Some("gemini-4-carbon-medium")).ids(),
+        expected
+    );
+
+    for (default_id, want) in [
+        (
+            "gemini-5-preview",
+            [
+                "gemini-4-neon-high",
+                "gemini-5-preview",
+                "gemini-3.6-flash",
+                "gemini-2.5-flash",
+                "gemini-9-future-exp",
+            ],
+        ),
+        (
+            "gemini-2.5-flash",
+            [
+                "gemini-4-neon-high",
+                "gemini-2.5-flash",
+                "gemini-3.6-flash",
+                "gemini-9-future-exp",
+                "gemini-5-preview",
+            ],
+        ),
+    ] {
+        let with_default = ModelList::from_gemini_ids(
+            [
+                ("gemini-2.5-flash".into(), None, None),
+                ("gemini-3.6-flash".into(), None, None),
+                ("gemini-5-preview".into(), None, None),
+                ("gemini-4-neon-high".into(), None, None),
+                ("gemini-9-future-exp".into(), None, None),
+            ],
+            Some(default_id),
+        )
+        .unwrap();
+        assert_eq!(with_default.ids(), want, "{default_id}");
+    }
+}
