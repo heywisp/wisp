@@ -616,7 +616,7 @@ async fn keep_warm_on_an_openai_endpoint_is_answered_and_never_marked() {
     assert_eq!(
         text,
         format!(
-            "Started /w on gpt (Gateway, API) with {GPT}, high, in {}. Its report will arrive as a message; don't poll it or wait for it. keep_warm does nothing on account gpt: Wisp doesn't refresh this provider's cache.",
+            "Started /w on gpt (Gateway, API) with {GPT}, high, in {}. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work. keep_warm does nothing on account gpt: Wisp doesn't refresh this provider's cache.",
             spawned_entry(&run, "/w").cwd.unwrap_or_default()
         )
     );

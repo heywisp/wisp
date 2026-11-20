@@ -48,6 +48,7 @@ pub const MESSAGES_SENTENCE: &str =
 pub const REPORT_SENTENCE: &str = "Finish each task you were given by calling report.";
 
 pub const REPORTED: &str = "Reported.";
+pub const REPORT_ARRIVES_SENTENCE: &str = "Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work.";
 pub const QUEUED_SENTENCE: &str = "It is queued: it starts by itself once fewer agents are running (agents.max_running, agents.max_tree_running).";
 pub const MAX_REPORT_LINE_CHARS: usize = 200;
 pub const NO_AGENTS: &str = "No other agents yet.";
@@ -81,7 +82,7 @@ pub fn agent_lines_in(environment: &str) -> Vec<&str> {
 
 pub fn started(agent: &StartedAgent, preset: Option<&str>) -> String {
     let mut text = format!(
-        "Started {} {} with {}, {}, in {}. Its report will arrive as a message; don't poll it or wait for it.",
+        "Started {} {} with {}, {}, in {}. {REPORT_ARRIVES_SENTENCE}",
         agent.path,
         on(&agent.endpoint, Some(&agent.provider)),
         agent.model,

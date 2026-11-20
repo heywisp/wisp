@@ -441,7 +441,10 @@ async fn a_question_from_a_child_wakes_its_parent_and_the_answer_reaches_its_nex
     run.root_ended().await;
     let root = run.requests("/");
     assert!(root[0].all_text().contains("Which file should I edit?"));
-    assert_eq!(result_of(&root[1], "m1").1, "Sent to /c (idle: woken).");
+    assert_eq!(
+        result_of(&root[1], "m1").1,
+        "Sent to /c (idle: woken). Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
+    );
     run.child_ended("/c").await;
     let c = run.requests("/c");
     assert_eq!(c.len(), 3);
@@ -701,7 +704,7 @@ async fn a_coordinator_you_stop_reads_its_workers_notices_and_messages_them_on()
     );
     assert_eq!(
         result_of(&lead[3], "m1").1,
-        "Sent to /lead/helper (idle: woken)."
+        "Sent to /lead/helper (idle: woken). Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
     );
     run.child_ended("/lead/helper").await;
     let helper = run.requests("/lead/helper");
@@ -899,7 +902,7 @@ async fn a_child_that_reported_takes_follow_up_work_in_the_same_context_until_it
     let root = run.requests("/");
     assert_eq!(
         result_of(&root[3], "m1").1,
-        "Sent to /reviewer (idle: woken)."
+        "Sent to /reviewer (idle: woken). Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
     );
     assert_eq!(
         result_of(&root[5], "k1").1,

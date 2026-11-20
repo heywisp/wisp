@@ -2,7 +2,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
-use wisp_plugin_api::host::{CallContext, Host, SpawnInput};
+use wisp_plugin_api::host::{CallContext, Delivery, Host, SpawnInput};
 use wisp_plugin_api::prompt::{At, Prior, Rendered};
 use wisp_plugin_api::tools::{
     BuildContext, ClientTool, Effect, Prepared, Purpose, Tags, Timeouts, ToolDef, ToolKind,
@@ -12,9 +12,9 @@ use wisp_plugin_api::tree::{AgentNode, AgentState, IdleOutcome, QueueReason, Sho
 use wisp_plugin_api::types::{Action, Completed, Display, Outcome, OutputKind, ToolRun, Verbs};
 use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
 use wisp_tool_text::agents::{
-    LIST_AGENTS, MESSAGES_SENTENCE, QUEUED_SENTENCE, RENAME_AGENT, REPORT, REPORT_SENTENCE,
-    REPORTED, SEND_MESSAGE, SPAWN_AGENT, STOP_AGENT, WAKE, kept_warm_line, listed, renamed,
-    report_line, sent, started, stopped,
+    LIST_AGENTS, MESSAGES_SENTENCE, QUEUED_SENTENCE, RENAME_AGENT, REPORT, REPORT_ARRIVES_SENTENCE,
+    REPORT_SENTENCE, REPORTED, SEND_MESSAGE, SPAWN_AGENT, STOP_AGENT, WAKE, kept_warm_line, listed,
+    renamed, report_line, sent, started, stopped,
 };
 
 pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
@@ -547,15 +547,29 @@ pub async fn run(host: &dyn Host, call: Box<dyn Prepared>, ctx: &dyn CallContext
         }
         Call::List => host.list_agents(ctx).map(|rows| listed(&rows)),
         Call::Report(input) => host.report(input, ctx).map(|()| REPORTED.to_owned()),
-        Call::Send { to, text, wake } => host
-            .send_message(to, text, wake, ctx)
-            .map(|delivered| sent(&delivered)),
+        Call::Send { to, text, wake } => host.send_message(to, text, wake, ctx).map(|delivered| {
+            let text = sent(&delivered);
+            if delivered.delivery == Delivery::Woken && is_direct_child(host, &delivered.to) {
+                format!("{text} {REPORT_ARRIVES_SENTENCE}")
+            } else {
+                text
+            }
+        }),
         Call::Stop { name, end } => host.stop_agent(name, end, ctx).map(|done| stopped(&done)),
         Call::Rename { name, new_name } => host
             .rename_agent(name, new_name, ctx)
             .map(|done| renamed(&done)),
     };
     answered(result)
+}
+
+fn is_direct_child(host: &dyn Host, target: &str) -> bool {
+    let Some(me) = host.current_agent() else {
+        return false;
+    };
+    host.snapshot()
+        .into_iter()
+        .any(|node| node.path == target && node.parent.as_deref() == Some(me.path.as_str()))
 }
 
 fn listed_refreshes(node: &AgentNode, shown: &ShownState) -> Option<u32> {

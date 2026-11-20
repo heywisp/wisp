@@ -587,7 +587,7 @@ async fn a_model_is_checked_against_the_childs_endpoint() {
                 !is_error
                     && text
                         == format!(
-                            "Started /{child} on gem-sub (Antigravity subscription) with gemini-4-carbon-medium, medium, in ~/work. Its report will arrive as a message; don't poll it or wait for it."
+                            "Started /{child} on gem-sub (Antigravity subscription) with gemini-4-carbon-medium, medium, in ~/work. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
                         ),
                 "{text}"
             );
