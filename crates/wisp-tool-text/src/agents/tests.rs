@@ -50,7 +50,7 @@ fn the_started_line_names_the_agent_and_says_not_to_poll() {
     );
     assert_eq!(
         line,
-        "Started /review/planner on gpt (ChatGPT subscription) with claude-opus-5-5, high, in ~/Projects/Wisp-worktrees/review. Its report will arrive as a message; don't poll it or wait for it."
+        "Started /review/planner on gpt (ChatGPT subscription) with claude-opus-5-5, high, in ~/Projects/Wisp-worktrees/review. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
     );
 }
 
@@ -260,7 +260,7 @@ fn planner(keep_warm: Option<WarmMark>) -> StartedAgent {
 
 #[test]
 fn a_kept_warm_start_names_the_limit_or_says_it_is_off() {
-    let opening = "Started /planner on direct (anthropic) with claude-opus-5-5, high, in ~/w. Its report will arrive as a message; don't poll it or wait for it.";
+    let opening = "Started /planner on direct (anthropic) with claude-opus-5-5, high, in ~/w. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work.";
     assert_eq!(
         started(&planner(Some(WarmMark::Limit(8))), None),
         format!(
@@ -286,7 +286,7 @@ fn a_kept_warm_start_names_the_limit_or_says_it_is_off() {
     };
     assert_eq!(
         started(&gpt, None),
-        "Started /planner on gpt (openai) with gpt-6.1-sol, high, in ~/w. Its report will arrive as a message; don't poll it or wait for it. keep_warm does nothing on account gpt: Wisp doesn't refresh this provider's cache."
+        "Started /planner on gpt (openai) with gpt-6.1-sol, high, in ~/w. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work. keep_warm does nothing on account gpt: Wisp doesn't refresh this provider's cache."
     );
 }
 

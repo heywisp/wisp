@@ -114,7 +114,7 @@ fn spawn_input_is_read_strictly_and_completely() {
 
 #[test]
 fn a_spawn_hands_its_input_to_the_host_and_returns_its_line_at_once() {
-    let started = "Started /planner on b (anthropic) with claude-test, low, in /w. Its report will arrive as a message; don't poll it or wait for it.";
+    let started = "Started /planner on b (anthropic) with claude-test, low, in /w. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work.";
     let input = json!({"name": "planner", "task": "Plan it.", "effort": "low", "endpoint": "b"});
     for (state, tail) in [
         (
@@ -174,7 +174,7 @@ fn a_kept_warm_spawn_passes_the_mark_and_words_the_hosts_limit() {
         assert_eq!(
             run.result,
             Some(format!(
-                "Started /planner on env (anthropic) with claude-test, high, in /w. Its report will arrive as a message; don't poll it or wait for it.{tail}"
+                "Started /planner on env (anthropic) with claude-test, high, in /w. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work.{tail}"
             ))
         );
         assert_eq!(host.spawned.lock().unwrap()[0].1.keep_warm, Some(true));
@@ -440,6 +440,46 @@ fn send_message_reads_its_input_strictly_and_words_the_delivery() {
     assert_eq!(
         quiet.result.as_deref(),
         Some("Sent to .. (idle: it reads this when it next runs).")
+    );
+    let tree = vec![node("/coord/rev-a", AgentState::Idle(None))];
+    let coord = FakeHost {
+        identity: Some(identity("/coord")),
+        tree: tree.clone(),
+        ..FakeHost::default()
+    };
+    let woke_child = run_tool(
+        &coord,
+        SEND_MESSAGE,
+        &json!({"to": "/coord/rev-a", "text": "Fix it."}),
+    );
+    assert_eq!(
+        woke_child.result.as_deref(),
+        Some(
+            "Sent to /coord/rev-a (idle: woken). Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
+        )
+    );
+    let idle_child = run_tool(
+        &coord,
+        SEND_MESSAGE,
+        &json!({"to": "/coord/rev-a", "text": "FYI", "wake": false}),
+    );
+    assert_eq!(
+        idle_child.result.as_deref(),
+        Some("Sent to /coord/rev-a (idle: it reads this when it next runs).")
+    );
+    let root = FakeHost {
+        identity: Some(identity("/")),
+        tree,
+        ..FakeHost::default()
+    };
+    let woke_descendant = run_tool(
+        &root,
+        SEND_MESSAGE,
+        &json!({"to": "/coord/rev-a", "text": "Check in."}),
+    );
+    assert_eq!(
+        woke_descendant.result.as_deref(),
+        Some("Sent to /coord/rev-a (idle: woken).")
     );
     let messaged = host.messaged.lock().unwrap().clone();
     assert_eq!(

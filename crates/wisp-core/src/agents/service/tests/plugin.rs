@@ -125,7 +125,7 @@ async fn spawn_agent_answers_at_once_and_each_refusal_is_a_tool_error_naming_its
         (
             false,
             format!(
-                "Started /a on env (Claude API) with {MODEL}, high, in ~/work. Its report will arrive as a message; don't poll it or wait for it."
+                "Started /a on env (Claude API) with {MODEL}, high, in ~/work. Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
             )
         )
     );
@@ -705,7 +705,12 @@ async fn spawn_agent_with_keep_warm_words_the_limit_and_list_agents_shows_the_ma
         let (_, marked) = result_of(&requests[1], "s1");
         assert!(marked.ends_with(started), "{marked}");
         let (_, plain) = result_of(&requests[1], "s2");
-        assert!(plain.ends_with("don't poll it or wait for it."), "{plain}");
+        assert!(
+            plain.ends_with(
+                "don't poll it, and end your turn unless you have other independent work."
+            ),
+            "{plain}"
+        );
         let (_, listed) = result_of(&requests[2], "l1");
         let w = listed.lines().find(|l| l.starts_with("- /w ")).unwrap();
         let v = listed.lines().find(|l| l.starts_with("- /v ")).unwrap();
