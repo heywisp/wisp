@@ -263,10 +263,32 @@ fn a_quiet_end_replays_no_block() {
         thinking: "hmm".to_owned(),
         signature: "sig".to_owned(),
     };
+    let gem_reasoning = crate::provider::envelope(
+        crate::provider::gemini::PROVIDER,
+        &json!({"type": crate::provider::REASONING_ITEM, "thought": "quiet", "signature": ""}),
+        1,
+        "id_gem",
+    );
+    let gem_thought = ContentBlock::Thinking {
+        thinking: "quiet".to_owned(),
+        signature: String::new(),
+    };
+    let gem_sig = crate::provider::envelope(
+        crate::provider::gemini::PROVIDER,
+        &json!({"type": crate::provider::gemini::TEXT_SIGNATURE_ITEM, "signature": "sig_q"}),
+        0,
+        "id_gem",
+    );
     let log = records(vec![
         started(json!({"turn": 1, "text": "hi"})),
         assistant(vec![text(crate::provider::NO_TEXT)]),
         assistant(vec![typed, text(" [no text]\n")]),
+        assistant(vec![
+            gem_reasoning,
+            gem_thought,
+            gem_sig,
+            text(crate::provider::NO_TEXT),
+        ]),
     ]);
     let events = transcript(&log, &Toolbox::default(), None);
     assert!(

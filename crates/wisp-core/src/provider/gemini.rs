@@ -101,6 +101,9 @@ pub static CREDENTIAL_VARS: [VariableName; 1] = [VariableName::from_static(API_K
 pub const MEDIA_TYPES: &[&str] = &["application/pdf", "image/jpeg", "image/png", "image/webp"];
 
 pub(crate) const PROVIDER: &str = "gemini";
+pub(crate) const TEXT_SIGNATURE_ITEM: &str = "text_signature";
+pub(crate) const CALL_SIGNATURES_ITEM: &str = "call_signatures";
+pub(crate) const PART_ITEM: &str = "part";
 const FIRST_BYTE: Duration = Duration::from_secs(300);
 const LIST_LIMIT: usize = 8 * 1024 * 1024;
 const MAX_MODEL_PAGES: usize = 5;
@@ -217,6 +220,59 @@ struct GeminiModelEntry {
 pub(crate) fn native_item(block: &ContentBlock) -> Option<(&Value, usize, &str)> {
     let envelope = super::native_envelope(block).filter(|e| e.provider == PROVIDER)?;
     Some((envelope.item?, envelope.projections?, envelope.identity?))
+}
+
+pub(crate) fn quiet_blocks(content: &[ContentBlock]) -> Vec<ContentBlock> {
+    let mut out = Vec::new();
+    let mut has_signature = false;
+    let mut index = 0;
+    while index < content.len() {
+        let Some(block) = content.get(index) else {
+            break;
+        };
+        if let Some((item, projections, identity)) = native_item(block) {
+            let end = index.saturating_add(1).saturating_add(projections);
+            if let Some(slice) = content.get(index..end) {
+                match item.get("type").and_then(Value::as_str) {
+                    Some(super::REASONING_ITEM) => {
+                        let thought = item
+                            .get("thought")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        let signature = item
+                            .get("signature")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        if !thought.is_empty() || !signature.is_empty() {
+                            out.extend(slice.iter().cloned());
+                            if !signature.is_empty() {
+                                has_signature = true;
+                            }
+                        }
+                    }
+                    Some(TEXT_SIGNATURE_ITEM)
+                        if item
+                            .get("signature")
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| !s.is_empty()) =>
+                    {
+                        if projections == 0 {
+                            out.push(block.clone());
+                            has_signature = true;
+                        } else if projections == 1 {
+                            out.push(super::envelope(PROVIDER, item, 0, identity));
+                            has_signature = true;
+                        }
+                    }
+                    _ => {}
+                }
+                index = end;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    if has_signature { out } else { Vec::new() }
 }
 
 fn endpoint_identity(base_url: &str, credential: &Credential) -> String {

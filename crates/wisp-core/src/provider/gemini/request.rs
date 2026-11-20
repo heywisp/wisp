@@ -7,12 +7,22 @@ use wisp_protocol::{ContentBlock, Effort, ErrorKind, ImageSource, MediaSource, M
 use wisp_tool_text::{CONTEXT_PREFIX, SENT_PREFIX};
 
 use super::super::{
-    ModelCapabilities, NotSent, PrefixBytes, ProviderError, Request, not_sent_note,
+    ModelCapabilities, NotSent, PrefixBytes, ProviderError, REASONING_ITEM, Request, not_sent_note,
 };
+use super::{CALL_SIGNATURES_ITEM, PART_ITEM, TEXT_SIGNATURE_ITEM};
 use crate::endpoints::ProviderKind;
 use crate::tool::Entry;
 
 const SKIP_SIGNATURE_VALIDATOR: &str = "skip_thought_signature_validator";
+
+fn stop_sequences() -> [String; 4] {
+    [
+        format!("\nuser\n{SENT_PREFIX}"),
+        format!("\nuser\n{CONTEXT_PREFIX}"),
+        format!("\nuser\n{MAIL_OPEN}"),
+        format!("\n{MAIL_OPEN} from=\""),
+    ]
+}
 
 #[derive(Debug)]
 pub(super) struct BuiltBody {
@@ -101,10 +111,7 @@ pub(super) fn build_body(
         "maxOutputTokens".to_owned(),
         Value::from(request.session.max_tokens),
     );
-    generation_config.insert(
-        "stopSequences".to_owned(),
-        json!([SENT_PREFIX, CONTEXT_PREFIX, MAIL_OPEN].map(|prefix| format!("\nuser\n{prefix}"))),
-    );
+    generation_config.insert("stopSequences".to_owned(), json!(stop_sequences()));
     if !prefix.thinking_config.is_null() {
         generation_config.insert("thinkingConfig".to_owned(), prefix.thinking_config);
     }
@@ -291,7 +298,7 @@ fn extract_call_signatures<'a>(
             continue;
         };
         if provider == super::PROVIDER
-            && raw.get("type").and_then(Value::as_str) == Some("call_signatures")
+            && raw.get("type").and_then(Value::as_str) == Some(CALL_SIGNATURES_ITEM)
             && raw.get("identity").and_then(Value::as_str) == Some(identity)
             && let Some(sigs) = raw.get("signatures").and_then(Value::as_object)
         {
@@ -343,6 +350,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                     _ => false,
                 });
 
+                let is_quiet = crate::provider::quiet_end(&message.content);
                 let mut parts = Vec::new();
                 let mut responses = Vec::new();
                 let mut has_signed_thinking = false;
@@ -360,12 +368,12 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                             ));
                         }
                         let item_type = item.get("type").and_then(Value::as_str);
-                        let is_reasoning = item_type == Some("reasoning");
+                        let is_reasoning = item_type == Some(REASONING_ITEM);
                         let cut =
                             is_reasoning && (index..end).any(|bi| request.rendering.cut(mi, bi));
                         if !cut && !as_text && item_identity == identity {
                             match item_type {
-                                Some("reasoning") => {
+                                Some(REASONING_ITEM) => {
                                     let thought = item
                                         .get("thought")
                                         .and_then(Value::as_str)
@@ -391,7 +399,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                                         parts.push(Value::Object(part));
                                     }
                                 }
-                                Some("text_signature") if projections == 0 => {
+                                Some(TEXT_SIGNATURE_ITEM) if projections == 0 => {
                                     let signature = item
                                         .get("signature")
                                         .and_then(Value::as_str)
@@ -410,7 +418,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                                         parts.push(Value::Object(part));
                                     }
                                 }
-                                Some("text_signature") if projections == 1 => {
+                                Some(TEXT_SIGNATURE_ITEM) if projections == 1 => {
                                     let signature = item
                                         .get("signature")
                                         .and_then(Value::as_str)
@@ -435,7 +443,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                                         responses.push(response);
                                     }
                                 }
-                                Some("part" | super::search::CALL) => {
+                                Some(PART_ITEM | super::search::CALL) => {
                                     if let Some(raw_part) = item.get("part") {
                                         if raw_part
                                             .get("thoughtSignature")
@@ -476,7 +484,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
 
                     match block {
                         ContentBlock::Text { text } => {
-                            if !text.is_empty() {
+                            if !(is_quiet && has_signed_thinking) && !text.is_empty() {
                                 parts.push(json!({ "text": text }));
                             }
                         }
@@ -901,6 +909,50 @@ mod tests {
             assert_eq!(body["labels"]["request_id"], format!("{id}-{n}"));
             assert_eq!(body["labels"]["last_step_index"], n.to_string());
         }
+        let mut turn3 = turn2.to_vec();
+        turn3.push(Message {
+            role: Role::Assistant,
+            content: vec![
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({"type": REASONING_ITEM, "thought": "quiet check", "signature": ""}),
+                    1,
+                    TEST_ID,
+                ),
+                ContentBlock::Thinking {
+                    thinking: "quiet check".into(),
+                    signature: String::new(),
+                },
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({"type": TEXT_SIGNATURE_ITEM, "signature": "sig_quiet_turn"}),
+                    0,
+                    TEST_ID,
+                ),
+                ContentBlock::Text {
+                    text: crate::provider::NO_TEXT.into(),
+                },
+            ],
+        });
+        turn3.push(Message::user_text("turn 3"));
+        let r3 = make_req(&s1, &turn3, &[], &[], &rendering);
+        assert_eq!(prefix_bytes(&r3, caps, true).unwrap(), pb1);
+        assert_eq!(cache_prefix(&r3, caps, true), cache_prefix(&r1, caps, true));
+        let tagged3 = tag(&r3);
+        assert_eq!(tagged3["labels"]["cascade_id"], id);
+        let contents3 = tagged3["contents"].as_array().unwrap();
+        assert_eq!(&contents3[..3], contents2.as_slice());
+        assert_eq!(
+            contents3[3],
+            json!({
+                "role": "model",
+                "parts": [
+                    {"thought": true, "text": "quiet check"},
+                    {"text": "", "thoughtSignature": "sig_quiet_turn"},
+                ]
+            })
+        );
+
         let other = [Message::user_text("another conversation")];
         let other = make_req(&s1, &other, &[], &[], &rendering);
         assert_ne!(tag(&other)["labels"]["cascade_id"], id);
@@ -1031,10 +1083,18 @@ mod tests {
 
     #[test]
     fn thinking_config_follows_adaptive_thinking_budgets_pretiered_and_unlisted_capabilities() {
+        let stop_list = stop_sequences();
+        let rendered_mail = wisp_protocol::agents::render_mail(
+            &wisp_protocol::AgentPath::root(),
+            wisp_protocol::agents::MailKind::Report,
+            "ok",
+        );
+        assert!(rendered_mail.starts_with(&stop_list[3][1..]));
         let stops = json!([
             format!("\nuser\n{SENT_PREFIX}"),
             format!("\nuser\n{CONTEXT_PREFIX}"),
             format!("\nuser\n{MAIL_OPEN}"),
+            format!("\n{MAIL_OPEN} from=\""),
         ]);
         let rendering = Rendering::default();
         let messages = [Message::user_text("hi")];
@@ -1262,6 +1322,130 @@ mod tests {
             assert_eq!(cut_parts.len(), 1);
             assert_eq!(cut_parts[0]["thoughtSignature"], "sig_call_a");
         }
+
+        let quiet_with_sig = [
+            Message::user_text("quiet 1"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    crate::provider::envelope(
+                        super::super::PROVIDER,
+                        &json!({"type": REASONING_ITEM, "thought": "cut me", "signature": ""}),
+                        1,
+                        TEST_ID,
+                    ),
+                    ContentBlock::Thinking {
+                        thinking: "cut me".into(),
+                        signature: String::new(),
+                    },
+                    crate::provider::envelope(
+                        super::super::PROVIDER,
+                        &json!({"type": TEXT_SIGNATURE_ITEM, "signature": "sig_keep"}),
+                        0,
+                        TEST_ID,
+                    ),
+                    ContentBlock::Text {
+                        text: crate::provider::NO_TEXT.into(),
+                    },
+                ],
+            },
+        ];
+        let mut quiet_cut = Rendering::default();
+        quiet_cut.cuts.push(Cut {
+            from: BlockPosition {
+                message: 1,
+                block: 0,
+            },
+            through: 1,
+            tools: false,
+        });
+        let cut_with_sig = build_body(
+            &make_req(&session, &quiet_with_sig, &[], &[], &quiet_cut),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            cut_with_sig.body["contents"][1]["parts"],
+            json!([{"text": "", "thoughtSignature": "sig_keep"}])
+        );
+
+        let as_text_rendering = Rendering {
+            native_as_text: vec![false, true],
+            ..Rendering::default()
+        };
+        let compacted = build_body(
+            &make_req(&session, &quiet_with_sig, &[], &[], &as_text_rendering),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            compacted.body["contents"][1]["parts"],
+            json!([{"text": crate::provider::NO_TEXT}])
+        );
+
+        let quiet_signed_reasoning = [
+            Message::user_text("quiet 2"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    crate::provider::envelope(
+                        super::super::PROVIDER,
+                        &json!({"type": REASONING_ITEM, "thought": "cut all", "signature": "sig_r"}),
+                        1,
+                        TEST_ID,
+                    ),
+                    ContentBlock::Thinking {
+                        thinking: "cut all".into(),
+                        signature: String::new(),
+                    },
+                    ContentBlock::Text {
+                        text: crate::provider::NO_TEXT.into(),
+                    },
+                ],
+            },
+        ];
+        let cut_without_sig = build_body(
+            &make_req(&session, &quiet_signed_reasoning, &[], &[], &quiet_cut),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            cut_without_sig.body["contents"][1]["parts"],
+            json!([{"text": crate::provider::NO_TEXT}])
+        );
+
+        let legacy_whitespace = [
+            Message::user_text("legacy"),
+            Message {
+                role: Role::Assistant,
+                content: vec![ContentBlock::Text {
+                    text: " [no text]\n".into(),
+                }],
+            },
+        ];
+        let legacy = build_body(
+            &make_req(
+                &session,
+                &legacy_whitespace,
+                &[],
+                &[],
+                &Rendering::default(),
+            ),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            legacy.body["contents"][1]["parts"],
+            json!([{"text": " [no text]\n"}])
+        );
     }
 
     #[test]
@@ -1480,6 +1664,37 @@ mod tests {
                     },
                 ],
             },
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    crate::provider::envelope(
+                        super::super::PROVIDER,
+                        &json!({
+                            "type": REASONING_ITEM,
+                            "thought": "gemini quiet thought",
+                            "signature": "",
+                        }),
+                        1,
+                        TEST_ID,
+                    ),
+                    ContentBlock::Thinking {
+                        thinking: "gemini quiet thought".into(),
+                        signature: String::new(),
+                    },
+                    crate::provider::envelope(
+                        super::super::PROVIDER,
+                        &json!({
+                            "type": TEXT_SIGNATURE_ITEM,
+                            "signature": "sig_quiet_end",
+                        }),
+                        0,
+                        TEST_ID,
+                    ),
+                    ContentBlock::Text {
+                        text: crate::provider::NO_TEXT.into(),
+                    },
+                ],
+            },
             Message::user_text("follow up"),
         ];
 
@@ -1497,6 +1712,13 @@ mod tests {
         assert_eq!(same_parts[0]["thoughtSignature"], "sig_gemini_a");
         assert_eq!(same_parts[2]["thoughtSignature"], "sig_call_a1");
         assert_eq!(same_parts[3]["thoughtSignature"], "sig_call_a2");
+        assert_eq!(
+            same_account.body["contents"][3]["parts"],
+            json!([
+                {"thought": true, "text": "gemini quiet thought"},
+                {"text": "", "thoughtSignature": "sig_quiet_end"},
+            ])
+        );
 
         let other_account = build_body(
             &make_req(&session, &gemini_history, &[], &[], &rendering),
@@ -1508,9 +1730,11 @@ mod tests {
         let other_wire = other_account.body.to_string();
         assert!(!other_wire.contains("gemini signed thought"));
         assert!(!other_wire.contains("gemini unsigned thought"));
+        assert!(!other_wire.contains("gemini quiet thought"));
         assert!(!other_wire.contains("sig_gemini_a"));
         assert!(!other_wire.contains("sig_call_a1"));
         assert!(!other_wire.contains("sig_call_a2"));
+        assert!(!other_wire.contains("sig_quiet_end"));
         let other_parts = other_account.body["contents"][1]["parts"]
             .as_array()
             .unwrap();
@@ -1520,6 +1744,10 @@ mod tests {
             "skip_thought_signature_validator"
         );
         assert!(other_parts[1].get("thoughtSignature").is_none());
+        assert_eq!(
+            other_account.body["contents"][3]["parts"],
+            json!([{"text": crate::provider::NO_TEXT}])
+        );
 
         let claude_session = gemini_session("claude-sonnet-4-6", Effort::High);
         let to_claude_bytes = crate::provider::anthropic::build_body(&make_req(
@@ -1533,27 +1761,45 @@ mod tests {
         let to_claude = String::from_utf8(to_claude_bytes).unwrap();
         assert!(!to_claude.contains("gemini signed thought"));
         assert!(!to_claude.contains("gemini unsigned thought"));
+        assert!(!to_claude.contains("gemini quiet thought"));
         assert!(!to_claude.contains("sig_gemini_a"));
         assert!(!to_claude.contains("sig_call_a1"));
+        assert!(!to_claude.contains("sig_quiet_end"));
         assert!(!to_claude.contains("call_signatures"));
         assert!(to_claude.contains("gem_call_1"));
+        let claude_json: Value = serde_json::from_str(&to_claude).unwrap();
+        assert_eq!(
+            claude_json["messages"][3]["content"],
+            json!([{"type": "text", "text": crate::provider::NO_TEXT}])
+        );
 
         let gpt_session = gemini_session("gpt-5.4", Effort::High);
-        let to_openai = crate::provider::openai::build_body(&make_req(
+        let to_openai_json = crate::provider::openai::build_body(&make_req(
             &gpt_session,
             &gemini_history,
             &[],
             &[],
             &rendering,
         ))
-        .unwrap()
-        .to_string();
+        .unwrap();
+        let to_openai = to_openai_json.to_string();
         assert!(!to_openai.contains("gemini signed thought"));
         assert!(!to_openai.contains("gemini unsigned thought"));
+        assert!(!to_openai.contains("gemini quiet thought"));
         assert!(!to_openai.contains("sig_gemini_a"));
         assert!(!to_openai.contains("sig_call_a1"));
+        assert!(!to_openai.contains("sig_quiet_end"));
         assert!(!to_openai.contains("call_signatures"));
         assert!(to_openai.contains("gem_call_1"));
+        assert!(
+            to_openai_json["input"]
+                .as_array()
+                .unwrap()
+                .contains(&json!({
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": crate::provider::NO_TEXT}],
+                }))
+        );
     }
 
     #[test]
@@ -1864,6 +2110,47 @@ mod tests {
         assert_eq!(
             other.body["contents"][1]["parts"],
             json!([{"text": "Hello"}])
+        );
+
+        let signed_answer = [
+            Message::user_text("hi"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    crate::provider::envelope(
+                        super::super::PROVIDER,
+                        &json!({
+                            "type": REASONING_ITEM,
+                            "thought": "plan",
+                            "signature": "sig_plan",
+                        }),
+                        1,
+                        TEST_ID,
+                    ),
+                    ContentBlock::Thinking {
+                        thinking: "plan".into(),
+                        signature: String::new(),
+                    },
+                    ContentBlock::Text {
+                        text: "answer".into(),
+                    },
+                ],
+            },
+            Message::user_text("next"),
+        ];
+        let replayed = build_body(
+            &make_req(&session, &signed_answer, &[], &[], &rendering),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            replayed.body["contents"][1]["parts"],
+            json!([
+                {"thought": true, "text": "plan", "thoughtSignature": "sig_plan"},
+                {"text": "answer"},
+            ])
         );
     }
 }

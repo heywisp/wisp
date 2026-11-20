@@ -1118,6 +1118,7 @@ pub(crate) fn not_sent_note(media_type: &str, why: NotSent) -> String {
 }
 
 pub(crate) const NO_TEXT: &str = "[no text]";
+pub(crate) const REASONING_ITEM: &str = "reasoning";
 
 fn said<'a>(blocks: impl IntoIterator<Item = &'a ContentBlock>) -> Option<&'a str> {
     let mut said = None;
@@ -1171,7 +1172,10 @@ pub(crate) fn quiet_block(block: &ContentBlock) -> bool {
 }
 
 pub(crate) fn opaque_marker(kind: &str) -> bool {
-    matches!(kind, "redacted_thinking" | "fallback" | "call_signatures")
+    matches!(
+        kind,
+        "redacted_thinking" | "fallback" | gemini::CALL_SIGNATURES_ITEM
+    )
 }
 
 pub(crate) fn view(block: &ContentBlock) -> View<'_> {
@@ -1192,14 +1196,14 @@ pub(crate) fn view(block: &ContentBlock) -> View<'_> {
             if openai::native_item(block)
                 .or_else(|| gemini::native_item(block))
                 .is_some_and(|(item, ..)| {
-                    item.get("type").and_then(Value::as_str) == Some("reasoning")
+                    item.get("type").and_then(Value::as_str) == Some(REASONING_ITEM)
                 }) =>
         {
             View::Thinking { signed: true }
         }
         ContentBlock::Opaque { .. }
             if gemini::native_item(block).is_some_and(|(item, ..)| {
-                item.get("type").and_then(Value::as_str) == Some("text_signature")
+                item.get("type").and_then(Value::as_str) == Some(gemini::TEXT_SIGNATURE_ITEM)
             }) =>
         {
             View::Marker

@@ -343,21 +343,102 @@ async fn an_empty_end_turn_reply_is_kept_as_a_quiet_end() {
     }));
     let both = [thinking(0, "hmm", "sig"), text(1, NO_TEXT)].concat();
     let block = ["start 0", "stop 0"];
-    let rows: [(Script, Option<&str>, &[&str]); 10] = [
-        (Vec::new(), Some(NO_TEXT), &[]),
-        (text(0, "  \n"), Some(NO_TEXT), &[]),
-        (thinking(0, "hmm", "sig"), Some(NO_TEXT), &block),
-        (thinking(0, "hmm", ""), Some(NO_TEXT), &block),
-        (text(0, NO_TEXT), Some(NO_TEXT), &[]),
-        (text(0, "\n[no text] "), Some(NO_TEXT), &[]),
-        (both, Some(NO_TEXT), &block),
+    let text_block = |text: &str| ContentBlock::Text { text: text.into() };
+    let just_text = |text: &str| Some(vec![text_block(text)]);
+    let emit_block = |index: usize, block: ContentBlock| {
+        vec![
+            Ok(ProviderEvent::BlockStart { index, block }),
+            Ok(ProviderEvent::BlockStop { index }),
+        ]
+    };
+    let reasoning_env = crate::provider::envelope(
+        crate::provider::gemini::PROVIDER,
+        &json!({"type": crate::provider::REASONING_ITEM, "thought": "hmm", "signature": ""}),
+        1,
+        "id_gem",
+    );
+    let text_sig_0 = crate::provider::envelope(
+        crate::provider::gemini::PROVIDER,
+        &json!({"type": crate::provider::gemini::TEXT_SIGNATURE_ITEM, "signature": "sig_tail"}),
+        0,
+        "id_gem",
+    );
+    let text_sig_1 = crate::provider::envelope(
+        crate::provider::gemini::PROVIDER,
+        &json!({"type": crate::provider::gemini::TEXT_SIGNATURE_ITEM, "signature": "sig_tail"}),
+        1,
+        "id_gem",
+    );
+    let unsigned_thought = ContentBlock::Thinking {
+        thinking: "hmm".into(),
+        signature: String::new(),
+    };
+    let gem_signed_tail = [
+        emit_block(0, reasoning_env.clone()),
+        thinking(1, "hmm", ""),
+        emit_block(2, text_sig_0.clone()),
+    ]
+    .concat();
+    let signed_reasoning_env = crate::provider::envelope(
+        crate::provider::gemini::PROVIDER,
+        &json!({"type": crate::provider::REASONING_ITEM, "thought": "hmm", "signature": "sig_r"}),
+        1,
+        "id_gem",
+    );
+    let gem_signed_blank = [emit_block(0, text_sig_1), text(1, " \n")].concat();
+    let gem_unsigned_only = [emit_block(0, reasoning_env.clone()), thinking(1, "hmm", "")].concat();
+    let gem_signed_reasoning_only = [
+        emit_block(0, signed_reasoning_env.clone()),
+        thinking(1, "hmm", ""),
+    ]
+    .concat();
+    type Row<'a> = (Script, Option<Vec<ContentBlock>>, &'a [&'a str]);
+    let rows: [Row<'_>; 14] = [
+        (Vec::new(), just_text(NO_TEXT), &[]),
+        (text(0, "  \n"), just_text(NO_TEXT), &[]),
+        (thinking(0, "hmm", "sig"), just_text(NO_TEXT), &block),
+        (thinking(0, "hmm", ""), just_text(NO_TEXT), &block),
+        (text(0, NO_TEXT), just_text(NO_TEXT), &[]),
+        (text(0, "\n[no text] "), just_text(NO_TEXT), &[]),
+        (both, just_text(NO_TEXT), &block),
         (
             streamed,
-            Some("[no text]."),
+            just_text("[no text]."),
             &["start 0", "0 [no", "0  text]", "0 .", "stop 0"],
         ),
-        (unknown, Some(NO_TEXT), &["unknown"]),
+        (unknown, just_text(NO_TEXT), &["unknown"]),
         (text(0, ""), None, &["start 0", "0 ", "stop 0"]),
+        (
+            gem_signed_tail,
+            Some(vec![
+                reasoning_env,
+                unsigned_thought.clone(),
+                text_sig_0.clone(),
+                text_block(NO_TEXT),
+            ]),
+            &[
+                "start 0", "stop 0", "start 1", "stop 1", "start 2", "stop 2",
+            ],
+        ),
+        (
+            gem_signed_blank,
+            Some(vec![text_sig_0, text_block(NO_TEXT)]),
+            &block,
+        ),
+        (
+            gem_unsigned_only,
+            just_text(NO_TEXT),
+            &["start 0", "stop 0", "start 1", "stop 1"],
+        ),
+        (
+            gem_signed_reasoning_only,
+            Some(vec![
+                signed_reasoning_env,
+                unsigned_thought,
+                text_block(NO_TEXT),
+            ]),
+            &["start 0", "stop 0", "start 1", "stop 1"],
+        ),
     ];
     for (blocks, kept, shown) in rows {
         let stop = if kept.is_some() {
@@ -377,8 +458,7 @@ async fn an_empty_end_turn_reply_is_kept_as_a_quiet_end() {
             .filter(|m| m.role == Role::Assistant)
             .map(|m| m.content.as_slice())
             .collect();
-        let reply = kept.map(|text| [ContentBlock::Text { text: text.into() }]);
-        let expected: Vec<&[ContentBlock]> = reply.iter().map(|r| r.as_slice()).collect();
+        let expected: Vec<&[ContentBlock]> = kept.iter().map(Vec::as_slice).collect();
         assert_eq!(replies, expected, "{outcome:?}");
         let order: Vec<String> = events
             .iter()

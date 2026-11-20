@@ -329,6 +329,7 @@ fn cli_runs_two_resumed_gemini_tool_turns_with_stable_prefix_and_distinct_idless
             format!("\nuser\n{SENT_PREFIX}"),
             format!("\nuser\n{CONTEXT_PREFIX}"),
             format!("\nuser\n{MAIL_OPEN}"),
+            format!("\n{MAIL_OPEN} from=\""),
         ])
     );
     assert_eq!(
