@@ -45,7 +45,6 @@ pub(super) struct GeminiDecoder {
     search_id: Option<String>,
     search_hits: Vec<SearchHit>,
     call_signatures: BTreeMap<String, String>,
-    tool_called: bool,
     web_search_requests: u64,
     usage: Usage,
 }
@@ -78,7 +77,6 @@ impl GeminiDecoder {
             search_id: None,
             search_hits: Vec::new(),
             call_signatures: BTreeMap::new(),
-            tool_called: false,
             web_search_requests: 0,
             usage: Usage {
                 billing,
@@ -293,7 +291,6 @@ impl GeminiDecoder {
                 delta: Delta::InputJson(args.to_string()),
             });
             events.push(ProviderEvent::BlockStop { index });
-            self.tool_called = true;
             return;
         }
 
@@ -569,9 +566,7 @@ impl GeminiDecoder {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty());
 
-        if self.call_seq == 0
-            && let Some(mut error) = candidate_finish.and_then(tool_finish_error)
-        {
+        if let Some(mut error) = candidate_finish.and_then(tool_finish_error) {
             error.usage_complete = payload.get("usageMetadata").is_some();
             self.close_active(events);
             events.push(ProviderEvent::MessageDelta {
@@ -586,7 +581,7 @@ impl GeminiDecoder {
 
         if let Some(stop_reason) = candidate_finish
             .map(|reason| {
-                if self.tool_called {
+                if self.call_seq > 0 && reason == "STOP" {
                     StopReason::ToolUse
                 } else {
                     map_stop_reason(reason)
@@ -1244,7 +1239,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_tool_finishes_retry_only_when_no_call_was_decoded_and_keep_billed_usage() {
+    fn invalid_tool_finishes_fail_with_billed_usage_even_after_calls_or_search() {
         for (reason, message) in [
             (
                 "MALFORMED_FUNCTION_CALL",
@@ -1256,7 +1251,7 @@ mod tests {
             ),
         ] {
             for wrapped in [false, true] {
-                for call in [None, Some("client_tool")] {
+                for (call, search) in [(None, false), (Some("client_tool"), false), (None, true)] {
                     let mut decoder = GeminiDecoder::new(
                         "gemini-4-carbon".into(),
                         Billing::Metered,
@@ -1267,9 +1262,19 @@ mod tests {
                     if let Some(name) = call {
                         parts.push(json!({"functionCall": {"name": name, "args": {}}}));
                     }
+                    let mut candidate = json!({
+                        "content": {"role": "model", "parts": parts},
+                        "finishReason": reason,
+                        "finishMessage": "[diagnostic placeholder]",
+                    });
+                    if search {
+                        candidate["groundingMetadata"] = json!({
+                            "webSearchQueries": ["rust async trait"],
+                            "groundingChunks": [{"web": {"uri": "https://example.com/rust", "title": "rust"}}],
+                        });
+                    }
                     let payload = json!({
-                        "candidates": [{"content": {"role": "model", "parts": parts},
-                            "finishReason": reason, "finishMessage": "[diagnostic placeholder]"}],
+                        "candidates": [candidate],
                         "usageMetadata": {"promptTokenCount": 42, "thoughtsTokenCount": 5},
                     });
                     let frame = if wrapped {
@@ -1295,27 +1300,53 @@ mod tests {
                     assert_eq!(usage.input_tokens, 42);
                     assert_eq!(usage.output_tokens, 5);
                     assert_eq!(usage.reasoning_tokens, 5);
+                    assert_eq!(usage.web_search_requests, u64::from(search));
                     assert_eq!(usage.billing, Billing::Metered);
-                    if call.is_some() {
-                        assert!(stopped && failure.is_none());
-                        assert_eq!(assembler.finish().unwrap().stop_reason, StopReason::ToolUse);
-                    } else {
-                        let error = failure.unwrap();
-                        assert!(!stopped && !decoder.ended());
-                        assert_eq!(error.kind, ErrorKind::InvalidResponse);
-                        assert_eq!(error.message, message);
-                        assert_eq!(error.detail.phase, FailurePhase::Stream);
-                        assert_eq!(error.detail.source, FailureSource::Endpoint);
-                        assert_eq!(error.detail.retry, RetryClass::Transient);
-                        assert_eq!(error.detail.status, Some(200));
-                        assert_eq!(error.detail.error_type.as_deref(), Some(reason));
-                        assert!(error.detail.possibly_billed && error.possibly_billed);
-                        assert!(error.usage_complete);
-                        assert!(!error.uncounted(true));
-                        assert!(assembler.finish().is_err());
-                    }
+                    let error = failure.unwrap();
+                    assert!(!stopped && !decoder.ended());
+                    assert_eq!(error.kind, ErrorKind::InvalidResponse);
+                    assert_eq!(error.message, message);
+                    assert_eq!(error.detail.phase, FailurePhase::Stream);
+                    assert_eq!(error.detail.source, FailureSource::Endpoint);
+                    assert_eq!(error.detail.retry, RetryClass::Transient);
+                    assert_eq!(error.detail.status, Some(200));
+                    assert_eq!(error.detail.error_type.as_deref(), Some(reason));
+                    assert!(error.detail.possibly_billed && error.possibly_billed);
+                    assert!(error.usage_complete);
+                    assert!(!error.uncounted(true));
+                    assert!(assembler.finish().is_err());
                 }
             }
+        }
+
+        for (reason, expected) in [
+            ("SAFETY", StopReason::Refusal),
+            ("MAX_TOKENS", StopReason::MaxTokens),
+        ] {
+            let mut decoder = GeminiDecoder::new(
+                "gemini-4-carbon".into(),
+                Billing::Metered,
+                None,
+                "non-stop-call".into(),
+            );
+            let frame = sse_frame(&json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{"functionCall": {"name": "client_tool", "args": {}}}]
+                    },
+                    "finishReason": reason,
+                }],
+                "usageMetadata": {"promptTokenCount": 42, "candidatesTokenCount": 5},
+            }));
+            let mut assembler = Assembler::default();
+            for event in decoder.push(&frame) {
+                assembler.apply(event.unwrap()).unwrap();
+            }
+            assert!(decoder.ended());
+            let stop_reason = assembler.finish().unwrap().stop_reason;
+            assert_ne!(stop_reason, StopReason::ToolUse);
+            assert_eq!(stop_reason, expected);
         }
     }
 

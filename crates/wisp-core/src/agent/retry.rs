@@ -18,6 +18,7 @@ pub const BASE_DELAY: Duration = Duration::from_secs(1);
 pub const MAX_DELAY: Duration = Duration::from_secs(300);
 pub const LIMIT_WAIT: Duration = Duration::from_secs(5 * 60 * 60);
 pub const JITTER: f64 = 0.2;
+pub const INVALID_RESPONSE_RETRIES: u32 = 3;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RetryPolicy {
@@ -52,6 +53,19 @@ impl RetryPolicy {
             max_retry_after: self.max_retry_after.or(Some(Duration::from_secs(60))),
             busy_window: self.busy_window.or(Some(Duration::from_secs(600))),
             ..self
+        }
+    }
+
+    pub(crate) fn for_kind(self, kind: ErrorKind) -> Self {
+        if kind == ErrorKind::InvalidResponse {
+            Self {
+                step_retries: Some(self.step_retries.map_or(INVALID_RESPONSE_RETRIES, |max| {
+                    max.min(INVALID_RESPONSE_RETRIES)
+                })),
+                ..self
+            }
+        } else {
+            self
         }
     }
 
@@ -413,11 +427,13 @@ impl Agent {
             .unwrap_or(0.0)
             + searched;
         let estimate = base.map(|e| e + search_usd);
-        let policy = if policy.budget_usd.is_some() && error.possibly_billed && estimate.is_none() {
-            policy.for_fallback()
-        } else {
-            policy
-        };
+        let policy =
+            if policy.budget_usd.is_some() && error.possibly_billed && estimate.is_none() {
+                policy.for_fallback()
+            } else {
+                policy
+            }
+            .for_kind(error.kind);
         let counted = !self.provider().busy_waits_5xx()
             && error.detail.status.is_some_and(classify::status_billed);
         let may_wait =

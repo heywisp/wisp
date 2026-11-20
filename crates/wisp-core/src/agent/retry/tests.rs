@@ -743,3 +743,80 @@ fn a_failed_request_counts_the_deferred_entries_with_their_flags() {
         sent.len() as u64 - crate::tool::tools_json(&tools, &[]).len() as u64
     );
 }
+
+#[test]
+fn invalid_response_caps_step_retries_even_under_default_policy() {
+    let base = RetryPolicy {
+        jitter: || 0.0,
+        ..RetryPolicy::default()
+    };
+    let capped = base.for_kind(ErrorKind::InvalidResponse);
+    assert_eq!(capped.step_retries, Some(INVALID_RESPONSE_RETRIES));
+    let transient = detail(RetryClass::Transient, true);
+    for child in [false, true] {
+        let waits: Vec<_> = (0..INVALID_RESPONSE_RETRIES)
+            .map(|n| {
+                delay(decide(
+                    &capped,
+                    &state(n, n, 0.0),
+                    &transient,
+                    false,
+                    None,
+                    child,
+                ))
+            })
+            .collect();
+        assert_eq!(
+            waits,
+            [
+                Duration::from_secs(1),
+                Duration::from_secs(2),
+                Duration::from_secs(4),
+            ]
+        );
+        assert_eq!(
+            decide(
+                &capped,
+                &state(INVALID_RESPONSE_RETRIES, INVALID_RESPONSE_RETRIES, 0.0),
+                &transient,
+                false,
+                None,
+                child,
+            ),
+            Decision::GiveUp(GaveUp::StepLimit)
+        );
+    }
+    for tighter in [0, 1] {
+        let narrow = RetryPolicy {
+            step_retries: Some(tighter),
+            ..base
+        }
+        .for_kind(ErrorKind::InvalidResponse);
+        assert_eq!(narrow.step_retries, Some(tighter));
+    }
+    assert_eq!(
+        policy().for_kind(ErrorKind::InvalidResponse).step_retries,
+        Some(INVALID_RESPONSE_RETRIES)
+    );
+    assert_eq!(
+        RetryPolicy::default()
+            .for_fallback()
+            .for_kind(ErrorKind::InvalidResponse)
+            .step_retries,
+        Some(INVALID_RESPONSE_RETRIES)
+    );
+    let never = detail(RetryClass::Never, false);
+    assert_eq!(
+        decide(&capped, &state(0, 0, 0.0), &never, false, None, false),
+        Decision::GiveUp(GaveUp::NotRetryable)
+    );
+    for kind in [
+        ErrorKind::Server,
+        ErrorKind::Network,
+        ErrorKind::Timeout,
+        ErrorKind::Overloaded,
+        ErrorKind::RateLimit,
+    ] {
+        assert_eq!(base.for_kind(kind).step_retries, None, "{kind:?}");
+    }
+}

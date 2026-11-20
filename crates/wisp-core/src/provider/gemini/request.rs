@@ -847,7 +847,9 @@ mod tests {
             Message::user_text("turn 1"),
             Message {
                 role: Role::Assistant,
-                content: vec![ContentBlock::Text { text: "ok".into() }],
+                content: vec![ContentBlock::Text {
+                    text: crate::provider::NO_TEXT.into(),
+                }],
             },
             Message::user_text("turn 2"),
         ];
@@ -884,6 +886,12 @@ mod tests {
         };
         let tagged1 = tag(&r1);
         let tagged2 = tag(&r2);
+        let contents2 = tagged2["contents"].as_array().unwrap();
+        assert_eq!(contents2.len(), 3);
+        assert_eq!(
+            contents2[1],
+            json!({"role": "model", "parts": [{"text": crate::provider::NO_TEXT}]})
+        );
         let id = tagged1["labels"]["cascade_id"].as_str().unwrap();
         assert!(uuid::Uuid::parse_str(id).is_ok());
         for (offset, body) in [&tagged1, &tagged2].into_iter().enumerate() {

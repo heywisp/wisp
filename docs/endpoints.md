@@ -1267,7 +1267,7 @@ Set `endpoints.NAME.client_version` to the public release number of the subscrip
 
 Recoverable failures keep retrying until the request succeeds or you stop
 it. This applies to the main agent and its children, with no retry-count or
-waiting-time limit. The waits are 1, 2, 4, 8, 16, 32, 64, 128 and 256 s,
+waiting-time limit, except retryable `invalid_response` replies below. The waits are 1, 2, 4, 8, 16, 32, 64, 128 and 256 s,
 then 5 min, each less up to 20 % jitter. A `retry-after` header is a floor
 under that backoff, even when it asks for a longer wait. A subscription's
 used-up window retries by itself for up to 5 minutes on a child agent or
@@ -1302,22 +1302,27 @@ Switch. A gateway that drops that code and answers with its own `429` can't
 be told apart from a busy one, so it keeps retrying until stopped.
 
 Gemini's `MALFORMED_FUNCTION_CALL` and `UNEXPECTED_TOOL_CALL` finish reasons
-retry when no tool call was decoded. Wisp shows the plain cause, keeps known
-billed usage, and discards the unfinished reply; a decoded call keeps its
-existing stop handling. Raw finish diagnostics and attempted arguments stay out.
-Other unreadable-reply diagnostics keep a provider-named lead-in, never a
-bare parser fragment.
+always fail and discard the unfinished reply, even after a decoded tool call or
+search; Wisp shows the plain cause and keeps known billed usage. `SAFETY`,
+`MAX_TOKENS`, and other non-`STOP` Gemini finishes after a decoded call stop
+the reply with their mapped stop reason instead of running the calls. Retryable
+`invalid_response` failures retry at most 3 times per step—even under looser
+explicit policies, while tighter bounds still win, sharing the step's non-busy
+retry count—before stopping with `step_limit` and the Retry / Switch offer. Raw
+finish diagnostics and attempted arguments stay out. Other unreadable-reply
+diagnostics keep a provider-named lead-in, never a bare parser fragment.
 
 Native and background compaction keep finite counted bounds: 5 retries per
-step, 10 total (shared with the enclosing turn for in-turn compaction)
-and a 60 s `retry-after` ceiling. Only a native
-compaction's busy rate limits take the 10 min busy window; background
-compaction never busy-waits. A native compaction refused as overloaded falls back to Wisp's
-own engine after its quick tries, whether or not a gateway kept the
-`compaction_unavailable` code. Background compaction yields to foreground
-compaction when its retries run out. Ordinary foreground Wisp compaction
-uses the same unbounded defaults as a turn. Explicit finite policies keep
-their bounds. Keep-warm keeps its separate 58-minute deadline.
+step (3 for retryable `invalid_response`), 10 total (shared with the
+enclosing turn for in-turn compaction) and a 60 s `retry-after` ceiling.
+Only a native compaction's busy rate limits take the 10 min busy window;
+background compaction never busy-waits. A native compaction refused as
+overloaded falls back to Wisp's own engine after its quick tries, whether or
+not a gateway kept the `compaction_unavailable` code. Background compaction
+yields to foreground compaction when its retries run out. Ordinary foreground
+Wisp compaction uses the same defaults as a turn. Explicit finite policies
+keep their bounds (still capped at 3 for retryable `invalid_response`).
+Keep-warm keeps its separate 58-minute deadline.
 
 In the main agent, Esc during a model retry wait stops automatic retries and leaves Retry available at once, with the same bytes; compaction waits still cancel compaction.
 Closing the session stops any wait without a Retry offer. Retries re-send
