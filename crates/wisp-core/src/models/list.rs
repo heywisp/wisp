@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::path::Path;
@@ -219,30 +220,13 @@ impl ModelList {
         ids: impl IntoIterator<Item = (String, Option<u64>, Option<u32>)>,
         default_model: Option<&str>,
     ) -> Result<Self, Unusable> {
-        let table = ModelTable::shared();
         let mut seen = BTreeSet::new();
-        let mut ranked = Vec::new();
+        let mut models = Vec::new();
         for (id, input_limit, output_limit) in ids {
             if !valid_model_id(&id) || !seen.insert(id.clone()) {
                 continue;
             }
-            let row = table.find(&id);
-            let caps = row.and_then(|r| r.capabilities);
-            let has_thinking =
-                caps.is_some_and(|c| c.adaptive_thinking || c.thinking_budgets.is_some());
-            let rank = table.listed_rank(&id);
-            let order = if default_model == Some(id.as_str()) {
-                (0u8, 0u32, String::new())
-            } else if let Some(r) = rank {
-                (1, u32::from(r), String::new())
-            } else if row.is_some() && has_thinking {
-                (2, 0, id.clone())
-            } else if row.is_some() {
-                (3, 0, id.clone())
-            } else {
-                (4, 0, id.clone())
-            };
-            let listed = ListedModel {
+            models.push(ListedModel {
                 shown: true,
                 window: window(&id, input_limit),
                 default_window: None,
@@ -254,11 +238,16 @@ impl ModelList {
                 images: false,
                 search: false,
                 id,
-            };
-            ranked.push((order, listed));
+            });
         }
-        ranked.sort_by(|a, b| a.0.cmp(&b.0));
-        Self::new(ranked.into_iter().map(|(_, model)| model).collect())
+        sort_gemini(&mut models, default_model);
+        Self::new(models)
+    }
+
+    pub(crate) fn sorted_gemini(&self, default_model: Option<&str>) -> Self {
+        let mut models = self.0.clone();
+        sort_gemini(&mut models, default_model);
+        Self(models)
     }
 
     pub fn find(&self, id: &str) -> Option<&ListedModel> {
@@ -331,6 +320,70 @@ impl From<WireEntry> for ListedModel {
             search: entry.supports_search_tool,
         }
     }
+}
+
+fn gemini_version(id: &str) -> Option<(u32, u32)> {
+    let rest = id.strip_prefix("gemini-")?;
+    let segment = rest.split('-').next()?;
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    match segment.split_once('.') {
+        Some((major, minor)) if digits(major) && digits(minor) => {
+            Some((major.parse().ok()?, minor.parse().ok()?))
+        }
+        None if digits(segment) => Some((segment.parse().ok()?, 0)),
+        _ => None,
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct GeminiSortKey<'a> {
+    tier: u8,
+    rank: u16,
+    effort: Option<Effort>,
+    version: Reverse<Option<(u32, u32)>>,
+    id: &'a str,
+}
+
+fn gemini_sort_key<'a>(
+    table: &ModelTable,
+    id: &'a str,
+    default_model: Option<&str>,
+) -> GeminiSortKey<'a> {
+    let row = table.find(id);
+    let variant = row.and_then(|r| r.effort_variant.as_ref());
+    let family = variant.map_or(id, |v| v.family.as_str());
+    let has_thinking = row
+        .and_then(|r| r.capabilities)
+        .is_some_and(|c| c.adaptive_thinking || c.thinking_budgets.is_some());
+    let (tier, rank, effort, version) = if let Some(rank) = table.listed_rank(family) {
+        (0, rank, variant.map(|v| v.effort), None)
+    } else if default_model.is_some_and(|d| table.canonical(d) == table.canonical(id)) {
+        (1, 0, variant.map(|v| v.effort), None)
+    } else if row.is_some() && has_thinking {
+        (2, 0, None, gemini_version(id))
+    } else if row.is_some() {
+        (3, 0, None, gemini_version(id))
+    } else {
+        (4, 0, None, gemini_version(id))
+    };
+    GeminiSortKey {
+        tier,
+        rank,
+        effort,
+        version: Reverse(version),
+        id,
+    }
+}
+
+fn sort_gemini(models: &mut [ListedModel], default_model: Option<&str>) {
+    let table = ModelTable::shared();
+    models.sort_by(|a, b| {
+        gemini_sort_key(table, &a.id, default_model).cmp(&gemini_sort_key(
+            table,
+            &b.id,
+            default_model,
+        ))
+    });
 }
 
 fn window(id: &str, tokens: Option<u64>) -> Option<u64> {

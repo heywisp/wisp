@@ -2155,20 +2155,22 @@ fn model_validation_substitutes_the_default_for_each_provider_and_keeps_gateway_
         (sibling.model.as_str(), sibling.effort),
         ("gemini-4-carbon-low", Effort::Low)
     );
-    agent.session.model = "gemini-4-hydrogen-high".into();
-    for effort in [Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh] {
-        let sibling = agent.validate_settings(None, None, Some(effort)).unwrap();
+    for family in ["gemini-4-hydrogen", "gemini-4-neon"] {
+        agent.session.model = format!("{family}-high");
+        for effort in [Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh] {
+            let sibling = agent.validate_settings(None, None, Some(effort)).unwrap();
+            assert_eq!(
+                (sibling.model, sibling.effort),
+                (format!("{family}-{}", effort.as_str()), effort)
+            );
+        }
         assert_eq!(
-            (sibling.model, sibling.effort),
-            (format!("gemini-4-hydrogen-{}", effort.as_str()), effort)
+            agent
+                .validate_settings(None, None, Some(Effort::Max))
+                .unwrap_err(),
+            format!("{family}-high doesn't take effort max; it takes low, medium, high, xhigh")
         );
     }
-    assert_eq!(
-        agent
-            .validate_settings(None, None, Some(Effort::Max))
-            .unwrap_err(),
-        "gemini-4-hydrogen-high doesn't take effort max; it takes low, medium, high, xhigh"
-    );
     let dir = tempfile::tempdir().unwrap();
     let saved = crate::models::list::SavedList {
         attempted: 0,

@@ -62,7 +62,7 @@ pub fn models(ready: &[Connection]) -> Vec<ModelFacts> {
             (c, list, offers)
         })
         .collect();
-    let mut ids: BTreeSet<String> = pricing::model_ids().map(str::to_owned).collect();
+    let mut ids: BTreeSet<String> = table.described_ids().map(str::to_owned).collect();
     ids.extend(lists.iter().flat_map(|(_, list, _)| list.ids()));
     ids.into_iter()
         .map(|id| {
