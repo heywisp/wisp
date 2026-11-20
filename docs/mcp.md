@@ -23,9 +23,12 @@ Unknown fields, invalid types and NUL characters are refused without echoing
 command or argument values. The configured name identifies the server;
 a server's self-reported name never decides its provider tool names.
 
-Servers inherit the session's working folder and process environment, with
-`WISP_JOB=1`, as shell jobs do. Wisp does not export credentials loaded from its
-keys file or another server's secret store entry. A key the user already exported is inherited.
+Servers inherit the session's working folder and process environment with the
+same stripped variables and defaults as shell jobs (`docs/tools.md`,
+"Environment"); `keys` entries apply after those job defaults and before
+`WISP_JOB=1`. Wisp does not export credentials loaded from its keys file or
+another server's secret store entry. A key the user already exported is
+inherited.
 A table may name its keys with `keys = ["SENTRY_TOKEN"]`: names only, never values.
 Wisp reads the named keys from its secret store and sets them on that server's command only.
 It masks these stored values in that server's call text, structured results, resource and prompt text, form text and call errors, and in session-log side fields.

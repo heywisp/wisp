@@ -27,6 +27,30 @@ pub use table::{
 
 pub const REGEX_LIMIT: usize = 1024 * 1024;
 
+pub const STRIPPED_ENV: [&str; 8] = [
+    "BROWSER",
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "VSCODE_GIT_ASKPASS_EXTRA_ARGS",
+    "VSCODE_GIT_ASKPASS_MAIN",
+    "VSCODE_GIT_ASKPASS_NODE",
+    "VSCODE_GIT_IPC_HANDLE",
+    "VSCODE_IPC_HOOK_CLI",
+];
+
+pub const PROMPT_DEFAULTS: [(&str, &str); 3] = [
+    ("GCM_INTERACTIVE", "never"),
+    ("GIT_TERMINAL_PROMPT", "0"),
+    ("SSH_ASKPASS_REQUIRE", "never"),
+];
+
+pub(crate) fn apply_job_env(command: &mut tokio::process::Command) {
+    for name in STRIPPED_ENV {
+        command.env_remove(name);
+    }
+    command.envs(PROMPT_DEFAULTS);
+}
+
 pub fn job_end(end: &ProcessEnd) -> JobEnd {
     match end {
         ProcessEnd::Exited { exit } => JobEnd::Exited(exit_status(*exit)),

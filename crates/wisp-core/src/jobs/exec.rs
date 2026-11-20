@@ -162,6 +162,7 @@ impl Spawner for HostSpawner {
                 command
             }
         };
+        super::apply_job_env(&mut command);
         command
             .args(launch.args)
             .current_dir(launch.cwd)
@@ -199,6 +200,7 @@ impl Spawner for HostSpawner {
         };
         let pair = pty::open(size)?;
         let mut command = Command::new(setsid);
+        super::apply_job_env(&mut command);
         command
             .arg("--ctty")
             .arg(launch.program)
