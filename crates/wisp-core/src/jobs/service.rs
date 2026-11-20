@@ -455,8 +455,11 @@ impl Jobs {
 }
 
 async fn capture_at(path: &Path, args: &[String], limit: Duration) -> Captured {
-    let child = tokio::process::Command::new(path)
+    let mut command = tokio::process::Command::new(path);
+    super::apply_job_env(&mut command);
+    let child = command
         .args(args)
+        .env(wisp_protocol::WISP_JOB, "1")
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .stdout(Stdio::piped())

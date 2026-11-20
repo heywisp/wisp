@@ -1632,16 +1632,17 @@ async fn start(
     watch: Arc<Watch>,
 ) -> Result<Connection, String> {
     let mut command = Command::new(&config.command);
+    crate::jobs::apply_job_env(&mut command);
     command
         .args(&config.args)
         .current_dir(cwd)
-        .env(wisp_protocol::WISP_JOB, "1")
         .kill_on_drop(true);
     for name in &config.keys {
         if let Some(value) = keys.get(name) {
             command.env(name, value.expose());
         }
     }
+    command.env(wisp_protocol::WISP_JOB, "1");
     #[cfg(unix)]
     command.process_group(0);
     let mut group = ProcessGroup(

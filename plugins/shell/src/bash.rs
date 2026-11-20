@@ -22,29 +22,28 @@ pub const MAX_COMMAND_BYTES: usize = 256 * 1024;
 pub const SYSTEM_LINE: &str =
     "You can run shell commands on the user's computer with the bash tool.";
 
-pub const NON_INTERACTIVE: [(&str, &str); 9] = [
+const SHARED_ENV: [(&str, &str); 6] = [
     ("GH_PAGER", "cat"),
     ("GIT_EDITOR", "false"),
     ("GIT_PAGER", "cat"),
-    ("GIT_TERMINAL_PROMPT", "0"),
     ("MANPAGER", "cat"),
     ("NO_COLOR", "1"),
     ("PAGER", "cat"),
-    ("SSH_ASKPASS_REQUIRE", "never"),
-    ("TERM", "dumb"),
 ];
 
-pub const TERMINAL_ENV: [(&str, &str); 9] = [
-    ("GH_PAGER", "cat"),
-    ("GIT_EDITOR", "false"),
-    ("GIT_PAGER", "cat"),
-    ("GIT_TERMINAL_PROMPT", "0"),
-    ("MANPAGER", "cat"),
-    ("NO_COLOR", "1"),
-    ("PAGER", "cat"),
-    ("SSH_ASKPASS_REQUIRE", "never"),
-    ("TERM", "xterm-256color"),
-];
+const fn with_term(term: &'static str) -> [(&'static str, &'static str); SHARED_ENV.len() + 1] {
+    let mut env = [("", ""); SHARED_ENV.len() + 1];
+    let mut index = 0;
+    while index < SHARED_ENV.len() {
+        env[index] = SHARED_ENV[index];
+        index += 1;
+    }
+    env[SHARED_ENV.len()] = ("TERM", term);
+    env
+}
+
+pub const NON_INTERACTIVE: [(&str, &str); SHARED_ENV.len() + 1] = with_term("dumb");
+pub const TERMINAL_ENV: [(&str, &str); SHARED_ENV.len() + 1] = with_term("xterm-256color");
 
 const DESCRIPTION: &str = "Run a bash command on the user's computer and get its exit code and combined stdout and stderr. The working directory carries over between calls (a cd persists); variables, aliases and functions do not. Commands run as the user with no sandbox and no approval step. By default a command runs in the foreground with empty stdin and no terminal, and the call waits for it to finish, so don't run editors, pagers or anything that prompts that way: pass flags such as --yes or --no-pager, or set tty. A command is stopped when it runs longer than timeout_ms, 120000 by default; give a larger value for slow builds or tests, or 0 for no time limit. A foreground command still running after 2 minutes is handed back to you as a numbered process with its output so far; it keeps running, and its time limit still applies. Set tty to run the command in a terminal, for REPLs, prompts, full-screen programs or other agents' terminal interfaces; in the foreground, a terminal command also returns once its screen has been still for 10 seconds, since it may be waiting for input. Set run_in_background, with or without tty, to start a server, a watcher or any long job and get its process number within a few seconds; it then has no time limit unless you give timeout_ms. For REPLs and other programs you will keep talking to, use run_in_background, or timeout_ms 0 in the foreground. Never ask the user to paste a password or other secret into the chat, where it would reach you and the session log; ";
 const DESCRIPTION_END: &str = "Check one variable by name and list processes by number and name; don't print the whole environment or processes' arguments (env, ps aux), where any secret could reach you and the session log. When a background process ends while no turn is running, you are told in a new turn, so end your turn rather than wait for a long job. A result that gives a process number means the process tool can wait for it, read or search its output, show its screen, type into it or stop it. Programs left running with & or nohup are stopped when the command that started them exits; run them with run_in_background instead. Background processes are stopped when Wisp exits; for a server or other service that must stay up after that, also set keep_running. The full output of every call is saved to a file whose path is in the result; long output is shown only as a preview, so read the parts you need with the process tool, or from that file with sed -n, grep or tail.";

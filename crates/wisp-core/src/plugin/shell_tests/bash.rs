@@ -414,37 +414,27 @@ async fn the_environment_arrives_unchanged_plus_the_defaults() {
     let mut rig = Rig::new("env");
     let ran = rig.run(bash("env -0 > env.out")).await;
     assert_eq!(ran.exit(), Some(ExitStatus::Code { code: 0 }));
-    let raw = fs::read(rig.path("env.out")).unwrap();
-    let seen: BTreeSet<Vec<u8>> = raw
-        .split(|b| *b == 0)
-        .filter(|e| !e.is_empty())
-        .map(<[u8]>::to_vec)
-        .collect();
-    let shell_owned = ["PWD", "OLDPWD", "SHLVL", "_"];
-    let keep = |entry: &Vec<u8>| {
-        let name = entry.split(|b| *b == b'=').next().unwrap_or_default();
-        !shell_owned.iter().any(|s| s.as_bytes() == name)
-    };
+    let mut seen = parse_env_nul(&fs::read(rig.path("env.out")).unwrap());
     let mut expected: std::collections::BTreeMap<Vec<u8>, Vec<u8>> = std::env::vars_os()
         .map(|(k, v)| {
             use std::os::unix::ffi::OsStrExt;
             (k.as_bytes().to_vec(), v.as_bytes().to_vec())
         })
         .collect();
+    for name in crate::jobs::STRIPPED_ENV {
+        expected.remove(name.as_bytes());
+    }
+    for (k, v) in crate::jobs::PROMPT_DEFAULTS {
+        expected.insert(k.as_bytes().to_vec(), v.as_bytes().to_vec());
+    }
     for (k, v) in NON_INTERACTIVE {
         expected.insert(k.as_bytes().to_vec(), v.as_bytes().to_vec());
     }
     expected.insert(wisp_protocol::WISP_JOB.as_bytes().to_vec(), b"1".to_vec());
-    let expected: BTreeSet<Vec<u8>> = expected
-        .into_iter()
-        .map(|(mut k, v)| {
-            k.push(b'=');
-            k.extend(v);
-            k
-        })
-        .filter(keep)
-        .collect();
-    let seen: BTreeSet<Vec<u8>> = seen.into_iter().filter(keep).collect();
+    for name in ["PWD", "OLDPWD", "SHLVL", "_"] {
+        seen.remove(name.as_bytes());
+        expected.remove(name.as_bytes());
+    }
     assert!(
         seen == expected,
         "the job environment differs from its expected defaults"
@@ -1788,4 +1778,251 @@ async fn the_cwd_file_is_private_never_reused_and_removed_after_the_call() {
         ran.run.trailer
     );
     assert_eq!(fs::read_to_string(&taken).unwrap(), "keep");
+}
+
+const JOB_ENV_CHILD: &str = "WISP_BASH_JOB_ENV_CHILD";
+
+fn conflicting_prompt_value(default: &str) -> String {
+    format!("inherited-not-{default}")
+}
+
+fn write_askpass_script(path: &Path, marker: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let body = format!(
+        "#!/bin/sh\necho invoked >> '{}'\nprintf 'test-cred\\n'\n",
+        marker.display()
+    );
+    fs::write(path, body).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+fn parse_env_nul(raw: &[u8]) -> std::collections::BTreeMap<Vec<u8>, Vec<u8>> {
+    raw.split(|b| *b == 0)
+        .filter(|entry| !entry.is_empty())
+        .filter_map(|entry| {
+            let eq = entry.iter().position(|b| *b == b'=')?;
+            Some((entry[..eq].to_vec(), entry[eq + 1..].to_vec()))
+        })
+        .collect()
+}
+
+fn assert_clean_job_env(raw: &[u8], label: &str) {
+    let seen = parse_env_nul(raw);
+    for name in crate::jobs::STRIPPED_ENV {
+        assert!(
+            !seen.contains_key(name.as_bytes()),
+            "{label}: {name} was not stripped"
+        );
+    }
+    for (name, value) in crate::jobs::PROMPT_DEFAULTS {
+        assert_eq!(
+            seen.get(name.as_bytes()).map(Vec::as_slice),
+            Some(value.as_bytes()),
+            "{label}: {name} mismatch"
+        );
+    }
+    assert_eq!(
+        seen.get(wisp_protocol::WISP_JOB.as_bytes())
+            .map(Vec::as_slice),
+        Some(b"1".as_slice()),
+        "{label}: WISP_JOB mismatch"
+    );
+}
+
+#[test]
+fn stripped_env_and_prompt_defaults_apply_to_jobs_and_allow_overrides() {
+    let scratch = ScratchDir::new(SCRATCH_PREFIX, "job-env");
+    let inherited_script = scratch.root.join("inherited-askpass.sh");
+    let inherited_marker = scratch.root.join("inherited-ran");
+    write_askpass_script(&inherited_script, &inherited_marker);
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "plugin::shell_tests::bash::job_env_child",
+            "--exact",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(JOB_ENV_CHILD, &scratch.root)
+        .current_dir(&scratch.root);
+    for name in crate::jobs::STRIPPED_ENV {
+        if name == "GIT_ASKPASS" {
+            command.env(name, &inherited_script);
+        } else {
+            command.env(name, format!("inherited-{name}"));
+        }
+    }
+    for (name, default) in crate::jobs::PROMPT_DEFAULTS {
+        command.env(name, conflicting_prompt_value(default));
+    }
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success() && stdout.contains("1 passed"),
+        "job_env_child failed ({:?}):\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    assert!(
+        !inherited_marker.exists(),
+        "inherited GIT_ASKPASS script was executed"
+    );
+}
+
+#[tokio::test]
+#[ignore = "a helper that stripped_env_and_prompt_defaults_apply_to_jobs_and_allow_overrides runs with seeded env"]
+async fn job_env_child() {
+    let Some(root) = std::env::var_os(JOB_ENV_CHILD) else {
+        return;
+    };
+    let root = PathBuf::from(root);
+    let inherited_marker = root.join("inherited-ran");
+    for name in crate::jobs::STRIPPED_ENV {
+        assert!(
+            std::env::var_os(name).is_some(),
+            "parent test env missing {name}"
+        );
+    }
+    for (name, default) in crate::jobs::PROMPT_DEFAULTS {
+        let expected = conflicting_prompt_value(default);
+        assert_eq!(
+            std::env::var_os(name).as_deref(),
+            Some(std::ffi::OsStr::new(&expected)),
+            "parent test env missing {name}={expected}"
+        );
+    }
+
+    let mut rig = Rig::new("job-env-pipe");
+    let ran = rig.run(bash("env -0 > env.out")).await;
+    assert_eq!(ran.exit(), Some(ExitStatus::Code { code: 0 }));
+    assert_clean_job_env(&fs::read(rig.path("env.out")).unwrap(), "pipe");
+
+    let spawner = HostSpawner::detect();
+    if spawner.has_ctty() {
+        let mut tty_rig = Rig::new("job-env-tty");
+        let ran = tty_rig
+            .run(json!({"command": "env -0 > env.out", "tty": true, "timeout_ms": 10_000}))
+            .await;
+        assert_eq!(ran.exit(), Some(ExitStatus::Code { code: 0 }));
+        assert_clean_job_env(&fs::read(tty_rig.path("env.out")).unwrap(), "tty");
+    }
+
+    let jobs = crate::jobs::Jobs::new(crate::jobs::Processes::default(), Arc::new(spawner.clone()));
+    let captured = jobs.capture("env", &["-0".to_owned()], 10_000).await;
+    let wisp_plugin_api::host::Captured::Output(bytes) = captured else {
+        panic!("capture env -0 failed: {captured:?}");
+    };
+    assert_clean_job_env(&bytes, "capture");
+
+    let sh_bin = exec::find_program("sh").unwrap();
+    let args = [OsString::from("-c"), OsString::from("env -0 > caller.out")];
+    let process = spawner
+        .spawn(&Launch {
+            program: &sh_bin,
+            args: &args,
+            cwd: &rig.work,
+            env: &[
+                ("GIT_ASKPASS", "/tmp/caller-askpass"),
+                ("GIT_TERMINAL_PROMPT", "1"),
+            ],
+            stdin: false,
+            log: None,
+        })
+        .unwrap();
+    let mut sink = OutputSink::detached("caller-override");
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    let done = exec::supervise(process, &mut sink, &CancellationToken::new(), deadline).await;
+    assert!(done.status.unwrap().success());
+    let seen = parse_env_nul(&fs::read(rig.path("caller.out")).unwrap());
+    assert_eq!(
+        seen.get(b"GIT_ASKPASS".as_slice()).map(Vec::as_slice),
+        Some(b"/tmp/caller-askpass".as_slice())
+    );
+    assert_eq!(
+        seen.get(b"GIT_TERMINAL_PROMPT".as_slice())
+            .map(Vec::as_slice),
+        Some(b"1".as_slice())
+    );
+    for name in crate::jobs::STRIPPED_ENV {
+        if name != "GIT_ASKPASS" {
+            assert!(!seen.contains_key(name.as_bytes()), "caller: {name}");
+        }
+    }
+    for (name, value) in crate::jobs::PROMPT_DEFAULTS {
+        if name != "GIT_TERMINAL_PROMPT" {
+            assert_eq!(
+                seen.get(name.as_bytes()).map(Vec::as_slice),
+                Some(value.as_bytes()),
+                "caller: {name}"
+            );
+        }
+    }
+    assert_eq!(
+        seen.get(wisp_protocol::WISP_JOB.as_bytes())
+            .map(Vec::as_slice),
+        Some(b"1".as_slice())
+    );
+
+    let ran = rig
+        .run(bash(
+            r#"GIT_ASKPASS=/tmp/inline-askpass GIT_TERMINAL_PROMPT=1 sh -c 'printf "%s|%s" "$GIT_ASKPASS" "$GIT_TERMINAL_PROMPT"'"#,
+        ))
+        .await;
+    assert_eq!(ran.exit(), Some(ExitStatus::Code { code: 0 }));
+    assert_eq!(ran.output(), "/tmp/inline-askpass|1");
+
+    if exec::find_program("git").is_some() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                    let _ = tokio::io::AsyncWriteExt::write_all(
+                        &mut stream,
+                        b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"test\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                    )
+                    .await;
+                });
+            }
+        });
+        let git_cmd = format!(
+            "GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost git -c http.proxy= -c credential.helper= ls-remote http://127.0.0.1:{port}/repo.git"
+        );
+        let ran = rig.run(bash(&git_cmd)).await;
+        assert!(
+            matches!(ran.exit(), Some(ExitStatus::Code { code }) if code != 0),
+            "unexpected bare git exit: {:?}\n{}",
+            ran.exit(),
+            ran.text
+        );
+        assert!(
+            !inherited_marker.exists(),
+            "inherited GIT_ASKPASS ran during bare git ls-remote"
+        );
+
+        let explicit_script = rig.path("explicit-askpass.sh");
+        let explicit_marker = rig.path("explicit-ran");
+        write_askpass_script(&explicit_script, &explicit_marker);
+        let override_cmd = format!("GIT_ASKPASS='{}' {git_cmd}", explicit_script.display());
+        let ran = rig.run(bash(&override_cmd)).await;
+        assert!(
+            matches!(ran.exit(), Some(ExitStatus::Code { code }) if code != 0),
+            "unexpected override git exit: {:?}\n{}",
+            ran.exit(),
+            ran.text
+        );
+        assert!(
+            explicit_marker.exists(),
+            "explicit inline GIT_ASKPASS did not run during git ls-remote: {}",
+            ran.text
+        );
+        assert!(
+            !inherited_marker.exists(),
+            "inherited GIT_ASKPASS ran during explicit override git ls-remote"
+        );
+        server.abort();
+    }
 }

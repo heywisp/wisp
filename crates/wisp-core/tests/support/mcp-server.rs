@@ -360,6 +360,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     json!({"content":[{"type":"text","text":std::env::var_os(&key_name).is_some_and(|value| !value.is_empty()).to_string()}],"isError":false})
                 }
             }
+            "tools/call" if message["params"]["arguments"]["vars"].is_array() => {
+                let mut seen = serde_json::Map::new();
+                if let Some(vars) = message["params"]["arguments"]["vars"].as_array() {
+                    for name in vars.iter().filter_map(Value::as_str) {
+                        seen.insert(name.to_owned(), json!(std::env::var(name).ok()));
+                    }
+                }
+                json!({"content":[],"structuredContent":seen})
+            }
             "tools/call" if mode == "text" => {
                 json!({"content":[{"type":"text","text":"MCP result"}],"isError":false})
             }

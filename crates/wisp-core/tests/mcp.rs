@@ -2564,3 +2564,121 @@ async fn form_cancellation_and_legacy() {
     }
     assert!(rx.try_recv().is_err());
 }
+
+const MCP_ENV_CHILD: &str = "WISP_MCP_ENV_CHILD";
+
+fn conflicting_prompt_value(default: &str) -> String {
+    format!("inherited-not-{default}")
+}
+
+#[test]
+fn stdio_server_strips_askpass_and_sets_prompt_defaults() {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "stdio_env_child",
+            "--exact",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(MCP_ENV_CHILD, "1");
+    for name in wisp_core::jobs::STRIPPED_ENV {
+        command.env(name, format!("inherited-{name}"));
+    }
+    for (name, default) in wisp_core::jobs::PROMPT_DEFAULTS {
+        command.env(name, conflicting_prompt_value(default));
+    }
+    let output = command.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success() && stdout.contains("1 passed"),
+        "stdio_env_child failed ({:?}):\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+}
+
+#[tokio::test]
+#[ignore = "a helper that stdio_server_strips_askpass_and_sets_prompt_defaults runs with seeded env"]
+async fn stdio_env_child() {
+    if std::env::var_os(MCP_ENV_CHILD).is_none() {
+        return;
+    }
+    for name in wisp_core::jobs::STRIPPED_ENV {
+        assert!(std::env::var_os(name).is_some(), "missing seeded {name}");
+    }
+    for (name, default) in wisp_core::jobs::PROMPT_DEFAULTS {
+        let expected = conflicting_prompt_value(default);
+        assert_eq!(
+            std::env::var_os(name).as_deref(),
+            Some(std::ffi::OsStr::new(&expected)),
+            "missing seeded {name}={expected}"
+        );
+    }
+    let mut vars: Vec<&str> = wisp_core::jobs::STRIPPED_ENV.to_vec();
+    vars.extend(wisp_core::jobs::PROMPT_DEFAULTS.iter().map(|(k, _)| *k));
+    vars.push(wisp_protocol::WISP_JOB);
+
+    let scratch = ScratchDir::new("wisp-mcp-", "stdio-env");
+    let mcp = service(&scratch, "local", "modern");
+    mcp.connect("local").await.unwrap();
+    let run = mcp
+        .call(
+            "mcp__local__z_echo",
+            json!({"vars": vars}),
+            Duration::from_secs(5),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let seen: serde_json::Value = serde_json::from_str(&run.result.unwrap()).unwrap();
+    for name in wisp_core::jobs::STRIPPED_ENV {
+        assert!(seen[name].is_null(), "MCP server saw stripped {name}");
+    }
+    for (name, value) in wisp_core::jobs::PROMPT_DEFAULTS {
+        assert_eq!(seen[name], json!(value), "MCP server {name} mismatch");
+    }
+    assert_eq!(seen[wisp_protocol::WISP_JOB], json!("1"));
+
+    let mut keyed = stdio_server("modern");
+    keyed.keys = vec!["GIT_ASKPASS".into(), "GIT_TERMINAL_PROMPT".into()];
+    let mcp_keys = Service::new(BTreeMap::new(), scratch.root.clone(), None);
+    mcp_keys
+        .add_with_keys(
+            "keyed",
+            keyed,
+            BTreeMap::from([
+                ("GIT_ASKPASS".into(), wisp_protocol::Secret::new("ok")),
+                (
+                    "GIT_TERMINAL_PROMPT".into(),
+                    wisp_protocol::Secret::new("1"),
+                ),
+            ]),
+        )
+        .await
+        .unwrap();
+    let run = mcp_keys
+        .call(
+            "mcp__keyed__z_echo",
+            json!({"vars": vars}),
+            Duration::from_secs(5),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let seen: serde_json::Value = serde_json::from_str(&run.result.unwrap()).unwrap();
+    assert_eq!(seen["GIT_ASKPASS"], json!("ok"));
+    assert_eq!(seen["GIT_TERMINAL_PROMPT"], json!("1"));
+    for (name, value) in wisp_core::jobs::PROMPT_DEFAULTS {
+        if name != "GIT_TERMINAL_PROMPT" {
+            assert_eq!(seen[name], json!(value), "keyed MCP server {name} mismatch");
+        }
+    }
+    assert_eq!(seen[wisp_protocol::WISP_JOB], json!("1"));
+    for name in wisp_core::jobs::STRIPPED_ENV {
+        if name != "GIT_ASKPASS" {
+            assert!(seen[name].is_null(), "keyed MCP server saw stripped {name}");
+        }
+    }
+}
