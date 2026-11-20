@@ -11,7 +11,8 @@ use crate::endpoints::ProviderKind;
 use crate::models::ModelTable;
 
 use super::super::sse::{Decoder, SseParser, broken};
-use super::super::{Delta, ProviderError, ProviderEvent, SearchSignal};
+use super::super::{Delta, ProviderError, ProviderEvent, REASONING_ITEM, SearchSignal};
+use super::{CALL_SIGNATURES_ITEM, PART_ITEM, TEXT_SIGNATURE_ITEM};
 
 const MAX_DIAGNOSTIC_KEYS: usize = 16;
 const MAX_DIAGNOSTIC_KEY_BYTES: usize = 64;
@@ -169,7 +170,7 @@ impl GeminiDecoder {
                     signature,
                 } => {
                     let item = json!({
-                        "type": "reasoning",
+                        "type": REASONING_ITEM,
                         "thought": thinking,
                         "signature": signature,
                     });
@@ -224,6 +225,12 @@ impl GeminiDecoder {
     }
 
     fn append_thinking(&mut self, text: &str, sig: Option<&str>, events: &mut Vec<ProviderEvent>) {
+        if matches!(
+            &self.active,
+            Some(ActiveBlock::Thinking { signature, .. }) if !signature.is_empty()
+        ) {
+            self.close_active(events);
+        }
         let index = self.open_thinking(events);
         if let Some(ActiveBlock::Thinking {
             thinking,
@@ -233,7 +240,7 @@ impl GeminiDecoder {
         {
             thinking.push_str(text);
             if let Some(sig) = sig {
-                signature.push_str(sig);
+                *signature = sig.to_owned();
             }
         }
         if !text.is_empty() {
@@ -298,7 +305,7 @@ impl GeminiDecoder {
             self.close_active(events);
             let index = self.alloc_index();
             let item = json!({
-                "type": "part",
+                "type": PART_ITEM,
                 "part": part,
             });
             events.push(ProviderEvent::BlockStart {
@@ -323,21 +330,17 @@ impl GeminiDecoder {
         if text.is_empty()
             && let Some(sig) = thought_sig
         {
-            if matches!(self.active, Some(ActiveBlock::Thinking { .. })) {
-                self.append_thinking("", Some(sig), events);
-            } else {
-                self.close_active(events);
-                let index = self.alloc_index();
-                let item = json!({
-                    "type": "text_signature",
-                    "signature": sig,
-                });
-                events.push(ProviderEvent::BlockStart {
-                    index,
-                    block: super::super::envelope(super::PROVIDER, &item, 0, &self.identity),
-                });
-                events.push(ProviderEvent::BlockStop { index });
-            }
+            self.close_active(events);
+            let index = self.alloc_index();
+            let item = json!({
+                "type": TEXT_SIGNATURE_ITEM,
+                "signature": sig,
+            });
+            events.push(ProviderEvent::BlockStart {
+                index,
+                block: super::super::envelope(super::PROVIDER, &item, 0, &self.identity),
+            });
+            events.push(ProviderEvent::BlockStop { index });
             return;
         }
 
@@ -347,7 +350,7 @@ impl GeminiDecoder {
                 let env_index = self.alloc_index();
                 let text_index = self.alloc_index();
                 let item = json!({
-                    "type": "text_signature",
+                    "type": TEXT_SIGNATURE_ITEM,
                     "signature": sig,
                 });
                 events.push(ProviderEvent::BlockStart {
@@ -593,7 +596,7 @@ impl GeminiDecoder {
             if !self.call_signatures.is_empty() {
                 let index = self.alloc_index();
                 let raw = json!({
-                    "type": "call_signatures",
+                    "type": CALL_SIGNATURES_ITEM,
                     "identity": self.identity,
                     "signatures": self.call_signatures,
                 });
@@ -1575,6 +1578,165 @@ mod tests {
         assert_eq!(
             crate::provider::reply_text(&msg.content).as_deref(),
             Some("Hello")
+        );
+    }
+
+    #[test]
+    fn trailing_empty_text_signature_after_thinking_stays_separate_and_signed_thoughts_do_not_concatenate()
+     {
+        let decode = |frames: Vec<Value>| {
+            let mut decoder = GeminiDecoder::new(
+                "gemini-4-neon".into(),
+                Billing::Metered,
+                None,
+                "id_gem_parts".into(),
+            );
+            let mut assembler = Assembler::default();
+            for frame in frames {
+                for item in decoder.push(&sse_frame(&frame)) {
+                    assembler.apply(item.unwrap()).unwrap();
+                }
+            }
+            assert!(decoder.finish().is_none());
+            assembler.finish().unwrap().content
+        };
+
+        let quiet_tail = decode(vec![
+            json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{"thought": true, "text": "waiting for child"}]
+                    }
+                }]
+            }),
+            json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{"text": "", "thoughtSignature": "sig_tail"}]
+                    },
+                    "finishReason": "STOP"
+                }]
+            }),
+        ]);
+        assert_eq!(
+            quiet_tail,
+            vec![
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({
+                        "type": REASONING_ITEM,
+                        "thought": "waiting for child",
+                        "signature": "",
+                    }),
+                    1,
+                    "id_gem_parts",
+                ),
+                ContentBlock::Thinking {
+                    thinking: "waiting for child".into(),
+                    signature: String::new(),
+                },
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({
+                        "type": TEXT_SIGNATURE_ITEM,
+                        "signature": "sig_tail",
+                    }),
+                    0,
+                    "id_gem_parts",
+                ),
+            ]
+        );
+
+        let two_signed = decode(vec![
+            json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{"thought": true, "text": "first", "thoughtSignature": "sig_1"}]
+                    }
+                }]
+            }),
+            json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{"thought": true, "text": "second", "thoughtSignature": "sig_2"}]
+                    },
+                    "finishReason": "STOP"
+                }]
+            }),
+        ]);
+        assert_eq!(
+            two_signed,
+            vec![
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({"type": REASONING_ITEM, "thought": "first", "signature": "sig_1"}),
+                    1,
+                    "id_gem_parts",
+                ),
+                ContentBlock::Thinking {
+                    thinking: "first".into(),
+                    signature: String::new(),
+                },
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({"type": REASONING_ITEM, "thought": "second", "signature": "sig_2"}),
+                    1,
+                    "id_gem_parts",
+                ),
+                ContentBlock::Thinking {
+                    thinking: "second".into(),
+                    signature: String::new(),
+                },
+            ]
+        );
+
+        let signed_then_unsigned = decode(vec![
+            json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{"thought": true, "text": "first", "thoughtSignature": "sig_1"}]
+                    }
+                }]
+            }),
+            json!({
+                "candidates": [{
+                    "content": {
+                        "role": "model",
+                        "parts": [{"thought": true, "text": "after"}]
+                    },
+                    "finishReason": "STOP"
+                }]
+            }),
+        ]);
+        assert_eq!(
+            signed_then_unsigned,
+            vec![
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({"type": REASONING_ITEM, "thought": "first", "signature": "sig_1"}),
+                    1,
+                    "id_gem_parts",
+                ),
+                ContentBlock::Thinking {
+                    thinking: "first".into(),
+                    signature: String::new(),
+                },
+                crate::provider::envelope(
+                    super::super::PROVIDER,
+                    &json!({"type": REASONING_ITEM, "thought": "after", "signature": ""}),
+                    1,
+                    "id_gem_parts",
+                ),
+                ContentBlock::Thinking {
+                    thinking: "after".into(),
+                    signature: String::new(),
+                },
+            ]
         );
     }
 }

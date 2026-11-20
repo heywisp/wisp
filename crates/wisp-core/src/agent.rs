@@ -3779,9 +3779,11 @@ impl Agent {
                 continue;
             }
             if quiet {
-                message.content = vec![ContentBlock::Text {
+                let mut content = crate::provider::gemini::quiet_blocks(&message.content);
+                content.push(ContentBlock::Text {
                     text: NO_TEXT.to_owned(),
-                }];
+                });
+                message.content = content;
                 message.indices.clear();
             }
             let echoed = self.provider().echoed(&message.content, &earlier);

@@ -1,6 +1,9 @@
 use serde_json::Value;
 use wisp_protocol::ContentBlock;
 
+use super::REASONING_ITEM;
+use super::gemini::{CALL_SIGNATURES_ITEM, TEXT_SIGNATURE_ITEM};
+
 pub(super) fn text(block: &ContentBlock, target: &str) -> Option<String> {
     let ContentBlock::Opaque {
         provider,
@@ -51,7 +54,13 @@ pub(super) fn text(block: &ContentBlock, target: &str) -> Option<String> {
 fn private_reasoning(value: &Value) -> bool {
     matches!(
         value.get("type").and_then(Value::as_str),
-        Some("thinking" | "redacted_thinking" | "reasoning" | "call_signatures" | "text_signature")
+        Some(
+            "thinking"
+                | "redacted_thinking"
+                | REASONING_ITEM
+                | CALL_SIGNATURES_ITEM
+                | TEXT_SIGNATURE_ITEM
+        )
     )
 }
 

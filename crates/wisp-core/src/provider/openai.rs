@@ -529,7 +529,8 @@ impl OpenAiProvider {
                             "invalid OpenAI native item projection",
                         ));
                     }
-                    let thinking = item.get("type").and_then(Value::as_str) == Some("reasoning");
+                    let thinking =
+                        item.get("type").and_then(Value::as_str) == Some(super::REASONING_ITEM);
                     let cut = thinking && (index..end).any(|bi| request.rendering.cut(mi, bi));
                     if !cut && identity == self.identity && !as_text {
                         input.push(item.clone());

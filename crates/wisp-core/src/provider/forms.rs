@@ -39,7 +39,7 @@ pub fn is_thinking(block: &ContentBlock) -> bool {
     if let Some((item, _, _)) =
         super::openai::native_item(block).or_else(|| super::gemini::native_item(block))
     {
-        return item.get("type").and_then(Value::as_str) == Some("reasoning");
+        return item.get("type").and_then(Value::as_str) == Some(super::REASONING_ITEM);
     }
     thinking_shaped(block)
 }
