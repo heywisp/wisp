@@ -2824,7 +2824,7 @@ impl Decoder for StreamDecoder {
         }
         if !self.decoded && !self.sse.has_partial() {
             return Some(broken(
-                ErrorKind::InvalidResponse,
+                ErrorKind::Network,
                 "the server answered with an empty stream",
             ));
         }

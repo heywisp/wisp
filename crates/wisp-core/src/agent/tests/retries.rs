@@ -1,8 +1,8 @@
 use super::*;
 use crate::agent::retry::RetryPolicy;
 use crate::session::MemoryStore;
-use wisp_protocol::RequestId;
 use wisp_protocol::log::LogEvent;
+use wisp_protocol::{RequestId, RetryOffer};
 
 fn half_reply(words: &str, input: u64) -> Script {
     let mut script = vec![Ok(ProviderEvent::Sending), Ok(start(input, 0))];
@@ -966,4 +966,91 @@ async fn every_step_and_retry_logs_its_estimate_and_model() {
         let events: Vec<LogEvent> = log_events(&store);
         assert_logged_costs(&events, case, &["retrying", "step_ended"]);
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn invalid_response_retries_cap_at_three_on_default_policy() {
+    let bad = || {
+        failing(
+            half_reply(crate::provider::NO_TEXT, 600),
+            failure(ErrorKind::InvalidResponse, RetryClass::Transient, true),
+        )
+    };
+    let deterministic = RetryPolicy {
+        jitter: || 0.0,
+        ..RetryPolicy::default()
+    };
+
+    let provider = Fake::new((0..4).map(|_| bad()));
+    let mut agent =
+        Agent::new(provider.clone(), default_session()).with_retry_policy(deterministic);
+    let began = tokio::time::Instant::now();
+    let (outcome, events) = turn(&mut agent, "hi").await;
+    assert_eq!(began.elapsed(), Duration::from_secs(1 + 2 + 4));
+    assert!(
+        matches!(
+            outcome,
+            TurnOutcome::Error {
+                kind: ErrorKind::InvalidResponse,
+                attempts: 4,
+                gave_up: Some(GaveUp::StepLimit),
+                offer: Some(RetryOffer { retry: true, .. }),
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+    let retries = retrying(&events);
+    assert_eq!(retries.len(), 3);
+    assert!(retries.iter().enumerate().all(|(i, event)| matches!(
+        event,
+        AgentEvent::Retrying {
+            step: 1,
+            attempt,
+            max_attempts: 3,
+            kind: ErrorKind::InvalidResponse,
+            discarded_chars: 9,
+            ..
+        } if *attempt == i as u32 + 1
+    )));
+    let sent = provider.texts();
+    assert_eq!(sent.len(), 4);
+    assert!(sent.iter().all(|body| *body == sent[0]));
+    assert!(agent.history().is_empty());
+
+    let mut script = vec![bad(), bad(), Step::from(tool_call("t", "x"))];
+    script.extend((0..3).map(|_| bad()));
+    script.push(Step::from(reply("done", 10, 0, StopReason::EndTurn)));
+    let provider = Fake::new(script);
+    let mut agent = Agent::new(provider, default_session()).with_retry_policy(deterministic);
+    let (outcome, events) = turn(&mut agent, "hi").await;
+    assert!(
+        matches!(outcome, TurnOutcome::Completed { steps: 2, .. }),
+        "{outcome:?}"
+    );
+    let retries = retrying(&events);
+    assert_eq!(retries.len(), 5);
+    assert!(retries[..2].iter().enumerate().all(|(i, event)| matches!(
+        event,
+        AgentEvent::Retrying {
+            step: 1,
+            attempt,
+            max_attempts: 3,
+            ..
+        } if *attempt == i as u32 + 1
+    )));
+    assert!(retries[2..].iter().enumerate().all(|(i, event)| matches!(
+        event,
+        AgentEvent::Retrying {
+            step: 2,
+            attempt,
+            max_attempts: 3,
+            ..
+        } if *attempt == i as u32 + 1
+    )));
+    assert!(
+        serde_json::to_string(&*agent.history())
+            .unwrap()
+            .contains("done")
+    );
 }

@@ -2582,7 +2582,7 @@ fn unreadable_reply_diagnostics_keep_their_lead_in_unless_the_reason_names_its_s
         ),
         (
             "Anthropic",
-            "the server answered with an empty stream",
+            "the server replied with text Wisp can't read as a reply: bad gateway",
             false,
         ),
         ("OpenAI", "invalid OpenAI native item projection", false),

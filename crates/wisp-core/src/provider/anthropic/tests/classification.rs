@@ -491,7 +491,7 @@ async fn transport_failures_are_local_and_name_their_phase() {
     let empty = last_error(http::sse("")).await;
     assert_detail(
         &empty,
-        ErrorKind::InvalidResponse,
+        ErrorKind::Network,
         FailurePhase::Stream,
         RetryClass::Transient,
     );
