@@ -58,7 +58,7 @@ To resolve world 0.3.0, tools load its three folders into one `Resolve`, oldest 
 |---|---|
 | `chat.wit` | `interface chat`: synchronous `rename(name) -> result<string, string>`; answers with the name as kept or a refusal |
 | `project.wit` | `interface project`: synchronous `key() -> option<string>` |
-| `mcp.wit` | `interface mcp`: `state` (including `needs-key(list<string>)`, whose strings are key names), `server` (including `listed`, which distinguishes a missing list from an empty one, and tree-wide `off`), `tool`, `prompt-argument`, `prompt`, `resource`, `prompt-message`; `servers`, `tools`, `revision`, `connect`, `call`, `add`, `remove`, `sign-in-start`, `sign-in-finish`, `prompts`, `get-prompt`, `resources`, `read-resource`; content reads return typed messages or text parts, with absent text marking a non-text part |
+| `mcp.wit` | `interface mcp`: `state` (including `needs-key(list<string>)`, whose strings are key names), `server` (including `listed`, which distinguishes a missing list from an empty one, `fresh`, true when the tree's copy came from a listing in this run with no list-change notice since, and tree-wide `off`), `tool`, `prompt-argument`, `prompt`, `resource`, `prompt-message`; `servers`, `tools`, `revision`, `connect`, `call`, `add`, `remove`, `sign-in-start`, `sign-in-finish`, `prompts`, `get-prompt`, `resources`, `read-resource`; content reads return typed messages or text parts, with absent text marking a non-text part |
 | `manage.wit` | `interface manage`: `action` (`on`, `off`, `add`, `remove`), `kind` (`tool`, `skill`, `server`), `change` (action, kind, name, optional from and keys: a list of environment-variable names, never values) and async `manage(change, ctx)`; `ok` is the call's answer, `err` a refusal |
 | `model.wit` | `interface model`: `prompt`, `source`, `reply`, `ask-error` and async `ask(req, ctx)`; one bounded model request on the chat's account |
 | `usage.wit` | `interface usage`: `usage-state`, `account-usage` and the synchronous read `accounts()`; windows are 0.2.0's `limit-window` |
@@ -945,6 +945,10 @@ Gathering is contained: a panicking source contributes no entries and reports a 
 Names are unique in the gathered snapshot. A tool wins over a skill, then a
 skill over a document; within a kind the earlier source in stable plugin-name
 order wins. A discarded entry reports a problem. Reading uses the live owner, held weakly by the index.
+A source's `tool` entry is kept only for an allowed tool the agent holds; one for any other tool,
+loaded, turned on or unknown, is dropped without a problem, from a world 0.3.0 source too.
+The plugin that owns a held tool may give its entry, which takes the place of the one the kernel
+builds from the definition; another source's entry for it is a discarded duplicate.
 `Host::index().entries()` returns that snapshot to any plugin of world 0.3.0: each entry's kind, name, summary and search text. Async `open(name)` returns a tool's parameter schema as JSON text, or the owning source's skill/document text, to a bundled plugin only. An installed plugin gets `an installed plugin can't open index entries`, before any owner or parameters are read. Opening this to installed plugins belongs to task 514 (plugin-capabilities-enforced). Entries, opening and changed notifications are unavailable in renders.
 The kernel gathers and routes; plugins rank with `wisp-index`.
 
@@ -979,7 +983,9 @@ Both are world 0.4.0 imports owned by `mcp`; state includes `needs-sign-in`.
 The sign-in link stays out of command answers and the session log.
 The service owns the connections; tools are tagged as reading untrusted text and
 using the network, and server text is never put in a system instruction.
-A changed catalog asks the index to refresh. Between openings, held MCP tools
+A changed catalog asks the index to refresh. The plugin gives its held tools' entries from its
+last `describe`, and adds the saved-list note to a hit while its server isn't `fresh`, and to a
+tool whose copy in the tree changed since that describe. Between openings, held MCP tools
 follow a new listing before the next tool call. At each opening the kernel describes
 the running dynamic plugin from saved lists and compares canonical tool specs;
 an unchanged catalog changes no request byte, and a describe failure keeps its

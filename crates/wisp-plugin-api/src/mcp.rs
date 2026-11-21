@@ -22,6 +22,7 @@ pub struct Server {
     pub state: State,
     pub tools: u32,
     pub listed: bool,
+    pub fresh: bool,
     pub off: bool,
 }
 

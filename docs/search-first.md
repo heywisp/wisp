@@ -65,7 +65,8 @@ The kernel gathers entries at start, then at a turn opening or after a completed
 uncancelled tool call when a source marks them changed. Gathering refreshes the
 searchable index, not provider declarations or the cached system prefix. Off tools are excluded. Duplicate
 names keep the first kind (tool, skill, document), then the first source in stable
-plugin-name order, and the other entry produces a problem. A source that panics
+plugin-name order, and the other entry produces a problem. A source's tool entry counts only for
+a held tool, and the owning plugin's entry replaces the one built from its definition. A source that panics
 while listing is left out of that gathering with a problem. No ranking runs in
 the kernel, and no new tool definition is put into the request by search yet.
 

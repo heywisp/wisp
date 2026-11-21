@@ -195,7 +195,7 @@ declarations or the cached system prefix. Held server tools follow a listing bef
 the next step; a child follows only the servers present when it starts or resumes. Shared server-off
 filters apply to every agent's lookups. Duplicate names are resolved
 by kind (tool, skill, document), then stable source order, with a problem for the
-discarded entry. Search ranking is in the plugin, not the kernel. A found tool can load mid-turn where the pair supports it, without changing any
+discarded entry; a source's tool entry counts only for a held tool, the owner's replacing the built one. Search ranking is in the plugin, not the kernel. A found tool can load mid-turn where the pair supports it, without changing any
 earlier request bytes; `use` runs a held tool without changing the request prefix.
 
 The `chat` plugin's `rename_chat` tool is held too: search finds it when the user asks to rename this chat, and `use` runs it without changing the request prefix. `/rename` needs no search.

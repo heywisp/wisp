@@ -50,6 +50,7 @@ fn instantiate(host: Arc<dyn Host>) -> Arc<dyn Plugin> {
     Arc::new(Mcp {
         listing: AtomicBool::new(false),
         known: Mutex::default(),
+        described: Mutex::default(),
         opened: Mutex::default(),
         revision: AtomicU64::new(host.mcp().revision()),
         host,
@@ -59,6 +60,7 @@ fn instantiate(host: Arc<dyn Host>) -> Arc<dyn Plugin> {
 pub struct Mcp {
     host: Arc<dyn Host>,
     known: Mutex<BTreeMap<String, (String, String)>>,
+    described: Mutex<Vec<Tool>>,
     opened: Mutex<BTreeSet<String>>,
     listing: AtomicBool,
     revision: AtomicU64,
@@ -261,21 +263,33 @@ impl Mcp {
 impl Plugin for Mcp {
     fn entries(&self) -> BoxFuture<'_, Vec<Entry>> {
         Box::pin(async move {
-            if !self.search() {
-                return Vec::new();
-            }
-            let mut entries = Vec::new();
+            let servers = self.host.mcp().servers();
+            let saved = |server: &str| !servers.iter().any(|row| row.name == server && row.fresh);
+            let tools = self.host.mcp().tools();
+            let mut entries: Vec<Entry> = self
+                .described
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .iter()
+                .map(|tool| {
+                    let schema = serde_json::from_str(&tool.input_schema).unwrap_or_default();
+                    let entry = wisp_index::tool_entry(&tool.name, &tool.description, &schema);
+                    Entry {
+                        summary: noted(entry.summary, saved(&tool.server) || !tools.contains(tool)),
+                        ..entry
+                    }
+                })
+                .collect();
+            let (prompts, resources) = if self.search() {
+                (self.host.mcp().prompts(), self.host.mcp().resources())
+            } else {
+                (Vec::new(), Vec::new())
+            };
             let mut known = self.known.lock().unwrap_or_else(PoisonError::into_inner);
-            for prompt in self
-                .host
-                .mcp()
-                .prompts()
-                .into_iter()
-                .filter(|prompt| self.on(&prompt.server))
-            {
+            for prompt in prompts {
                 known.insert(
                     prompt.name.clone(),
-                    (prompt.server, prompt.original.clone()),
+                    (prompt.server.clone(), prompt.original.clone()),
                 );
                 let summary = wisp_index::first_line(&prompt.description);
                 let arguments = prompt
@@ -286,34 +300,34 @@ impl Plugin for Mcp {
                     .join(" ");
                 entries.push(Entry {
                     kind: Kind::Skill,
-                    summary: if summary.is_empty() {
-                        prompt.original.clone()
-                    } else {
-                        summary.to_owned()
-                    },
+                    summary: noted(
+                        if summary.is_empty() {
+                            prompt.original.clone()
+                        } else {
+                            summary.to_owned()
+                        },
+                        saved(&prompt.server),
+                    ),
                     text: format!("{} {} {arguments}", prompt.original, prompt.description),
                     name: prompt.name,
                 });
             }
-            for resource in self
-                .host
-                .mcp()
-                .resources()
-                .into_iter()
-                .filter(|resource| self.on(&resource.server))
-            {
+            for resource in resources {
                 known.insert(
                     resource.name.clone(),
-                    (resource.server, resource.uri.clone()),
+                    (resource.server.clone(), resource.uri.clone()),
                 );
                 let summary = wisp_index::first_line(&resource.description);
                 entries.push(Entry {
                     kind: Kind::Document,
-                    summary: if summary.is_empty() {
-                        resource.title.clone()
-                    } else {
-                        summary.to_owned()
-                    },
+                    summary: noted(
+                        if summary.is_empty() {
+                            resource.title.clone()
+                        } else {
+                            summary.to_owned()
+                        },
+                        saved(&resource.server),
+                    ),
                     text: format!(
                         "{} {} {}",
                         resource.title, resource.uri, resource.description
@@ -329,21 +343,12 @@ impl Plugin for Mcp {
     fn open_entry<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<String, String>> {
         Box::pin(async move {
             self.changed();
-            if let Some((server, _)) = self
-                .known
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get(name)
-                && !self.on(server)
-            {
-                return Err(wisp_tool_text::manage::turned_off(server));
-            }
             if let Some(prompt) = self
                 .host
                 .mcp()
                 .prompts()
                 .into_iter()
-                .find(|prompt| prompt.name == name && self.on(&prompt.server))
+                .find(|prompt| prompt.name == name)
             {
                 if self
                     .opened
@@ -371,7 +376,7 @@ impl Plugin for Mcp {
                 .mcp()
                 .resources()
                 .into_iter()
-                .find(|resource| resource.name == name && self.on(&resource.server))
+                .find(|resource| resource.name == name)
             {
                 let parts = self.host.mcp().read_resource(name).await;
                 self.changed();
@@ -402,6 +407,10 @@ impl Plugin for Mcp {
                         (tool.server.clone(), tool.original.clone()),
                     )
                 }));
+            self.described
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone_from(&tools);
             tools.into_iter().map(definition).collect()
         })
     }
@@ -612,6 +621,14 @@ fn text(value: impl Into<String>) -> CommandLine {
 
 fn answer(value: impl Into<String>) -> CommandReply {
     CommandReply::Lines(vec![text(value)])
+}
+
+fn noted(summary: String, saved: bool) -> String {
+    if saved {
+        wisp_tool_text::index::from_saved_list(&summary)
+    } else {
+        summary
+    }
 }
 
 fn definition(tool: Tool) -> ToolDef {
