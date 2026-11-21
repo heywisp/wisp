@@ -47,6 +47,7 @@ pub(super) struct GeminiDecoder {
     search_hits: Vec<SearchHit>,
     call_signatures: BTreeMap<String, String>,
     web_search_requests: u64,
+    said: bool,
     usage: Usage,
 }
 
@@ -79,6 +80,7 @@ impl GeminiDecoder {
             search_hits: Vec::new(),
             call_signatures: BTreeMap::new(),
             web_search_requests: 0,
+            said: false,
             usage: Usage {
                 billing,
                 ..Usage::default()
@@ -264,6 +266,12 @@ impl GeminiDecoder {
             .get("thoughtSignature")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty());
+        self.said |= thought_sig.is_some()
+            || !only_text_fields(part)
+            || part
+                .get("text")
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.trim().is_empty());
         if let Some(fc) = part.get("functionCall") {
             self.close_active(events);
             self.call_seq = self.call_seq.saturating_add(1);
@@ -569,7 +577,7 @@ impl GeminiDecoder {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty());
 
-        if let Some(mut error) = candidate_finish.and_then(tool_finish_error) {
+        if let Some(mut error) = candidate_finish.and_then(|reason| self.invalid_finish(reason)) {
             error.usage_complete = payload.get("usageMetadata").is_some();
             self.close_active(events);
             events.push(ProviderEvent::MessageDelta {
@@ -641,27 +649,28 @@ impl GeminiDecoder {
 
         Ok(())
     }
-}
 
-fn tool_finish_error(reason: &str) -> Option<ProviderError> {
-    let message = match reason {
-        "MALFORMED_FUNCTION_CALL" => "Gemini returned a malformed tool call",
-        "UNEXPECTED_TOOL_CALL" => "Gemini returned an unexpected tool call",
-        _ => return None,
-    };
-    let mut detail = ErrorDetail::new(
-        FailurePhase::Stream,
-        FailureSource::Endpoint,
-        RetryClass::Transient,
-    );
-    detail.status = Some(200);
-    detail.error_type = Some(reason.to_owned());
-    detail.possibly_billed = true;
-    Some(ProviderError::classified(
-        ErrorKind::InvalidResponse,
-        message,
-        detail,
-    ))
+    fn invalid_finish(&self, reason: &str) -> Option<ProviderError> {
+        let message = match reason {
+            "MALFORMED_FUNCTION_CALL" => "Gemini returned a malformed tool call",
+            "UNEXPECTED_TOOL_CALL" => "Gemini returned an unexpected tool call",
+            "STOP" if !self.said && self.search_id.is_none() => "Gemini returned an empty reply",
+            _ => return None,
+        };
+        let mut detail = ErrorDetail::new(
+            FailurePhase::Stream,
+            FailureSource::Endpoint,
+            RetryClass::Transient,
+        );
+        detail.status = Some(200);
+        detail.error_type = Some(reason.to_owned());
+        detail.possibly_billed = true;
+        Some(ProviderError::classified(
+            ErrorKind::InvalidResponse,
+            message,
+            detail,
+        ))
+    }
 }
 
 fn only_text_fields(part: &Value) -> bool {
@@ -1272,7 +1281,74 @@ mod tests {
     }
 
     #[test]
-    fn invalid_tool_finishes_fail_with_billed_usage_even_after_calls_or_search() {
+    fn invalid_and_empty_finishes_fail_with_billed_usage_even_after_calls_or_search() {
+        let usage = json!({"promptTokenCount": 42, "thoughtsTokenCount": 5});
+        let reply = |parts: Value, reason: &str, search: bool| {
+            let mut candidate = json!({
+                "content": {"role": "model", "parts": parts},
+                "finishReason": reason,
+                "finishMessage": "[diagnostic placeholder]",
+            });
+            if search {
+                candidate["groundingMetadata"] = json!({
+                    "webSearchQueries": ["rust async trait"],
+                    "groundingChunks": [{"web": {"uri": "https://example.com/rust", "title": "rust"}}],
+                });
+            }
+            json!({"candidates": [candidate], "usageMetadata": usage})
+        };
+        let decode = |frames: &[Value], wrapped: bool| {
+            let mut decoder = GeminiDecoder::new(
+                "gemini-4-carbon".into(),
+                Billing::Metered,
+                None,
+                "tool-finish".into(),
+            );
+            let mut assembler = Assembler::default();
+            let mut failure = None;
+            for frame in frames {
+                let frame = if wrapped {
+                    json!({"response": frame})
+                } else {
+                    frame.clone()
+                };
+                for event in decoder.push(&sse_frame(&frame)) {
+                    match event {
+                        Ok(event) => {
+                            assert!(failure.is_none());
+                            assembler.apply(event).unwrap();
+                        }
+                        Err(error) => failure = Some(error),
+                    }
+                }
+            }
+            (decoder.ended(), assembler, failure)
+        };
+        let fails = |frames: &[Value], reason: &str, message: &str, searches: u64| {
+            for wrapped in [false, true] {
+                let (ended, assembler, failure) = decode(frames, wrapped);
+                let usage = assembler.usage().unwrap();
+                assert_eq!(usage.input_tokens, 42);
+                assert_eq!(usage.output_tokens, 5);
+                assert_eq!(usage.reasoning_tokens, 5);
+                assert_eq!(usage.web_search_requests, searches);
+                assert_eq!(usage.billing, Billing::Metered);
+                let error = failure.unwrap();
+                assert!(!ended, "{frames:?}");
+                assert_eq!(error.kind, ErrorKind::InvalidResponse);
+                assert_eq!(error.message, message);
+                assert_eq!(error.detail.phase, FailurePhase::Stream);
+                assert_eq!(error.detail.source, FailureSource::Endpoint);
+                assert_eq!(error.detail.retry, RetryClass::Transient);
+                assert_eq!(error.detail.status, Some(200));
+                assert_eq!(error.detail.error_type.as_deref(), Some(reason));
+                assert!(error.detail.possibly_billed && error.possibly_billed);
+                assert!(error.usage_complete);
+                assert!(!error.uncounted(true));
+                assert!(assembler.finish().is_err());
+            }
+        };
+
         for (reason, message) in [
             (
                 "MALFORMED_FUNCTION_CALL",
@@ -1283,72 +1359,45 @@ mod tests {
                 "Gemini returned an unexpected tool call",
             ),
         ] {
-            for wrapped in [false, true] {
-                for (call, search) in [(None, false), (Some("client_tool"), false), (None, true)] {
-                    let mut decoder = GeminiDecoder::new(
-                        "gemini-4-carbon".into(),
-                        Billing::Metered,
-                        None,
-                        "tool-finish".into(),
-                    );
-                    let mut parts = vec![json!({"thought": true, "text": "[thought placeholder]"})];
-                    if let Some(name) = call {
-                        parts.push(json!({"functionCall": {"name": name, "args": {}}}));
-                    }
-                    let mut candidate = json!({
-                        "content": {"role": "model", "parts": parts},
-                        "finishReason": reason,
-                        "finishMessage": "[diagnostic placeholder]",
-                    });
-                    if search {
-                        candidate["groundingMetadata"] = json!({
-                            "webSearchQueries": ["rust async trait"],
-                            "groundingChunks": [{"web": {"uri": "https://example.com/rust", "title": "rust"}}],
-                        });
-                    }
-                    let payload = json!({
-                        "candidates": [candidate],
-                        "usageMetadata": {"promptTokenCount": 42, "thoughtsTokenCount": 5},
-                    });
-                    let frame = if wrapped {
-                        json!({"response": payload})
-                    } else {
-                        payload
-                    };
-                    let events = decoder.push(&sse_frame(&frame));
-                    let mut assembler = Assembler::default();
-                    let mut failure = None;
-                    let mut stopped = false;
-                    for event in events {
-                        match event {
-                            Ok(event) => {
-                                assert!(failure.is_none());
-                                stopped |= matches!(event, ProviderEvent::MessageStop);
-                                assembler.apply(event).unwrap();
-                            }
-                            Err(error) => failure = Some(error),
-                        }
-                    }
-                    let usage = assembler.usage().unwrap();
-                    assert_eq!(usage.input_tokens, 42);
-                    assert_eq!(usage.output_tokens, 5);
-                    assert_eq!(usage.reasoning_tokens, 5);
-                    assert_eq!(usage.web_search_requests, u64::from(search));
-                    assert_eq!(usage.billing, Billing::Metered);
-                    let error = failure.unwrap();
-                    assert!(!stopped && !decoder.ended());
-                    assert_eq!(error.kind, ErrorKind::InvalidResponse);
-                    assert_eq!(error.message, message);
-                    assert_eq!(error.detail.phase, FailurePhase::Stream);
-                    assert_eq!(error.detail.source, FailureSource::Endpoint);
-                    assert_eq!(error.detail.retry, RetryClass::Transient);
-                    assert_eq!(error.detail.status, Some(200));
-                    assert_eq!(error.detail.error_type.as_deref(), Some(reason));
-                    assert!(error.detail.possibly_billed && error.possibly_billed);
-                    assert!(error.usage_complete);
-                    assert!(!error.uncounted(true));
-                    assert!(assembler.finish().is_err());
+            for (call, search) in [(None, false), (Some("client_tool"), false), (None, true)] {
+                let mut parts = vec![json!({"thought": true, "text": "[thought placeholder]"})];
+                if let Some(name) = call {
+                    parts.push(json!({"functionCall": {"name": name, "args": {}}}));
                 }
+                let frames = [reply(json!(parts), reason, search)];
+                fails(&frames, reason, message, u64::from(search));
+            }
+        }
+
+        let stop = |parts: Value| reply(parts, "STOP", false);
+        let blank =
+            json!({"candidates": [{"content": {"role": "model", "parts": [{"text": " "}]}}]});
+        for frames in [
+            vec![json!({"candidates": [{"finishReason": "STOP"}], "usageMetadata": usage})],
+            vec![stop(json!([]))],
+            vec![stop(json!([{"text": ""}]))],
+            vec![stop(json!([{"text": " \n", "thoughtSignature": ""}]))],
+            vec![stop(json!([{"thought": true, "text": ""}]))],
+            vec![blank, stop(json!([]))],
+        ] {
+            fails(&frames, "STOP", "Gemini returned an empty reply", 0);
+        }
+        let said = json!({"candidates": [{"content": {"role": "model", "parts": [{"text": "[reply placeholder]"}]}}]});
+        for frames in [
+            vec![stop(
+                json!([{"thought": true, "text": "[thought placeholder]"}]),
+            )],
+            vec![stop(
+                json!([{"executableCode": {"language": "PYTHON", "code": "print(1)"}}]),
+            )],
+            vec![reply(json!([]), "STOP", true)],
+            vec![said.clone(), stop(json!([]))],
+            vec![said, stop(json!([{"text": ""}]))],
+        ] {
+            for wrapped in [false, true] {
+                let (ended, assembler, failure) = decode(&frames, wrapped);
+                assert!(ended && failure.is_none(), "{frames:?}");
+                assert_eq!(assembler.finish().unwrap().stop_reason, StopReason::EndTurn);
             }
         }
 
@@ -1677,6 +1726,25 @@ mod tests {
                     "id_gem_parts",
                 ),
             ]
+        );
+
+        let signed_alone = decode(vec![json!({
+            "candidates": [{
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": "", "thoughtSignature": "sig_alone"}]
+                },
+                "finishReason": "STOP"
+            }]
+        })]);
+        assert_eq!(
+            signed_alone,
+            vec![crate::provider::envelope(
+                super::super::PROVIDER,
+                &json!({"type": TEXT_SIGNATURE_ITEM, "signature": "sig_alone"}),
+                0,
+                "id_gem_parts",
+            )]
         );
 
         let two_signed = decode(vec![
