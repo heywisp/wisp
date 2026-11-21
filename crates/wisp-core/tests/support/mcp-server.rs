@@ -226,7 +226,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let text = |placeholder: &str| {
             if mode == "key" {
-                std::env::var(&key_name).unwrap_or_default()
+                let key = std::env::var(&key_name).unwrap_or_default();
+                format!("{key} {}", escaped_json_string(&key).trim_matches('"'))
             } else {
                 placeholder.to_owned()
             }
@@ -349,7 +350,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let key = std::env::var(&key_name)?;
                     let escaped = escaped_json_string(&key);
                     let text = format!(r#"{{"named":{{{escaped}:[{escaped}]}}}}"#);
-                    json!({"content":[{"type":"text","text":text}],"structuredContent":{"named":{(&key):[key]}}})
+                    json!({"content":[{"type":"text","text":text},{"type":"text","text":json!(text).to_string()}],"structuredContent":{"named":{(&key):[key]}}})
                 } else if message["params"]["arguments"]["echo-key"] == true {
                     let key = std::env::var(&key_name)?;
                     json!({"content":[
@@ -518,6 +519,7 @@ fn form_output(mut summary: Value, echo: &str) -> Value {
             if let Ok(structured) = serde_json::from_str(&text)
                 && let Some(content) = summary["content"].as_array_mut()
             {
+                content.push(json!({"type":"text","text":json!(text).to_string()}));
                 content.push(json!({"type":"text","text":text}));
                 summary["structuredContent"] = structured;
             }

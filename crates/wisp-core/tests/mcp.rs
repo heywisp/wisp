@@ -1698,10 +1698,8 @@ async fn key_is_scrubbed(mcp: &Service, server: &str) {
         )
         .await
         .unwrap();
-    assert_eq!(
-        run.result.unwrap(),
-        json!({"named":{"[redacted]":["[redacted]"]}}).to_string()
-    );
+    let named = json!({"named":{"[redacted]":["[redacted]"]}}).to_string();
+    assert_eq!(run.result.unwrap(), format!("{}\n{named}", json!(named)));
     let messages = mcp
         .get_prompt(&format!("{}prompt:review.code", tool_name(server, "")))
         .await
@@ -1719,8 +1717,8 @@ async fn key_is_scrubbed(mcp: &Service, server: &str) {
             resource
         ),
         (
-            vec![Some("[redacted]".into()); 2],
-            vec![Some("[redacted]".into())]
+            vec![Some("[redacted] [redacted]".into()); 2],
+            vec![Some("[redacted] [redacted]".into())]
         )
     );
 }

@@ -1563,6 +1563,81 @@ fn redactions_also_catch_a_secret_escaped_by_debug_output() {
     assert_eq!(registered(), once);
 }
 
+#[test]
+fn scrub_catches_a_secret_spelled_with_unicode_escapes() {
+    let secret = "CANARY-a\"b\\c-\u{1F642}-unicode";
+    let redactions = Redactions::new([secret.to_owned()]);
+    let every = |upper: bool| -> String {
+        secret
+            .encode_utf16()
+            .map(|unit| {
+                if upper {
+                    format!("\\u{unit:04X}")
+                } else {
+                    format!("\\u{unit:04x}")
+                }
+            })
+            .collect()
+    };
+    let single = r#"\u0043ANARY-a\"b\\c-🙂-unicode"#;
+    for spelled in [
+        single.to_owned(),
+        r#"CANARY-a\u0022b\\c-🙂-unicode"#.to_owned(),
+        r#"CANARY-a\"b\\c-\uD83D\ude42-unicode"#.to_owned(),
+        r#"\u{43}ANARY-a\"b\\c-\u{1f642}-unicode"#.to_owned(),
+        every(true),
+        every(false),
+    ] {
+        assert_eq!(
+            redactions.scrub(&format!("key={spelled}.")),
+            format!("key={REDACTED}.")
+        );
+    }
+    assert_eq!(redactions.scrub(&format!("{secret}{single}")), REDACTED);
+    assert_eq!(
+        redactions.scrub(&format!("{single} {secret}")),
+        format!("{REDACTED} {REDACTED}")
+    );
+    let wrapped = |text: String, times: usize| {
+        (0..times).fold(text, |text, _| serde_json::to_string(&text).unwrap())
+    };
+    for times in 0..ESCAPE_LEVELS {
+        assert_eq!(
+            redactions.scrub(&wrapped(format!("key={single}."), times)),
+            wrapped(format!("key={REDACTED}."), times)
+        );
+    }
+    let beyond = wrapped(format!("key={single}."), ESCAPE_LEVELS);
+    assert_eq!(redactions.scrub(&beyond), beyond);
+    let rest = r#"ANARY-a\"b\\c-🙂-unicode"#;
+    let mut unchanged = [
+        r"\uD800",
+        r"\uDC43",
+        r"\u00G3",
+        r"\u{110043}",
+        r"\u{}",
+        r"\u{0000043}",
+        r"\u{D800}",
+        r"\u{4G}",
+        r"\u{+43}",
+        r"\x43",
+        r"\u43",
+        r"\u+043",
+    ]
+    .map(|first| format!("key={first}{rest}."))
+    .to_vec();
+    unchanged.extend([
+        single.replacen("unicode", r"unicod\", 1),
+        r#"line\n\u0041 \u{1F600} \"quoted\" \\ \/"#.to_owned(),
+        r"\u0043ANARY-a".to_owned(),
+        r"\u{".repeat(100_000),
+        r"\u{1234567".repeat(100_000),
+    ]);
+    for text in unchanged {
+        assert_eq!(redactions.scrub(&text), text);
+    }
+}
+
 fn png_like(tag: &str) -> (String, Vec<u8>) {
     let bytes = format!("\u{89}PNG fake image {tag}").into_bytes();
     (sha256_bytes_hex(&bytes), bytes)

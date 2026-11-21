@@ -480,7 +480,9 @@ Before commit, tool results mask held credentials of 20 characters or more and k
 
 As a backstop, content strings in records are scrubbed of registered values,
 including credentials, their base64 forms when the credential has 20 characters or more,
-held server-key values and the endpoint's password, path and query, which are replaced with `[redacted]`. A value needs at least three
+held server-key values and the endpoint's password, path and query, which are replaced with `[redacted]`.
+A value spelled with JSON's string escapes (`\uXXXX`, surrogate pairs and `\" \\ \/ \b \f \n \r \t`)
+or Rust's `\u{…}` is caught too, nested up to four escape levels deep. A value needs at least three
 non-whitespace Unicode characters to be masked; shorter values are left as-is,
 including their debug-escaped forms. Everyday values of three or more characters
 can still mask matching content. Record tags, enum values, object keys, hashes,
