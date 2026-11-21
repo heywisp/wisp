@@ -163,16 +163,22 @@ fn network(message: String) -> ProviderError {
 }
 
 pub fn key(url: &str, credential: &Credential, account: &str) -> Option<String> {
-    let (sign_in, name) = match credential {
+    let (address, sign_in, name) = match credential {
         Credential::Subscription {
             profile: Some(path),
             ..
-        } => ("subscription", path.as_os_str().as_encoded_bytes()),
-        Credential::ApiKey(_) | Credential::AuthToken(_) => ("account", account.as_bytes()),
+        } => (
+            url.to_owned(),
+            "subscription",
+            path.as_os_str().as_encoded_bytes(),
+        ),
+        Credential::ApiKey(_) | Credential::AuthToken(_) => {
+            (crate::endpoints::origin(url), "account", account.as_bytes())
+        }
         _ => return None,
     };
     let mut hash = Sha256::new();
-    hash.update(url.as_bytes());
+    hash.update(address.as_bytes());
     hash.update([0]);
     hash.update(sign_in.as_bytes());
     hash.update([0]);

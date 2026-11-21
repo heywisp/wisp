@@ -409,7 +409,7 @@ fn a_sign_ins_key_keeps_its_saved_file_name_and_an_api_keys_comes_from_its_accou
     assert_eq!(key(url, &signed_in, "work").as_deref(), Some(pinned));
     let api = |secret: &str| Credential::ApiKey(secret.into());
     let work = key(url, &api("synthetic-key"), "work").unwrap();
-    assert_eq!(work, "ee69b13a84a9f993aabe4f48efcd340b");
+    assert_eq!(work, "af682bf8bd24db81c54d036f6e096e64");
     assert_eq!(
         key(url, &api("synthetic-other"), "work"),
         Some(work.clone())
@@ -427,6 +427,23 @@ fn a_sign_ins_key_keeps_its_saved_file_name_and_an_api_keys_comes_from_its_accou
         key(url, &api("synthetic-key"), "work")
     );
     assert_ne!(key(url, &bearer, "work"), key(url, &bearer, "home"));
+    let gateway = key("https://gw.example.com", &bearer, "work");
+    assert_eq!(
+        key(
+            "https://gw.example.com/CANARY_path_token/v1/messages",
+            &bearer,
+            "work"
+        ),
+        gateway
+    );
+    assert_eq!(
+        key("https://gw.example.com/other/v1/messages", &bearer, "work"),
+        gateway
+    );
+    assert_ne!(
+        key("https://gw.example.org/CANARY_path_token", &bearer, "work"),
+        gateway
+    );
 }
 
 #[test]

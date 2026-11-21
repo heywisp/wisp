@@ -530,6 +530,13 @@ From version 35 `session_started.sections`, `session_resumed.sections` and
 each prompt section's snapshot byte for byte and send no section again; a
 lead entry's `snapshot` is in `turn_started`, which is never scrubbed.
 
+A native item's replay identity is one of the hashes that are never scrubbed: an
+unsalted SHA-256 over the account's whole URL, path included, a label, and its API key
+or token, or a sign-in's profile path instead. It stays in the conversation records on
+this machine and is never sent, shown or put in events. Whoever holds a copy of a log can
+confirm a key they already have, or see that two logs used the same key, so a shared log
+carries that fingerprint.
+
 Wisp replaces registered secrets, bearer values, email addresses, key-shaped
 or known-prefix tokens, and account IDs in provider error text with `[redacted]`
 before applying character limits. This affects the screen too, as well as
