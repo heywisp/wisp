@@ -329,10 +329,7 @@ impl AnthropicProvider {
             subscription::data(),
             endpoint.client_version,
         )?;
-        provider.list_key = provider
-            .official
-            .then(|| list::key(&provider.url, &endpoint.credential, endpoint.name.as_str()))
-            .flatten();
+        provider.list_key = list::key(&provider.url, &endpoint.credential, endpoint.name.as_str());
         Ok(provider)
     }
 

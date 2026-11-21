@@ -8,7 +8,7 @@ use crate::provider::anthropic::{AnthropicProvider, Credential, DEFAULT_BASE_URL
 use crate::provider::credential::SubscriptionKind;
 use crate::provider::{Provider, ProviderError};
 use crate::test_guard::http;
-use wisp_protocol::settings::ClientVersion;
+use wisp_protocol::settings::{AccountModel, ClientVersion};
 
 pub(super) fn account(credential: Credential, base_url: &str) -> ResolvedEndpoint {
     ResolvedEndpoint {
@@ -167,18 +167,51 @@ async fn a_fetched_list_is_saved_under_its_sign_in_and_read_once_by_each_connect
         .connect(&endpoint, Some(&folder))
         .unwrap();
     assert_eq!(fresh.model_list().as_deref(), Some(&newer));
-    let others = [
-        connect(api_key("synthetic-key"), "https://gateway.example"),
-        connect(credential("synthetic-oauth"), DEFAULT_BASE_URL),
-    ];
+    let setup = connect(credential("synthetic-oauth"), DEFAULT_BASE_URL);
+    assert_eq!(setup.list_key(), None);
     let empty = dir.path().join("empty");
-    for other in others {
-        assert_eq!(other.list_key(), None);
-        other.save_fetched(answer(&other, &ok).await, &empty).await;
-        assert!(!empty.exists());
-    }
+    setup.save_fetched(answer(&setup, &ok).await, &empty).await;
+    assert!(!empty.exists());
     let official = connect(api_key("synthetic-key"), DEFAULT_BASE_URL);
-    assert!(official.list_key().is_some_and(|official| official != key));
+    let official = official.list_key().unwrap().to_owned();
+    assert_ne!(official, key);
+    let fable = claude_wire(&[claude_entry("claude-fable-5-2", "fable", 1_000_000)]);
+    let fable = http::json("200 OK", &String::from_utf8(fable).unwrap());
+    let error = r#"{"error":{"message":"PLACEHOLDER","type":"invalid_request_error"}}"#;
+    let not_a_list = http::json("200 OK", error);
+    let gateway = "https://gateway.example";
+    let bearer = Credential::AuthToken("CANARY_GATEWAY_TOKEN".into());
+    let failed = dir.path().join("failed");
+    let unlisted = connect(bearer.clone(), gateway);
+    unlisted
+        .save_fetched(answer(&unlisted, &not_a_list).await, &failed)
+        .await;
+    let endpoint = account(bearer.clone(), gateway);
+    let shipped = ProviderKind::Anthropic.connect(&endpoint, Some(&failed));
+    assert_eq!(shipped.unwrap().model_list(), None);
+    for credential in [api_key("CANARY_GATEWAY_KEY"), bearer] {
+        let provider = connect(credential.clone(), gateway);
+        let own = provider.list_key().unwrap().to_owned();
+        assert_ne!(own, official);
+        provider
+            .save_fetched(answer(&provider, &fable).await, &folder)
+            .await;
+        let saved = SavedList::load(&folder, &own).unwrap().list;
+        for reply in [&refused, &not_a_list] {
+            provider
+                .save_fetched(answer(&provider, reply).await, &folder)
+                .await;
+            assert_eq!(SavedList::load(&folder, &own).unwrap().list, saved);
+        }
+        let endpoint = account(credential, gateway);
+        let shown = ProviderKind::Anthropic.connect(&endpoint, Some(&folder));
+        let offers = shown.unwrap().model_list().unwrap().offers();
+        let fable = AccountModel {
+            id: "claude-fable-5-2".into(),
+            listed: Some(0),
+        };
+        assert_eq!(offers, [fable]);
+    }
 }
 
 #[tokio::test]

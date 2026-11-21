@@ -1058,7 +1058,7 @@ fn lists_are_due_when_missing_hourly_after_success_and_next_round_after_failure(
         let provider = endpoint.provider.connect(endpoint, None).unwrap();
         provider.list_key().map(str::to_owned)
     };
-    for name in ["token", "claude-gateway", "claude-setup"] {
+    for name in ["token", "claude-setup"] {
         assert_eq!(key(name), None, "{name}");
     }
     let now = 1_000_000;
@@ -1087,10 +1087,16 @@ fn lists_are_due_when_missing_hourly_after_success_and_next_round_after_failure(
     assert_eq!(keys(&due.missing), [key("claude-plan"), key("missing")]);
     assert_eq!(
         keys(&due.stale),
-        [key("claude-api"), key("old"), key("retry")]
+        [
+            key("claude-api"),
+            key("claude-gateway"),
+            key("old"),
+            key("retry")
+        ]
     );
     let listed = [
         "claude-api",
+        "claude-gateway",
         "claude-plan",
         "failed",
         "fresh",
