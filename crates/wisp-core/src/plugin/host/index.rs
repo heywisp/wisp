@@ -105,10 +105,10 @@ impl KernelHost {
         allowed: &BTreeSet<String>,
         sources: BTreeMap<String, Arc<dyn Plugin>>,
     ) -> Vec<Problem> {
-        let (off, described, scope) = {
+        let (off, scope) = {
             let mut state = locked(&self.index);
             state.dirty = false;
-            (state.off.clone(), state.described, state.mcp_scope.clone())
+            (state.off.clone(), state.mcp_scope.clone())
         };
         let parameters: BTreeMap<_, _> = allowed
             .iter()
@@ -117,6 +117,11 @@ impl KernelHost {
                 Some((name.clone(), spec.input_schema.to_string()))
             })
             .collect();
+        let held_by = |name: &str, id: &str| {
+            toolbox
+                .held_tool(name)
+                .is_some_and(|tool| tool.tool().id() == id)
+        };
         let mut candidates: Vec<(Entry, Option<Owner>)> = toolbox
             .held_specs()
             .iter()
@@ -141,7 +146,8 @@ impl KernelHost {
                         .filter(|entry| {
                             !off.contains(&entry.name)
                                 && (entry.kind != Kind::Tool
-                                    || parameters.contains_key(&entry.name))
+                                    || (allowed.contains(&entry.name)
+                                        && toolbox.held_tool(&entry.name).is_some()))
                         })
                         .map(|entry| (entry, Some((id.clone(), plugin.clone())))),
                 ),
@@ -151,22 +157,27 @@ impl KernelHost {
                 }),
             }
         }
-        candidates.sort_by(|(a, _), (b, _)| a.kind.cmp(&b.kind).then(a.name.cmp(&b.name)));
+        let owns = |entry: &Entry, owner: &Option<Owner>| {
+            entry.kind == Kind::Tool
+                && owner
+                    .as_ref()
+                    .is_some_and(|(id, _)| held_by(&entry.name, id))
+        };
+        candidates.sort_by(|(a, x), (b, y)| {
+            a.kind
+                .cmp(&b.kind)
+                .then(a.name.cmp(&b.name))
+                .then_with(|| owns(b, y).cmp(&owns(a, x)))
+        });
         let mut names = BTreeSet::new();
         let mut owners = BTreeMap::new();
         let mut entries = Vec::new();
         let mcp = self.mcp();
-        let unconfirmed = mcp.unconfirmed_entries();
         let scoped = scope.map(|servers| mcp.entries_of(&servers));
-        let moved = mcp.changes() != described;
-        for (mut entry, owner) in candidates {
-            let mcp_entry = (moved || scoped.is_some())
+        for (entry, owner) in candidates {
+            let mcp_entry = scoped.is_some()
                 && owner.as_ref().map_or_else(
-                    || {
-                        toolbox
-                            .held_tool(&entry.name)
-                            .is_some_and(|tool| tool.tool().id() == MCP_PLUGIN)
-                    },
+                    || held_by(&entry.name, MCP_PLUGIN),
                     |(id, _)| id == MCP_PLUGIN,
                 );
             if mcp_entry
@@ -190,9 +201,6 @@ impl KernelHost {
                     });
                 }
                 continue;
-            }
-            if unconfirmed.contains_key(&entry.name) || (moved && mcp_entry) {
-                entry.summary = wisp_tool_text::index::from_saved_list(&entry.summary);
             }
             if let Some((_, owner)) = owner {
                 owners.insert(entry.name.clone(), Arc::downgrade(&owner));

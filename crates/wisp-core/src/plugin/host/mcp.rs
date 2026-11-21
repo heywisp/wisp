@@ -59,6 +59,7 @@ impl Mcp for PluginHost {
             .map(|row| Server {
                 listed: self.kernel.mcp().saved(&row.name).is_some(),
                 off: row.off,
+                fresh: row.fresh,
                 name: row.name,
                 tools: u32::try_from(row.tools).unwrap_or(u32::MAX),
                 state: match row.state {

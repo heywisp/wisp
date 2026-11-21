@@ -151,12 +151,14 @@ server is committed; the chat tree's copy, read from the saved list at start and
 replaced by every listing; each agent's definitions, where held ones follow the
 tree's copy before the agent's next tool call and loaded ones change only at the
 next message, by the rule below; and the search index, gathered again with the
-held definitions. A server is listed by the main chat's background hook at chat
-start, if the server is on; at each new connection (its first call, skill or
-document read in this run, a sign-in, a new key or a reconnect); and after an
-argument refusal or a list-change notice. Search hits for its tools, skills and
-documents end their summary with `(saved list; may be out of date)` until the first
-listing in this run and again after a notice until the new list arrives. A child
+held definitions, whose MCP entries the MCP plugin gives. A server is listed by
+the main chat's background hook at chat start, if the server is on; at each new
+connection (its first call, skill or document read in this run, a sign-in, a new
+key or a reconnect); and after an argument refusal or a list-change notice.
+Search hits for its tools, skills and documents end their summary with
+`(saved list; may be out of date)` until the first listing in this run and again
+after a notice until the new list arrives, and a held tool's hit also while the
+tree's copy of that tool differs from its definition or is missing. A child
 follows only the servers present when it starts or resumes.
 
 To send notices, declare `listChanged: true` in the `tools`, `prompts` or `resources` capability and return the current items from `tools/list`, `prompts/list` or `resources/list`.

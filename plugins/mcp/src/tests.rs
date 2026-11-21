@@ -176,6 +176,7 @@ fn server(name: &str, state: State, listed: bool, tools: u32) -> Server {
         name: name.into(),
         state,
         listed,
+        fresh: true,
         off: false,
         tools,
     }
@@ -776,12 +777,11 @@ fn documents_reread_and_non_text_or_oversized_parts_return_no_partial_text() {
 }
 
 #[test]
-fn an_off_server_has_no_tools_prompts_or_resources_and_shows_where_to_turn_it_on() {
+fn an_off_server_has_no_tools_and_shows_where_to_turn_it_on() {
     let service = entries_service(false);
     service.servers.lock().unwrap()[0].off = true;
     let plugin = plugin(service.clone(), true);
     assert!(block_on(plugin.describe(&context())).is_empty());
-    assert!(block_on(plugin.entries()).is_empty());
     let listing = lines(block_on(plugin.run_command("mcp", "")));
     let CommandLine::Row(row) = &listing[1] else {
         panic!("not a row");
@@ -793,7 +793,58 @@ fn an_off_server_has_no_tools_prompts_or_resources_and_shows_where_to_turn_it_on
     assert!(plain(CommandReply::Lines(listing)).contains("turn on: /config, Turned off"));
     service.servers.lock().unwrap()[0].off = false;
     assert_eq!(block_on(plugin.describe(&context())).len(), 1);
-    assert_eq!(block_on(plugin.entries()).len(), 2);
+    assert_eq!(block_on(plugin.entries()).len(), 3);
+}
+
+#[test]
+fn held_tool_and_saved_entries_carry_the_note_until_their_server_is_fresh() {
+    let service = entries_service(false);
+    service.servers.lock().unwrap()[0].fresh = false;
+    let plugin = plugin(service.clone(), true);
+    let summaries = || {
+        block_on(plugin.entries())
+            .into_iter()
+            .map(|entry| (entry.kind, entry.summary))
+            .collect::<Vec<_>>()
+    };
+    let noted = wisp_tool_text::index::from_saved_list;
+    assert_eq!(
+        summaries(),
+        [
+            (Kind::Skill, noted("Review placeholder code")),
+            (Kind::Document, noted("Placeholder notes"))
+        ]
+    );
+    block_on(plugin.describe(&context()));
+    let built = wisp_index::tool_entry(
+        &tool().name,
+        &tool().description,
+        &serde_json::json!({"type": "object"}),
+    );
+    assert_eq!(
+        block_on(plugin.entries())[0],
+        Entry {
+            summary: noted(&built.summary),
+            ..built.clone()
+        }
+    );
+    service.servers.lock().unwrap()[0].fresh = true;
+    let fresh = [
+        (Kind::Tool, built.summary.clone()),
+        (Kind::Skill, "Review placeholder code".to_owned()),
+        (Kind::Document, "Placeholder notes".to_owned()),
+    ];
+    assert_eq!(summaries(), fresh);
+    service.tools.lock().unwrap()[0].description = "Echo a new message".into();
+    assert_eq!(summaries()[0], (Kind::Tool, noted(&built.summary)));
+    assert_eq!(summaries()[1..], fresh[1..]);
+    block_on(plugin.describe(&context()));
+    assert_eq!(
+        summaries()[0],
+        (Kind::Tool, "Echo a new message".to_owned())
+    );
+    service.tools.lock().unwrap().clear();
+    assert_eq!(summaries()[0], (Kind::Tool, noted("Echo a new message")));
 }
 
 #[test]

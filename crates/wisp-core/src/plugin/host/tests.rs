@@ -1594,29 +1594,36 @@ async fn index_entries_sort_by_kind_and_name_and_leave_out_an_off_tool() {
     use wisp_plugin_api::index::Kind;
     let kernel = Arc::new(KernelHost::new());
     let all = crate::tool::test_toolbox();
-    let toolbox = crate::tool::Toolbox::default().with_held([
+    let mut toolbox = crate::tool::Toolbox::default().with_held([
         all.get("echo").unwrap().clone(),
         all.get("sleep").unwrap().clone(),
     ]);
-    let sources = [(
-        "aa".to_owned(),
-        entry_source(
-            "aa",
-            vec![
-                index_entry(Kind::Document, "guide"),
-                index_entry(Kind::Skill, "how-to"),
-            ],
-            false,
-        ),
-    )]
-    .into_iter()
-    .collect();
+    let owner = toolbox.held_tool("echo").unwrap().tool().id().to_owned();
+    let echo = wisp_plugin_api::index::Entry {
+        summary: "Echo from its owner".to_owned(),
+        ..index_entry(Kind::Tool, "echo")
+    };
+    let sources = |ids: &[&str]| {
+        ids.iter()
+            .map(|id| {
+                let mut entries = vec![
+                    echo.clone(),
+                    index_entry(Kind::Tool, "sleep"),
+                    index_entry(Kind::Tool, "gone"),
+                ];
+                if *id == "aa" {
+                    entries = vec![
+                        index_entry(Kind::Document, "guide"),
+                        index_entry(Kind::Skill, "how-to"),
+                    ];
+                }
+                (id.to_string(), entry_source(id, entries, false))
+            })
+            .collect::<BTreeMap<_, _>>()
+    };
+    let allowed = ["echo".to_owned(), "gone".to_owned()].into_iter().collect();
     let problems = kernel
-        .gather_index(
-            &toolbox,
-            &["echo".to_owned()].into_iter().collect(),
-            sources,
-        )
+        .gather_index(&toolbox, &allowed, sources(&["aa", &owner]))
         .await;
     assert!(problems.is_empty(), "{problems:?}");
     assert!(plugin_host(&[], &kernel).index().entries().is_empty());
@@ -1632,11 +1639,36 @@ async fn index_entries_sort_by_kind_and_name_and_leave_out_an_off_tool() {
             (Kind::Document, "guide")
         ]
     );
+    assert_eq!(entries[0], echo);
     assert_eq!(
         index_host(&kernel).index().open("echo").await.unwrap(),
         toolbox.definition("echo").unwrap().input_schema.to_string()
     );
     assert!(index_host(&kernel).index().open("sleep").await.is_err());
+    let problems = kernel
+        .gather_index(&toolbox, &allowed, sources(&["zz"]))
+        .await;
+    assert_eq!(
+        problems
+            .iter()
+            .map(|problem| (problem.plugin.as_str(), problem.message.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            "zz",
+            "its tool `echo` has the same name as an earlier entry; it is left out"
+        )]
+    );
+    let spec = toolbox.definition("echo").unwrap();
+    assert_eq!(
+        kernel.index_entries()[0],
+        wisp_index::tool_entry(&spec.name, &spec.description, &spec.input_schema)
+    );
+    toolbox.turn_on("echo");
+    let problems = kernel
+        .gather_index(&toolbox, &allowed, sources(&[&owner]))
+        .await;
+    assert!(problems.is_empty(), "{problems:?}");
+    assert!(kernel.index_entries().is_empty());
 }
 
 #[tokio::test]

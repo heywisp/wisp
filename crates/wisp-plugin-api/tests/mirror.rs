@@ -222,6 +222,7 @@ fn mirrors() -> Vec<Mirror> {
                 state,
                 tools,
                 listed,
+                fresh,
                 off
             }
         ),

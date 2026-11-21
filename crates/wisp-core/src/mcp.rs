@@ -203,6 +203,7 @@ pub struct Row {
     pub name: String,
     pub state: State,
     pub tools: usize,
+    pub fresh: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -822,21 +823,6 @@ impl Service {
         entries
     }
 
-    pub(crate) fn unconfirmed_entries(&self) -> BTreeMap<String, String> {
-        let unconfirmed = self
-            .servers()
-            .iter()
-            .filter(|(name, server)| {
-                let snapshot = server.snapshot();
-                !self.is_off(name)
-                    && snapshot.list.is_some()
-                    && snapshot.listed != Some(server.watch.notices().seen)
-            })
-            .map(|(name, _)| name.clone())
-            .collect();
-        self.entries_of(&unconfirmed)
-    }
-
     pub(crate) fn owns_tool(&self, server: &str, name: &str) -> bool {
         self.0
             .known
@@ -873,6 +859,7 @@ impl Service {
                         snapshot.state.clone()
                     },
                     tools: snapshot.list.as_ref().map_or(0, |list| list.tools.len()),
+                    fresh: snapshot.listed == Some(server.watch.notices().seen),
                 }
             })
             .collect()

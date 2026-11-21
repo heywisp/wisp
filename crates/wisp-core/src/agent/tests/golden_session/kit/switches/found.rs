@@ -1175,8 +1175,16 @@ async fn a_changed_loaded_mcp_definition_updates_by_value_or_keeps_the_session_v
         assert_eq!(latest.contains("Changed"), updates);
         let hit = result_text(&body(&server, 4), "find_held");
         assert!(
-            hit.contains("mcp__local__a-first — Changed") && !hit.contains(SAVED_LIST),
+            hit.contains("mcp__local__a-first — Changed")
+                && !hit.contains(SAVED_LIST)
+                && !hit.contains("mcp__local__z_echo"),
             "{hit}"
+        );
+        let host = agent.hooks.host.as_ref().unwrap();
+        assert!(
+            host.index_entries()
+                .iter()
+                .all(|entry| entry.name != "mcp__local__z_echo")
         );
         if !updates {
             assert!(second.iter().any(|event| matches!(event, AgentEvent::PluginsChanged { kept, .. } if kept.iter().any(|record| record.id == "mcp"))));
