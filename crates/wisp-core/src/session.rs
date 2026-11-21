@@ -1436,6 +1436,10 @@ pub(crate) const MIN_REDACTION_CHARS: usize = 3;
 
 const ESCAPE_LEVELS: usize = 4;
 
+const ESCAPE_BYTES: usize = 12;
+
+pub(crate) const ESCAPED_HOLD: usize = 16;
+
 fn base64_forms(value: &str) -> [String; 3] {
     [0, 1, 2].map(|leading| {
         let mut bytes = vec![0; leading];
@@ -1519,26 +1523,82 @@ fn spliced(
     out
 }
 
-fn unescaped(text: &str) -> Option<(String, Vec<usize>)> {
-    if !text.contains('\\') {
-        return None;
+fn matched(
+    entries: &[&[u8]],
+    bytes: &[u8],
+    covered: usize,
+    pending: bool,
+) -> (Vec<std::ops::Range<usize>>, usize, Option<Vec<usize>>) {
+    let runs = (covered > 0).then_some(0..covered).into_iter().collect();
+    let (mut view, cut) = unescaped(bytes, pending);
+    let (mut runs, mut boundary) = found(entries, &bytes[..cut], runs, pending);
+    let mut starts = None;
+    for level in 1..=ESCAPE_LEVELS {
+        let Some((decoded, origin)) = view.take() else {
+            break;
+        };
+        let (next, cut) = if level < ESCAPE_LEVELS {
+            unescaped(&decoded, pending)
+        } else {
+            (None, decoded.len())
+        };
+        let (hits, prefix) = found(entries, &decoded[..cut], Vec::new(), pending);
+        runs.extend(
+            hits.into_iter()
+                .map(|run| origin[run.start]..origin[run.end]),
+        );
+        boundary = boundary.min(origin[prefix]);
+        view = next.map(|(next, from)| (next, from.into_iter().map(|at| origin[at]).collect()));
+        starts = Some(origin);
     }
-    let mut out = String::with_capacity(text.len());
-    let mut origin = Vec::with_capacity(text.len() + 1);
-    let mut at = 0;
-    while let Some(c) = text[at..].chars().next() {
-        let (decoded, used) = escape(&text[at..]).unwrap_or((c, c.len_utf8()));
-        origin.extend(std::iter::repeat_n(at, decoded.len_utf8()));
-        out.push(decoded);
-        at += used;
-    }
-    origin.push(text.len());
-    (out.len() < text.len()).then_some((out, origin))
+    runs.sort_by_key(|run| run.start);
+    let runs = runs.into_iter().fold(Vec::new(), |mut merged, run| {
+        joined(&mut merged, run);
+        merged
+    });
+    (runs, boundary, starts)
 }
 
-fn escape(text: &str) -> Option<(char, usize)> {
-    let rest = text.strip_prefix('\\')?;
-    let simple = match rest.bytes().next()? {
+type Decoded = (Vec<u8>, Vec<usize>);
+
+fn unescaped(text: &[u8], open: bool) -> (Option<Decoded>, usize) {
+    if !text.contains(&b'\\') {
+        return (None, text.len());
+    }
+    let mut out = Vec::with_capacity(text.len());
+    let mut origin = Vec::with_capacity(text.len() + 1);
+    let mut at = 0;
+    while let Some(&byte) = text.get(at) {
+        match escape(&text[at..]) {
+            Some((decoded, used)) => {
+                out.extend_from_slice(decoded.encode_utf8(&mut [0; 4]).as_bytes());
+                origin.extend(std::iter::repeat_n(at, decoded.len_utf8()));
+                at += used;
+            }
+            None if open && byte == b'\\' && unfinished(&text[at..]) => break,
+            None => {
+                out.push(byte);
+                origin.push(at);
+                at += 1;
+            }
+        }
+    }
+    origin.push(at);
+    ((out.len() < at).then_some((out, origin)), at)
+}
+
+fn unfinished(tail: &[u8]) -> bool {
+    tail.len() < ESCAPE_BYTES
+        && [&b"\\u0000"[..], b"\\u{0}", b"\\uD800\\uDC00"]
+            .iter()
+            .any(|whole| {
+                (0..whole.len()).any(|from| escape(&[tail, &whole[from..]].concat()).is_some())
+            })
+}
+
+fn escape(text: &[u8]) -> Option<(char, usize)> {
+    let rest = text.strip_prefix(b"\\")?;
+    let simple = match rest.first()? {
         b'"' => '"',
         b'\\' => '\\',
         b'/' => '/',
@@ -1553,14 +1613,18 @@ fn escape(text: &str) -> Option<(char, usize)> {
     Some((simple, 2))
 }
 
-fn code_point(text: &str) -> Option<(char, usize)> {
-    let hex = |digits: &str| {
-        (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_hexdigit()))
-            .then(|| u32::from_str_radix(digits, 16).ok())
+fn code_point(text: &[u8]) -> Option<(char, usize)> {
+    let hex = |digits: &[u8]| {
+        (!digits.is_empty())
+            .then(|| {
+                digits.iter().try_fold(0, |value: u32, &digit| {
+                    Some(value * 16 + char::from(digit).to_digit(16)?)
+                })
+            })
             .flatten()
     };
-    if let Some(braced) = text.strip_prefix('{') {
-        let digits = braced.get(..braced.bytes().take(7).position(|b| b == b'}')?)?;
+    if let Some(braced) = text.strip_prefix(b"{") {
+        let digits = braced.get(..braced.iter().take(7).position(|&b| b == b'}')?)?;
         return hex(digits)
             .and_then(char::from_u32)
             .map(|c| (c, digits.len() + 2));
@@ -1570,7 +1634,7 @@ fn code_point(text: &str) -> Option<(char, usize)> {
     if let Some(c) = char::from_u32(high) {
         return Some((c, 4));
     }
-    let low = unit(6).filter(|_| text.get(4..6) == Some("\\u"))?;
+    let low = unit(6).filter(|_| text.get(4..6) == Some(b"\\u".as_slice()))?;
     let pair = (0xD800..0xDC00).contains(&high) && (0xDC00..0xE000).contains(&low);
     let c = pair
         .then(|| char::from_u32(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00)))
@@ -1673,11 +1737,12 @@ impl Redactions {
                 0,
             );
         };
-        let mut runs: Vec<std::ops::Range<usize>> = Vec::new();
-        if covered > 0 {
-            runs.push(0..covered);
+        let (runs, mut boundary, starts) = matched(&entries, bytes, covered, pending);
+        let hold = longest.len().saturating_mul(ESCAPED_HOLD);
+        if pending {
+            boundary = boundary.max(bytes.len().saturating_sub(hold));
         }
-        let (runs, mut boundary) = found(&entries, bytes, runs, pending);
+        let prefix = boundary;
         if pending
             && let Some(run) = runs
                 .iter()
@@ -1691,8 +1756,19 @@ impl Redactions {
             && let Some(run) = runs.iter().find(|run| run.start == boundary)
         {
             let keep = (longest.len() - 1).min(run.end - run.start);
-            boundary = run.end - keep;
-            next_covered = keep;
+            let from = prefix.min(run.end - keep);
+            let floor = run.start.max(bytes.len().saturating_sub(hold));
+            let shown = |at: usize| at > run.start || covered > run.start;
+            let restart = starts
+                .as_deref()
+                .and_then(|starts| starts[..starts.partition_point(|&at| at <= from)].last())
+                .copied()
+                .filter(|&at| at >= floor && shown(at))
+                .unwrap_or(from);
+            if shown(restart) {
+                boundary = restart;
+                next_covered = run.end - boundary;
+            }
         }
         (
             spliced(bytes, &runs, boundary, covered),
@@ -1702,32 +1778,7 @@ impl Redactions {
     }
 
     pub fn scrub(&self, text: &str) -> String {
-        let entries = self.values(false);
-        if entries.is_empty() {
-            return text.to_owned();
-        }
-        let (mut runs, _) = found(&entries, text.as_bytes(), Vec::new(), false);
-        let mut view = unescaped(text);
-        for level in 1..=ESCAPE_LEVELS {
-            let Some((decoded, origin)) = view.take() else {
-                break;
-            };
-            let (hits, _) = found(&entries, decoded.as_bytes(), Vec::new(), false);
-            runs.extend(
-                hits.into_iter()
-                    .map(|run| origin[run.start]..origin[run.end]),
-            );
-            if level < ESCAPE_LEVELS {
-                view = unescaped(&decoded)
-                    .map(|(next, from)| (next, from.into_iter().map(|at| origin[at]).collect()));
-            }
-        }
-        runs.sort_by_key(|run| run.start);
-        let runs = runs.into_iter().fold(Vec::new(), |mut merged, run| {
-            joined(&mut merged, run);
-            merged
-        });
-        redacted_text(text, spliced(text.as_bytes(), &runs, text.len(), 0))
+        redacted_text(text, self.replaced(text.as_bytes(), false, false, 0).0)
     }
 
     pub fn mask(&self, text: &str) -> String {
