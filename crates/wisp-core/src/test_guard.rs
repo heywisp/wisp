@@ -26,16 +26,18 @@ use crate::session::{MemoryStore, Redactions, SessionLog, SessionStore, new_sess
 use crate::workspace::Workspace;
 
 pub(crate) fn mcp_server() -> String {
-    std::env::current_exe()
+    let path = std::env::current_exe()
         .unwrap()
         .parent()
         .unwrap()
         .parent()
         .unwrap()
-        .join("mcp-test-server")
-        .to_str()
-        .unwrap()
-        .to_owned()
+        .join("mcp-test-server");
+    assert!(
+        path.exists(),
+        "mcp-test-server isn't built: a `--lib` run skips it, so run this test without `--lib`"
+    );
+    path.to_str().unwrap().to_owned()
 }
 
 pub(crate) mod http;
