@@ -17,13 +17,13 @@ Security is deferred. With tools on:
 
 The only security hook is the no-op `policy::Gate` (`crates/wisp-core/src/policy.rs`). It sees every call, with its resolved working directory, just before the call starts, and always allows it; it sees the final input, after any `before-tool` hook (below).
 
-Before a tool result joins the conversation, Wisp replaces credentials it holds of 20 characters or more with `[redacted]`, including their escaped text and standard-alphabet base64 copies, even with text before or after the credential inside the encoding.
+Before a tool result joins the conversation, Wisp replaces credentials it holds of 20 characters or more with `[redacted]`, including their escaped text, their spellings with JSON's string escapes or Rust's `\u{…}` nested up to four levels deep (`docs/session-log.md`), and standard-alphabet base64 copies, even with text before or after the credential inside the encoding.
 This applies with or without a session log. Account keys, provider sign-in tokens, key variables and exported keys named in an MCP server's `keys` are held from when Wisp reads them; an MCP server's stored keys, sign-in tokens and client secrets are read and held before the chat's first turn. A URL's path and query and a project id are log-only: they are scrubbed in log side fields, not tool results.
 Exported variables whose names contain `KEY`, `TOKEN`, `SECRET` or `PASSWORD` (any case) are also held from start when their values have 20 or more characters and do not start with `/`, `~` or `.` (paths). These values are held in memory only.
 A long id under such a name also reads `[redacted]`.
 A process's output is masked as it is captured, before the output file, live output, terminal screen and process reads receive it.
 This also masks a held key before a result window cuts it or a terminal wraps it across rows.
-Characters that could start a held value show only when more output or the end settles them; no timer releases them. Newly held values apply only to retained bytes, not output already released, including a capped run.
+Characters that could start a held value, its escaped spelling included, show only when more output or the end settles them; no timer releases them. So does output that ends in an unfinished escape: a lone `\`, or the start of `\uXXXX`, `\u{…}` or a surrogate pair; a backslash that no later byte can turn into an escape, as in `C:\Users\me> `, shows at once. A possible start is held back for up to about 16 times the longest held spelling's length, so an escaped spelling longer than that, split across output, can show in the live output and output file, and is masked in the result only when the result holds it whole; with an already masked tail, at most 17 times that length is held. Newly held values apply only to retained bytes, not output already released, including a capped run.
 
 A masked result ends with this line for the model, kept unchanged on later turns and resume:
 `[redacted] marks a key Wisp holds; the original is unchanged.`

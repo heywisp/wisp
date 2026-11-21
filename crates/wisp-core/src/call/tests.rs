@@ -505,14 +505,28 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
     let base64 = "CANARY-base64-overlap-credential";
     let repeated = "CANARYCANARYCANARYCANARY";
     let private = "sk-CANARY-private-key-credential";
+    let escaped = "CANARY-J/escaped-\u{1F642}-credential";
     crate::session::register_secrets(
         [
-            fake, long, inside, outside, crossing, base64, repeated, private,
+            fake, long, inside, outside, crossing, base64, repeated, private, escaped,
         ]
         .map(str::to_owned),
     );
     let held = crate::session::held();
     let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, base64);
+    let units: String = escaped
+        .encode_utf16()
+        .map(|unit| format!("\\u{unit:04x}"))
+        .collect();
+    let spellings = [
+        r"\u0043ANARY-\u004A/escaped-🙂-credential".to_owned(),
+        r"CANARY-\u004a/escaped-🙂-credential".to_owned(),
+        r"\u{43}ANARY-J/escaped-\u{1f642}-credential".to_owned(),
+        r"CANARY-J/escaped-\uD83D\uDE42-credential".to_owned(),
+        r"CANARY-J\/escaped-🙂-credential".to_owned(),
+        r"\\u0043ANARY-J\\/escaped-\\uD83D\\uDE42-credential".to_owned(),
+        units,
+    ];
     let bodies: [(String, &[&str]); 13] = [
         (format!("before {fake} after\n"), &[]),
         ("no held value é€😀\n".to_owned(), &[]),
@@ -528,8 +542,14 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
         ("AAAaaa".to_owned(), &["]aaa", "AAA", "]aa"]),
         (format!("key={private}"), &["=sk"]),
     ];
+    let masked = format!("key=\"{}\" end\n", crate::session::REDACTED);
+    let spelled = spellings.map(|spelled| {
+        let body = format!("key=\"{spelled}\" end\n");
+        assert_eq!(held.mask(&body), masked);
+        (body, &[][..])
+    });
     let mut number = 0;
-    for (body, typed) in bodies {
+    for (body, typed) in bodies.into_iter().chain(spelled) {
         let redactions = held.union([&crate::session::Redactions::typed(
             typed.iter().map(|value| (*value).to_owned()),
         )]);
@@ -712,6 +732,95 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
         collapsed(&joined),
         oracle(&"AAA".repeat(64).into_bytes(), &["AAA", "][r"], 0)
     );
+    let key = "CANARY-run-key";
+    let ending = format!("{key}\\\\\\");
+    let redactions = crate::session::Redactions::typed([key.to_owned(), ending.clone()]);
+    let bound = (crate::session::ESCAPED_HOLD + 1) * (ending.len() + 3);
+    let nested: String = ending
+        .chars()
+        .map(|c| {
+            if c == '\\' {
+                r"\\\\\\\\".to_owned()
+            } else {
+                format!(r"\\\\u{:04x}", u32::from(c))
+            }
+        })
+        .collect();
+    let twice: String = key[..key.len() - 1]
+        .chars()
+        .map(|c| format!(r"\u{:04x}", u32::from(c)))
+        .flat_map(|single| {
+            single
+                .chars()
+                .map(|c| format!(r"\u{:04x}", u32::from(c)))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert!(twice.len() > bound);
+    let spelled: String = key[..key.len() - 1]
+        .chars()
+        .map(|c| format!(r"\\u{:04x}", u32::from(c)))
+        .collect();
+    let marker = crate::session::REDACTED;
+    let unchanged = [
+        "\\".repeat(100_000),
+        r"\u{".repeat(30_000),
+        r"\\u00".repeat(20_000),
+        format!("{twice}!").repeat(200),
+    ]
+    .map(|text| (text.clone(), text, &[64 * 1024, 255, 7][..], false, false));
+    let prompts = [
+        r"PS C:\Users\me> ",
+        r"Enter password for CORP\jdoe: ",
+        r"Password for [WORKGROUP\user]:",
+    ]
+    .map(|text| {
+        (
+            text.to_owned(),
+            text.to_owned(),
+            &[1, 4, 64][..],
+            false,
+            true,
+        )
+    });
+    let rows = [
+        (
+            nested.repeat(64),
+            marker.to_owned(),
+            &[1, 5, 7, 13][..],
+            true,
+            false,
+        ),
+        (
+            format!("{key}{spelled}!\n"),
+            format!("{marker}{spelled}!\n"),
+            &[1, 5, 7],
+            false,
+            false,
+        ),
+    ]
+    .into_iter()
+    .chain(unchanged)
+    .chain(prompts);
+    for (text, expected, sizes, capping, settles) in rows {
+        assert_eq!(redactions.mask(&text), expected);
+        for &size in sizes {
+            let mut pending = crate::session::MaskTail::default();
+            let mut joined = Vec::new();
+            let mut capped = false;
+            for chunk in text.as_bytes().chunks(size) {
+                joined.extend(feed(&redactions, chunk, &mut pending, &mut capped, bound));
+            }
+            assert!(pending.bytes.is_empty() || !settles, "{text:?}");
+            joined.extend(redactions.release(&mut pending).0);
+            assert!(pending.bytes.is_empty());
+            assert!(capped || !capping);
+            assert_eq!(collapsed(&joined), expected.as_bytes(), "chunks of {size}");
+            if !capped {
+                assert_eq!(joined, expected.as_bytes(), "chunks of {size}");
+            }
+        }
+    }
 }
 
 #[tokio::test]

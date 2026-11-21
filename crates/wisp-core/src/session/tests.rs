@@ -1588,11 +1588,20 @@ fn scrub_catches_a_secret_spelled_with_unicode_escapes() {
         every(true),
         every(false),
     ] {
-        assert_eq!(
-            redactions.scrub(&format!("key={spelled}.")),
-            format!("key={REDACTED}.")
-        );
+        let text = format!("key={spelled}.");
+        assert_eq!(redactions.scrub(&text), format!("key={REDACTED}."));
+        assert_eq!(redactions.mask(&text), format!("key={REDACTED}."));
+        assert_eq!(Redactions::log_only([secret.to_owned()]).mask(&text), text);
+        assert_ne!(Redactions::log_only([secret.to_owned()]).scrub(&text), text);
     }
+    let mut invalid = b"\xff key=".to_vec();
+    invalid.extend_from_slice(single.as_bytes());
+    invalid.extend_from_slice(b" \xc3\\");
+    let mut masked = b"\xff key=".to_vec();
+    masked.extend_from_slice(REDACTED.as_bytes());
+    masked.extend_from_slice(b" \xc3\\");
+    assert_eq!(redactions.mask_bytes(&invalid), Some(masked));
+    assert_eq!(redactions.mask_bytes(b"\xff\\u0043\xc3\\"), None);
     assert_eq!(redactions.scrub(&format!("{secret}{single}")), REDACTED);
     assert_eq!(
         redactions.scrub(&format!("{single} {secret}")),
@@ -1602,13 +1611,16 @@ fn scrub_catches_a_secret_spelled_with_unicode_escapes() {
         (0..times).fold(text, |text, _| serde_json::to_string(&text).unwrap())
     };
     for times in 0..ESCAPE_LEVELS {
+        let text = wrapped(format!("key={single}."), times);
         assert_eq!(
-            redactions.scrub(&wrapped(format!("key={single}."), times)),
+            redactions.scrub(&text),
             wrapped(format!("key={REDACTED}."), times)
         );
+        assert_eq!(redactions.mask(&text), redactions.scrub(&text));
     }
     let beyond = wrapped(format!("key={single}."), ESCAPE_LEVELS);
     assert_eq!(redactions.scrub(&beyond), beyond);
+    assert_eq!(redactions.mask(&beyond), beyond);
     let rest = r#"ANARY-a\"b\\c-🙂-unicode"#;
     let mut unchanged = [
         r"\uD800",
@@ -1635,6 +1647,7 @@ fn scrub_catches_a_secret_spelled_with_unicode_escapes() {
     ]);
     for text in unchanged {
         assert_eq!(redactions.scrub(&text), text);
+        assert_eq!(redactions.mask(&text), text);
     }
 }
 
