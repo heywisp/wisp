@@ -105,6 +105,7 @@ pub const MEDIA_TYPES: &[&str] = &["application/pdf", "image/jpeg", "image/png",
 pub(crate) const PROVIDER: &str = "gemini";
 pub(crate) const TEXT_SIGNATURE_ITEM: &str = "text_signature";
 pub(crate) const CALL_SIGNATURES_ITEM: &str = "call_signatures";
+pub(crate) const FOLD_TEXT: &str = "fold_text";
 pub(crate) const PART_ITEM: &str = "part";
 const FIRST_BYTE: Duration = Duration::from_secs(300);
 const LIST_LIMIT: usize = 8 * 1024 * 1024;

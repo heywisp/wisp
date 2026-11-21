@@ -12,7 +12,7 @@ use crate::models::ModelTable;
 
 use super::super::sse::{Decoder, SseParser, broken};
 use super::super::{Delta, ProviderError, ProviderEvent, REASONING_ITEM, SearchSignal};
-use super::{CALL_SIGNATURES_ITEM, PART_ITEM, TEXT_SIGNATURE_ITEM};
+use super::{CALL_SIGNATURES_ITEM, FOLD_TEXT, PART_ITEM, TEXT_SIGNATURE_ITEM};
 
 const MAX_DIAGNOSTIC_KEYS: usize = 16;
 const MAX_DIAGNOSTIC_KEY_BYTES: usize = 64;
@@ -593,12 +593,13 @@ impl GeminiDecoder {
             .or_else(|| prompt_blocked.map(|_| StopReason::Refusal))
         {
             self.close_active(events);
-            if !self.call_signatures.is_empty() {
+            if self.call_seq > 0 {
                 let index = self.alloc_index();
                 let raw = json!({
                     "type": CALL_SIGNATURES_ITEM,
                     "identity": self.identity,
                     "signatures": self.call_signatures,
+                    FOLD_TEXT: true,
                 });
                 events.push(ProviderEvent::BlockStart {
                     index,
@@ -937,7 +938,8 @@ mod tests {
                     "signatures": {
                         first_id.clone(): "sig_call_1",
                         "explicit_2": "sig_call_2",
-                    }
+                    },
+                    "fold_text": true,
                 })
             )
         );
@@ -960,6 +962,34 @@ mod tests {
             panic!("expected second ToolUse");
         };
         assert_ne!(first_id, second_id);
+
+        let mut unsigned = GeminiDecoder::new(
+            "gemini-3.1-pro-preview".into(),
+            Billing::Metered,
+            None,
+            "id_gem_calls".into(),
+        );
+        let frame = sse_frame(&json!({
+            "candidates": [{
+                "content": {"role": "model", "parts": [
+                    {"functionCall": {"id": "plain_1", "name": "read_file", "args": {}}}
+                ]},
+                "finishReason": "STOP"
+            }]
+        }));
+        let mut assembler = Assembler::default();
+        for item in unsigned.push(&frame) {
+            assembler.apply(item.unwrap()).unwrap();
+        }
+        let msg = assembler.finish().unwrap();
+        assert_eq!(msg.content.len(), 2);
+        assert_eq!(
+            msg.content[1],
+            ContentBlock::opaque(
+                "gemini",
+                json!({"type": "call_signatures", "identity": "id_gem_calls", "signatures": {}, "fold_text": true})
+            )
+        );
     }
 
     #[test]

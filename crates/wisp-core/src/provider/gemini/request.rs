@@ -10,7 +10,7 @@ use super::super::{
     ModelCapabilities, NotSent, PrefixBytes, ProviderError, REASONING_ITEM, Request, WirePrint,
     not_sent_note,
 };
-use super::{CALL_SIGNATURES_ITEM, PART_ITEM, TEXT_SIGNATURE_ITEM};
+use super::{CALL_SIGNATURES_ITEM, FOLD_TEXT, PART_ITEM, TEXT_SIGNATURE_ITEM};
 use crate::endpoints::ProviderKind;
 use crate::tool::Entry;
 
@@ -283,19 +283,59 @@ pub(super) fn clean_json_schema(schema: &Value) -> Value {
     }
 }
 
+fn answered_reply(messages: &[Message], index: usize) -> Option<&Message> {
+    messages[..index]
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::Assistant)
+}
+
 fn adjacent_tool_name<'a>(
     messages: &'a [Message],
     result_msg_index: usize,
     tool_use_id: &str,
 ) -> Option<&'a str> {
-    let assistant = messages[..result_msg_index]
-        .iter()
-        .rev()
-        .find(|m| m.role == Role::Assistant)?;
+    let assistant = answered_reply(messages, result_msg_index)?;
     assistant.content.iter().find_map(|block| match block {
         ContentBlock::ToolUse { id, name, .. } if id == tool_use_id => Some(name.as_str()),
         _ => None,
     })
+}
+
+fn folds_text(messages: &[Message], index: usize) -> bool {
+    answered_reply(messages, index).is_some_and(|assistant| {
+        assistant.content.iter().any(|block| {
+            matches!(block, ContentBlock::Opaque { provider, raw, .. }
+                    if provider == super::PROVIDER
+                        && raw.get("type").and_then(Value::as_str) == Some(CALL_SIGNATURES_ITEM)
+                        && raw.get(FOLD_TEXT) == Some(&Value::Bool(true)))
+        })
+    })
+}
+
+fn fold_into_result(contents: &mut [Value], parts: &mut [Value], text: &str) -> bool {
+    let earlier = contents
+        .last_mut()
+        .filter(|turn| turn.get("role").and_then(Value::as_str) == Some("user"))
+        .and_then(|turn| turn.get_mut("parts"))
+        .and_then(Value::as_array_mut);
+    let output = parts
+        .iter_mut()
+        .rev()
+        .chain(
+            earlier
+                .into_iter()
+                .flat_map(|earlier| earlier.iter_mut().rev()),
+        )
+        .find_map(|part| part.pointer_mut("/functionResponse/response/output"));
+    let Some(Value::String(output)) = output else {
+        return false;
+    };
+    if !output.is_empty() {
+        output.push_str("\n\n");
+    }
+    output.push_str(text);
+    true
 }
 
 fn index_tool_names(messages: &[Message]) -> BTreeMap<&str, &str> {
@@ -573,11 +613,14 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                 push_turn(&mut contents, "user", responses);
             }
             Role::User | Role::System => {
+                let fold = folds_text(request.messages, mi);
                 let mut parts = Vec::new();
                 for block in &message.content {
                     match block {
                         ContentBlock::Text { text } => {
-                            if !text.is_empty() {
+                            if !text.is_empty()
+                                && !(fold && fold_into_result(&mut contents, &mut parts, text))
+                            {
                                 parts.push(json!({ "text": text }));
                             }
                         }
@@ -653,6 +696,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                         }
                         ContentBlock::Opaque { .. } => {
                             if let Some(text) = super::super::foreign::text(block, super::PROVIDER)
+                                && !(fold && fold_into_result(&mut contents, &mut parts, &text))
                             {
                                 parts.push(json!({ "text": text }));
                             }
@@ -694,7 +738,7 @@ mod tests {
     use super::*;
     use crate::provider::{Features, Rendering, RequestOptions, ServerToolSpec};
     use crate::tool::ToolSpec;
-    use wisp_protocol::log::{BlockPosition, Cut};
+    use wisp_protocol::log::{BlockPosition, Cut, LoggedMessage};
     use wisp_protocol::{CacheTtl, ImageType, MessageTime, SessionConfig};
 
     fn gemini_session(model: &str, effort: Effort) -> SessionConfig {
@@ -1525,6 +1569,25 @@ mod tests {
             "skip_thought_signature_validator"
         );
         assert!(parts[1].get("thoughtSignature").is_none());
+
+        let mut marked = messages.clone();
+        marked[1].content.push(ContentBlock::opaque(
+            "gemini",
+            json!({"type": "call_signatures", "identity": TEST_ID, "signatures": {}, "fold_text": true}),
+        ));
+        for identity in [TEST_ID, "id_other_gemini_acct"] {
+            let body = |history: &[Message]| {
+                build_body(
+                    &make_req(&session, history, &[], &[], &Rendering::default()),
+                    caps,
+                    identity,
+                    true,
+                )
+                .unwrap()
+                .body
+            };
+            assert_eq!(body(&marked), body(&messages));
+        }
     }
 
     #[test]
@@ -1686,6 +1749,7 @@ mod tests {
                                 "gem_call_1": "sig_call_a1",
                                 "gem_call_2": "sig_call_a2",
                             },
+                            "fold_text": true,
                         }),
                     ),
                 ],
@@ -1807,6 +1871,7 @@ mod tests {
         assert!(!to_claude.contains("sig_call_a1"));
         assert!(!to_claude.contains("sig_quiet_end"));
         assert!(!to_claude.contains("call_signatures"));
+        assert!(!to_claude.contains("fold_text"));
         assert!(to_claude.contains("gem_call_1"));
         let claude_json: Value = serde_json::from_str(&to_claude).unwrap();
         assert_eq!(
@@ -1831,6 +1896,7 @@ mod tests {
         assert!(!to_openai.contains("sig_call_a1"));
         assert!(!to_openai.contains("sig_quiet_end"));
         assert!(!to_openai.contains("call_signatures"));
+        assert!(!to_openai.contains("fold_text"));
         assert!(to_openai.contains("gem_call_1"));
         assert!(
             to_openai_json["input"]
@@ -1914,6 +1980,134 @@ mod tests {
             "captured\n[web search: \"rust borrow checker\"]"
         );
         assert_eq!(result_parts[1]["inlineData"]["mimeType"], "image/png");
+    }
+
+    #[test]
+    fn mail_folds_into_the_last_function_response_after_a_marked_reply() {
+        let session = gemini_session("gemini-4-carbon", Effort::High);
+        let caps = super::super::model_capabilities(&session.model).copied();
+        let rendering = Rendering::default();
+        let png = || ContentBlock::Image {
+            source: ImageSource::Base64 {
+                media_type: ImageType::Png,
+                data: "iVBORw0KGgo=".into(),
+            },
+        };
+        let call = |id: &str| ContentBlock::ToolUse {
+            id: id.into(),
+            name: "probe".into(),
+            input: json!({}),
+        };
+        let marker = ContentBlock::opaque(
+            "gemini",
+            json!({"type": "call_signatures", "identity": TEST_ID, "signatures": {}, "fold_text": true}),
+        );
+        let history = |marked: bool| {
+            let mut reply = vec![call("c1"), call("c2")];
+            if marked {
+                reply.push(marker.clone());
+            }
+            vec![
+                Message::user_text("probe twice"),
+                Message {
+                    role: Role::Assistant,
+                    content: reply,
+                },
+                Message {
+                    role: Role::User,
+                    content: vec![
+                        ContentBlock::ToolResult {
+                            tool_use_id: "c1".into(),
+                            content: vec![ContentBlock::Text { text: "one".into() }],
+                            is_error: false,
+                        },
+                        ContentBlock::ToolResult {
+                            tool_use_id: "c2".into(),
+                            content: vec![png()],
+                            is_error: true,
+                        },
+                        ContentBlock::Text {
+                            text: "mail".into(),
+                        },
+                    ],
+                },
+                Message {
+                    role: Role::System,
+                    content: vec![ContentBlock::Effort {
+                        level: Effort::Low,
+                        rendered: true,
+                    }],
+                },
+                Message {
+                    role: Role::User,
+                    content: vec![
+                        ContentBlock::Text {
+                            text: "late steer".into(),
+                        },
+                        ContentBlock::opaque(
+                            "openai",
+                            json!({"type": "wisp_native_item", "projection_blocks": 0, "item": {"type": "web_search_call", "action": {"type": "search", "query": "q"}}}),
+                        ),
+                    ],
+                },
+                Message {
+                    role: Role::Assistant,
+                    content: vec![
+                        crate::provider::envelope(
+                            "gemini",
+                            &json!({"type": "part", "part": {"functionResponse": {"response": {"output": "raw"}}}}),
+                            0,
+                            TEST_ID,
+                        ),
+                        call("c3"),
+                        marker.clone(),
+                    ],
+                },
+                Message::user_text("no result here"),
+            ]
+        };
+        let contents = |marked: bool| {
+            build_body(
+                &make_req(&session, &history(marked), &[], &[], &rendering),
+                caps,
+                TEST_ID,
+                true,
+            )
+            .unwrap()
+            .body["contents"]
+                .clone()
+        };
+        let response = |id: &str, output: &str, is_error: bool| json!({"functionResponse": {"id": id, "name": "probe", "response": {"output": output, "is_error": is_error}}});
+        let image = json!({"inlineData": {"mimeType": "image/png", "data": "iVBORw0KGgo="}});
+
+        let folded = contents(true);
+        assert_eq!(
+            folded[2]["parts"],
+            json!([
+                response("c1", "one", false),
+                response("c2", "mail\n\nlate steer\n\n[web search: \"q\"]", true),
+                image.clone(),
+            ])
+        );
+        assert_eq!(
+            folded[3]["parts"][0]["functionResponse"]["response"]["output"],
+            "raw"
+        );
+        assert_eq!(folded[4]["parts"], json!([{"text": "no result here"}]));
+
+        let old = contents(false);
+        assert_eq!(
+            old[2]["parts"],
+            json!([
+                response("c1", "one", false),
+                response("c2", "", true),
+                image,
+                {"text": "mail"},
+                {"text": "late steer"},
+                {"text": "[web search: \"q\"]"},
+            ])
+        );
+        assert_eq!(old[4], folded[4]);
     }
 
     #[test]
@@ -2001,21 +2195,32 @@ mod tests {
             Message::user_text("read then run"),
             Message {
                 role: Role::Assistant,
-                content: vec![ContentBlock::ToolUse {
-                    id: "gemini_call_1".into(),
-                    name: "read_file".into(),
-                    input: json!({"path": "a.rs"}),
-                }],
+                content: vec![
+                    ContentBlock::ToolUse {
+                        id: "gemini_call_1".into(),
+                        name: "read_file".into(),
+                        input: json!({"path": "a.rs"}),
+                    },
+                    ContentBlock::opaque(
+                        "gemini",
+                        json!({"type": "call_signatures", "identity": TEST_ID, "signatures": {"gemini_call_1": "sig_old"}}),
+                    ),
+                ],
             },
             Message {
                 role: Role::User,
-                content: vec![ContentBlock::ToolResult {
-                    tool_use_id: "gemini_call_1".into(),
-                    content: vec![ContentBlock::Text {
-                        text: "fn a() {}".into(),
-                    }],
-                    is_error: false,
-                }],
+                content: vec![
+                    ContentBlock::ToolResult {
+                        tool_use_id: "gemini_call_1".into(),
+                        content: vec![ContentBlock::Text {
+                            text: "fn a() {}".into(),
+                        }],
+                        is_error: false,
+                    },
+                    ContentBlock::Text {
+                        text: "early mail".into(),
+                    },
+                ],
             },
         ];
         let body1 = build_body(
@@ -2053,17 +2258,35 @@ mod tests {
                     name: "run_check".into(),
                     input: json!({"cmd": "ls"}),
                 },
+                ContentBlock::opaque(
+                    "gemini",
+                    json!({"type": "call_signatures", "identity": TEST_ID, "signatures": {}, "fold_text": true}),
+                ),
             ],
         });
         turn2.push(Message {
             role: Role::User,
-            content: vec![ContentBlock::ToolResult {
-                tool_use_id: "gemini_call_1".into(),
-                content: vec![ContentBlock::Text {
-                    text: "Cargo.toml".into(),
-                }],
-                is_error: false,
-            }],
+            content: vec![
+                ContentBlock::ToolResult {
+                    tool_use_id: "gemini_call_1".into(),
+                    content: vec![ContentBlock::Text {
+                        text: "Cargo.toml".into(),
+                    }],
+                    is_error: false,
+                },
+                ContentBlock::Text {
+                    text: "steer".into(),
+                },
+                ContentBlock::Text {
+                    text: "steer note".into(),
+                },
+                ContentBlock::Image {
+                    source: ImageSource::Base64 {
+                        media_type: ImageType::Png,
+                        data: "iVBORw0KGgo=".into(),
+                    },
+                },
+            ],
         });
 
         let body2 = build_body(
@@ -2078,7 +2301,57 @@ mod tests {
         let c2 = body2.body["contents"].as_array().unwrap();
         assert_eq!(&c2[..c1.len()], c1.as_slice());
         assert_eq!(c2[2]["parts"][0]["functionResponse"]["name"], "read_file");
+        assert_eq!(c2[2]["parts"][1], json!({"text": "early mail"}));
         assert_eq!(c2[4]["parts"][0]["functionResponse"]["name"], "run_check");
+        assert_eq!(
+            c2[4]["parts"][0]["functionResponse"]["response"]["output"],
+            "Cargo.toml\n\nsteer\n\nsteer note"
+        );
+        assert_eq!(c2[4]["parts"][1]["inlineData"]["mimeType"], "image/png");
+        assert_eq!(c2[4]["parts"].as_array().unwrap().len(), 2);
+
+        let mut turn3 = turn2.clone();
+        turn3.push(Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::Text {
+                text: "checked".into(),
+            }],
+        });
+        turn3.push(Message::user_text("next"));
+        let body3 = build_body(
+            &make_req(&session, &turn3, &[], &[], &rendering),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        let c3 = body3.body["contents"].as_array().unwrap();
+        assert_eq!(&c3[..c2.len()], c2);
+
+        for (history, body) in [(&turn1, &body1), (&turn2, &body2), (&turn3, &body3)] {
+            let resumed: Vec<Message> = history
+                .iter()
+                .map(|message| {
+                    let line =
+                        serde_json::to_string(&LoggedMessage::from(message.clone())).unwrap();
+                    serde_json::from_str::<LoggedMessage>(&line)
+                        .unwrap()
+                        .inline()
+                        .unwrap()
+                })
+                .collect();
+            let rebuilt = build_body(
+                &make_req(&session, &resumed, &[], &[], &rendering),
+                caps,
+                TEST_ID,
+                true,
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::to_vec(&rebuilt.body).unwrap(),
+                serde_json::to_vec(&body.body).unwrap()
+            );
+        }
         assert_eq!(
             c2[3]["parts"][0],
             json!({"executableCode": {"language": "PYTHON", "code": "print(42)"}})
