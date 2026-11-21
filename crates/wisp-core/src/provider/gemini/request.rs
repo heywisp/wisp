@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value, json};
 use wisp_protocol::agents::MAIL_OPEN;
@@ -7,7 +7,8 @@ use wisp_protocol::{ContentBlock, Effort, ErrorKind, ImageSource, MediaSource, M
 use wisp_tool_text::{CONTEXT_PREFIX, SENT_PREFIX};
 
 use super::super::{
-    ModelCapabilities, NotSent, PrefixBytes, ProviderError, REASONING_ITEM, Request, not_sent_note,
+    ModelCapabilities, NotSent, PrefixBytes, ProviderError, REASONING_ITEM, Request, WirePrint,
+    not_sent_note,
 };
 use super::{CALL_SIGNATURES_ITEM, PART_ITEM, TEXT_SIGNATURE_ITEM};
 use crate::endpoints::ProviderKind;
@@ -153,6 +154,27 @@ pub(super) fn prefix_bytes(
         thinking: serde_json::to_vec(&prefix.thinking_config).ok()?,
         tools: serde_json::to_vec(&tools).ok()?,
         system: serde_json::to_vec(&system).ok()?,
+    })
+}
+
+pub(super) fn wire_print(
+    request: &Request<'_>,
+    capabilities: Option<ModelCapabilities>,
+    identity: &str,
+    official: bool,
+) -> Option<WirePrint> {
+    validate_request(request, capabilities, official).ok()?;
+    let contents = build_contents(request, identity).ok()?;
+    let messages = contents
+        .iter()
+        .map(crate::session::sha256_json_hex)
+        .collect::<Option<Vec<_>>>()?;
+    Some(WirePrint {
+        betas: String::new(),
+        pinned: String::new(),
+        blocks: None,
+        messages,
+        thinking: BTreeSet::new(),
     })
 }
 
@@ -712,6 +734,15 @@ mod tests {
 
     const TEST_ID: &str = "id_gemini_account_a";
 
+    fn content_digests(body: &Value) -> Vec<String> {
+        body["contents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| crate::session::sha256_json_hex(entry).unwrap())
+            .collect()
+    }
+
     #[test]
     fn search_and_client_calls_replay_together_and_foreign_history_is_text() {
         let session = gemini_session("gemini-4-carbon", Effort::High);
@@ -895,6 +926,13 @@ mod tests {
         let tagged1 = tag(&r1);
         let tagged2 = tag(&r2);
         let contents2 = tagged2["contents"].as_array().unwrap();
+        let wp1 = wire_print(&r1, caps, TEST_ID, true).unwrap();
+        let wp2 = wire_print(&r2, caps, TEST_ID, true).unwrap();
+        assert_eq!(wp1.blocks, None);
+        assert!(wp1.betas.is_empty() && wp1.pinned.is_empty() && wp1.thinking.is_empty());
+        assert_eq!(wp1.messages, content_digests(&tagged1));
+        assert_eq!(wp2.messages, content_digests(&tagged2));
+        assert_eq!(&wp2.messages[..wp1.messages.len()], wp1.messages.as_slice());
         assert_eq!(contents2.len(), 3);
         assert_eq!(
             contents2[1],
@@ -942,6 +980,9 @@ mod tests {
         assert_eq!(tagged3["labels"]["cascade_id"], id);
         let contents3 = tagged3["contents"].as_array().unwrap();
         assert_eq!(&contents3[..3], contents2.as_slice());
+        let wp3 = wire_print(&r3, caps, TEST_ID, true).unwrap();
+        assert_eq!(wp3.messages, content_digests(&tagged3));
+        assert_eq!(&wp3.messages[..wp2.messages.len()], wp2.messages.as_slice());
         assert_eq!(
             contents3[3],
             json!({
@@ -2151,6 +2192,121 @@ mod tests {
                 {"thought": true, "text": "plan", "thoughtSignature": "sig_plan"},
                 {"text": "answer"},
             ])
+        );
+    }
+
+    #[test]
+    fn wire_print_detects_edits_rejects_invalid_requests_and_isolates_identity() {
+        let session = gemini_session("gemini-4-carbon", Effort::High);
+        let caps = super::super::model_capabilities(&session.model).copied();
+        let rendering = Rendering::default();
+        let base = [
+            Message::user_text("first"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    crate::provider::envelope(
+                        super::super::PROVIDER,
+                        &json!({"type": REASONING_ITEM, "thought": "plan", "signature": "sig_a"}),
+                        1,
+                        TEST_ID,
+                    ),
+                    ContentBlock::Thinking {
+                        thinking: "plan".into(),
+                        signature: String::new(),
+                    },
+                    ContentBlock::Text {
+                        text: "answer".into(),
+                    },
+                ],
+            },
+            Message::user_text("second"),
+        ];
+        let req = make_req(&session, &base, &[], &[], &rendering);
+        let wp_a = wire_print(&req, caps, TEST_ID, true).unwrap();
+        let body_a = build_body(&req, caps, TEST_ID, true).unwrap().body;
+        assert_eq!(wp_a.messages, content_digests(&body_a));
+
+        let mut edited = base.clone();
+        edited[1].content[2] = ContentBlock::Text {
+            text: "edited answer".into(),
+        };
+        let wp_edited = wire_print(
+            &make_req(&session, &edited, &[], &[], &rendering),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        assert_eq!(wp_edited.messages[0], wp_a.messages[0]);
+        assert_ne!(wp_edited.messages[1], wp_a.messages[1]);
+        assert_eq!(wp_edited.messages[2], wp_a.messages[2]);
+
+        let merged = [
+            Message {
+                role: Role::System,
+                content: vec![ContentBlock::Text {
+                    text: "<delta>".into(),
+                }],
+            },
+            Message::user_text("follow-up"),
+        ];
+        let merged_req = make_req(&session, &merged, &[], &[], &rendering);
+        let wp_merged = wire_print(&merged_req, caps, TEST_ID, true).unwrap();
+        let body_merged = build_body(&merged_req, caps, TEST_ID, true).unwrap().body;
+        assert_eq!(wp_merged.messages.len(), 1);
+        assert_eq!(wp_merged.messages, content_digests(&body_merged));
+
+        let wp_other = wire_print(&req, caps, "id_gemini_account_b", true).unwrap();
+        let body_other = build_body(&req, caps, "id_gemini_account_b", true)
+            .unwrap()
+            .body;
+        assert_eq!(wp_other.messages, content_digests(&body_other));
+        assert_ne!(wp_other.messages[1], wp_a.messages[1]);
+
+        let mut debug_req = req;
+        debug_req.options.debug_cache = true;
+        assert!(wire_print(&debug_req, caps, TEST_ID, true).is_none());
+
+        let bad_effort = gemini_session("gemini-4-carbon", Effort::Xhigh);
+        assert!(
+            wire_print(
+                &make_req(&bad_effort, &base, &[], &[], &rendering),
+                caps,
+                TEST_ID,
+                true
+            )
+            .is_none()
+        );
+
+        let wrong_model = gemini_session("claude-opus-5-5", Effort::High);
+        assert!(
+            wire_print(
+                &make_req(&wrong_model, &base, &[], &[], &rendering),
+                None,
+                TEST_ID,
+                true
+            )
+            .is_none()
+        );
+
+        let malformed = [Message {
+            role: Role::Assistant,
+            content: vec![crate::provider::envelope(
+                super::super::PROVIDER,
+                &json!({"type": REASONING_ITEM, "thought": "plan", "signature": "sig"}),
+                5,
+                TEST_ID,
+            )],
+        }];
+        assert!(
+            wire_print(
+                &make_req(&session, &malformed, &[], &[], &rendering),
+                caps,
+                TEST_ID,
+                true
+            )
+            .is_none()
         );
     }
 }

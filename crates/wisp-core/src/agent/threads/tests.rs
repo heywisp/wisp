@@ -218,7 +218,7 @@ fn a_head_on_another_endpoint_is_never_continued() {
     let wire = |messages: &[&str]| crate::provider::WirePrint {
         betas: String::new(),
         pinned: "pinned".into(),
-        blocks: 0,
+        blocks: None,
         messages: messages.iter().map(|m| (*m).to_owned()).collect(),
         thinking: std::collections::BTreeSet::new(),
     };

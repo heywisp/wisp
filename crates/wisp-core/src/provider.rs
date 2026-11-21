@@ -575,7 +575,7 @@ pub trait Provider: Send + Sync {
 pub struct WirePrint {
     pub betas: String,
     pub pinned: String,
-    pub blocks: usize,
+    pub blocks: Option<usize>,
     pub messages: Vec<String>,
     pub thinking: BTreeSet<(usize, usize)>,
 }

@@ -60,8 +60,11 @@ pub(super) fn cause(
         .and_then(|p| p.sent.wire.as_ref().map(|w| (p, w)))
         .zip(now.wire.as_ref());
     let compared = compared
-        && wire
-            .is_some_and(|((_, was), is)| is.blocks.saturating_sub(was.blocks) <= LOOKBACK_BLOCKS);
+        && wire.is_some_and(|((_, was), is)| {
+            was.blocks
+                .zip(is.blocks)
+                .is_none_or(|(was, is)| is.saturating_sub(was) <= LOOKBACK_BLOCKS)
+        });
     if let Some(cause) = wire.and_then(|((print, was), is)| wire_change(print, was, is, drops)) {
         return cause;
     }

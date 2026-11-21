@@ -1773,7 +1773,7 @@ fn wire_print_for(request: &Request<'_>, profile: Profile) -> Option<WirePrint> 
     Some(WirePrint {
         betas: crate::session::sha256_hex(&cache_betas(&betas)),
         pinned: crate::session::sha256_json_hex(&(pinned, fixed_betas))?,
-        blocks: messages.iter().map(|m| m.content.len()).sum(),
+        blocks: Some(messages.iter().map(|m| m.content.len()).sum()),
         messages: digests,
         thinking,
     })

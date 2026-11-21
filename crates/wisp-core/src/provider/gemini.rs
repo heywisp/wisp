@@ -27,7 +27,9 @@ use super::classify::{self, Carries, error_object};
 use super::client_version;
 use super::credential::{Credential, EnvFile, Source, SubscriptionKind};
 use super::sse::{IDLE_TIMEOUT, Waits};
-use super::{ModelCapabilities, PrefixBytes, Provider, ProviderError, ProviderEvent, Request};
+use super::{
+    ModelCapabilities, PrefixBytes, Provider, ProviderError, ProviderEvent, Request, WirePrint,
+};
 use crate::endpoints::{
     Answer, CheckOutcome, EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, Unreachable,
     UrlSource, clean,
@@ -875,6 +877,15 @@ impl Provider for GeminiProvider {
         request::prefix_bytes(
             request,
             self.capabilities(&request.session.model),
+            self.official,
+        )
+    }
+
+    fn wire_print(&self, request: &Request<'_>) -> Option<WirePrint> {
+        request::wire_print(
+            request,
+            self.capabilities(&request.session.model),
+            &self.identity,
             self.official,
         )
     }
