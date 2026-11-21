@@ -1303,7 +1303,8 @@ be told apart from a busy one, so it keeps retrying until stopped.
 
 Gemini's `MALFORMED_FUNCTION_CALL` and `UNEXPECTED_TOOL_CALL` finish reasons
 always fail and discard the unfinished reply, even after a decoded tool call or
-search; Wisp shows the plain cause and keeps known billed usage. `SAFETY`,
+search, and so does a `STOP` reply with nothing in it (`docs/gemini.md`); Wisp
+shows the plain cause and keeps known billed usage. `SAFETY`,
 `MAX_TOKENS`, and other non-`STOP` Gemini finishes after a decoded call stop
 the reply with their mapped stop reason instead of running the calls. Retryable
 `invalid_response` failures retry at most 3 times per step—even under looser
