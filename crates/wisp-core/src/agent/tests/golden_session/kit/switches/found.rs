@@ -1033,6 +1033,11 @@ async fn server_skills_and_documents_are_gathered_searched_and_opened_through_us
     let store = MemoryStore::default();
     let service = saved_mcp(&env).await;
     let mut kit = found_kit(&server, &env, &store, false);
+    let registry = registry(Tools::Default);
+    kit.tools = Arc::new(
+        crate::plugin::Tools::new(registry.clone(), registry.default_on())
+            .with_preload(vec!["core".into()]),
+    );
     kit.mcp = service.clone();
     let agent = kit
         .build(on(CAPABLE, kit::Start::Fresh))
@@ -1040,6 +1045,15 @@ async fn server_skills_and_documents_are_gathered_searched_and_opened_through_us
         .unwrap()
         .agent;
     assert_eq!(service.rows()[0].state, crate::mcp::State::Stopped);
+    let host = agent.hooks.host.clone().unwrap();
+    assert_eq!(
+        host.index_kind("mcp__local__prompt:review.code"),
+        Some(wisp_plugin_api::index::Kind::Skill)
+    );
+    assert_eq!(
+        host.index_kind("mcp__local__resource:test:///notes"),
+        Some(wisp_plugin_api::index::Kind::Document)
+    );
     let mut session = Session::start(agent);
     session
         .turn("u1", "Find and read the server skill and document.")
