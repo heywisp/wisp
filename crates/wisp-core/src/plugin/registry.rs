@@ -940,6 +940,10 @@ impl Registry {
             self.dynamic_owner_on(name, &self.config.switches.off)
                 .is_some()
         }));
+        let before = host.snapshot();
+        let mut snapshot = before.clone();
+        snapshot.facts.capabilities = toolbox.capabilities().to_vec();
+        host.publish(snapshot);
         let index_problems = host
             .gather_index(
                 &toolbox,
@@ -947,6 +951,7 @@ impl Registry {
                 self.index_sources(&instances, &self.config.switches.off),
             )
             .await;
+        host.publish(before);
         problems.sort();
         let table = self.table_without(&problems);
         let mut catalog = self.catalog_of(&on_tools, &problems, &table);

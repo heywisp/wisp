@@ -937,10 +937,11 @@ The bundled `search` plugin in `plugins/search` provides `search` and `use`, on 
 
 World 0.3.0 lets a plugin set `index = true` and implement async `entries()` and
 `open_entry(name)`. The kernel gathers allowed held tools and each enabled source's entries
-at start, then at a turn's opening or after a completed, uncancelled tool call when
-`Host::index().changed()` marks the snapshot dirty. This refreshes searchable
-entries without changing provider tool declarations or the cached system prefix.
-Gathering is contained: a panicking source contributes no entries and reports a problem.
+at start, where `session.current` shows the sources the agent's capabilities for that
+gather only, then at a turn's opening or after a completed, uncancelled tool call when
+`Host::index().changed()` marks the snapshot dirty. This refreshes searchable entries
+without changing provider tool declarations or the cached system prefix. Gathering is
+contained: a panicking source contributes no entries and reports a problem.
 
 Names are unique in the gathered snapshot. A tool wins over a skill, then a
 skill over a document; within a kind the earlier source in stable plugin-name
