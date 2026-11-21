@@ -7,8 +7,14 @@ use wisp_protocol::{
 
 use super::{Before, Print, Repeats, Sent, cause, dropped_thinking};
 use crate::context::ttl_span;
+use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, UrlSource};
 use crate::provider::anthropic::{prefix_bytes, wire_print};
-use crate::provider::{FeatureUse, Features, Rendering, Request, RequestOptions, ThinkingDrop};
+use crate::provider::credential::{Credential, Source, SubscriptionKind};
+use crate::provider::gemini::{DEFAULT_BASE_URL, GeminiProvider};
+use crate::provider::{
+    FeatureUse, Features, PrefixBytes, Provider, Rendering, Request, RequestOptions, ThinkingDrop,
+    WirePrint,
+};
 use crate::tool::ToolSpec;
 use crate::warmth::{Component, Fingerprint};
 
@@ -86,6 +92,21 @@ fn parts() -> Parts {
 
 impl Parts {
     fn sent(&self) -> Sent {
+        self.sent_with(prefix_bytes, wire_print)
+    }
+
+    fn sent_on(&self, provider: &dyn Provider) -> Sent {
+        self.sent_with(
+            |request| provider.prefix_bytes(request),
+            |request| provider.wire_print(request),
+        )
+    }
+
+    fn sent_with(
+        &self,
+        prefix: impl FnOnce(&Request<'_>) -> Option<PrefixBytes>,
+        wire: impl FnOnce(&Request<'_>) -> Option<WirePrint>,
+    ) -> Sent {
         let rendering = Rendering::default();
         let request = Request {
             session: &self.session,
@@ -101,8 +122,8 @@ impl Parts {
             compaction: None,
         };
         Sent {
-            fingerprint: prefix_bytes(&request).map(|b| Fingerprint::new(self.endpoint, &b)),
-            wire: wire_print(&request),
+            fingerprint: prefix(&request).map(|b| Fingerprint::new(self.endpoint, &b)),
+            wire: wire(&request),
         }
     }
 
@@ -597,4 +618,126 @@ fn mixed_reasons_give_no_shared_reason() {
 fn a_drop_where_wisp_sent_no_thinking_is_no_dropped_thinking_change() {
     let drops = [because("messages.1.content.1", "prefix_binding_mismatch")];
     assert_eq!(drops_after(&[], &drops), None);
+}
+
+fn gemini_provider(name: &str, credential: Credential, base_url: &str) -> GeminiProvider {
+    GeminiProvider::from_endpoint(&ResolvedEndpoint {
+        client_version: None,
+        name: EndpointName::parse(name).unwrap(),
+        provider: ProviderKind::Gemini,
+        credential,
+        base_url: base_url.to_owned(),
+        source: Source::Environment,
+        key_env: None,
+        url_source: UrlSource::Official,
+        pricing: PricingMode::List,
+    })
+    .unwrap()
+}
+
+fn gemini_parts() -> Parts {
+    let mut base = parts();
+    base.endpoint = "gemini-api";
+    base.session.model = "gemini-4-carbon".into();
+    base.messages[TOOL_TURN] = Message {
+        role: Role::Assistant,
+        content: vec![ContentBlock::ToolUse {
+            id: "toolu_1".into(),
+            name: "bash".into(),
+            input: json!({"command": "ls"}),
+        }],
+    };
+    base
+}
+
+#[test]
+fn gemini_misses_classify_unchanged_large_step_edited_shortened_and_expired() {
+    let api = gemini_provider(
+        "gemini-api",
+        Credential::ApiKey("test".into()),
+        DEFAULT_BASE_URL,
+    );
+    let sub = gemini_provider(
+        "gemini-sub",
+        Credential::Subscription {
+            kind: SubscriptionKind::Antigravity,
+            secret: "test".into(),
+            profile: None,
+        },
+        "http://127.0.0.1:1",
+    );
+    let base = gemini_parts();
+    assert_eq!(base.sent_on(&api).wire, base.sent_on(&sub).wire);
+
+    for provider in [&api, &sub] {
+        let life = provider.cache_life(base.session.cache_ttl);
+        let print = Print {
+            sent: base.sent_on(provider),
+            drops: Vec::new(),
+        };
+        assert_eq!(print.sent.wire.as_ref().unwrap().blocks, None);
+        let before = Before {
+            print: Some(&print),
+            started_at: Some(base.at),
+            life: Some(life),
+            switch: None,
+        };
+
+        let mut grown = base.clone();
+        grown.messages.push(Message {
+            role: Role::Assistant,
+            content: (0..super::LOOKBACK_BLOCKS + 5)
+                .map(|n| ContentBlock::Text {
+                    text: format!("Part {n}."),
+                })
+                .collect(),
+        });
+        grown.messages.push(Message::user_text("Continue."));
+        assert_eq!(
+            cause(None, &before, &grown.sent_on(provider), Some(base.at), &[]),
+            MissCause::RemoteLoss
+        );
+
+        let mut edited = grown.clone();
+        edited.messages[TOOL_TURN].content[0] = ContentBlock::ToolUse {
+            id: "toolu_1".into(),
+            name: "bash".into(),
+            input: json!({"command": "pwd"}),
+        };
+        assert_eq!(
+            cause(None, &before, &edited.sent_on(provider), Some(base.at), &[]),
+            MissCause::MessageChanged { index: TOOL_TURN }
+        );
+
+        let mut shortened = base.clone();
+        shortened.messages.pop();
+        assert_eq!(
+            cause(
+                None,
+                &before,
+                &shortened.sent_on(provider),
+                Some(base.at),
+                &[]
+            ),
+            MissCause::MessageChanged { index: 2 }
+        );
+
+        let expired_at = base
+            .at
+            .checked_add(life + SignedDuration::from_secs(1))
+            .unwrap();
+        let expected_gap = u64::try_from(life.as_secs() + 1).unwrap();
+        assert_eq!(
+            cause(
+                None,
+                &before,
+                &grown.sent_on(provider),
+                Some(expired_at),
+                &[]
+            ),
+            MissCause::TtlExpired {
+                gap_s: expected_gap
+            }
+        );
+    }
 }

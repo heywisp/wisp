@@ -65,7 +65,7 @@ Web search is on by default for every shipped Gemini model except `gemini-3.1-fl
 
 Every Gemini request sends the same four stop sequences: a newline, a `user` line, then Wisp's `Sent: ` stamp prefix, `Context: ` note prefix or `<wisp:message` opener, plus `\n<wisp:message from="` to stop before an invented user or inline mail turn. Google excludes the matched sequence and reports `STOP`, which Wisp treats as normal end-of-turn completion. Because the fourth sequence matches any line starting with `<wisp:message from="` after a newline, a legitimate reply that puts that header at the start of a new line truncates there, and a fabricated mail header at byte 0 of a reply (with no leading newline) is not stopped.
 
-System instructions (`system` plus `instructions`) stay fixed in top-level `systemInstruction`, mid-session `Role::System` deltas append in `contents`, and `PrefixBytes` and `cache_prefix` hash `(model, thinkingConfig, tools, systemInstruction)` without serializing `contents`. Implicit prefix caching reports hits via `usageMetadata.cachedContentTokenCount` (`cache_read_input_tokens`) with no explicit cache-TTL storage resource required.
+System instructions (`system` plus `instructions`) stay fixed in top-level `systemInstruction`, mid-session `Role::System` deltas append in `contents`, `PrefixBytes` and `cache_prefix` hash `(model, thinkingConfig, tools, systemInstruction)` without serializing `contents`, and `wire_print` hashes each wire `contents` entry so in-life misses distinguish `remote_loss` from `message_changed` (indexed by `contents` entry). Implicit prefix caching reports hits via `usageMetadata.cachedContentTokenCount` (`cache_read_input_tokens`) with no explicit cache-TTL storage resource required.
 
 ### Implicit cache
 

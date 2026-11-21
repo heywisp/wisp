@@ -234,7 +234,7 @@ Every miss carries a local `cause`, on every provider, from what Wisp kept of th
 6. `provider_dropped_thinking` (`first_path`, `count`): the drop list of blocks Wisp sent changed while Wisp's bytes didn't.
 7. `ttl_expired` (`gap_s`): the previous request went out at least the cache's life earlier: the tail TTL, or, for a provider that caches by itself, the idle life its route's data names (`Provider::cache_life`; `cache_idle_s` on Gemini's Antigravity route).
 8. `remote_loss`: Wisp compared everything (the prefix digests, the beta header, every earlier message and the drop list) and nothing changed, with the gap inside the TTL, so the cache was lost on the provider's or a gateway's side. The TUI shows it as "provider- or gateway-side cache loss, nothing changed locally".
-9. `unexplained`: Wisp couldn't compare: no earlier print (after a resume or a rewind), a missing part (a provider without prefix or message bytes, an unknown TTL), or a request that added more than 20 blocks (past the provider's lookback, Wisp's own layout can lose the cache). A compaction request is checked with its own send time, like a step.
+9. `unexplained`: Wisp couldn't compare: no earlier print (after a resume or a rewind), a missing part (a provider without prefix or message bytes, an unknown TTL), or, on a provider with a block lookback (Anthropic's 20-block breakpoint lookback; Gemini has none), a request that added more than 20 blocks (past the provider's lookback, Wisp's own layout can lose the cache). A compaction request is checked with its own send time, like a step.
 
 A provider that gives no prefix or message bytes gets only `expected`, `ttl_expired` and `unexplained`. Remote diagnostics (`diagnostics`) still go out only with `debug_cache`.
 
