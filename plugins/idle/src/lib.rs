@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use wisp_plugin_api::hooks::{BeforeTurn, Event, Reply};
 use wisp_plugin_api::host::Host;
-use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
+use wisp_plugin_api::{BoxFuture, Bundled, Plugin, tree};
 
 pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
 
@@ -55,10 +55,7 @@ impl Idle {
             self.since.store(now, Ordering::SeqCst);
             return Reply::None;
         }
-        let main = self
-            .host
-            .current_agent()
-            .is_none_or(|me| me.parent.is_none());
+        let main = tree::is_main(&*self.host);
         let quiet = now.saturating_sub(self.since.load(Ordering::SeqCst));
         if main && quiet >= IDLE_MINUTES * 60_000 {
             Reply::Append(vec![note()])

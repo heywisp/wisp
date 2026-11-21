@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use unicode_width::UnicodeWidthStr;
 use wisp_plugin_api::commands::{CommandLine, CommandReply, CommandRow};
-use wisp_plugin_api::hooks::{Event, Reply};
+use wisp_plugin_api::hooks::{CompactedInfo, Event, Reply};
 use wisp_plugin_api::host::{CallContext, Host};
 use wisp_plugin_api::index::{Entry, Kind, SEARCH_CAPABILITY};
 use wisp_plugin_api::mcp::{State, Tool};
@@ -15,7 +15,7 @@ use wisp_plugin_api::tools::{
     ToolDef, ToolKind, ToolMeta,
 };
 use wisp_plugin_api::types::{Action, Display, OutputKind, ToolRun};
-use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
+use wisp_plugin_api::{BoxFuture, Bundled, Plugin, tree};
 use wisp_tool_text::index::{SEARCH_OFF, already_in_view};
 use wisp_tool_text::mcp as wording;
 
@@ -518,37 +518,33 @@ impl Plugin for Mcp {
         })
     }
 
-    fn on_hook<'a>(&'a self, hook: &'a str, event: Event) -> BoxFuture<'a, Reply> {
+    fn on_hook<'a>(&'a self, _hook: &'a str, event: Event) -> BoxFuture<'a, Reply> {
         Box::pin(async move {
-            match (hook, event) {
-                ("compacted", Event::AfterCompact(info)) if info.failed.is_none() => {
+            match event {
+                Event::AfterCompact(CompactedInfo { failed: None, .. }) | Event::Rewound(_) => {
                     self.opened
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner)
                         .clear();
                 }
-                ("rewound", Event::Rewound(_)) => {
-                    self.opened
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .clear();
+                Event::SessionStart(_)
+                    if tree::is_main(&*self.host) && !self.listing.swap(true, Ordering::AcqRel) =>
+                {
+                    let stopped: Vec<_> = self
+                        .host
+                        .mcp()
+                        .servers()
+                        .into_iter()
+                        .filter(|server| !server.off && server.state == State::Stopped)
+                        .collect();
+                    futures::future::join_all(
+                        stopped
+                            .iter()
+                            .map(|server| self.host.mcp().connect(&server.name)),
+                    )
+                    .await;
                 }
                 _ => {}
-            }
-            if hook == "list" && !self.listing.swap(true, Ordering::AcqRel) {
-                let stopped: Vec<_> = self
-                    .host
-                    .mcp()
-                    .servers()
-                    .into_iter()
-                    .filter(|server| !server.off && server.state == State::Stopped)
-                    .collect();
-                futures::future::join_all(
-                    stopped
-                        .iter()
-                        .map(|server| self.host.mcp().connect(&server.name)),
-                )
-                .await;
             }
             self.changed();
             Reply::None

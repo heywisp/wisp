@@ -341,10 +341,11 @@ async fn a_tree_resumes_every_live_agent_quietly_and_a_follow_up_extends_its_his
             [
                 LogEvent::SessionResumed { .. },
                 LogEvent::HookRan { hook: instructions, point: section, outcome: wisp_protocol::HookOutcome::None, .. },
+                LogEvent::HookRan { hook: mcp, point: start, outcome: wisp_protocol::HookOutcome::None, .. },
                 LogEvent::SessionEnded { .. },
-            ] if instructions == "instructions/instructions" && section == "section-start"
+            ] if instructions == "instructions/instructions" && section == "section-start" && mcp == "mcp/list" && start == "session-start"
         ),
-        "an untouched child gains only resume/end and its instructions audit"
+        "an untouched child gains only resume/end and the two no-op startup audits"
     );
 }
 
