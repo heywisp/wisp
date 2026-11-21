@@ -54,12 +54,16 @@ impl Server {
                     let mut writer = stream.try_clone().unwrap();
                     let mut reader = BufReader::new(stream);
                     while let Some(request) = read_request(&mut reader) {
-                        let (reply, log) = if is_naming(&request.body) {
-                            (name.clone(), &naming)
+                        let (reply, log) = if request.head.starts_with("GET /v1/models") {
+                            (json("404 Not Found", "{}"), None)
+                        } else if is_naming(&request.body) {
+                            (name.clone(), Some(&naming))
                         } else {
-                            (answer(&request), &recorded)
+                            (answer(&request), Some(&recorded))
                         };
-                        log.lock().unwrap().push(request);
+                        if let Some(log) = log {
+                            log.lock().unwrap().push(request);
+                        }
                         if writer.write_all(reply.as_bytes()).is_err() {
                             return;
                         }

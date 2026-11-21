@@ -422,7 +422,11 @@ fn a_sign_ins_key_keeps_its_saved_file_name_and_an_api_keys_comes_from_its_accou
     };
     let bearer = Credential::AuthToken("synthetic-token".into());
     assert_eq!(key(url, &setup, "work"), None);
-    assert_eq!(key(url, &bearer, "work"), None);
+    assert_eq!(
+        key(url, &bearer, "work"),
+        key(url, &api("synthetic-key"), "work")
+    );
+    assert_ne!(key(url, &bearer, "work"), key(url, &bearer, "home"));
 }
 
 #[test]

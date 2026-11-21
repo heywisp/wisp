@@ -168,7 +168,7 @@ pub fn key(url: &str, credential: &Credential, account: &str) -> Option<String> 
             profile: Some(path),
             ..
         } => ("subscription", path.as_os_str().as_encoded_bytes()),
-        Credential::ApiKey(_) => ("account", account.as_bytes()),
+        Credential::ApiKey(_) | Credential::AuthToken(_) => ("account", account.as_bytes()),
         _ => return None,
     };
     let mut hash = Sha256::new();
