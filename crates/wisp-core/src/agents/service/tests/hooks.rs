@@ -739,7 +739,7 @@ async fn current_agent_names_each_agent_and_a_hook_and_a_tool_call_see_the_tree_
  {
     let kernels = Kernels::default();
     let reads = Reads::default();
-    let body = "\n[[hooks]]\nname = \"turn\"\npoint = \"before-turn\"\n";
+    let body = "\n[[hooks]]\nname = \"turn\"\npoint = \"before-turn\"\n\n[[hooks]]\nname = \"start\"\npoint = \"session-start\"\nbackground = true\n";
     let mut run = start(
         "tree-current",
         Setup {
@@ -801,12 +801,19 @@ async fn current_agent_names_each_agent_and_a_hook_and_a_tool_call_see_the_tree_
         );
         assert_eq!(paths(&read.nodes), ["/a"]);
     }
-    let root: Vec<&Read> = reads
-        .iter()
-        .filter(|r| r.me.as_ref().is_some_and(|m| m.path == "/"))
-        .collect();
-    assert!(!root.is_empty(), "{reads:#?}");
-    for read in &root {
+    assert!(child.iter().any(|r| r.hook == "start"), "{reads:#?}");
+    let root = |hook: &str| -> Vec<&Read> {
+        reads
+            .iter()
+            .filter(|r| r.hook == hook && r.me.as_ref().is_some_and(|m| m.path == "/"))
+            .collect()
+    };
+    let (root_turns, root_starts) = (root("turn"), root("start"));
+    assert!(
+        !root_turns.is_empty() && !root_starts.is_empty(),
+        "{reads:#?}"
+    );
+    for read in root_turns.iter().chain(&root_starts) {
         assert_eq!(
             read.me,
             Some(Identity {
@@ -819,9 +826,14 @@ async fn current_agent_names_each_agent_and_a_hook_and_a_tool_call_see_the_tree_
                 root_session_id: root_session.clone(),
             })
         );
+    }
+    for read in &root_turns {
         assert_eq!(paths(&read.nodes), ["/a"]);
     }
-    assert_eq!(reads.len(), child.len() + root.len());
+    assert_eq!(
+        reads.len(),
+        child.len() + root_turns.len() + root_starts.len()
+    );
     assert_eq!(
         result_of(&run.requests("/a")[1], "t1"),
         (false, "current /a; tree [/a]".to_owned())
@@ -2104,6 +2116,15 @@ async fn a_resumed_tree_fires_queued_points_after_session_start_and_none_once_se
     );
     let all = heard.lock().unwrap().clone();
     let hooks: Vec<&str> = all.iter().map(|h| h.hook.as_str()).collect();
+    for child in ["/lead", "/lead/w", "/solo"] {
+        assert!(
+            all.iter().any(|h| h.hook == "start"
+                && h.me
+                    .as_ref()
+                    .is_some_and(|m| m.path == child && m.parent.is_some())),
+            "{child}: {hooks:?}"
+        );
+    }
     let started = hooks.iter().position(|h| *h == "start done").unwrap();
     let first = all.iter().position(|h| h.event.is_some()).unwrap();
     assert!(started < first, "{hooks:?}");

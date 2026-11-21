@@ -1337,49 +1337,6 @@ fn local_off() -> crate::settings::Given {
 }
 
 #[tokio::test]
-async fn a_restored_child_cannot_list_a_saved_server_before_the_root_starts() {
-    let env = Env::new("mcp-resume-child-before-root");
-    let server = Server::start(vec![says("msg_first", 400, "First.")]).await;
-    let store = MemoryStore::default();
-    let service = saved_mcp(&env).await;
-    let mut kit = found_kit(&server, &env, &store, false);
-    kit.mcp = service.clone();
-    let spec = || super::resumed::child_with(env.work(), &["search", "use"]);
-    let mut original = Session::start(kit.build_child(spec()).await.unwrap());
-    original.turn("u1", "Say First.").await;
-    original.end().await;
-    let (log, recovered, logged, rebuilt) = reopen(&store, &server);
-    let resume = kit::Resume {
-        log,
-        recovered: &recovered,
-        truncated_bytes: 0,
-        logged: logged.as_ref(),
-        rebuilt,
-    };
-    kit.start_layers.flags = vec![local_off()];
-    let methods = env.work().join("methods");
-    let before = fs::read(&methods).unwrap();
-    let (child, _) = kit.resume_child(spec(), resume).await.unwrap();
-    let mut restored = Session::start(child);
-    restored
-        .send(ClientCommand::DescribeSettings {
-            request: RequestId(2),
-        })
-        .await;
-    restored
-        .until(|e| matches!(e, AgentEvent::SettingsSnapshot(s) if s.answers == RequestId(2)))
-        .await;
-    let child = restored.end().await;
-    assert!(!child.hook_on(&crate::plugin::hooks::Name::new("mcp", "list")));
-    assert!(
-        !service.rows()[0].off,
-        "the root has not published its switches yet"
-    );
-    assert_eq!(service.rows()[0].state, crate::mcp::State::Stopped);
-    assert_eq!(fs::read(methods).unwrap(), before);
-}
-
-#[tokio::test]
 async fn a_child_finds_and_uses_a_server_unless_its_preset_takes_search_away() {
     let env = Env::new("mcp-child");
     let server = Server::start(vec![

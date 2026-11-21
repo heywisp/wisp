@@ -30,8 +30,6 @@ use crate::pricing;
 use crate::workspace::Workspace;
 use wisp_plugin_api::Plugin;
 
-const MCP_LIST_HOOK: &str = "list";
-
 mod calls;
 mod end;
 mod input;
@@ -221,9 +219,7 @@ impl Agent {
         let Some(hook) = self.hooks.engine.hook(name) else {
             return false;
         };
-        if self.plugin_off(&name.plugin)
-            || (self.is_child() && name.plugin == crate::mcp::PLUGIN && name.hook == MCP_LIST_HOOK)
-        {
+        if self.plugin_off(&name.plugin) {
             return false;
         }
         match &hook.switch {
@@ -560,9 +556,6 @@ impl Agent {
         });
         let fire = Fire::new(SESSION_START, What::Event(event), At::default());
         self.await_outside(fire, events).await;
-        if self.is_child() && self.hook_on_next(&Name::new(crate::mcp::PLUGIN, MCP_LIST_HOOK)) {
-            self.emit_nested(events).await;
-        }
         if !self.is_child()
             && self.usage_display == crate::plan_usage::Display::Enabled
             && let Some(host) = &self.hooks.host

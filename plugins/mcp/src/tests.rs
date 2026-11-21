@@ -5,7 +5,7 @@ use wisp_plugin_api::hooks::{CompactedInfo, RewindInfo};
 use wisp_plugin_api::mcp::{
     Mcp as HostMcp, Prompt, PromptArgument, PromptMessage, Resource, Server,
 };
-use wisp_plugin_testkit::host::{FakeCall, FakeHost};
+use wisp_plugin_testkit::host::{FakeCall, FakeHost, identity};
 
 use super::*;
 
@@ -453,28 +453,37 @@ fn a_removed_tools_routing_names_stay_without_retaining_its_definition() {
 
 #[test]
 fn every_stopped_server_that_is_on_is_listed_by_the_background_hook() {
-    let service = Arc::new(Service {
-        servers: Mutex::new(vec![
-            server("empty", State::Stopped, true, 0),
-            server("missing", State::Stopped, false, 0),
-            Server {
-                off: true,
-                ..server("off", State::Stopped, true, 0)
-            },
-            server("running", State::Ready, true, 3),
-        ]),
-        ..Service::default()
-    });
-    let plugin = plugin(service.clone(), true);
-    block_on(plugin.on_hook(
-        "list",
-        Event::SessionStart(wisp_plugin_api::hooks::SessionStart { resumed: false }),
-    ));
-    block_on(plugin.on_hook(
-        "list",
-        Event::SessionStart(wisp_plugin_api::hooks::SessionStart { resumed: false }),
-    ));
-    assert_eq!(*service.connected.lock().unwrap(), ["empty", "missing"]);
+    for (identity, listed) in [
+        (Some(identity("/c")), false),
+        (None, true),
+        (Some(identity("/")), true),
+    ] {
+        let service = Arc::new(Service {
+            servers: Mutex::new(vec![
+                server("empty", State::Stopped, true, 0),
+                server("missing", State::Stopped, false, 0),
+                Server {
+                    off: true,
+                    ..server("off", State::Stopped, true, 0)
+                },
+                server("running", State::Ready, true, 3),
+            ]),
+            ..Service::default()
+        });
+        let plugin = instantiate(Arc::new(FakeHost {
+            mcp: Some(service.clone()),
+            identity: identity.clone(),
+            ..FakeHost::default()
+        }));
+        for _ in 0..2 {
+            block_on(plugin.on_hook(
+                "list",
+                Event::SessionStart(wisp_plugin_api::hooks::SessionStart { resumed: false }),
+            ));
+        }
+        let expected: &[&str] = if listed { &["empty", "missing"] } else { &[] };
+        assert_eq!(*service.connected.lock().unwrap(), expected, "{identity:?}");
+    }
 }
 
 #[test]

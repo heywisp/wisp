@@ -105,6 +105,10 @@ pub trait Agent {
     fn current_agent(&self) -> Option<Identity>;
 }
 
+pub fn is_main(agent: &(impl Agent + ?Sized)) -> bool {
+    agent.current_agent().is_none_or(|me| me.parent.is_none())
+}
+
 pub trait AgentTree {
     fn snapshot(&self) -> Vec<AgentNode>;
 }
