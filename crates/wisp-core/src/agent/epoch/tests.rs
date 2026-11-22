@@ -30,7 +30,7 @@ static PER_MESSAGE: ModelCapabilities = ModelCapabilities {
     efforts: &[Effort::Low, Effort::Medium, Effort::High],
     default_effort: None,
     per_message_effort: true,
-    effort_in_id: false,
+    effort_in_id: None,
     adaptive_thinking: true,
     thinking_budgets: None,
     max_output: None,

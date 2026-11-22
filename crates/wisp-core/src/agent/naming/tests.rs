@@ -25,7 +25,7 @@ static HIGH_ONLY: ModelCapabilities = ModelCapabilities {
     efforts: &[Effort::High],
     default_effort: None,
     per_message_effort: false,
-    effort_in_id: false,
+    effort_in_id: None,
     inline_tools: false,
     tools_after_results: false,
     deferred_tools: false,
