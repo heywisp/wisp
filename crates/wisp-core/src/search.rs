@@ -59,9 +59,9 @@ pub fn side_model(provider: &dyn crate::provider::Provider, chat: &str) -> Strin
     crate::models::ModelTable::shared()
         .provider(provider.kind())
         .and_then(|row| row.web_search_model.as_deref())
-        .filter(|model| provider.official() && provider.capabilities(model).is_some())
-        .unwrap_or(chat)
-        .to_owned()
+        .filter(|model| crate::agent::side::served_side_model(provider, model))
+        .map(str::to_owned)
+        .unwrap_or_else(|| crate::agent::side::one_shot_model(provider, chat))
 }
 
 pub fn listed_version(kind: ProviderKind) -> &'static str {

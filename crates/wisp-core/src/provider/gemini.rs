@@ -2703,7 +2703,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn search_model_uses_the_chat_on_a_gateway_or_when_a_loaded_list_lacks_the_fast_model() {
+    fn search_model_uses_the_one_shot_model_when_unlisted_and_the_chat_on_a_gateway() {
         let mut ep = endpoint(
             Credential::ApiKey("CANARY_API_key".into()),
             DEFAULT_BASE_URL,
@@ -2720,14 +2720,20 @@ pub(crate) mod tests {
             crate::search::side_model(&provider, default_model()),
             default_model()
         );
+        let (tier, low) = ("gemini-4-neon-xhigh", "gemini-4-neon-low");
+        for (ids, want) in [(&[tier, low][..], low), (&[tier][..], tier)] {
+            let entries = ids.iter().map(|&id| (id.to_owned(), None, None));
+            let list = ModelList::from_gemini_ids(entries, None).unwrap();
+            provider.list = ListCell::new(Some(Arc::new(list)));
+            assert_eq!(crate::search::side_model(&provider, tier), want);
+        }
         ep.base_url = "https://gateway.example.com".into();
+        let gw = GeminiProvider::from_endpoint(&ep).unwrap();
         assert_eq!(
-            crate::search::side_model(
-                &GeminiProvider::from_endpoint(&ep).unwrap(),
-                default_model()
-            ),
+            crate::search::side_model(&gw, default_model()),
             default_model()
         );
+        assert_eq!(crate::search::side_model(&gw, tier), tier);
     }
 
     fn report_live_failure(error: &ProviderError) {
@@ -2752,11 +2758,7 @@ pub(crate) mod tests {
         let list = provider.listed(limits.clone(), default.as_deref()).unwrap();
         provider.list = ListCell::new_with_default(Some(Arc::new(list)), default);
         let default = provider.default_model();
-        let model = crate::models::ModelTable::shared()
-            .sibling(&default, Effort::Low)
-            .filter(|model| provider.capabilities(model).is_some())
-            .unwrap_or(&default)
-            .to_owned();
+        let model = crate::agent::side::one_shot_model(&provider, &default);
         (provider, model, limits)
     }
 

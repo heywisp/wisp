@@ -131,6 +131,51 @@ async fn a_model_ask_is_unmarked_bounded_and_leaves_the_chat_prefix_unchanged() 
         "short reply"
     );
     prefix::assert_prefix_stable(&[sent[0].body(), sent[2].body()], None);
+    for (chat, list, want) in [
+        (
+            "gemini-4-neon-xhigh",
+            &["gemini-4-neon-xhigh", "gemini-4-neon-low"][..],
+            "gemini-4-neon-low",
+        ),
+        (
+            "gemini-4-neon-xhigh",
+            &["gemini-4-neon-xhigh"][..],
+            "gemini-4-neon-xhigh",
+        ),
+        (
+            "gemini-4-carbon",
+            &["gemini-4-carbon"][..],
+            "gemini-4-carbon",
+        ),
+    ] {
+        let store = MemoryStore::default();
+        let provider = scripted(vec![
+            uses(&[call("q", "question", json!({}))]),
+            vec![Err(ProviderError::new(ErrorKind::Network, "down"))].into(),
+            done("done"),
+        ]);
+        provider.knobs(|k| {
+            k.kind = Some(crate::endpoints::ProviderKind::Gemini);
+            k.caps = Some(Caps::Fn(crate::provider::gemini::model_capabilities));
+            k.list = Some(crate::agent::testing::gemini_list(list));
+        });
+        let question = Question::new(None);
+        let mut agent = question_agent(provider.clone(), &env, &question).with_log(
+            SessionLog::new(Box::new(store.clone()), "s1"),
+            log_context(),
+        );
+        agent.session.model = chat.into();
+        turn(&mut agent, "go").await;
+        let sent = provider.sent();
+        assert_eq!(sent[0].session.model, chat);
+        assert_eq!(sent[1].session.model, want);
+        assert_eq!(sent[1].session.effort, Effort::Low);
+        assert!(sent[1].rendering.drop_base_marker);
+        assert_eq!(sent[2].session.model, chat);
+        let logged =
+            pick!(&log_events(&store), LogEvent::ModelAsked { model, .. } => model.clone());
+        assert_eq!(logged, [Some(want.to_owned())]);
+    }
 }
 
 #[tokio::test]

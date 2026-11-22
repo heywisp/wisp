@@ -570,3 +570,53 @@ async fn a_rename_during_a_name_request_keeps_its_name() {
     assert_eq!(spend(&resumed.agent), spend(&closed.agent));
     assert!(resumed.provider.sent().is_empty());
 }
+
+#[tokio::test(start_paused = true)]
+async fn tier_chats_name_on_their_low_sibling_when_served() {
+    const XHIGH: &str = "gemini-4-neon-xhigh";
+    const LOW: &str = "gemini-4-neon-low";
+    const PLAIN: &str = "gemini-4-carbon";
+    for (chat, list, want, fail) in [
+        (XHIGH, &[XHIGH, LOW][..], LOW, false),
+        (XHIGH, &[XHIGH, LOW][..], LOW, true),
+        (XHIGH, &[XHIGH][..], XHIGH, false),
+        (PLAIN, &[PLAIN][..], PLAIN, false),
+    ] {
+        let fourth = if fail {
+            refused()
+        } else {
+            let mut reply = name_reply("Tier name");
+            for event in &mut reply.script {
+                if let Ok(ProviderEvent::MessageStart { model, .. }) = event {
+                    *model = want.into();
+                }
+            }
+            reply
+        };
+        let mut rig = Rig::with(
+            vec![answer("m1"), answer("m2"), answer("m3"), fourth],
+            |mut agent| {
+                agent.session.model = chat.into();
+                agent.with_naming(true)
+            },
+        );
+        rig.provider.knobs(|k| {
+            k.kind = Some(crate::endpoints::ProviderKind::Gemini);
+            k.caps = Some(Caps::Fn(crate::provider::gemini::model_capabilities));
+            k.list = Some(crate::agent::testing::gemini_list(list));
+        });
+        for said in ["one", "two", "three"] {
+            rig.completed(said).await;
+        }
+        assert_eq!(named(&mut rig).await.is_some(), !fail);
+        let closed = rig.close().await;
+        let ask = &closed.provider.sent()[3];
+        assert_eq!(ask.session.model, want);
+        assert_eq!(ask.session.effort, Effort::Low);
+        let logged = log_events(&closed.store).into_iter().find_map(|e| match e {
+            LogEvent::SessionNamed { model, .. } => model,
+            _ => None,
+        });
+        assert_eq!(logged.as_deref(), Some(want));
+    }
+}

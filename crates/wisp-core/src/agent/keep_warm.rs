@@ -462,7 +462,7 @@ impl Agent {
     }
 
     fn judge(&self, landed: &Landed) -> Judged {
-        let (spend, model) = self.side_spend(landed);
+        let (spend, model) = self.side_spend(landed, &self.session.model);
         let other_stop = landed
             .stop
             .as_ref()

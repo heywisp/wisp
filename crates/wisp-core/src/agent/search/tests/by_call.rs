@@ -239,13 +239,22 @@ async fn a_broken_gemini_ask_keeps_the_query_fee_as_a_lower_bound() {
 }
 
 #[tokio::test]
-async fn a_refused_side_model_retries_once_on_the_chats_model_without_turning_search_off() {
-    for gemini in [false, true] {
-        let chat = if gemini {
-            crate::provider::gemini::default_model()
-        } else {
-            DEFAULT_MODEL
-        };
+async fn a_refused_or_missing_side_model_uses_the_chats_one_shot_model_without_turning_search_off()
+{
+    const XHIGH: &str = "gemini-4-neon-xhigh";
+    const LOW: &str = "gemini-4-neon-low";
+    let fast = crate::provider::gemini::web_search_model();
+    for (gemini, chat, list, retry) in [
+        (false, DEFAULT_MODEL, None, DEFAULT_MODEL),
+        (
+            true,
+            crate::provider::gemini::default_model(),
+            None,
+            crate::provider::gemini::default_model(),
+        ),
+        (true, XHIGH, Some(&[XHIGH, LOW, fast][..]), LOW),
+        (true, XHIGH, Some(&[XHIGH, fast][..]), XHIGH),
+    ] {
         let steps = vec![
             uses(&[B::Call("q", WEB_SEARCH, json!({"query": "rust release"}))]),
             vec![Err(refusal(
@@ -253,7 +262,7 @@ async fn a_refused_side_model_retries_once_on_the_chats_model_without_turning_se
                 "side model refused search",
             ))]
             .into(),
-            report_on(chat).into(),
+            report_on(retry).into(),
             done(&[B::Text("Answer.")]),
         ];
         let mut rig = if gemini {
@@ -261,6 +270,11 @@ async fn a_refused_side_model_retries_once_on_the_chats_model_without_turning_se
         } else {
             by_call_rig(steps)
         };
+        rig.agent.session.model = chat.into();
+        if let Some(ids) = list {
+            rig.provider
+                .knobs(|k| k.list = Some(crate::agent::testing::gemini_list(ids)));
+        }
         let (_, events) = rig.turn("search").await;
         let sent = rig.provider.sent();
         assert_eq!(sent.len(), 4);
@@ -268,7 +282,7 @@ async fn a_refused_side_model_retries_once_on_the_chats_model_without_turning_se
             sent[1].session.model,
             crate::search::side_model(rig.provider.as_ref(), chat)
         );
-        assert_eq!(sent[2].session.model, chat);
+        assert_eq!(sent[2].session.model, retry);
         assert!(sent[2].rendering.search_only);
         assert_eq!(
             sent[2].server_tools,
@@ -284,8 +298,35 @@ async fn a_refused_side_model_retries_once_on_the_chats_model_without_turning_se
         ));
         assert!(!events.iter().any(|event| matches!(event, AgentEvent::ToolsChanged { removed, .. } if removed.contains(&WEB_SEARCH.to_owned()))));
         let rows = log_events(&rig.store);
-        let asks = pick!(&rows, LogEvent::ModelAsked { detail, .. } => detail.clone());
-        assert_eq!(asks, [Some("native_search".to_owned()), None]);
+        let asks = pick!(&rows, LogEvent::ModelAsked { detail, model, .. } => (detail.clone(), model.clone()));
+        assert_eq!(
+            asks,
+            [
+                (
+                    Some("native_search".to_owned()),
+                    Some(sent[1].session.model.clone())
+                ),
+                (None, Some(retry.to_owned())),
+            ]
+        );
+    }
+    for (list, want) in [(&[XHIGH, LOW][..], LOW), (&[XHIGH][..], XHIGH)] {
+        let mut rig = gemini_by_call_rig(vec![
+            uses(&[B::Call("q", WEB_SEARCH, json!({"query": "rust release"}))]),
+            report_on(want).into(),
+            done(&[B::Text("Answer.")]),
+        ]);
+        rig.agent.session.model = XHIGH.into();
+        rig.provider
+            .knobs(|k| k.list = Some(crate::agent::testing::gemini_list(list)));
+        rig.turn("search").await;
+        let sent = rig.provider.sent();
+        assert_eq!(sent.len(), 3);
+        assert_eq!(sent[1].session.model, want);
+        assert_eq!(sent[1].session.effort, Effort::Low);
+        let models =
+            pick!(&log_events(&rig.store), LogEvent::ModelAsked { model, .. } => model.clone());
+        assert_eq!(models, [Some(want.to_owned())]);
     }
 }
 
