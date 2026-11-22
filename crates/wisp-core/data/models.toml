@@ -119,7 +119,7 @@ base_url = "https://daily-cloudcode-pa.googleapis.com"
 user_agent = "antigravity/cli/{version}"
 default_model = "gemini-4-carbon-medium"
 session_id = "-3750763034362895579"
-cache_idle_s = 240
+cache_idle_s = 600
 
 [providers.gemini.sources]
 client = "https://github.com/google-antigravity/antigravity-cli/releases"
@@ -128,7 +128,7 @@ web_search_price = "https://ai.google.dev/gemini-api/docs/google-search"
 price = "https://ai.google.dev/gemini-api/docs/pricing"
 min_cacheable = "https://ai.google.dev/gemini-api/docs/caching"
 default_model = "https://ai.google.dev/gemini-api/docs/models"
-antigravity = "https://antigravity.google/docs; session_id is what the Antigravity CLI sends on every request; cache_idle_s is Wisp's own measurement; see docs/gemini.md"
+antigravity = "https://antigravity.google/docs; session_id is what the Antigravity CLI sends on every request; cache_idle_s is Wisp's own measurement on this route, 2026-11-22, unpinged probes of about 8k and 16k tokens: Neon missed 1 of 33 up to 12.5 min (2/3 at 15 min), Carbon 3/3 at 5 min and 1/3 at 10 min, Neon unchanged at 5 and 10 min with thinkingLevel sent; 600 is the longest pause with broad support; see docs/gemini.md"
 
 [models."claude-fable-5-2"]
 provider = "anthropic"
