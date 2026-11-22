@@ -107,7 +107,6 @@ pub(crate) const TEXT_SIGNATURE_ITEM: &str = "text_signature";
 pub(crate) const CALL_SIGNATURES_ITEM: &str = "call_signatures";
 pub(crate) const FOLD_TEXT: &str = "fold_text";
 pub(crate) const PART_ITEM: &str = "part";
-pub(crate) const MALFORMED_FUNCTION_CALL: &str = "MALFORMED_FUNCTION_CALL";
 const FIRST_BYTE: Duration = Duration::from_secs(300);
 const LIST_LIMIT: usize = 8 * 1024 * 1024;
 const MAX_MODEL_PAGES: usize = 5;

@@ -397,6 +397,7 @@ struct Pending {
     found_tools: bool,
     tool_note: Option<String>,
     continue_note: bool,
+    retry_note: bool,
     after: Vec<ContentBlock>,
 }
 
@@ -412,10 +413,20 @@ impl Pending {
         if !self.after.is_empty() {
             append_user(messages, self.after.clone());
         }
+        if self.retry_note {
+            append_user(
+                messages,
+                vec![ContentBlock::Text {
+                    text: retry::MALFORMED_CALL_NOTE.to_owned(),
+                }],
+            );
+        }
     }
 
     fn has_payload(&self) -> bool {
-        self.user.is_some() || ((self.late_marker || self.found_tools) && self.has_system())
+        self.user.is_some()
+            || self.retry_note
+            || ((self.late_marker || self.found_tools) && self.has_system())
     }
 
     fn system(&self) -> Option<Message> {
@@ -2377,6 +2388,7 @@ impl Agent {
             found_tools: false,
             tool_note: lead.text(LEAD_TOOLS).map(str::to_owned),
             continue_note: false,
+            retry_note: false,
             after: Vec::new(),
         };
         if !opens && !cancelled && self.found_use().is_some() {
@@ -3340,6 +3352,7 @@ impl Agent {
         let mut cut_off = false;
         loop {
             if self.track().step > 0 {
+                pending.retry_note = false;
                 self.close_kept_tail(events).await;
                 let boundary = self
                     .at_boundary(ending.take(), &mut pending, commands, events)
@@ -3641,7 +3654,12 @@ impl Agent {
                     .after_failure(step, &failure, retry::Mode::Request, commands, events)
                     .await
                 {
-                    AfterFailure::Retry => {}
+                    AfterFailure::Retry => {
+                        if failure.error.malformed_call && !pending.retry_note {
+                            pending.retry_note = true;
+                            messages = self.request_messages(&pending);
+                        }
+                    }
                     AfterFailure::Stopped => {
                         failure.attempts = attempts;
                         failure_charged = true;
@@ -4076,12 +4094,14 @@ impl Agent {
         events: &mpsc::Sender<AgentEvent>,
     ) -> Heard {
         let opening = pending.user.is_some() || !pending.after.is_empty();
+        let retry_note = pending.retry_note;
         if pending.has_payload() {
             self.place_pending(pending, events).await;
             self.sync_history();
             *pending = Pending::default();
         }
         let mut opened = Heard::default();
+        let step = self.track().step;
         if opening {
             self.track().pending_images.clear();
             self.track().withdrawn_images.clear();
@@ -4091,8 +4111,15 @@ impl Agent {
             opened.ids.extend(self.hear_restarted());
             self.track().notice = None;
             self.track().notice_ends.clear();
-            let step = self.track().step;
-            self.commit_inputs(step, events).await;
+            self.commit_inputs(step, retry_note, events).await;
+        } else if retry_note {
+            let turn = self.track().index;
+            let record = LogEvent::InputCommitted {
+                turn,
+                step,
+                inputs: vec![retry::call_note_input(turn, step)],
+            };
+            self.log(events, record).await;
         }
         let carried = std::mem::take(&mut self.track().carried_ends);
         for carrier in carried {
@@ -4101,8 +4128,13 @@ impl Agent {
         opened
     }
 
-    async fn commit_inputs(&mut self, step: u32, events: &mpsc::Sender<AgentEvent>) {
-        let (turn, inputs, mail) = {
+    async fn commit_inputs(
+        &mut self,
+        step: u32,
+        retry_note: bool,
+        events: &mpsc::Sender<AgentEvent>,
+    ) {
+        let (turn, mut inputs, mail) = {
             let track = self.track();
             track.opening.clear();
             track.inputs.clear();
@@ -4121,6 +4153,9 @@ impl Agent {
             .collect();
         let seq = self.logged_seq();
         self.note_inputs(turn, said, seq);
+        if retry_note {
+            inputs.push(retry::call_note_input(turn, step));
+        }
         if inputs.is_empty() {
             return;
         }

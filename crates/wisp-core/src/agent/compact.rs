@@ -1853,6 +1853,7 @@ impl Agent {
     }
 
     pub(super) fn continue_after_head(&mut self, pending: &mut Pending) {
+        pending.retry_note = false;
         let leading = self.compaction.head.as_ref().is_some_and(Head::leading);
         let kept = {
             let track = self.track();

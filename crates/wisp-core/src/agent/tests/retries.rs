@@ -969,75 +969,317 @@ async fn every_step_and_retry_logs_its_estimate_and_model() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn invalid_response_retries_cap_at_three_on_default_policy() {
-    let bad_with = |error_type: Option<&str>| {
+async fn invalid_response_retries_cap_on_default_policy() {
+    let note = crate::agent::retry::MALFORMED_CALL_NOTE;
+    let bad_with = |malformed_call: bool| {
         let mut error = failure(ErrorKind::InvalidResponse, RetryClass::Transient, true);
-        error.detail.error_type = error_type.map(str::to_owned);
+        error.malformed_call = malformed_call;
         failing(half_reply(crate::provider::NO_TEXT, 600), error)
     };
-    let bad = || bad_with(None);
+    let bad = || bad_with(false);
+    let malformed = || bad_with(true);
     let deterministic = RetryPolicy {
         jitter: || 0.0,
         ..RetryPolicy::default()
     };
-
-    for (error_type, cap, wait_secs) in [
-        (None, 3u32, 1u64 + 2 + 4),
-        (Some("UNEXPECTED_TOOL_CALL"), 3, 1 + 2 + 4),
-        (
-            Some(crate::provider::gemini::MALFORMED_FUNCTION_CALL),
-            8,
-            1 + 2 + 4 + 8 + 16 + 32 + 64 + 128,
-        ),
-    ] {
-        let total = cap + 1;
-        let provider = Fake::new((0..total).map(|_| bad_with(error_type)));
-        let mut agent =
-            Agent::new(provider.clone(), default_session()).with_retry_policy(deterministic);
-        let began = tokio::time::Instant::now();
-        let (outcome, events) = turn(&mut agent, "hi").await;
-        assert_eq!(
-            began.elapsed(),
-            Duration::from_secs(wait_secs),
-            "{error_type:?}"
-        );
+    async fn next_turn_end(
+        ev_rx: &mut mpsc::Receiver<AgentEvent>,
+        seen: &mut Vec<AgentEvent>,
+    ) -> TurnOutcome {
+        while let Some(event) = ev_rx.recv().await {
+            seen.push(event.clone());
+            if let AgentEvent::TurnEnded { outcome, .. } = event {
+                return outcome;
+            }
+        }
+        panic!("events ended before TurnEnded; seen {seen:#?}");
+    }
+    let plain_session = || SessionConfig {
+        message_time: wisp_protocol::MessageTime::Off,
+        context_note: false,
+        ..default_session()
+    };
+    let logged_plain = |provider: Arc<Fake>, store: &MemoryStore| {
+        Agent::new(provider, plain_session())
+            .with_clock(TickingClock::new())
+            .with_log(
+                SessionLog::new(Box::new(store.clone()), "s1"),
+                log_context(),
+            )
+    };
+    let with_prefix = |step_two: bool, rest: Vec<Step>| {
+        let mut script = if step_two {
+            vec![Step::from(tool_call("t", "x"))]
+        } else {
+            Vec::new()
+        };
+        script.extend(rest);
+        script
+    };
+    let rebuild = |store: &MemoryStore| {
+        let recs = records(store);
+        let agent = logged_plain(Fake::new(Vec::new()), store)
+            .resume(&recs, 0)
+            .unwrap();
+        (recs, agent)
+    };
+    let check_note_delta =
+        |before: &serde_json::Value, after: &serde_json::Value, msg_idx: usize| {
+            let b = before["messages"].as_array().unwrap();
+            let a = after["messages"].as_array().unwrap();
+            assert_eq!(a[..msg_idx], b[..msg_idx]);
+            assert_eq!(a[msg_idx]["content"][0], b[msg_idx]["content"][0]);
+            assert_eq!(a[msg_idx]["content"][1]["text"], note);
+        };
+    let assert_rebuilt_without_note = |store: &MemoryStore| {
+        let (_, resumed) = rebuild(store);
         assert!(
-            matches!(
-                outcome,
-                TurnOutcome::Error {
-                    kind: ErrorKind::InvalidResponse,
-                    attempts,
-                    gave_up: Some(GaveUp::StepLimit),
-                    offer: Some(RetryOffer { retry: true, .. }),
-                    ..
-                } if attempts == total
-            ),
-            "{error_type:?}: {outcome:?}"
+            !serde_json::to_string(&*resumed.history())
+                .unwrap()
+                .contains(note)
         );
+    };
+    let verify_log_and_providers = |store: &MemoryStore, live_history: &[Message]| {
+        let (recs, resumed) = rebuild(store);
+        assert_eq!(resumed.history(), live_history);
+        assert!(!resumed.compaction.said_texts().contains(&note));
+        let replayed = crate::resume::transcript(&recs, &Toolbox::default(), None);
+        assert!(!replayed.iter().any(|event| matches!(
+            event,
+            AgentEvent::InputAccepted { id, text, .. }
+                if crate::agent::retry::is_call_note_id(id) || text == note
+        )));
+        assert!(
+            !crate::agent::view::input_ids(&recs)
+                .iter()
+                .any(|id| id.starts_with(crate::agent::retry::CALL_NOTE_ID_PREFIX))
+        );
+        let session = plain_session();
+        let req = crate::provider::Request {
+            session: &session,
+            tools: &[],
+            deferred: &[],
+            by_value: &[],
+            server_tools: &[],
+            messages: live_history,
+            previous_response_id: None,
+            features: crate::provider::Features::default(),
+            options: crate::provider::RequestOptions::default(),
+            rendering: &crate::provider::UNRENDERED,
+            compaction: None,
+        };
+        let anthropic =
+            String::from_utf8(crate::provider::anthropic::build_body(&req).unwrap()).unwrap();
+        assert_eq!(anthropic.matches(note).count(), 1, "{anthropic}");
+        let openai_session = SessionConfig {
+            model: crate::provider::openai::DEFAULT_MODEL.into(),
+            ..plain_session()
+        };
+        let openai = crate::provider::openai::build_body(&crate::provider::Request {
+            session: &openai_session,
+            ..req
+        })
+        .unwrap()
+        .to_string();
+        assert_eq!(openai.matches(note).count(), 1, "{openai}");
+    };
+
+    for (step_two, is_malformed, cap, wait_secs) in [
+        (false, false, 3u32, 7u64),
+        (false, true, 8, 255),
+        (true, true, 8, 255),
+    ] {
+        let (total, first, expected_step, msg_idx) = (
+            cap + 1,
+            usize::from(step_two),
+            if step_two { 2 } else { 1 },
+            if step_two { 2 } else { 0 },
+        );
+        let mut rest: Vec<Step> = (0..total).map(|_| bad_with(is_malformed)).collect();
+        rest.push(Step::from(reply("after-retry", 10, 0, StopReason::EndTurn)));
+        let store = MemoryStore::default();
+        let provider = Fake::new(with_prefix(step_two, rest));
+        let agent = logged_plain(provider.clone(), &store).with_retry_policy(deterministic);
+        let (commands, mut ev_rx, task) = spawn(agent);
+        let began = tokio::time::Instant::now();
+        commands
+            .send(ClientCommand::send("u1", "hi"))
+            .await
+            .unwrap();
+        let mut events = Vec::new();
+        let outcome = next_turn_end(&mut ev_rx, &mut events).await;
+        assert_eq!(began.elapsed(), Duration::from_secs(wait_secs));
+        assert!(matches!(
+            outcome,
+            TurnOutcome::Error {
+                kind: ErrorKind::InvalidResponse,
+                attempts,
+                gave_up: Some(GaveUp::StepLimit),
+                offer: Some(RetryOffer { retry: true, .. }),
+                ..
+            } if attempts == total
+        ));
         let retries = retrying(&events);
-        assert_eq!(retries.len(), cap as usize, "{error_type:?}");
+        assert_eq!(retries.len(), cap as usize);
         assert!(retries.iter().enumerate().all(|(i, event)| matches!(
             event,
-            AgentEvent::Retrying {
-                step: 1,
-                attempt,
-                max_attempts,
-                kind: ErrorKind::InvalidResponse,
-                discarded_chars: 9,
-                ..
-            } if *attempt == i as u32 + 1 && *max_attempts == cap
+            AgentEvent::Retrying { step, attempt, max_attempts, kind: ErrorKind::InvalidResponse, discarded_chars: 9, .. }
+                if *step == expected_step && *attempt == i as u32 + 1 && *max_attempts == cap
         )));
-        let sent = provider.texts();
-        assert_eq!(sent.len(), total as usize, "{error_type:?}");
-        assert!(sent.iter().all(|body| *body == sent[0]));
-        assert!(agent.history().is_empty());
+        let retry_cmd = ClientCommand::Retry {
+            turn: 1,
+            endpoint: None,
+            request: RequestId(1),
+        };
+        commands.send(retry_cmd).await.unwrap();
+        let outcome = next_turn_end(&mut ev_rx, &mut Vec::new()).await;
+        assert!(committed(&outcome), "{outcome:?}");
+        drop(commands);
+        task.handle.await.unwrap();
+        let (sent, bodies) = (provider.texts(), provider.bodies());
+        assert_eq!(sent.len(), first + total as usize + 1);
+        assert!(!sent[first].contains(note));
+        if is_malformed {
+            assert_eq!(sent[first + 1].matches(note).count(), 1);
+            assert!(
+                sent[first + 1..first + total as usize]
+                    .iter()
+                    .all(|b| *b == sent[first + 1])
+            );
+            check_note_delta(&bodies[first], &bodies[first + 1], msg_idx);
+        } else {
+            assert!(
+                sent[first..first + total as usize]
+                    .iter()
+                    .all(|b| *b == sent[first])
+            );
+        }
+        assert_eq!(
+            sent[first + total as usize],
+            sent[first],
+            "Retry after give-up sends no note"
+        );
+        assert_rebuilt_without_note(&store);
     }
+
+    for step_two in [false, true] {
+        let (first, msg_idx, expected_steps) = (
+            usize::from(step_two),
+            if step_two { 2 } else { 0 },
+            if step_two { 2 } else { 1 },
+        );
+        let store = MemoryStore::default();
+        let provider = Fake::new(with_prefix(
+            step_two,
+            vec![
+                malformed(),
+                malformed(),
+                Step::from(reply("ok", 10, 0, StopReason::EndTurn)),
+                Step::from(reply("turn2-ok", 10, 0, StopReason::EndTurn)),
+            ],
+        ));
+        let mut agent = logged_plain(provider.clone(), &store).with_retry_policy(deterministic);
+        let (outcome, _) = turn(&mut agent, "hi").await;
+        assert!(matches!(outcome, TurnOutcome::Completed { steps, .. } if steps == expected_steps));
+        let (outcome, _) = turn(&mut agent, "next").await;
+        assert!(committed(&outcome), "{outcome:?}");
+        let bodies = provider.bodies();
+        assert_eq!(bodies.len(), first + 4);
+        assert!(!bodies[first].to_string().contains(note));
+        assert_eq!(
+            bodies[first + 1],
+            bodies[first + 2],
+            "2nd malformed finish must not stack notes"
+        );
+        check_note_delta(&bodies[first], &bodies[first + 1], msg_idx);
+        assert_eq!(
+            bodies[first + 3]["messages"].as_array().unwrap()[..=msg_idx],
+            bodies[first + 1]["messages"].as_array().unwrap()[..=msg_idx]
+        );
+        assert!(!agent.compaction.said_texts().contains(&note));
+        verify_log_and_providers(&store, &agent.history());
+    }
+
+    let store = MemoryStore::default();
+    let provider = Fake::new(vec![
+        malformed(),
+        Step::from(reply("", 10, 0, StopReason::MaxTokens)),
+        Step::from(reply("after-steer", 10, 0, StopReason::EndTurn)),
+    ]);
+    let agent = logged_plain(provider.clone(), &store).with_retry_policy(deterministic);
+    let (commands, mut ev_rx, task) = spawn(agent);
+    commands
+        .send(ClientCommand::send("u1", "hi"))
+        .await
+        .unwrap();
+    while let Some(event) = ev_rx.recv().await {
+        if matches!(event, AgentEvent::Retrying { .. }) {
+            commands
+                .send(ClientCommand::send("s1", "steer"))
+                .await
+                .unwrap();
+            break;
+        }
+    }
+    let outcome = next_turn_end(&mut ev_rx, &mut Vec::new()).await;
+    assert!(matches!(
+        outcome,
+        TurnOutcome::Completed {
+            steps: 2,
+            committed: true,
+            ..
+        }
+    ));
+    drop(commands);
+    task.handle.await.unwrap();
+    let sent = provider.texts();
+    assert_eq!(sent.len(), 3);
+    assert!(!sent[0].contains(note) && sent[1].matches(note).count() == 1);
+    assert!(
+        !sent[2].contains(note) && sent[2].contains("steer"),
+        "{}",
+        sent[2]
+    );
+    assert_rebuilt_without_note(&store);
+
+    let provider = Fake::new(vec![
+        bad(),
+        malformed(),
+        bad(),
+        malformed(),
+        failing(half_reply("half", 600), server_mid_stream()),
+        bad(),
+    ]);
+    let mut agent = Agent::new(provider.clone(), plain_session()).with_retry_policy(deterministic);
+    let (outcome, events) = turn(&mut agent, "hi").await;
+    assert!(matches!(
+        outcome,
+        TurnOutcome::Error {
+            kind: ErrorKind::InvalidResponse,
+            attempts: 6,
+            gave_up: Some(GaveUp::StepLimit),
+            ..
+        }
+    ));
+    let maxes: Vec<u32> = retrying(&events)
+        .into_iter()
+        .map(|e| match e {
+            AgentEvent::Retrying { max_attempts, .. } => *max_attempts,
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(maxes, [3, 8, 3, 8, 0]);
+    let sent = provider.texts();
+    assert!(
+        !sent[0].contains(note) && !sent[1].contains(note) && sent[2].matches(note).count() == 1
+    );
+    assert!(sent[2..].iter().all(|body| *body == sent[2]));
 
     let mut script = vec![bad(), bad(), Step::from(tool_call("t", "x"))];
     script.extend((0..3).map(|_| bad()));
     script.push(Step::from(reply("done", 10, 0, StopReason::EndTurn)));
     let provider = Fake::new(script);
-    let mut agent = Agent::new(provider, default_session()).with_retry_policy(deterministic);
+    let mut agent = Agent::new(provider, plain_session()).with_retry_policy(deterministic);
     let (outcome, events) = turn(&mut agent, "hi").await;
     assert!(
         matches!(outcome, TurnOutcome::Completed { steps: 2, .. }),
@@ -1047,21 +1289,11 @@ async fn invalid_response_retries_cap_at_three_on_default_policy() {
     assert_eq!(retries.len(), 5);
     assert!(retries[..2].iter().enumerate().all(|(i, event)| matches!(
         event,
-        AgentEvent::Retrying {
-            step: 1,
-            attempt,
-            max_attempts: 3,
-            ..
-        } if *attempt == i as u32 + 1
+        AgentEvent::Retrying { step: 1, attempt, max_attempts: 3, .. } if *attempt == i as u32 + 1
     )));
     assert!(retries[2..].iter().enumerate().all(|(i, event)| matches!(
         event,
-        AgentEvent::Retrying {
-            step: 2,
-            attempt,
-            max_attempts: 3,
-            ..
-        } if *attempt == i as u32 + 1
+        AgentEvent::Retrying { step: 2, attempt, max_attempts: 3, .. } if *attempt == i as u32 + 1
     )));
     assert!(
         serde_json::to_string(&*agent.history())

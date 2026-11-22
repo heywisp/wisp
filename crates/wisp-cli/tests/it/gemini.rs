@@ -447,6 +447,78 @@ fn cli_runs_two_resumed_gemini_tool_turns_with_stable_prefix_and_distinct_idless
     );
 }
 
+#[test]
+fn cli_malformed_gemini_tool_call_retries_with_folded_note_and_stable_prefix() {
+    let home = Home::new("gemini-malformed-note");
+    let note = wisp_core::agent::retry::MALFORMED_CALL_NOTE;
+    let step1_call = sse_chunk(
+        "gemini-4-carbon",
+        vec![json!({
+            "functionCall": {"name": "bash", "args": {"command": "printf ok"}},
+            "thoughtSignature": "sig_call_1"
+        })],
+        Some("STOP"),
+    );
+    let malformed = sse_chunk("gemini-4-carbon", vec![], Some("MALFORMED_FUNCTION_CALL"));
+    let step2_done = sse_chunk(
+        "gemini-4-carbon",
+        vec![json!({"text": "GEMINI-MALFORMED-RECOVERED"})],
+        Some("STOP"),
+    );
+    let resumed_done = sse_chunk(
+        "gemini-4-carbon",
+        vec![json!({"text": "GEMINI-MALFORMED-RESUMED"})],
+        Some("STOP"),
+    );
+    let (url, seen, server) = serve(vec![
+        step1_call,
+        malformed.clone(),
+        malformed,
+        step2_done,
+        resumed_done,
+    ]);
+    let cfg = write_config(&home.0, &url);
+    let first = pty::run(
+        &mut command(&home.0, &cfg),
+        "Run command\n",
+        "GEMINI-MALFORMED-RECOVERED",
+        TEST_KEY,
+    );
+    assert!(first.contains("GEMINI-MALFORMED-RECOVERED"), "{first}");
+    let second = pty::run(
+        command(&home.0, &cfg).arg("--resume"),
+        "Continue\n",
+        "GEMINI-MALFORMED-RESUMED",
+        TEST_KEY,
+    );
+    assert!(second.contains("GEMINI-MALFORMED-RESUMED"), "{second}");
+    assert!(!second.contains("improperly formatted"), "{second}");
+    server.join().unwrap();
+
+    let requests: Vec<Value> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|body| serde_json::from_str(body).unwrap())
+        .collect();
+    assert_eq!(requests.len(), 5);
+    assert!(!requests[1].to_string().contains(note));
+    assert_eq!(
+        requests[2]["contents"].as_array().unwrap()[..2],
+        requests[1]["contents"].as_array().unwrap()[..2]
+    );
+    let folded = requests[2]["contents"][2]["parts"][0]["functionResponse"]["response"]["output"]
+        .as_str()
+        .unwrap();
+    assert_eq!(folded.matches(note).count(), 1, "{folded}");
+    assert_eq!(requests[3], requests[2]);
+    assert_gemini_prefix_stable(&[
+        requests[0].clone(),
+        requests[2].clone(),
+        requests[4].clone(),
+    ]);
+}
+
 type CapturedHttp = Arc<Mutex<Vec<(String, String)>>>;
 
 fn serve_http(

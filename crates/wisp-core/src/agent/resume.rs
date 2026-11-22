@@ -203,7 +203,7 @@ fn opening_texts(event: &LogEvent, mail: &BTreeSet<InputId>) -> Vec<String> {
 fn said_texts(inputs: &[LoggedInput], mail: &BTreeSet<InputId>) -> Vec<String> {
     inputs
         .iter()
-        .filter(|i| !mail.contains(&i.id))
+        .filter(|i| !mail.contains(&i.id) && !super::retry::is_call_note_id(&i.id))
         .map(|i| i.text.clone())
         .collect()
 }

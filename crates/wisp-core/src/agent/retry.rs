@@ -3,10 +3,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::mpsc;
 use wisp_media::Tier;
-use wisp_protocol::log::LogEvent;
+use wisp_protocol::log::{LogEvent, LoggedInput};
 use wisp_protocol::{
-    AgentEvent, BusyWait, ClientCommand, ContentBlock, ErrorDetail, ErrorKind, GaveUp, Message,
-    QueueReason, RetryClass, RetryFocus, RetryOffer, Usage,
+    AgentEvent, BusyWait, ClientCommand, ContentBlock, ErrorDetail, ErrorKind, GaveUp, InputId,
+    Message, QueueReason, RetryClass, RetryFocus, RetryOffer, Usage,
 };
 
 use super::{Agent, Failure, emit};
@@ -20,6 +20,21 @@ pub const LIMIT_WAIT: Duration = Duration::from_secs(5 * 60 * 60);
 pub const JITTER: f64 = 0.2;
 pub const INVALID_RESPONSE_RETRIES: u32 = 3;
 pub const MALFORMED_CALL_RETRIES: u32 = 8;
+pub const MALFORMED_CALL_NOTE: &str = "Your previous response contained an improperly formatted function call. Send the function call again, properly formatted.";
+pub(crate) const CALL_NOTE_ID_PREFIX: &str = "wisp-call-note-";
+
+pub(crate) fn is_call_note_id(id: &InputId) -> bool {
+    id.as_str().starts_with(CALL_NOTE_ID_PREFIX)
+}
+
+pub(super) fn call_note_input(turn: u64, step: u32) -> LoggedInput {
+    LoggedInput {
+        id: InputId(format!("{CALL_NOTE_ID_PREFIX}{turn}-{step}")),
+        text: MALFORMED_CALL_NOTE.to_owned(),
+        images: Vec::new(),
+        note: None,
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct RetryPolicy {
@@ -57,11 +72,9 @@ impl RetryPolicy {
         }
     }
 
-    pub(crate) fn for_kind(self, kind: ErrorKind, detail: &ErrorDetail) -> Self {
-        if kind == ErrorKind::InvalidResponse {
-            let cap = if detail.error_type.as_deref()
-                == Some(crate::provider::gemini::MALFORMED_FUNCTION_CALL)
-            {
+    pub(crate) fn for_kind(self, error: &ProviderError) -> Self {
+        if error.kind == ErrorKind::InvalidResponse {
+            let cap = if error.malformed_call {
                 MALFORMED_CALL_RETRIES
             } else {
                 INVALID_RESPONSE_RETRIES
@@ -439,7 +452,7 @@ impl Agent {
             } else {
                 policy
             }
-            .for_kind(error.kind, &error.detail);
+            .for_kind(error);
         let counted = !self.provider().busy_waits_5xx()
             && error.detail.status.is_some_and(classify::status_billed);
         let may_wait =

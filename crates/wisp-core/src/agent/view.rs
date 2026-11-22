@@ -128,7 +128,12 @@ pub fn input_ids(records: &[LogRecord]) -> Vec<String> {
             }
             LogEvent::InputAccepted { id, .. } => ids.push(id.0.clone()),
             LogEvent::InputCommitted { inputs, .. } => {
-                ids.extend(inputs.iter().map(|i| i.id.0.clone()));
+                ids.extend(
+                    inputs
+                        .iter()
+                        .filter(|i| !super::retry::is_call_note_id(&i.id))
+                        .map(|i| i.id.0.clone()),
+                );
             }
             _ => {}
         }

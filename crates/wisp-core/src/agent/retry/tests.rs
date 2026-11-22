@@ -750,37 +750,36 @@ fn invalid_response_caps_step_retries_even_under_default_policy() {
         jitter: || 0.0,
         ..RetryPolicy::default()
     };
-    let typed = |name: Option<&str>| {
-        let mut d = detail(RetryClass::Transient, true);
-        d.error_type = name.map(str::to_owned);
-        d
+    let typed = |kind: ErrorKind, retry: RetryClass, malformed_call: bool| {
+        let mut error =
+            ProviderError::classified(kind, "err", detail(retry, retry != RetryClass::Never));
+        error.malformed_call = malformed_call;
+        error
     };
-    let malformed = typed(Some(crate::provider::gemini::MALFORMED_FUNCTION_CALL));
-    let other = [None, Some("UNEXPECTED_TOOL_CALL"), Some("STOP")];
-    for (error_type, cap, expected_waits) in [
+    let malformed = typed(ErrorKind::InvalidResponse, RetryClass::Transient, true);
+    let plain = typed(ErrorKind::InvalidResponse, RetryClass::Transient, false);
+    for (malformed_call, cap, expected_waits) in [
         (
-            Some(crate::provider::gemini::MALFORMED_FUNCTION_CALL),
+            true,
             MALFORMED_CALL_RETRIES,
             &[1u64, 2, 4, 8, 16, 32, 64, 128][..],
         ),
-        (None, INVALID_RESPONSE_RETRIES, &[1, 2, 4][..]),
-        (
-            Some("UNEXPECTED_TOOL_CALL"),
-            INVALID_RESPONSE_RETRIES,
-            &[1, 2, 4][..],
-        ),
-        (Some("STOP"), INVALID_RESPONSE_RETRIES, &[1, 2, 4][..]),
+        (false, INVALID_RESPONSE_RETRIES, &[1, 2, 4][..]),
     ] {
-        let transient = typed(error_type);
-        let capped = base.for_kind(ErrorKind::InvalidResponse, &transient);
-        assert_eq!(capped.step_retries, Some(cap), "{error_type:?}");
+        let error = typed(
+            ErrorKind::InvalidResponse,
+            RetryClass::Transient,
+            malformed_call,
+        );
+        let capped = base.for_kind(&error);
+        assert_eq!(capped.step_retries, Some(cap), "malformed={malformed_call}");
         for child in [false, true] {
             let waits: Vec<_> = (0..cap)
                 .map(|n| {
                     delay(decide(
                         &capped,
                         &state(n, n, 0.0),
-                        &transient,
+                        &error.detail,
                         false,
                         None,
                         child,
@@ -792,70 +791,75 @@ fn invalid_response_caps_step_retries_even_under_default_policy() {
                 .copied()
                 .map(Duration::from_secs)
                 .collect();
-            assert_eq!(waits, expected, "{error_type:?} child={child}");
+            assert_eq!(waits, expected, "malformed={malformed_call} child={child}");
             assert_eq!(
                 decide(
                     &capped,
                     &state(cap, cap, 0.0),
-                    &transient,
+                    &error.detail,
                     false,
                     None,
                     child,
                 ),
                 Decision::GiveUp(GaveUp::StepLimit),
-                "{error_type:?} child={child}"
+                "malformed={malformed_call} child={child}"
             );
         }
         let loose = RetryPolicy {
             step_retries: Some(cap + 4),
             ..base
         }
-        .for_kind(ErrorKind::InvalidResponse, &transient);
-        assert_eq!(loose.step_retries, Some(cap), "{error_type:?}");
+        .for_kind(&error);
+        assert_eq!(loose.step_retries, Some(cap), "malformed={malformed_call}");
     }
     for tighter in [0, 1] {
-        for d in other.into_iter().map(typed).chain([malformed.clone()]) {
+        for error in [&plain, &malformed] {
             let narrow = RetryPolicy {
                 step_retries: Some(tighter),
                 ..base
             }
-            .for_kind(ErrorKind::InvalidResponse, &d);
+            .for_kind(error);
             assert_eq!(narrow.step_retries, Some(tighter));
         }
     }
-    let plain = detail(RetryClass::Transient, true);
     assert_eq!(
-        policy()
-            .for_kind(ErrorKind::InvalidResponse, &plain)
-            .step_retries,
+        policy().for_kind(&plain).step_retries,
         Some(INVALID_RESPONSE_RETRIES)
     );
     assert_eq!(
-        policy()
-            .for_kind(ErrorKind::InvalidResponse, &malformed)
-            .step_retries,
+        policy().for_kind(&malformed).step_retries,
         policy().step_retries
     );
     assert_eq!(
         RetryPolicy::default()
             .for_fallback()
-            .for_kind(ErrorKind::InvalidResponse, &plain)
+            .for_kind(&plain)
             .step_retries,
         Some(INVALID_RESPONSE_RETRIES)
     );
     assert_eq!(
         RetryPolicy::default()
             .for_fallback()
-            .for_kind(ErrorKind::InvalidResponse, &malformed)
+            .for_kind(&malformed)
             .step_retries,
         RetryPolicy::default().for_fallback().step_retries
     );
-    for error_type in [None, Some(crate::provider::gemini::MALFORMED_FUNCTION_CALL)] {
-        let mut never = detail(RetryClass::Never, false);
-        never.error_type = error_type.map(str::to_owned);
-        let capped = base.for_kind(ErrorKind::InvalidResponse, &never);
+    for malformed_call in [false, true] {
+        let never = typed(
+            ErrorKind::InvalidResponse,
+            RetryClass::Never,
+            malformed_call,
+        );
+        let capped = base.for_kind(&never);
         assert_eq!(
-            decide(&capped, &state(0, 0, 0.0), &never, false, None, false),
+            decide(
+                &capped,
+                &state(0, 0, 0.0),
+                &never.detail,
+                false,
+                None,
+                false
+            ),
             Decision::GiveUp(GaveUp::NotRetryable)
         );
     }
@@ -866,8 +870,9 @@ fn invalid_response_caps_step_retries_even_under_default_policy() {
         ErrorKind::Overloaded,
         ErrorKind::RateLimit,
     ] {
-        for d in [&plain, &malformed] {
-            assert_eq!(base.for_kind(kind, d).step_retries, None, "{kind:?}");
+        for malformed_call in [false, true] {
+            let error = typed(kind, RetryClass::Transient, malformed_call);
+            assert_eq!(base.for_kind(&error).step_retries, None, "{kind:?}");
         }
     }
 }

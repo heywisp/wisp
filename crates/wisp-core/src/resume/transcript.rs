@@ -70,7 +70,10 @@ impl Inputs {
                     inputs.delivered.extend(ids.iter().cloned());
                 }
                 LogEvent::InputCommitted { inputs: list, .. } => {
-                    for input in list {
+                    for input in list
+                        .iter()
+                        .filter(|i| !crate::agent::retry::is_call_note_id(&i.id))
+                    {
                         inputs.delivered.insert(input.id.clone());
                         inputs
                             .known
@@ -346,7 +349,11 @@ impl Replay<'_> {
                 self.deliver(ids, *step);
             }
             LogEvent::InputCommitted { step, inputs, .. } => {
-                let ids: Vec<InputId> = inputs.iter().map(|i| i.id.clone()).collect();
+                let ids: Vec<InputId> = inputs
+                    .iter()
+                    .filter(|i| !crate::agent::retry::is_call_note_id(&i.id))
+                    .map(|i| i.id.clone())
+                    .collect();
                 self.deliver(&ids, *step);
             }
             LogEvent::InputWithdrawn { ids, by, .. } => {
