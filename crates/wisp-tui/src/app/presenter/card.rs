@@ -51,38 +51,71 @@ impl Presenter {
         }
     }
 
-    fn close_card(&mut self, give_back: bool) {
+    fn return_texts(&mut self, texts: &[crate::widgets::composer::Saved], at: Duration) {
+        if !texts.is_empty() {
+            self.composer.restore_ahead(texts);
+            self.transcript.note(copy::ANSWER_BACK);
+            self.view.sync(self.transcript.cells().len());
+            let cx = self.cx();
+            self.status.composer(self.composer.is_empty(), at, cx);
+        }
+    }
+
+    fn close_card(&mut self, give_back: bool, at: Duration) {
         let Some(card) = self.card.take() else {
             return;
         };
         self.card_hits.clear();
-        let texts = card.typed_texts();
-        if give_back && !texts.is_empty() {
-            self.composer.restore_ahead(&texts);
-            self.transcript.note(copy::ANSWER_BACK);
-            self.view.sync(self.transcript.cells().len());
+        if give_back {
+            self.return_texts(&card.typed_texts(), at);
+        }
+    }
+
+    fn bring_aside(&mut self, at: Duration) {
+        if let Some(mut aside) = self.card_aside.take() {
+            aside.refused();
+            self.card = Some(aside);
+            self.card_hits.clear();
+            self.card_settle = Settle::after(self.last_typed, at);
+            self.card_seen = false;
         }
     }
 
     pub(super) fn card_event(&mut self, event: &AgentEvent, at: Duration) {
         match event {
             AgentEvent::QuestionAsked { call_id, questions } => {
-                self.close_card(true);
+                if self.card.as_ref().is_some_and(|c| c.call_id() == call_id) {
+                    return;
+                }
+                if self
+                    .card_aside
+                    .as_ref()
+                    .is_some_and(|c| c.call_id() == call_id)
+                {
+                    if self.card.is_none() {
+                        self.bring_aside(at);
+                    }
+                    return;
+                }
+                if let Some(front) = self.card.take() {
+                    self.card_hits.clear();
+                    if let Some(old) = self.card_aside.replace(front) {
+                        self.return_texts(&old.typed_texts(), at);
+                    }
+                }
                 self.inputs.unfocus();
                 let (call_id, questions) = (call_id.clone(), questions.clone());
                 self.card_settle = Settle::after(self.last_typed, at);
-                self.card = Some(match self.card_back.take() {
-                    Some(mut card)
-                        if card.call_id() == call_id && card.questions() == questions =>
-                    {
+                let restored = self
+                    .card_back
+                    .iter()
+                    .position(|c| c.call_id() == call_id && c.questions() == questions)
+                    .map(|index| {
+                        let mut card = self.card_back.remove(index);
                         card.refused();
                         card
-                    }
-                    back => {
-                        self.card_back = back;
-                        Card::new(call_id, questions)
-                    }
-                });
+                    });
+                self.card = Some(restored.unwrap_or_else(|| Card::new(call_id, questions)));
                 self.card_seen = false;
                 if let Some(list) = &mut self.ps {
                     list.confirm = Default::default();
@@ -92,16 +125,26 @@ impl Presenter {
                 }
             }
             AgentEvent::QuestionClosed { call_id, how } => {
-                if self
-                    .card_back
+                let answered = matches!(how, QuestionEnd::Answered { .. });
+                self.card_back.retain(|c| c.call_id() != call_id);
+                let closed_front = self.card.as_ref().is_some_and(|c| c.call_id() == call_id);
+                let closed_aside = self
+                    .card_aside
                     .as_ref()
-                    .is_some_and(|c| c.call_id() == call_id)
+                    .is_some_and(|c| c.call_id() == call_id);
+                if closed_front {
+                    self.close_card(!answered, at);
+                    self.bring_aside(at);
+                } else if closed_aside
+                    && let Some(aside) = self.card_aside.take()
+                    && !answered
                 {
-                    self.card_back = None;
+                    self.return_texts(&aside.typed_texts(), at);
                 }
-                if self.card.as_ref().is_some_and(|c| c.call_id() == call_id) {
-                    let answered = matches!(how, QuestionEnd::Answered { .. });
-                    self.close_card(!answered);
+                if closed_front || closed_aside {
+                    if matches!(how, QuestionEnd::Withdrawn) && self.status.is_running() {
+                        self.status.hint(copy::QUESTION_WITHDRAWN, at, None);
+                    }
                     let cx = self.cx();
                     self.status.composer(self.composer.is_empty(), at, cx);
                 }
@@ -117,15 +160,11 @@ impl Presenter {
             AgentEvent::Rejected {
                 kind: Some(RejectKind::NoQuestion),
                 ..
-            } => {
-                if self.card.as_ref().is_some_and(Card::is_sending) {
-                    self.close_card(true);
-                }
+            } if self.card.as_ref().is_some_and(Card::is_sending) => {
+                self.close_card(true, at);
+                self.bring_aside(at);
             }
-            AgentEvent::TurnEnded { .. } => {
-                self.card_back = None;
-                self.close_card(true);
-            }
+            AgentEvent::TurnEnded { .. } => self.card_back.clear(),
             _ => {}
         }
     }
@@ -134,7 +173,16 @@ impl Presenter {
         match step {
             Step::Stay => {}
             Step::Stop => {
-                self.close_card(true);
+                let mut texts = self
+                    .card
+                    .take()
+                    .map(|c| c.typed_texts())
+                    .unwrap_or_default();
+                self.card_hits.clear();
+                if let Some(aside) = self.card_aside.take() {
+                    texts.extend(aside.typed_texts());
+                }
+                self.return_texts(&texts, at);
                 self.stop();
             }
             Step::Send(answers) => {

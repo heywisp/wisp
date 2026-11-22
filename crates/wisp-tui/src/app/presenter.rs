@@ -157,7 +157,7 @@ pub fn new_hint(count: usize, glyphs: GlyphSet) -> String {
 #[derive(Default)]
 pub struct Unsent {
     composer: Composer,
-    card: Option<super::question::Card>,
+    cards: Vec<super::question::Card>,
     unconfirmed: Vec<(InputId, Saved)>,
     returned: BTreeSet<InputId>,
     late: Option<(InputId, String)>,
@@ -194,7 +194,7 @@ impl Unsent {
         if !text.trim().is_empty() {
             texts.push(text);
         }
-        if let Some(card) = &self.card {
+        for card in &self.cards {
             texts.extend(
                 card.typed_texts()
                     .iter()
@@ -732,7 +732,8 @@ pub(super) struct Presenter {
     images: Reader,
     reading: Option<Reading>,
     card: Option<super::question::Card>,
-    card_back: Option<super::question::Card>,
+    card_back: Vec<super::question::Card>,
+    card_aside: Option<super::question::Card>,
     card_settle: super::question::Settle,
     card_hits: Vec<(u16, wisp_render::chrome::CardHit)>,
     card_seen: bool,
@@ -1043,7 +1044,12 @@ pub async fn run_to_end<C: Console>(
     p.cancel_edit();
     let unsent = (away || ended_outside).then_some(Unsent {
         composer: p.composer,
-        card: p.card.or(p.card_back),
+        cards: p
+            .card
+            .into_iter()
+            .chain(p.card_aside)
+            .chain(p.card_back)
+            .collect(),
         returned: p.returned,
         unconfirmed: p.inputs.take_sent(),
         late: None,
@@ -1114,7 +1120,7 @@ impl Presenter {
         let images = Reader::new(options.images, code.wake());
         let Unsent {
             mut composer,
-            card,
+            cards,
             returned,
             unconfirmed,
             late,
@@ -1199,7 +1205,8 @@ impl Presenter {
             images,
             reading: None,
             card: None,
-            card_back: card,
+            card_back: cards,
+            card_aside: None,
             card_settle: super::question::Settle::default(),
             card_hits: Vec::new(),
             card_seen: false,
@@ -1528,7 +1535,17 @@ impl Presenter {
         } else if waiting > 0 && self.overlay_open() {
             vec![KeyHint::note(copy::waiting_count(waiting))]
         } else if self.card.is_some() {
-            vec![]
+            if self.card_holds(at)
+                && !self.status.is_running()
+                && !self.overlay_holds()
+                && !self.picker_open()
+                && !self.prompt_open()
+                && !self.step_in_holds(at)
+            {
+                vec![copy::esc(copy::CLOSE_WORD)]
+            } else {
+                vec![]
+            }
         } else if self.overlay_holds() {
             self.overlay_keys()
         } else {

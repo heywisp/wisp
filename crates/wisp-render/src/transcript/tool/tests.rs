@@ -1239,13 +1239,30 @@ fn every_ending_of_a_question_has_its_own_row() {
         mark.map(|s| s.look),
         Some(crate::styled::Look::fg(crate::theme::Token::Ok))
     );
-    for (how, words) in [
-        (QuestionEnd::Stopped, "the turn was stopped"),
-        (QuestionEnd::MessageInstead, "you wrote a message instead"),
-        (QuestionEnd::Interrupted, "Wisp stopped"),
+    for (how, late, words) in [
+        (QuestionEnd::Stopped, false, "the turn was stopped"),
+        (QuestionEnd::Stopped, true, "you closed it"),
+        (
+            QuestionEnd::MessageInstead,
+            false,
+            "you wrote a message instead",
+        ),
+        (QuestionEnd::Interrupted, false, "Wisp stopped"),
+        (QuestionEnd::Withdrawn, true, "withdrawn"),
     ] {
         let mut t = transcript();
         let mut events = asked("q");
+        if late {
+            events.push(finished(
+                "q",
+                ToolOutcome::Completed {
+                    is_error: false,
+                    exit: None,
+                },
+                ToolOutputView::default(),
+                10,
+            ));
+        }
         events.push(closed("q", how));
         apply(&mut t, &events);
         let rows = text(&t.rows(&r(120), Detail::Scrollback));
@@ -1265,7 +1282,180 @@ fn every_ending_of_a_question_has_its_own_row() {
             full.contains("Which database should the service use?"),
             "{full}"
         );
+        assert!(full.contains(words), "{full}");
     }
+}
+
+fn rewound(turn: u64) -> AgentEvent {
+    AgentEvent::Rewound {
+        answers: None,
+        point: wisp_protocol::RewindPoint::Turn { turn },
+        reason: wisp_protocol::RewindReason::User,
+        dropped: wisp_protocol::Dropped {
+            turns: vec![turn],
+            messages: 2,
+        },
+        returned: Vec::new(),
+        cache: wisp_protocol::CacheEffect::Kept,
+    }
+}
+
+fn posted_past_turn_end(t: &mut Transcript, id: &str) {
+    let mut events = asked(id);
+    events.push(finished(
+        id,
+        ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+        ToolOutputView::default(),
+        12,
+    ));
+    events.push(AgentEvent::TurnEnded {
+        outcome: outcome(End::default()),
+        stats: wisp_protocol::TurnStats::default(),
+    });
+    apply(t, &events);
+}
+
+#[test]
+fn a_posted_question_waits_past_turn_end_reopens_and_prunes_on_cut() {
+    use wisp_protocol::{Answer, QuestionEnd};
+    let mut t = transcript();
+    posted_past_turn_end(&mut t, "q");
+    let rows = text(&t.rows(&r(120), Detail::Scrollback));
+    assert!(
+        rows.contains("\u{25c9} Asked Database, Features, Deploy"),
+        "{rows}"
+    );
+    assert!(rows.contains("waiting for your answer"), "{rows}");
+    assert!(!rows.contains("Which database"), "{rows}");
+    let full = text(&t.rows(&r(120), Detail::Full));
+    assert!(full.contains("waiting for your answer"), "{full}");
+    let answers = vec![Answer::choose(0), Answer::skipped(), Answer::skipped()];
+    apply(&mut t, &[closed("q", QuestionEnd::Answered { answers })]);
+    let rows = text(&t.rows(&r(120), Detail::Scrollback));
+    assert!(
+        rows.contains("\u{2713} Asked Database, Features, Deploy"),
+        "{rows}"
+    );
+    assert!(rows.contains("\u{203a} PostgreSQL (Recommended)"), "{rows}");
+    apply(
+        &mut t,
+        &[AgentEvent::QuestionAsked {
+            call_id: "q".to_owned(),
+            questions: questions(),
+        }],
+    );
+    let rows = text(&t.rows(&r(120), Detail::Scrollback));
+    assert!(rows.contains("waiting for your answer"), "{rows}");
+    assert!(!rows.contains("Which database"), "{rows}");
+    let mut second = transcript();
+    apply(
+        &mut second,
+        &[
+            AgentEvent::turn_started(1),
+            AgentEvent::BlockStarted {
+                index: 0,
+                kind: BlockKind::Text,
+            },
+            AgentEvent::TextDelta {
+                index: 0,
+                text: "before".to_owned(),
+            },
+            AgentEvent::BlockStopped { index: 0 },
+            AgentEvent::TurnEnded {
+                outcome: outcome(End::default()),
+                stats: wisp_protocol::TurnStats::default(),
+            },
+            AgentEvent::turn_started(2),
+            AgentEvent::BlockStarted {
+                index: 0,
+                kind: BlockKind::Text,
+            },
+            AgentEvent::TextDelta {
+                index: 0,
+                text: "ask now".to_owned(),
+            },
+            AgentEvent::BlockStopped { index: 0 },
+            tool_requested(Requested {
+                call_id: "q".to_owned(),
+                tool: "any_tool".to_owned(),
+                input: json!({"questions": []}),
+                action: ToolAction::Other {
+                    name: "any_tool".to_owned(),
+                },
+                target: "Database (+2)".to_owned(),
+                output: OutputKind::None,
+                ..Requested::default()
+            }),
+            started("q"),
+            AgentEvent::QuestionAsked {
+                call_id: "q".to_owned(),
+                questions: questions(),
+            },
+            finished(
+                "q",
+                ToolOutcome::Completed {
+                    is_error: false,
+                    exit: None,
+                },
+                ToolOutputView::default(),
+                12,
+            ),
+            AgentEvent::TurnEnded {
+                outcome: outcome(End::default()),
+                stats: wisp_protocol::TurnStats::default(),
+            },
+            rewound(2),
+        ],
+    );
+    apply(&mut second, &asked("q2"));
+    apply(&mut second, &[closed("q", QuestionEnd::Withdrawn)]);
+    second.answer_given("q");
+    let rows = text(&second.rows(&r(120), Detail::Scrollback));
+    assert!(rows.contains("Asking Database"), "{rows}");
+    assert!(!rows.contains("withdrawn"), "{rows}");
+    assert!(!rows.contains("You answered"), "{rows}");
+}
+
+#[test]
+fn answer_given_draws_one_note_per_answered_question_and_rewinds_with_its_turn() {
+    use wisp_protocol::{Answer, QuestionEnd};
+    let mut t = transcript();
+    posted_past_turn_end(&mut t, "q");
+    let before = text(&t.rows(&r(120), Detail::Scrollback));
+    assert!(!before.contains("Which database"), "{before}");
+    let answers = vec![
+        Answer::choose(0),
+        Answer {
+            chosen: vec![0, 2],
+            own: Some("Webhooks".to_owned()),
+        },
+        Answer::skipped(),
+    ];
+    apply(
+        &mut t,
+        &[
+            closed("q", QuestionEnd::Answered { answers }),
+            AgentEvent::turn_started(2),
+        ],
+    );
+    t.answer_given("q");
+    t.answer_given("missing");
+    let rows = text(&t.rows(&r(120), Detail::Scrollback));
+    assert!(
+        rows.contains("You answered Database: PostgreSQL (Recommended)"),
+        "{rows}"
+    );
+    assert!(
+        rows.contains("You answered Features: Auth \u{b7} Export \u{b7} your own: Webhooks"),
+        "{rows}"
+    );
+    assert!(!rows.contains("You answered Deploy"), "{rows}");
+    apply(&mut t, &[rewound(2)]);
+    let after = text(&t.rows(&r(120), Detail::Scrollback));
+    assert!(!after.contains("You answered"), "{after}");
 }
 
 #[test]
@@ -1320,7 +1510,7 @@ fn a_question_left_open_when_the_turn_stops_reads_not_answered() {
 }
 
 #[test]
-fn a_call_after_a_question_reads_not_run_waited_for_your_answer() {
+fn a_call_after_a_question_reads_not_run_came_after_a_question() {
     let mut t = transcript();
     apply(
         &mut t,
@@ -1342,7 +1532,7 @@ fn a_call_after_a_question_reads_not_run_waited_for_your_answer() {
     assert!(head.contains("\u{25E6} cargo new notes"), "{rows}");
     assert!(!head.contains("Running"), "{rows}");
     assert!(
-        head.ends_with("not run \u{b7} waited for your answer"),
+        head.ends_with("not run \u{b7} came after a question"),
         "{rows}"
     );
 }

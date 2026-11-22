@@ -1,0 +1,11 @@
+{
+  "schema_version": "LOG_SCHEMA_VERSION",
+  "seq": 5,
+  "at": "2026-10-23T12:00:00Z",
+  "type": "question_closed",
+  "turn": 3,
+  "call_id": "toolu_7",
+  "how": {
+    "type": "withdrawn"
+  }
+}

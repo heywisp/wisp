@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use wisp_protocol::{InputId, MailFrom, TurnOutcome};
+use wisp_protocol::{InputId, MailFrom, MailKind, TurnOutcome};
 use wisp_render::transcript::Transcript;
 
 #[derive(Clone, Debug, Default)]
@@ -26,6 +26,9 @@ impl MailBook {
         idle: bool,
         transcript: &mut Transcript,
     ) {
+        if from.kind == MailKind::Question && !from.wake {
+            return;
+        }
         if !self.mail.iter().any(|m| &m.id == id) {
             self.mail.push(Mailed {
                 id: id.clone(),
@@ -34,7 +37,7 @@ impl MailBook {
                 delivered: false,
             });
         }
-        if idle {
+        if idle && from.kind != MailKind::Question {
             self.draw(id, transcript);
         }
     }
@@ -54,18 +57,28 @@ impl MailBook {
         } else {
             self.mail.iter_mut().for_each(|m| m.delivered = false);
         }
-        let ids: Vec<InputId> = self.mail.iter().map(|m| m.id.clone()).collect();
+        let ids: Vec<InputId> = self
+            .mail
+            .iter()
+            .filter(|m| m.from.kind != MailKind::Question)
+            .map(|m| m.id.clone())
+            .collect();
         for id in &ids {
             self.draw(id, transcript);
         }
     }
 
     pub(crate) fn waiting(&self) -> usize {
-        self.mail.iter().filter(|m| !m.delivered).count()
+        self.mail
+            .iter()
+            .filter(|m| !m.delivered && m.from.kind != MailKind::Question)
+            .count()
     }
 
     pub(crate) fn waking(&self) -> bool {
-        self.mail.iter().any(|m| !m.delivered && m.from.wake)
+        self.mail
+            .iter()
+            .any(|m| !m.delivered && m.from.wake && m.from.kind != MailKind::Question)
     }
 
     pub(crate) fn seed(&mut self, drawn: impl IntoIterator<Item = InputId>) {
@@ -84,7 +97,11 @@ impl MailBook {
         if let Some(m) = self.mail.iter().find(|m| &m.id == id)
             && self.drawn.insert(id.clone())
         {
-            transcript.mail(&m.from, &m.text);
+            if m.from.kind == MailKind::Question {
+                transcript.answer_given(m.from.mail.as_str());
+            } else {
+                transcript.mail(&m.from, &m.text);
+            }
         }
     }
 }

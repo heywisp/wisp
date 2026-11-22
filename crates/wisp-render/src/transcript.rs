@@ -653,6 +653,7 @@ pub struct Transcript {
     step: u32,
     tool_blocks: BTreeMap<(u32, usize), usize>,
     calls: BTreeMap<String, usize>,
+    questions: BTreeMap<String, usize>,
     requests: u32,
     tool_calls: u32,
     attempt_from: usize,
@@ -1773,6 +1774,7 @@ impl Transcript {
             step: 0,
             tool_blocks: BTreeMap::new(),
             calls: BTreeMap::new(),
+            questions: BTreeMap::new(),
             requests: 0,
             tool_calls: 0,
             attempt_from: 0,
@@ -2184,6 +2186,25 @@ impl Transcript {
         self.push(None, Body::Mail(Box::new(MailCell::new(from, text))), false)
     }
 
+    pub fn answer_given(&mut self, call_id: &str) {
+        let answered = self
+            .questions
+            .get(call_id)
+            .and_then(|&cell| self.cells.get(cell))
+            .and_then(|c| match &c.body {
+                Body::Tool(t) => Some(t.answered()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        for (header, words) in answered {
+            let line = StyledLine::new(vec![StyledSpan::new(
+                one_line(&copy::answer_given(&header, &words)),
+                Token::TextMuted,
+            )]);
+            self.push(None, Body::Note(Box::new(line)), false);
+        }
+    }
+
     pub fn take_cut(&mut self) -> Option<usize> {
         self.cut_at.take()
     }
@@ -2213,6 +2234,7 @@ impl Transcript {
         self.blocks.retain(|_, cell| *cell < at);
         self.tool_blocks.retain(|_, cell| *cell < at);
         self.calls.retain(|_, cell| *cell < at);
+        self.questions.retain(|_, cell| *cell < at);
         for process in self.processes.values_mut() {
             process.cell = process.cell.filter(|cell| *cell < at);
             process.calls.retain(|cell| *cell < at);
@@ -3498,14 +3520,15 @@ impl Transcript {
             }
             AgentEvent::Citations { index, sources, .. } => self.cited(*index, sources),
             AgentEvent::QuestionAsked { call_id, questions } => {
-                if let Some((cell, t)) = self.call(call_id) {
+                if let Some((cell, t)) = self.question_cell(call_id) {
                     t.ask(questions);
+                    self.questions.insert(call_id.clone(), cell);
                     self.touch(cell);
                     self.tools_seen += 1;
                 }
             }
             AgentEvent::QuestionClosed { call_id, how } => {
-                if let Some((cell, t)) = self.call(call_id) {
+                if let Some((cell, t)) = self.question_cell(call_id) {
                     t.answer(how);
                     self.touch(cell);
                     self.tools_seen += 1;
@@ -3896,6 +3919,18 @@ impl Transcript {
 
     fn call(&mut self, call_id: &str) -> Option<(usize, &mut ToolCell)> {
         let cell = *self.calls.get(call_id)?;
+        match self.cells.get_mut(cell).map(|c| &mut c.body) {
+            Some(Body::Tool(t)) => Some((cell, t)),
+            _ => None,
+        }
+    }
+
+    fn question_cell(&mut self, call_id: &str) -> Option<(usize, &mut ToolCell)> {
+        let cell = self
+            .calls
+            .get(call_id)
+            .or_else(|| self.questions.get(call_id))
+            .copied()?;
         match self.cells.get_mut(cell).map(|c| &mut c.body) {
             Some(Body::Tool(t)) => Some((cell, t)),
             _ => None,

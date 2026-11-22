@@ -1702,7 +1702,7 @@ pub fn process_ended(id: impl fmt::Display, end: &ProcessEnd) -> String {
 
 pub const TURN_STOPPED: &str = "the turn was stopped";
 pub const BEFORE_RESTART: &str = "before the restart";
-pub const AFTER_QUESTION: &str = "waited for your answer";
+pub const AFTER_QUESTION: &str = "came after a question";
 pub const PROMPT: &str = "$ ";
 pub const TAIL_ONLY: &str = "Only the last part of the output is shown here.";
 pub const LOADING_FILE: &str = "Loading the output file";
@@ -2270,6 +2270,9 @@ pub const STEP_IN_NOT_ANSWERED: &str = "Not answered";
 pub const ANSWER_STOPPED: &str = "the turn was stopped";
 pub const ANSWER_MESSAGE_INSTEAD: &str = "you wrote a message instead";
 pub const ANSWER_INTERRUPTED: &str = "Wisp stopped";
+pub const ANSWER_WITHDRAWN: &str = "withdrawn";
+pub const ANSWER_CLOSED: &str = "you closed it";
+pub const QUESTION_WITHDRAWN: &str = "The agent withdrew its question";
 pub const SKIPPED: &str = "skipped";
 pub const NOT_ANSWERED_YET: &str = "not answered yet";
 pub const OWN_ANSWER: &str = "Type your own answer";
@@ -2314,6 +2317,14 @@ pub fn waiting_for_reports() -> String {
 
 pub fn waiting_for_answer() -> String {
     format!("{WAITING} for your answer")
+}
+
+pub fn waiting_fact() -> String {
+    waiting_for_answer().to_lowercase()
+}
+
+pub fn answer_given(header: &str, words: &str) -> String {
+    format!("You answered {header}: {words}")
 }
 
 pub const CACHE_EXPIRED_NOW: &str = "cache expired";
@@ -2497,7 +2508,9 @@ pub fn mail_label(kind: wisp_protocol::MailKind, quiet: bool, from: &str) -> Str
         wisp_protocol::MailKind::Message if quiet => "note",
         wisp_protocol::MailKind::Report => "report",
         wisp_protocol::MailKind::Notice => "notice",
-        wisp_protocol::MailKind::Message | wisp_protocol::MailKind::Unknown => "message",
+        wisp_protocol::MailKind::Message
+        | wisp_protocol::MailKind::Question
+        | wisp_protocol::MailKind::Unknown => "message",
     };
     format!("{noun} from {from}")
 }

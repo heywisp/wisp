@@ -39,8 +39,8 @@ expression: body
   ~ 5..23 fg Rgb(166, 166, 166)
 |     > skipped
   ~ 5..7 fg Rgb(130, 130, 130); 7..14 fg Rgb(166, 166, 166)
-| - cargo new notes-service                                                                                                     not run - waited for your answer
-  ~ 1..2 fg Rgb(166, 166, 166); 3..26 fg Rgb(166, 166, 166); 127..159 fg Rgb(166, 166, 166)
+| - cargo new notes-service                                                                                                      not run - came after a question
+  ~ 1..2 fg Rgb(166, 166, 166); 3..26 fg Rgb(166, 166, 166); 128..159 fg Rgb(166, 166, 166)
 |
 |   9s - 1 request - 2 tools - $0.004 - cached 92%
   ~ 3..49 fg Rgb(117, 117, 117)
@@ -153,8 +153,8 @@ expression: body
   ~ 5..23 fg Rgb(166, 166, 166)
 |     > skipped
   ~ 5..7 fg Rgb(130, 130, 130); 7..14 fg Rgb(166, 166, 166)
-| - cargo new notes-service                                                                                                     not run - waited for your answer
-  ~ 1..2 fg Rgb(166, 166, 166); 3..26 fg Rgb(166, 166, 166); 127..159 fg Rgb(166, 166, 166)
+| - cargo new notes-service                                                                                                      not run - came after a question
+  ~ 1..2 fg Rgb(166, 166, 166); 3..26 fg Rgb(166, 166, 166); 128..159 fg Rgb(166, 166, 166)
 |
 |   9s - 1 request - 2 tools - $0.004 - cached 92%
   ~ 3..49 fg Rgb(117, 117, 117)

@@ -58,7 +58,7 @@ enum Phase {
         work: Work,
     },
     Asking {
-        since: Duration,
+        since: Option<Duration>,
     },
     Compacting {
         since: Duration,
@@ -100,7 +100,6 @@ impl Phase {
             Phase::Thinking { .. }
                 | Phase::Answering
                 | Phase::Working { .. }
-                | Phase::Asking { .. }
                 | Phase::Compacting { .. }
         )
     }
@@ -266,6 +265,7 @@ pub struct Status {
     output_rate: OutputRate,
     targets: BTreeMap<String, String>,
     started: BTreeSet<String>,
+    questions: BTreeMap<String, Option<Duration>>,
     seed: u64,
     turns: u64,
     verb: &'static str,
@@ -532,6 +532,7 @@ impl Status {
             output_rate: OutputRate::default(),
             targets: BTreeMap::new(),
             started: BTreeSet::new(),
+            questions: BTreeMap::new(),
             seed: 0,
             turns: 0,
             verb: copy::verb(0, 0),
@@ -738,7 +739,9 @@ impl Status {
     }
 
     fn idle(&self) -> Phase {
-        if self.composer_empty {
+        if let Some(&since) = self.questions.values().next() {
+            Phase::Asking { since }
+        } else if self.composer_empty {
             Phase::ready()
         } else {
             Phase::Listening
@@ -997,12 +1000,20 @@ impl Status {
                     cx,
                 );
             }
-            AgentEvent::QuestionAsked { .. } if self.turn => {
-                self.go(Phase::Asking { since: t }, t, cx);
+            AgentEvent::QuestionAsked { call_id, .. } => {
+                let seen = self.started.contains(call_id).then_some(t);
+                let since = *self.questions.entry(call_id.clone()).or_insert(seen);
+                self.go(Phase::Asking { since }, t, cx);
             }
-            AgentEvent::QuestionClosed { .. } => {
+            AgentEvent::QuestionClosed { call_id, .. } => {
+                self.questions.remove(call_id);
                 if matches!(self.phase, Phase::Asking { .. }) {
-                    self.think(t, cx, None);
+                    if self.turn {
+                        self.think(t, cx, None);
+                    } else {
+                        let idle = self.idle();
+                        self.go(idle, t, cx);
+                    }
                 }
             }
             AgentEvent::ToolCallFinished { call_id, .. } => {
@@ -1017,29 +1028,38 @@ impl Status {
                 self.awaiting = false;
                 self.turn = false;
                 self.tally.add(&outcome);
-                let phase = match &outcome {
-                    TurnOutcome::Completed {
-                        stop_reason: StopReason::EndTurn,
-                        committed: true,
-                        ..
-                    } => Phase::Done {
-                        facts: done_facts(&outcome, stats, self.cache_miss, self.rebuilds.turn()),
-                        output_tokens: outcome.usage().map(|u| u.output_tokens),
-                    },
-                    TurnOutcome::Completed {
-                        stop_reason,
-                        committed,
-                        ..
-                    } if self.composer_empty => Phase::Ready {
-                        note: ended_note(stop_reason, *committed),
-                    },
-                    TurnOutcome::Completed { .. } => Phase::Listening,
-                    TurnOutcome::Cancelled {
-                        committed_steps, ..
-                    } => Phase::Stopped {
-                        kept: *committed_steps,
-                    },
-                    TurnOutcome::Error { .. } => self.idle(),
+                let phase = if let Some(&since) = self.questions.values().next() {
+                    Phase::Asking { since }
+                } else {
+                    match &outcome {
+                        TurnOutcome::Completed {
+                            stop_reason: StopReason::EndTurn,
+                            committed: true,
+                            ..
+                        } => Phase::Done {
+                            facts: done_facts(
+                                &outcome,
+                                stats,
+                                self.cache_miss,
+                                self.rebuilds.turn(),
+                            ),
+                            output_tokens: outcome.usage().map(|u| u.output_tokens),
+                        },
+                        TurnOutcome::Completed {
+                            stop_reason,
+                            committed,
+                            ..
+                        } if self.composer_empty => Phase::Ready {
+                            note: ended_note(stop_reason, *committed),
+                        },
+                        TurnOutcome::Completed { .. } => Phase::Listening,
+                        TurnOutcome::Cancelled {
+                            committed_steps, ..
+                        } => Phase::Stopped {
+                            kept: *committed_steps,
+                        },
+                        TurnOutcome::Error { .. } => self.idle(),
+                    }
                 };
                 self.cache_miss = false;
                 self.targets.clear();
@@ -1253,12 +1273,16 @@ impl Status {
                 Line::plain(vec![muted(text)])
                     .with_tail(muted(format!("{sep}{}", copy::clock(secs))))
             }
-            Phase::Asking { since, .. } => {
+            Phase::Asking { since } => {
+                let line = Line::told(copy::waiting_for_answer(), copy::WAITING, Token::Text);
+                let Some(since) = since else {
+                    return line;
+                };
                 let secs = t.saturating_sub(*since).as_secs();
-                let line =
-                    Line::told(copy::waiting_for_answer(), copy::WAITING, Token::Text).with_tail(
-                        StyledSpan::new(format!("{sep}{}", copy::clock(secs)), Token::Text),
-                    );
+                let line = line.with_tail(StyledSpan::new(
+                    format!("{sep}{}", copy::clock(secs)),
+                    Token::Text,
+                ));
                 match self.cache_note(t) {
                     Some(note) => {
                         line.with_tail(StyledSpan::new(format!("{sep}{note}"), Token::Text))
@@ -1378,6 +1402,7 @@ impl Status {
             return super::row::status_row(&self.orb(t, cx), sentence, &[], &right, layout);
         }
         let running = self.is_running();
+        let asking = matches!(self.phase, Phase::Asking { .. });
         let mut hints = self.keys.clone();
         let binds_exit = |h: &KeyHint| h.key() == copy::ESC_KEY || h.is_exit();
         let esc_bound = hints.iter().any(binds_exit);
@@ -1426,7 +1451,7 @@ impl Status {
                 vec![muted(copy::READY)]
             }
         } else {
-            let reserve = if layout.width < STOP_ONLY_BELOW && running {
+            let reserve = if layout.width < STOP_ONLY_BELOW && (running || asking) {
                 0
             } else {
                 let named: Vec<usize> = right
@@ -1450,6 +1475,8 @@ impl Status {
                         .find(|h| binds_exit(h))
                         .map_or_else(|| copy::esc_to_stop().text(), KeyHint::text);
                     width(&stop, mode) + GROUP_GAP
+                } else if let Some(stop) = hints.iter().find(|h| binds_exit(h) && h.is_exit()) {
+                    width(&stop.text(), mode) + GROUP_GAP
                 } else {
                     0
                 };
@@ -1470,12 +1497,13 @@ impl Status {
                 Some(at) => Some(hints.remove(at)),
                 None => Some(copy::esc_to_stop()),
             };
-            if running && layout.width < STOP_ONLY_BELOW {
+            if (running || asking) && layout.width < STOP_ONLY_BELOW {
                 hints.clear();
                 right.clear();
             }
             let after_note = usize::from(hints.first().is_some_and(|h| h.does().is_empty()));
             match stop {
+                None if asking && !line.notice => full.cut(room.saturating_sub(reserve), layout),
                 None => line.spans(&glyphs),
                 Some(stop) => {
                     let stop_w = width(&stop.text(), mode);
@@ -1529,12 +1557,12 @@ impl Status {
         if let Phase::Working {
             work: Work::Running { since, .. } | Work::Writing { since, .. },
         }
-        | Phase::Asking { since, .. } = &self.phase
+        | Phase::Asking { since: Some(since) } = &self.phase
         {
             let secs = t.saturating_sub(*since).as_secs().saturating_add(1);
             times.push(since.saturating_add(Duration::from_secs(secs)));
         }
-        if matches!(self.phase, Phase::Asking { .. }) {
+        if matches!(self.phase, Phase::Asking { since: Some(_) }) {
             times.extend(self.cache_changes(t));
         }
         let working_since = match &self.phase {

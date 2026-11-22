@@ -1,7 +1,7 @@
 use wisp_protocol::{Answer, Question, QuestionEnd};
 pub use wisp_tool_text::question::{
     ANSWERED, INTERRUPTED, MESSAGE_INSTEAD, OWN_WORDS, OWN_WORDS_CAUTION, SKIPPED, STOPPED,
-    UNAVAILABLE, UNAVAILABLE_MESSAGE,
+    UNAVAILABLE, UNAVAILABLE_MESSAGE, WITHDRAWN,
 };
 
 use crate::plugin::convert;
@@ -18,6 +18,7 @@ pub fn result_text(questions: &[Question], how: &QuestionEnd) -> String {
         QuestionEnd::Stopped => STOPPED.to_owned(),
         QuestionEnd::MessageInstead => MESSAGE_INSTEAD.to_owned(),
         QuestionEnd::Interrupted => INTERRUPTED.to_owned(),
+        QuestionEnd::Withdrawn => WITHDRAWN.to_owned(),
     }
 }
 

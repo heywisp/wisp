@@ -136,69 +136,75 @@ fn answered(command: &ClientCommand) -> (String, Vec<Answer>) {
 
 #[tokio::test(start_paused = true)]
 async fn the_ask_replay_fixture_answers_through_the_card() {
-    let events = replay::parse(FIXTURE).unwrap();
-    let screen = Screen::new(30, 80);
-    session(
-        screen.clone(),
-        vec![events],
-        Start::Stalled,
-        |run| async move {
-            sleep(Duration::from_millis(100)).await;
-            run.say("plan the service");
-            sleep(Duration::from_millis(100)).await;
-            run.say("use plan B");
-            sleep(Duration::from_secs(2)).await;
-            let lines = run.screen.visible();
-            assert!(
-                lines.iter().any(|l| l.starts_with(" ? Database")),
-                "{lines:#?}"
-            );
-            assert!(
-                lines
-                    .iter()
-                    .any(|l| l.contains(&copy::waiting_for_answer())),
-                "{lines:#?}"
-            );
-            run.send(key(KeyCode::Char('1')));
-            run.send(key(KeyCode::Char('1')));
-            run.send(key(KeyCode::Char('3')));
-            run.send(Input::Paste("Webhooks for new notes".to_owned()));
-            run.send(key(KeyCode::Enter));
-            run.send(key(KeyCode::Tab));
-            sleep(Duration::from_millis(100)).await;
-            let lines = run.screen.visible();
-            assert!(
-                lines
-                    .iter()
-                    .any(|l| l.contains("Deploy     not answered yet")),
-                "{lines:#?}"
-            );
-            run.send(key(KeyCode::Enter));
-            sleep(Duration::from_secs(2)).await;
-            let lines = run.screen.visible();
-            for want in [
-                "\u{2713} Asked Database, Features, Deploy",
-                "Which features should ship first?",
-                "\u{203a} PostgreSQL (Recommended)",
-                "\u{203a} Auth \u{b7} Export \u{b7} your own: Webhooks for new notes",
-                "\u{203a} skipped",
-                "Thanks. I'll go with your answers",
-            ] {
-                assert!(lines.iter().any(|l| l.contains(want)), "{want}: {lines:#?}");
-            }
-            let not_run = lines
+    let turns = replay::Script::new(replay::parse(FIXTURE).unwrap()).turns;
+    assert_eq!(turns.len(), 2);
+    let screen = Screen::new(40, 80);
+    session(screen.clone(), turns, Start::Stalled, |run| async move {
+        sleep(Duration::from_millis(100)).await;
+        run.say("plan the service");
+        sleep(Duration::from_millis(100)).await;
+        run.say("use plan B");
+        sleep(Duration::from_secs(2)).await;
+        let lines = run.screen.visible();
+        assert!(
+            lines.iter().any(|l| l.starts_with(" ? Database")),
+            "{lines:#?}"
+        );
+        assert!(
+            lines
                 .iter()
-                .find(|l| l.contains(copy::NOT_RUN_FACT))
-                .unwrap_or_else(|| panic!("{lines:#?}"));
-            assert!(not_run.contains("cargo new notes-service"), "{not_run}");
-            assert!(not_run.ends_with(copy::AFTER_QUESTION), "{not_run}");
-            let asked = lines.iter().position(|l| l.contains("\u{2713} Asked"));
-            let steer = lines.iter().position(|l| l.contains("use plan B"));
-            assert!(asked.is_some() && asked < steer, "{lines:#?}");
-            assert!(!lines.iter().any(|l| l.starts_with(" ? ")), "{lines:#?}");
-            run.send(ctrl('d'));
-        },
-    )
+                .any(|l| l.contains(&copy::waiting_for_answer()) && l.contains("esc close")),
+            "{lines:#?}"
+        );
+        assert!(
+            lines.iter().any(|l| l.contains(&copy::waiting_fact())),
+            "{lines:#?}"
+        );
+        run.send(key(KeyCode::Char('1')));
+        run.send(key(KeyCode::Char('1')));
+        run.send(key(KeyCode::Char('3')));
+        run.send(Input::Paste("Webhooks for new notes".to_owned()));
+        run.send(key(KeyCode::Enter));
+        run.send(key(KeyCode::Tab));
+        sleep(Duration::from_millis(100)).await;
+        let lines = run.screen.visible();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("Deploy     not answered yet")),
+            "{lines:#?}"
+        );
+        run.send(key(KeyCode::Enter));
+        sleep(Duration::from_secs(2)).await;
+        let lines = run.screen.visible();
+        for want in [
+            "\u{2713} Asked Database, Features, Deploy",
+            "Which features should ship first?",
+            "\u{203a} PostgreSQL (Recommended)",
+            "\u{203a} Auth \u{b7} Export \u{b7} your own: Webhooks for new notes",
+            "\u{203a} skipped",
+            "You answered Database: PostgreSQL (Recommended)",
+            "You answered Features: Auth \u{b7} Export \u{b7} your own: Webhooks for new notes",
+            "Thanks. I'll go with your answers",
+        ] {
+            assert!(lines.iter().any(|l| l.contains(want)), "{want}: {lines:#?}");
+        }
+        assert!(
+            !lines.iter().any(|l| l.contains("You answered Deploy")),
+            "{lines:#?}"
+        );
+        let not_run = lines
+            .iter()
+            .find(|l| l.contains(copy::NOT_RUN_FACT))
+            .unwrap_or_else(|| panic!("{lines:#?}"));
+        assert!(not_run.contains("cargo new notes-service"), "{not_run}");
+        assert!(not_run.ends_with(copy::AFTER_QUESTION), "{not_run}");
+        let asked = lines.iter().position(|l| l.contains("\u{2713} Asked"));
+        let steer = lines.iter().position(|l| l.contains("use plan B"));
+        assert!(asked.is_some() && asked < steer, "{lines:#?}");
+        assert!(!lines.iter().any(|l| l.starts_with(" ? ")), "{lines:#?}");
+        run.send(ctrl('d'));
+    })
     .await
     .unwrap();
 }
@@ -1383,6 +1389,11 @@ async fn a_returned_draft_under_a_question_keeps_edit_and_stop_keys() {
                 .key(KeyCode::Char('d'))
                 .key(KeyCode::Char('b'));
             a.settle().await;
+            a.emit(AgentEvent::QuestionClosed {
+                call_id: "q1".to_owned(),
+                how: QuestionEnd::Stopped,
+            })
+            .await;
             a.emit(AgentEvent::QuestionAsked {
                 call_id: "q2".to_owned(),
                 questions: vec![database()],
@@ -1449,4 +1460,296 @@ async fn a_typed_server_question_opens_on_typing_and_up_reaches_not_now() {
         })
         .await;
     }
+}
+
+async fn posted(a: &mut Agent, id: &str, questions: Vec<Question>) {
+    begun_as(a, id, questions).await;
+    a.emit(AgentEvent::call_finished(
+        id,
+        wisp_protocol::ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+    ))
+    .await;
+    sleep(Duration::from_millis(50)).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_card_outlives_its_call_and_turn_and_answers_while_idle() {
+    use wisp_protocol::MailKind;
+    steering(|mut a| async move {
+        posted(&mut a, "q1", vec![database()]).await;
+        a.emit(super::resumed::completed()).await;
+        let lines = a.settle().await;
+        assert!(row_with(&lines, "question 1 of 1").is_some(), "{lines:#?}");
+        assert!(
+            row_with(&lines, &copy::waiting_fact()).is_some(),
+            "{lines:#?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains(&copy::waiting_for_answer()) && l.contains("esc close")),
+            "{lines:#?}"
+        );
+        a.key(KeyCode::Char('1'));
+        let (call_id, answers) = answered(&a.next().await);
+        assert_eq!(call_id, "q1");
+        a.emit(AgentEvent::QuestionClosed {
+            call_id: "q1".to_owned(),
+            how: QuestionEnd::Answered { answers },
+        })
+        .await;
+        a.emit(super::agents::mail("q1", "/", MailKind::Question, true, ""))
+            .await;
+        let before = a.settle().await;
+        assert!(
+            row_with(&before, "question 1 of 1").is_none(),
+            "{before:#?}"
+        );
+        assert!(
+            row_with(&before, "You answered Database:").is_none(),
+            "{before:#?}"
+        );
+        a.emit(AgentEvent::turn_started(2)).await;
+        a.emit(AgentEvent::StepStarted { step: 1 }).await;
+        a.emit(super::agents::delivered(&["q1"], 1)).await;
+        let after = a.settle().await;
+        let notes: Vec<_> = after
+            .iter()
+            .filter(|l| l.contains("You answered Database: PostgreSQL (Recommended)"))
+            .collect();
+        assert_eq!(notes.len(), 1, "{after:#?}");
+        a.emit(super::agents::mail(
+            "q-undelivered",
+            "/",
+            MailKind::Question,
+            true,
+            "",
+        ))
+        .await;
+        a.emit(super::resumed::completed()).await;
+        let idle = a.settle().await;
+        let notes_after: Vec<_> = idle
+            .iter()
+            .filter(|l| l.contains("You answered Database: PostgreSQL (Recommended)"))
+            .collect();
+        assert_eq!(notes_after.len(), 1, "{idle:#?}");
+        assert!(row_with(&idle, copy::DONE).is_some(), "{idle:#?}");
+        assert!(row_with(&idle, "waiting").is_none(), "{idle:#?}");
+        a.emit(AgentEvent::TodosUpdated {
+            call_id: None,
+            items: vec![wisp_protocol::TodoItem {
+                text: "pick a database".to_owned(),
+                status: wisp_protocol::TodoStatus::Pending,
+                section: None,
+            }],
+        })
+        .await;
+        a.ctrl('t');
+        a.settle().await;
+        a.emit(AgentEvent::turn_started(3)).await;
+        ask(&a, "q2", vec![database()]).await;
+        a.emit(AgentEvent::call_finished(
+            "q2",
+            wisp_protocol::ToolOutcome::Completed {
+                is_error: false,
+                exit: None,
+            },
+        ))
+        .await;
+        a.emit(super::resumed::completed()).await;
+        sleep(Duration::from_millis(600)).await;
+        let overlay = a.settle().await;
+        assert!(
+            !overlay
+                .iter()
+                .any(|l| l.contains(&copy::waiting_for_answer()) && l.contains("esc close")),
+            "{overlay:#?}"
+        );
+        a.key(KeyCode::Esc);
+        let unoverlay = a.settle().await;
+        assert!(
+            unoverlay
+                .iter()
+                .any(|l| l.contains(&copy::waiting_for_answer()) && l.contains("esc close")),
+            "{unoverlay:#?}"
+        );
+        a.paste("Whatever staging runs");
+        a.settle().await;
+        a.key(KeyCode::Esc);
+        assert_eq!(a.next().await, ClientCommand::Cancel);
+        a.emit(AgentEvent::QuestionClosed {
+            call_id: "q2".to_owned(),
+            how: QuestionEnd::Stopped,
+        })
+        .await;
+        let closed = a.settle().await;
+        assert!(
+            row_with(&closed, "Whatever staging runs").is_some(),
+            "{closed:#?}"
+        );
+        assert!(
+            row_with(&closed, copy::ANSWER_CLOSED).is_some(),
+            "{closed:#?}"
+        );
+        assert!(row_with(&closed, copy::READY).is_none(), "{closed:#?}");
+        a.ctrl('c').ctrl('c').ctrl('c');
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_blocking_card_shows_in_front_and_esc_closes_both_under_one_note() {
+    steering(|mut a| async move {
+        posted(&mut a, "q1", vec![database()]).await;
+        a.settle().await;
+        a.paste("prefer redis");
+        assert!(
+            row_with(&a.settle().await, "prefer redis").is_some(),
+            "typed text on posted card"
+        );
+        ask(&a, "q2", vec![process_question(7)]).await;
+        sleep(Duration::from_millis(600)).await;
+        let front = a.settle().await;
+        assert!(row_with(&front, "Process 7").is_some(), "{front:#?}");
+        a.emit(AgentEvent::QuestionClosed {
+            call_id: "q2".to_owned(),
+            how: QuestionEnd::Answered {
+                answers: vec![Answer::choose(0)],
+            },
+        })
+        .await;
+        sleep(Duration::from_millis(600)).await;
+        let back = a.settle().await;
+        assert!(row_with(&back, "Database").is_some(), "{back:#?}");
+        assert!(row_with(&back, "prefer redis").is_some(), "{back:#?}");
+        ask(&a, "q3", vec![deploy()]).await;
+        sleep(Duration::from_millis(600)).await;
+        a.settle().await;
+        a.paste("on fly");
+        a.settle().await;
+        a.key(KeyCode::Esc);
+        assert_eq!(a.next().await, ClientCommand::Cancel);
+        a.emit(AgentEvent::QuestionClosed {
+            call_id: "q3".to_owned(),
+            how: QuestionEnd::Stopped,
+        })
+        .await;
+        a.emit(AgentEvent::QuestionClosed {
+            call_id: "q1".to_owned(),
+            how: QuestionEnd::Stopped,
+        })
+        .await;
+        a.emit(cancelled()).await;
+        let lines = a.settle().await;
+        assert!(row_with(&lines, "on fly").is_some(), "{lines:#?}");
+        assert!(row_with(&lines, "prefer redis").is_some(), "{lines:#?}");
+        let notes = lines
+            .iter()
+            .filter(|l| l.contains(copy::ANSWER_BACK))
+            .count();
+        assert_eq!(notes, 1, "{lines:#?}");
+        a.ctrl('c').ctrl('c').ctrl('c');
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_withdrawn_card_closes_returns_typed_text_and_shows_status_hint() {
+    steering(|mut a| async move {
+        posted(&mut a, "q1", vec![database()]).await;
+        a.settle().await;
+        a.paste("staging runs redis");
+        a.settle().await;
+        a.emit(AgentEvent::QuestionClosed {
+            call_id: "q1".to_owned(),
+            how: QuestionEnd::Withdrawn,
+        })
+        .await;
+        let lines = a.settle().await;
+        assert!(row_with(&lines, "question 1 of 1").is_none(), "{lines:#?}");
+        assert!(
+            row_with(&lines, "staging runs redis").is_some(),
+            "{lines:#?}"
+        );
+        assert!(
+            row_with(&lines, copy::QUESTION_WITHDRAWN).is_some(),
+            "{lines:#?}"
+        );
+        assert!(
+            row_with(&lines, copy::ANSWER_WITHDRAWN).is_some(),
+            "{lines:#?}"
+        );
+        a.emit(super::resumed::completed()).await;
+        let ended = a.settle().await;
+        assert!(row_with(&ended, copy::ANSWER_BACK).is_some(), "{ended:#?}");
+        a.ctrl('c').ctrl('c').ctrl('c');
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_secret_step_in_takes_the_keys_in_front_of_a_waiting_card() {
+    steering(|mut a| async move {
+        posted(&mut a, "q1", vec![database()]).await;
+        a.settle().await;
+        a.emit(super::processes::waiting_terminal(5)).await;
+        a.emit(super::secrets::asked()).await;
+        sleep(Duration::from_millis(600)).await;
+        let lines = a.settle().await;
+        assert!(row_with(&lines, "OpenAI API key").is_some(), "{lines:#?}");
+        a.paste("sk-CANARY-secret-value-1234").key(KeyCode::Enter);
+        assert!(
+            matches!(a.next().await, ClientCommand::AnswerSecret { call_id, .. } if call_id == "secret")
+        );
+        a.emit(AgentEvent::SecretRequestClosed {
+            call_id: "secret".to_owned(),
+            how: wisp_protocol::SecretRequestEnd::Entered,
+        })
+        .await;
+        sleep(Duration::from_millis(600)).await;
+        let after = a.settle().await;
+        assert!(row_with(&after, "Database").is_some(), "{after:#?}");
+        a.key(KeyCode::Char('1'));
+        let (call_id, _) = answered(&a.next().await);
+        assert_eq!(call_id, "q1");
+        finish(&a).await;
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_turn_end_drops_unconfirmed_saved_cards() {
+    let mut opts = options(Start::Stalled);
+    let ended = attached(&mut opts, wisp_protocol::link::REQUEST_RANGE);
+    let first = steering_finished(
+        Screen::new(30, 80),
+        opts,
+        super::facts(),
+        |mut a| async move {
+            begun(&mut a, vec![database()]).await;
+            a.paste("unsent draft");
+            a.settle().await;
+            a.cut(ended).await;
+        },
+    )
+    .await;
+    assert!(
+        first
+            .unsent
+            .as_ref()
+            .is_some_and(|u| u.texts().iter().any(|t| t.contains("unsent draft")))
+    );
+    let mut opts = options(Start::Stalled);
+    opts.unsent = first.unsent;
+    let ended = attached(&mut opts, wisp_protocol::link::REQUEST_RANGE);
+    let second = steering_finished(Screen::new(30, 80), opts, super::facts(), |a| async move {
+        a.emit(super::resumed::completed()).await;
+        a.settle().await;
+        a.cut(ended).await;
+    })
+    .await;
+    assert!(second.unsent.unwrap().texts().is_empty());
 }

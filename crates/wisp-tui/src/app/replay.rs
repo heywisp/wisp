@@ -9,11 +9,12 @@ use wisp_protocol::settings::{
     SettingValue, SettingsSnapshot, Shadowed, SnapshotContext, effort_refusal, names,
 };
 use wisp_protocol::{
-    ALREADY_COMPACTING, AgentEvent, COMPACT_BETWEEN_TURNS, CacheEffect, CacheTtl, ClientCommand,
-    CompactionEngine, CompactionFailure, CompactionTrigger, DeliveryMode, Effort, ErrorKind,
-    InputId, NO_NATIVE_COMPACTION, NOT_MOVABLE, NOTHING_HELD, NOTHING_RUNNING, Question,
-    QuestionEnd, RebuildReason, RejectKind, RequestId, TurnOutcome, TurnStats, WithdrawnBy,
-    answer_refusal, check_answers, process_refusal, report_refusal,
+    ALREADY_COMPACTING, AgentEvent, AgentPath, Answer, COMPACT_BETWEEN_TURNS, CacheEffect,
+    CacheTtl, ClientCommand, CompactionEngine, CompactionFailure, CompactionTrigger, DeliveryMode,
+    Effort, ErrorKind, InputId, MailFrom, MailId, MailKind, NO_NATIVE_COMPACTION, NOT_MOVABLE,
+    NOTHING_HELD, NOTHING_RUNNING, Question, QuestionEnd, RebuildReason, RejectKind, RequestId,
+    TurnOutcome, TurnStats, WithdrawnBy, answer_refusal, check_answers, process_refusal,
+    report_refusal,
 };
 use wisp_protocol::{
     AttachRequestEnd, BackgroundReason, DetachReason, Fact, ProcessEnd, StoppedBy, TermSize,
@@ -977,6 +978,8 @@ struct Agent {
     offered: Option<u64>,
     retry: Option<(u64, RequestId)>,
     recorded: Recorded,
+    posted: Option<(String, Vec<Question>)>,
+    answers: u64,
 }
 
 type Recorded = (
@@ -1168,10 +1171,92 @@ impl Agent {
     }
 
     async fn stop(&mut self, delivered: &[(InputId, u32)], committed: u32) -> bool {
+        if !self.stop_posted().await {
+            return false;
+        }
         let unkept = unkept(delivered, committed);
         let settled = self.settle(WithdrawnBy::TurnStopped, unkept).await;
         self.record_end(Some(WithdrawnBy::TurnStopped));
         settled && self.emit(cancelled_after(committed)).await
+    }
+
+    async fn stop_posted(&mut self) -> bool {
+        let Some((call_id, _)) = self.posted.take() else {
+            return true;
+        };
+        self.emit(AgentEvent::QuestionClosed {
+            call_id,
+            how: QuestionEnd::Stopped,
+        })
+        .await
+    }
+
+    async fn answer(
+        &mut self,
+        call_id: String,
+        answers: Vec<Answer>,
+        open: Option<(&str, &[Question])>,
+    ) -> Result<Option<String>, ()> {
+        let (posted, questions) = match open.filter(|(id, _)| *id == call_id) {
+            Some((_, questions)) => (false, Some(questions)),
+            None => (
+                true,
+                self.posted
+                    .as_ref()
+                    .filter(|(id, _)| *id == call_id)
+                    .map(|(_, q)| q.as_slice()),
+            ),
+        };
+        let problem = match questions {
+            None => Some((RejectKind::NoQuestion, None)),
+            Some(questions) => check_answers(questions, &answers)
+                .err()
+                .map(|why| (RejectKind::BadAnswer, Some(why))),
+        };
+        if let Some((kind, why)) = problem {
+            let reason = answer_refusal(&kind, &call_id, why.as_deref());
+            return self
+                .emit(rejected(None, kind, &reason))
+                .await
+                .then_some(None)
+                .ok_or(());
+        }
+        if posted {
+            self.posted = None;
+        }
+        if !self
+            .emit(AgentEvent::QuestionClosed {
+                call_id: call_id.clone(),
+                how: QuestionEnd::Answered { answers },
+            })
+            .await
+        {
+            return Err(());
+        }
+        Ok(posted.then_some(call_id))
+    }
+
+    async fn accept_answer_letter(&mut self, call_id: String) -> Option<InputId> {
+        self.answers = self.answers.saturating_add(1);
+        let id = InputId(format!("wisp-question-{}", self.answers));
+        let accepted = AgentEvent::InputAccepted {
+            id: id.clone(),
+            mode: DeliveryMode::Steer,
+            opening: !self.running,
+            text: String::new(),
+            images: Vec::new(),
+            replaces: None,
+            held: false,
+            front: false,
+            from: Some(MailFrom {
+                agent: AgentPath::root(),
+                kind: MailKind::Question,
+                mail: MailId(call_id),
+                wake: true,
+                plugin: None,
+            }),
+        };
+        self.emit(accepted).await.then_some(id)
     }
 
     async fn fail_unplayed(&mut self, opening: Vec<InputId>) -> bool {
@@ -1283,25 +1368,20 @@ impl Agent {
                 self.emit(event).await
             }
             ClientCommand::Answer { call_id, answers } => {
-                let event = match open.filter(|(id, _)| *id == call_id) {
-                    None => rejected(
-                        None,
-                        RejectKind::NoQuestion,
-                        &answer_refusal(&RejectKind::NoQuestion, &call_id, None),
-                    ),
-                    Some((_, questions)) => match check_answers(questions, &answers) {
-                        Ok(()) => AgentEvent::QuestionClosed {
-                            call_id,
-                            how: QuestionEnd::Answered { answers },
-                        },
-                        Err(why) => rejected(
-                            None,
-                            RejectKind::BadAnswer,
-                            &answer_refusal(&RejectKind::BadAnswer, &call_id, Some(&why)),
-                        ),
-                    },
+                let Ok(posted) = self.answer(call_id, answers, open).await else {
+                    return false;
                 };
-                self.emit(event).await
+                if let Some(call_id) = posted {
+                    let Some(id) = self.accept_answer_letter(call_id).await else {
+                        return false;
+                    };
+                    self.inbox.waiting.push(Waiting {
+                        id,
+                        mode: DeliveryMode::Steer,
+                        held: false,
+                    });
+                }
+                true
             }
             ClientCommand::ScreenReport { call_id, .. } => {
                 let refused = rejected(None, RejectKind::UnknownId, &report_refusal(&call_id));
@@ -1425,6 +1505,13 @@ impl Agent {
         self.turn = self.turn.saturating_add(1);
         self.running = true;
         let mut committed = 0;
+        let blocking: BTreeSet<String> = turn
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::QuestionClosed { call_id, .. } => Some(call_id.clone()),
+                _ => None,
+            })
+            .collect();
         let scripted = turn
             .iter()
             .any(|e| matches!(e, AgentEvent::InputDelivered { .. }));
@@ -1568,11 +1655,15 @@ impl Agent {
                 }
             }
             if let Some((call_id, questions)) = asked {
-                match self.ask(&call_id, &questions, inbox).await? {
-                    Asked::Closed => closed = Some(call_id),
-                    Asked::Stopped => {
-                        return self.stop(&delivered, committed).await.then_some(false);
+                if blocking.contains(&call_id) {
+                    match self.ask(&call_id, &questions, inbox).await? {
+                        Asked::Closed => closed = Some(call_id),
+                        Asked::Stopped => {
+                            return self.stop(&delivered, committed).await.then_some(false);
+                        }
                     }
+                } else {
+                    self.posted = Some((call_id, questions));
                 }
             }
             if let Some(outcome) = ended {
@@ -1730,6 +1821,8 @@ pub fn spawn(
             offered: None,
             retry: None,
             recorded: (None, Vec::new()),
+            posted: None,
+            answers: 0,
         };
         let mut due: Vec<InputId> = vec![];
         loop {
@@ -1787,9 +1880,30 @@ pub fn spawn(
                         ids.push(id);
                         ids
                     }
+                    ClientCommand::Cancel => {
+                        if !agent.stop_posted().await {
+                            return;
+                        }
+                        continue;
+                    }
+                    ClientCommand::Answer { call_id, answers } => {
+                        let Ok(posted) = agent.answer(call_id, answers, None).await else {
+                            return;
+                        };
+                        let Some(call_id) = posted else {
+                            continue;
+                        };
+                        if turns.is_empty() {
+                            continue;
+                        }
+                        let Some(id) = agent.accept_answer_letter(call_id).await else {
+                            return;
+                        };
+                        let mut ids = agent.inbox.held();
+                        ids.push(id);
+                        ids
+                    }
                     ClientCommand::Send { .. }
-                    | ClientCommand::Cancel
-                    | ClientCommand::Answer { .. }
                     | ClientCommand::AnswerSecret { .. }
                     | ClientCommand::ScreenReport { .. } => continue,
                     ClientCommand::ChangeSettings {

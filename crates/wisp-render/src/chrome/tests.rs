@@ -4693,6 +4693,7 @@ fn without_a_known_tail_there_is_no_cache_note() {
     let mut s = Status::new();
     s.submitted(d(0), cx);
     s.apply(&AgentEvent::turn_started(1), d(10), cx);
+    s.apply(&AgentEvent::call_started("q", ""), d(15), cx);
     s.apply(
         &AgentEvent::QuestionAsked {
             call_id: "q".to_owned(),
@@ -4703,6 +4704,121 @@ fn without_a_known_tail_there_is_no_cache_note() {
     );
     assert_eq!(s.cache_note(d(10_000_000)), None);
     assert_eq!(say(&s, 3_620, cx), "Waiting for your answer \u{b7} 3s");
+}
+
+#[test]
+fn a_turn_ending_with_an_open_question_waits_thinks_on_next_turn_and_waits_again() {
+    let cx = FULL;
+    let mut s = asking(CacheTtl::OneHour, 1000, 1000);
+    s.apply(
+        &AgentEvent::call_finished(
+            "q",
+            wisp_protocol::ToolOutcome::Completed {
+                is_error: false,
+                exit: None,
+            },
+        ),
+        d(1200),
+        cx,
+    );
+    assert_eq!(s.state(d(1200), cx), State::Thinking);
+    s.apply(
+        &AgentEvent::TurnEnded {
+            outcome: completed(StopReason::EndTurn, true),
+            stats: TurnStats::default(),
+        },
+        d(2000),
+        cx,
+    );
+    assert_eq!(s.state(d(5000), cx), State::Asking);
+    assert_eq!(say(&s, 5000, cx), "Waiting for your answer \u{b7} 4s");
+    s.apply(&AgentEvent::turn_started(2), d(6000), cx);
+    assert_eq!(s.state(d(6500), cx), State::Thinking);
+    s.apply(
+        &AgentEvent::TurnEnded {
+            outcome: completed(StopReason::EndTurn, true),
+            stats: TurnStats::default(),
+        },
+        d(10_000),
+        cx,
+    );
+    assert_eq!(s.state(d(15_000), cx), State::Asking);
+    assert_eq!(say(&s, 15_000, cx), "Waiting for your answer \u{b7} 14s");
+}
+
+#[test]
+fn an_idle_close_goes_idle_and_an_idle_ask_waits_without_a_clock() {
+    let cx = FULL;
+    let mut s = Status::new().with_tail(Duration::from_secs(3600));
+    s.apply(
+        &AgentEvent::QuestionAsked {
+            call_id: "q".to_owned(),
+            questions: vec![],
+        },
+        d(5000),
+        cx,
+    );
+    assert_eq!(s.state(d(20_000), cx), State::Asking);
+    assert_eq!(say(&s, 20_000, cx), "Waiting for your answer");
+    assert_eq!(s.next_change(d(20_000), cx), None);
+    s.apply(
+        &AgentEvent::QuestionClosed {
+            call_id: "q".to_owned(),
+            how: wisp_protocol::QuestionEnd::Stopped,
+        },
+        d(25_000),
+        cx,
+    );
+    assert_eq!(s.state(d(25_000), cx), State::Ready);
+}
+
+#[test]
+fn idle_waiting_row_fits_at_40_80_and_120_columns() {
+    let cx = SIXTEEN;
+    let mut s = asking(CacheTtl::OneHour, 1000, 1000);
+    s.apply(
+        &AgentEvent::call_finished(
+            "q",
+            wisp_protocol::ToolOutcome::Completed {
+                is_error: false,
+                exit: None,
+            },
+        ),
+        d(1200),
+        cx,
+    );
+    s.apply(
+        &AgentEvent::TurnEnded {
+            outcome: completed(StopReason::EndTurn, true),
+            stats: TurnStats::default(),
+        },
+        d(2000),
+        cx,
+    );
+    let t = d(1000 + (52 * 60 + 10) * 1000);
+    s.keys(&[copy::esc(copy::CLOSE_WORD)]);
+    let at = |s: &Status, w: usize| line(&s.row(t, cx, &facts(), layout(w)));
+    let r40 = at(&s, 40);
+    assert!(r40.contains("Waiting \u{b7} 52m 10s"), "{r40}");
+    assert!(r40.contains("esc close"), "{r40}");
+    assert!(!r40.contains("cache"), "{r40}");
+    assert!(!r40.contains("Claude"), "{r40}");
+    let r80 = at(&s, 80);
+    assert!(r80.contains("Waiting \u{b7} 52m 10s"), "{r80}");
+    assert!(r80.contains("cache expires in 8 min"), "{r80}");
+    assert!(r80.contains("esc close"), "{r80}");
+    assert!(r80.contains("Claude"), "{r80}");
+    let r120 = at(&s, 120);
+    assert!(
+        r120.contains("Waiting for your answer \u{b7} 52m 10s \u{b7} cache expires in 8 min"),
+        "{r120}"
+    );
+    assert!(r120.contains("esc close"), "{r120}");
+    s.keys(&[]);
+    let bare40 = at(&s, 40);
+    assert!(bare40.contains("Waiting \u{b7} 52m 10s"), "{bare40}");
+    assert!(!bare40.contains("cache"), "{bare40}");
+    assert!(!bare40.contains("Claude"), "{bare40}");
 }
 
 fn context_changed(used: u64, auto_compact: bool) -> AgentEvent {
