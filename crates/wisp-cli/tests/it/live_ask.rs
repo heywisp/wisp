@@ -18,7 +18,7 @@ const CAP_USD: f64 = 0.05;
 const MAX_TOKENS: u32 = 1024;
 const PREFIX_TOKENS: u64 = 5_000;
 const STEP_TOKENS: u64 = 1_500;
-const MAX_STEPS: u64 = 3;
+const MAX_STEPS: u64 = 4;
 const PROMPT: &str =
     "Ask me which of two colours, red or blue, to use, then reply with just that colour.";
 
@@ -73,6 +73,7 @@ async fn live_ask_user_asks_red_or_blue_and_follows_the_answer() {
     let mut tools = vec![];
     let mut asked = 0u32;
     let mut reply = String::new();
+    let mut answered_step = None;
     let outcome = loop {
         match next_event(&mut events).await {
             AgentEvent::StepEnded {
@@ -99,8 +100,17 @@ async fn live_ask_user_asks_red_or_blue_and_follows_the_answer() {
                     .await
                     .unwrap();
             }
+            AgentEvent::QuestionClosed {
+                how: wisp_protocol::QuestionEnd::Answered { .. },
+                ..
+            } => answered_step = Some(steps),
             AgentEvent::TextDelta { text, .. } => reply.push_str(&text),
-            AgentEvent::TurnEnded { outcome, .. } => break outcome,
+            AgentEvent::TurnEnded { outcome, .. }
+                if !matches!(outcome, TurnOutcome::Completed { .. })
+                    || answered_step.is_some_and(|at| steps > at) =>
+            {
+                break outcome;
+            }
             _ => {}
         }
     };
@@ -111,7 +121,7 @@ async fn live_ask_user_asks_red_or_blue_and_follows_the_answer() {
     );
     assert_eq!(asked, 1, "the model asked without ask_user: {tools:?}");
     assert_eq!(tools, ["ask_user"], "{tools:?}");
-    assert_eq!(steps, 2);
+    assert!((2..=3).contains(&steps), "{steps}");
     assert!(reply.to_lowercase().contains("blue"), "{reply:?}");
     assert!(spent <= CAP_USD, "spent ${spent:.4}");
 }

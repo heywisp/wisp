@@ -155,7 +155,7 @@ fn a_leading_head_after_a_kept_break_keeps_its_kept_thinking_off_binding() {
         let kept = bench.settled();
         let banded = Build {
             band: true,
-            models: Some("[models.\"claude-opus-5-5\"]\ncompact_at = 15000\n"),
+            models: Some("[models.\"claude-opus-5-5\"]\ncompact_at = 15500\n"),
             ..Build::default()
         };
         let mut live = bench.resume(banded);

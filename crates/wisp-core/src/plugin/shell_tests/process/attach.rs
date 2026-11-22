@@ -26,7 +26,9 @@ fn answering(rig: &mut Rig, reply: AskReply) -> tokio::task::JoinHandle<Option<(
             }
             AskRequest::Questions { .. }
             | AskRequest::Report { .. }
-            | AskRequest::Secret { .. } => None,
+            | AskRequest::Secret { .. }
+            | AskRequest::Post { .. }
+            | AskRequest::Withdraw { .. } => None,
         }
     })
 }

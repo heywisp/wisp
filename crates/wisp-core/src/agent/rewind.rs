@@ -22,6 +22,7 @@ use wisp_protocol::{
 use super::compact::{Head, Ledger};
 use super::epoch::{Entry, EpochAt, PrefixKey};
 use super::inbox::Input;
+use super::question::{Posted, PostedFold};
 use super::resume::HeadTurns;
 use super::{Agent, LastRequest, emit};
 use crate::context::{blocks_tokens, ttl_span};
@@ -93,6 +94,7 @@ pub(super) struct PointMark {
     failed_tail: Option<BTreeSet<String>>,
     ledger: Ledger,
     pub(super) todos: Vec<TodoItem>,
+    pub(super) posted: Option<Posted>,
     arrival: Option<u64>,
 }
 
@@ -225,6 +227,7 @@ impl Agent {
             failed_tail: opening.failed_tail,
             ledger: self.compaction.calls_now(),
             todos: self.todos.clone(),
+            posted: self.posted.clone(),
             arrival: opening.arrival,
         };
         self.rewind.marks.push(mark);
@@ -542,7 +545,7 @@ impl Agent {
     }
 
     async fn withdraw_all(&mut self, events: &mpsc::Sender<AgentEvent>) -> Vec<ReturnedInput> {
-        let ids = self.inbox.all_ids();
+        let mut ids = self.inbox.all_ids();
         let back = ids
             .iter()
             .filter_map(|id| self.inbox.remove(id))
@@ -553,6 +556,7 @@ impl Agent {
                 missing: Vec::new(),
             })
             .collect();
+        ids.extend(self.inbox.take_question_mail());
         self.withdrawn(ids, WithdrawnBy::Rewound, events).await;
         back
     }
@@ -595,6 +599,8 @@ impl Agent {
         let todos_before = self.todos.clone();
         self.restore_point(&mark, cache == CacheEffect::Kept);
         self.rewind.applied += 1;
+        self.withdraw_dropped_posted(mark.posted.as_ref(), events)
+            .await;
         if let Some(seq) = mark.seq {
             let record = LogEvent::Rewound {
                 to: seq.saturating_sub(1),
@@ -619,6 +625,7 @@ impl Agent {
             cache,
         };
         emit(events, event).await;
+        self.reopen_posted(mark.posted, events).await;
         if self.todos != todos_before {
             let items = self.todos.clone();
             emit(
@@ -859,6 +866,7 @@ impl Agent {
             failed_tail,
             ledger: Ledger::new(),
             todos: before.todos,
+            posted: before.posted.posted(),
             arrival: None,
         })
     }
@@ -939,10 +947,12 @@ struct Before {
     heard: BTreeSet<u32>,
     top: Option<u32>,
     todos: Vec<TodoItem>,
+    posted: PostedFold,
 }
 
 impl Before {
     fn see(&mut self, event: &LogEvent) {
+        self.posted.see(event);
         match event {
             LogEvent::ToolCallFinished {
                 state: Some(WorkspaceChange::Cwd { path }),

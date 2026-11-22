@@ -187,6 +187,7 @@ Ok(
         started_tools: [],
         tool_cwd: None,
         todos: [],
+        posted: None,
         rendered: {},
         unreadable: {},
         marker_dropped: {},

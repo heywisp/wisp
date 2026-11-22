@@ -35,6 +35,7 @@ use wisp_plugin_api::project::Project;
 use wisp_plugin_api::prompt::{
     self, At, EnvironmentFacts, JobNews, News, Prior, Rendered, WorkspaceFacts,
 };
+use wisp_plugin_api::questions::{self, Questions};
 use wisp_plugin_api::slots::{self, Content, SlotView};
 use wisp_plugin_api::strategy::{self, StrategyInfo, View};
 use wisp_plugin_api::tools::{self, BuildContext, DoctorRow, Prepared, ToolDef};
@@ -57,7 +58,15 @@ const WIT_0_3_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.3.0")
 
 const WIT_0_4_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.4.0");
 
-const ADDED_IN_0_4_0: [&str; 6] = ["chat", "manage", "mcp", "model", "project", "usage"];
+const ADDED_IN_0_4_0: [&str; 7] = [
+    "chat",
+    "manage",
+    "mcp",
+    "model",
+    "project",
+    "questions",
+    "usage",
+];
 
 const ADDED_IN_0_2_0: [&str; 17] = [
     "slot-types",
@@ -143,6 +152,16 @@ macro_rules! cases {
 
 fn mirrors() -> Vec<Mirror> {
     vec![
+        cases!(
+            Enum,
+            "questions",
+            "posted",
+            questions::Posted {
+                Open,
+                Busy,
+                Unavailable
+            }
+        ),
         cases!(
             Enum,
             "manage",
@@ -2531,6 +2550,11 @@ probe!(mcp_methods, impl Mcp {
     fn remove<'a>(&'a self, _name: &'a str) -> BoxFuture<'a, Result<(), String>> { ready(Ok(())) }
 });
 
+probe!(questions_methods, impl Questions {
+    fn post<'a>(&'a self, _items: Vec<Question>, _ctx: &'a dyn CallContext) -> BoxFuture<'a, questions::Posted> { ready(questions::Posted::Unavailable) }
+    fn withdraw<'a>(&'a self, _ctx: &'a dyn CallContext) -> BoxFuture<'a, bool> { ready(false) }
+});
+
 probe!(model_methods, impl Model {
     fn ask<'a>(&'a self, _req: model::Prompt, _ctx: &'a dyn CallContext) -> BoxFuture<'a, Result<model::Reply, model::AskError>> { ready(Err(model::AskError::Cancelled)) }
 });
@@ -2667,6 +2691,7 @@ fn traits() -> Vec<Trait> {
     vec![
         import("Chat", &[("chat", None)], chat_methods),
         import("Project", &[("project", None)], project_methods),
+        import("Questions", &[("questions", None)], questions_methods),
         import("Mcp", &[("mcp", None)], mcp_methods),
         import("Manage", &[("manage", None)], manage_methods),
         import("Model", &[("model", None)], model_methods),
@@ -3333,6 +3358,7 @@ fn each_folder_holds_one_package_and_each_later_one_only_its_delta() {
             "mcp.wit",
             "model.wit",
             "project.wit",
+            "questions.wit",
             "todos.wit",
             "usage.wit",
             "world.wit"
@@ -3625,6 +3651,7 @@ fn world_0_4_0_includes_every_item_of_0_3_0_from_its_folder() {
                     "wisp:plugin/mcp@0.4.0",
                     "wisp:plugin/model@0.4.0",
                     "wisp:plugin/project@0.4.0",
+                    "wisp:plugin/questions@0.4.0",
                     "wisp:plugin/todos@0.4.0",
                     "wisp:plugin/usage@0.4.0"
                 ]

@@ -151,6 +151,10 @@ fn cases() -> Vec<(&'static str, String)> {
             result_text(single, &QuestionEnd::Interrupted),
         ),
         ("unavailable", UNAVAILABLE.to_owned()),
+        ("posted", posted()),
+        ("busy", busy()),
+        ("withdrawn", result_text(single, &QuestionEnd::Withdrawn)),
+        ("nothing_open", NOTHING_OPEN.to_owned()),
     ]
 }
 

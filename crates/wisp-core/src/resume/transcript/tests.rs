@@ -759,7 +759,7 @@ fn asked_in(turn: u64, call_id: &str, questions: &[wisp_protocol::Question]) -> 
 
 #[test]
 fn an_answered_and_an_interrupted_question_are_rebuilt() {
-    let questions: Vec<wisp_protocol::Question> =
+    let wisp_plugin_ask_user::Call::Ask(parsed) =
         wisp_plugin_ask_user::parse(&json!({"questions": [
             {"header": "Colour", "question": "Which colour should the button be?", "options": [
                 {"label": "Red", "description": "The warm one."},
@@ -767,6 +767,10 @@ fn an_answered_and_an_interrupted_question_are_rebuilt() {
             ]},
         ]}))
         .unwrap()
+    else {
+        panic!("expected questions");
+    };
+    let questions: Vec<wisp_protocol::Question> = parsed
         .into_iter()
         .map(crate::plugin::convert::question)
         .collect();

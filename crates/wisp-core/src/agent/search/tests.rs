@@ -69,7 +69,7 @@ fn rig_with(steps: Vec<Step>, ask: bool, retry: RetryPolicy) -> Rig {
     let provider = searching(steps, tx);
     let mut tools: Vec<ToolEntry> = samples().into_iter().map(|s| s.tool).collect();
     if ask {
-        tools.push(crate::tool::testkit::ask_user());
+        tools.push(crate::tool::confirm_tool());
     }
     let store = MemoryStore::default();
     let agent = Agent::new(provider.clone(), default_session())
@@ -876,20 +876,9 @@ async fn a_search_stopped_in_one_turn_no_longer_holds_steers_later() {
 
 #[tokio::test]
 async fn a_steer_during_a_search_question_waits_for_the_answer_and_the_search() {
-    let ask_input = json!({"questions": [{
-        "header": "Plan",
-        "question": "Which plan?",
-        "options": [
-            {"label": "Keep", "description": "Carry on."},
-            {"label": "Change", "description": "Rethink."}
-        ]
-    }]});
     let mut rig = rig_with(
         vec![
-            uses(&[
-                B::Search("s1", "rust"),
-                B::Call("a1", "ask_user", ask_input),
-            ]),
+            uses(&[B::Search("s1", "rust"), B::Call("a1", "confirm", json!({}))]),
             done(&[B::Found("s1"), B::Text("found")]),
             done(&[B::Text("read your message")]),
         ],
@@ -932,7 +921,7 @@ async fn a_steer_during_a_search_question_waits_for_the_answer_and_the_search() 
     assert_eq!(results["content"].as_array().unwrap().len(), 1);
     assert_eq!(
         results["content"][0]["content"][0]["text"],
-        "The user answered:\n\n1. [Plan] Which plan?\n   Keep"
+        "The user answered:\nKeep the plan"
     );
     assert!(
         !serde_json::to_string(&second)

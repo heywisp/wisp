@@ -14,6 +14,7 @@ pub mod model;
 pub mod pricing;
 pub mod project;
 pub mod prompt;
+pub mod questions;
 pub mod slots;
 pub mod strategy;
 pub mod tools;

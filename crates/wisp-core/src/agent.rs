@@ -80,7 +80,7 @@ pub mod naming;
 mod native;
 mod plugins;
 mod processes;
-mod question;
+pub(crate) mod question;
 mod queue;
 mod reload;
 mod repair;
@@ -111,7 +111,7 @@ pub use inbox::{MAX_WAITING, SEEN_IDS};
 pub use mail::{MAX_MAIL_PER_SENDER, Mail, MailRefused, MailSender, NOT_YOURS, render_mail};
 use native::SearchRefusal;
 pub use processes::{MAX_ATTACH_INPUT, STOP_MARGIN, WAKE_SETTLE};
-use question::{OpenAttach, OpenQuestion, OpenReport, OpenSecret};
+use question::{OpenAttach, OpenQuestion, OpenReport, OpenSecret, Posted};
 use queue::{CommandQueue, Queued};
 pub use queue::{NO_HOST, QUIT_MARGIN, SWITCH_FIRST};
 pub use repair::{FINISHED_MESSAGE, INTERRUPTED_MESSAGE, ReturnedImage, ReturnedInput};
@@ -878,6 +878,8 @@ pub struct Agent {
     retry: RetryPolicy,
     user_input: bool,
     question: Option<OpenQuestion>,
+    posted: Option<Posted>,
+    question_letters: u64,
     screen_report: Option<OpenReport>,
     attach_request: Option<OpenAttach>,
     secret_request: Option<OpenSecret>,
@@ -1020,6 +1022,8 @@ impl Agent {
             retry: RetryPolicy::default(),
             user_input: false,
             question: None,
+            posted: None,
+            question_letters: 0,
             screen_report: None,
             attach_request: None,
             secret_request: None,
@@ -1667,6 +1671,7 @@ impl Agent {
                 self.connection_replaced(events).await;
             }
             self.announce_waiting_mail(events).await;
+            self.announce_posted(events).await;
             self.apply_repair(events).await;
             self.log_restarted(events).await;
             return;
@@ -2819,6 +2824,7 @@ impl Agent {
             }
             Err(ClientCommand::Cancel) => {
                 self.track().stopped = true;
+                self.stop_posted(events).await;
                 self.cancel_commands(None, events).await;
                 return true;
             }
@@ -5102,7 +5108,7 @@ impl Agent {
                             stopping = Some(tokio::time::Instant::now());
                             self.stop_requests(events).await;
                         }
-                        if !self.inbox.steer_ids().is_empty() {
+                        if !self.inbox.steer_ids().is_empty() || self.inbox.has_waking_above() {
                             steered.cancel();
                         }
                     },
@@ -5118,7 +5124,10 @@ impl Agent {
                         Some(request)
                             if stopping.is_none()
                                 && (self.user_input
-                                    || matches!(request, AskRequest::Report { .. })) =>
+                                    || matches!(
+                                        request,
+                                        AskRequest::Report { .. } | AskRequest::Withdraw { .. }
+                                    )) =>
                         {
                             self.open_request(call_id, request, events).await;
                         }

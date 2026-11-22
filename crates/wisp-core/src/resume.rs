@@ -14,6 +14,7 @@ use wisp_protocol::{
 };
 
 use crate::agent::add_usage;
+use crate::agent::question::{Posted, PostedFold};
 use crate::plugin::hooks::points::USER_INPUT;
 use crate::provider::Feature;
 use crate::provider::forms::is_thinking;
@@ -355,6 +356,7 @@ pub struct LoggedSession {
     pub started_tools: Vec<String>,
     pub tool_cwd: Option<String>,
     pub todos: Vec<wisp_protocol::TodoItem>,
+    pub(crate) posted: Option<Posted>,
     pub rendered: BTreeMap<String, usize>,
     pub unreadable: BTreeMap<String, usize>,
     pub marker_dropped: BTreeSet<String>,
@@ -578,6 +580,7 @@ struct Fold {
     before_turn: Option<CompactionSpend>,
     compaction_retry_bound: bool,
     compaction_retries: u32,
+    posted: PostedFold,
 }
 
 struct CompactionSpend {
@@ -744,6 +747,7 @@ impl Fold {
                 started_tools: Vec::new(),
                 tool_cwd: None,
                 todos: Vec::new(),
+                posted: None,
                 rendered: BTreeMap::new(),
                 unreadable: BTreeMap::new(),
                 marker_dropped: BTreeSet::new(),
@@ -780,6 +784,7 @@ impl Fold {
             before_turn: None,
             compaction_retry_bound: false,
             compaction_retries: 0,
+            posted: PostedFold::default(),
         }
     }
 
@@ -789,11 +794,15 @@ impl Fold {
         self.out.plan_usd += self.unclosed_plan_usd;
         self.out.pending = self.pending();
         self.out.later = self.later();
+        self.out.posted = self.posted.posted();
         self.out
     }
 
     fn apply(&mut self, index: usize, record: &LogRecord, masked: bool) {
         self.at = index;
+        if !masked {
+            self.posted.see(&record.event);
+        }
         let last_break = self.last_break.take();
         if matches!(
             record.event,
@@ -1564,6 +1573,9 @@ impl Fold {
             LogEvent::InputWithdrawn { ids, by, .. } => {
                 for id in ids {
                     self.out.open_inputs.retain(|open| open != id);
+                    if *by == WithdrawnBy::Rewound {
+                        self.out.waiting_mail.retain(|open| open != id);
+                    }
                     let undelivered = self.undelivered.remove(id);
                     let turn = self.out.last_turn.as_ref().filter(|_| self.turn_in_run);
                     let opening =

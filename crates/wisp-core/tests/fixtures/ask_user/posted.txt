@@ -1,0 +1,1 @@
+Asked. The user sees your questions now and their answers will come in a later message, whenever they reply. Until then, go on with any work the questions don't decide, and end your turn when nothing is left. If the questions stop mattering, withdraw them: call ask_user with withdraw set to true.

@@ -161,6 +161,7 @@ impl Watch {
             AgentEvent::ToolCallFinished {
                 call_id, process, ..
             } => {
+                self.questions.remove(call_id);
                 if let Some(call) = self.calls.remove(call_id)
                     && let Some(id) = process
                 {

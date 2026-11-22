@@ -1,9 +1,8 @@
 use std::sync::Arc;
-use std::sync::Mutex;
 
 use futures::executor::block_on;
-use wisp_plugin_api::types::{Answer, Completed};
-use wisp_plugin_testkit::host::FakeCall;
+use wisp_plugin_api::types::Completed;
+use wisp_plugin_testkit::host::{FakeCall, FakeHost};
 
 use super::*;
 
@@ -19,21 +18,22 @@ fn one(header: &str, question: &str) -> Value {
     json!({"header": header, "question": question, "options": two_options()})
 }
 
+fn plugin(host: FakeHost) -> AskUser {
+    AskUser::new(Arc::new(host))
+}
+
+fn bare() -> AskUser {
+    plugin(FakeHost::default())
+}
+
 fn refusal(input: &Value) -> Option<String> {
-    block_on(AskUser.prepare(NAME, &input.to_string())).err()
+    block_on(bare().prepare(NAME, &input.to_string())).err()
 }
 
 fn opt(label: &str, description: &str) -> QuestionOption {
     QuestionOption {
         label: label.into(),
         description: description.into(),
-    }
-}
-
-fn choose(index: u32) -> Answer {
-    Answer {
-        chosen: vec![index],
-        own: None,
     }
 }
 
@@ -84,7 +84,7 @@ fn the_metadata_says_read_only_serial_unbounded_and_ends_the_reply() {
     assert_eq!(meta.tags, Tags::default());
     assert!(!meta.parallel_safe);
     assert_eq!(meta.timeouts.max_ms, None);
-    assert_eq!(block_on(AskUser.time_limit_ms(NAME, "{}")), None);
+    assert_eq!(block_on(bare().time_limit_ms(NAME, "{}")), None);
     assert_eq!(meta.writing.as_deref(), Some("a question"));
     assert_eq!(meta.purpose, Purpose::Run);
     assert!(!meta.saves_output);
@@ -112,7 +112,7 @@ fn prepare_accepts_the_plan_example_and_keeps_its_text_verbatim() {
             option("wisp-store", ""), option("wisp-db", ""),
         ]},
     ]});
-    let prepared = block_on(AskUser.prepare(NAME, &input.to_string())).unwrap();
+    let prepared = block_on(bare().prepare(NAME, &input.to_string())).unwrap();
     assert_eq!(
         prepared.display(),
         Display {
@@ -125,12 +125,32 @@ fn prepare_accepts_the_plan_example_and_keeps_its_text_verbatim() {
         }
     );
     assert_eq!(
-        prepared
-            .into_any()
-            .downcast::<Vec<Question>>()
-            .ok()
-            .map(|q| *q),
-        Some(plan_questions())
+        prepared.into_any().downcast::<Call>().ok().map(|c| *c),
+        Some(Call::Ask(plan_questions()))
+    );
+}
+
+#[test]
+fn prepare_accepts_the_withdraw_form_with_its_own_display() {
+    let prepared = block_on(bare().prepare(NAME, &json!({"withdraw": true}).to_string())).unwrap();
+    assert_eq!(
+        prepared.display(),
+        Display {
+            action: Action::Other("ask_user".into()),
+            verbs: Some(Verbs {
+                doing: "Withdrawing".into(),
+                done: "Withdrew".into(),
+                failed: "couldn't withdraw".into(),
+            }),
+            target: "the question".into(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+        }
+    );
+    assert_eq!(
+        prepared.into_any().downcast::<Call>().ok().map(|c| *c),
+        Some(Call::Withdraw)
     );
 }
 
@@ -139,6 +159,18 @@ fn prepare_refuses_every_rule_of_the_input_table() {
     let cases: Vec<(Value, String)> = vec![
         (json!("hi"), "input must be an object".into()),
         (json!({}), "`questions` must be an array".into()),
+        (
+            json!({"questions": [one("H", "Q?")], "withdraw": true}),
+            "give either questions or withdraw, not both".into(),
+        ),
+        (
+            json!({"withdraw": false}),
+            "`withdraw` must be true; to ask, give `questions` instead".into(),
+        ),
+        (
+            json!({"withdraw": "yes"}),
+            "`withdraw` must be true; to ask, give `questions` instead".into(),
+        ),
         (
             json!({"questions": one("H", "Q?")}),
             "`questions` must be an array".into(),
@@ -253,11 +285,13 @@ fn a_long_header_is_shown_cut_but_kept_whole_in_the_question() {
     assert_eq!(cut_header("Ünïcödé héädér"), "Ünïcödé héä…");
     assert_eq!(cut_header("Thirteen char").chars().count(), HEADER_CHARS);
     let input = json!({"questions": [one("Deployment target", "Q?"), one("B", "R?")]});
-    let prepared = block_on(AskUser.prepare(NAME, &input.to_string())).unwrap();
+    let prepared = block_on(bare().prepare(NAME, &input.to_string())).unwrap();
     assert_eq!(prepared.display().target, "Deployment … (+1)");
-    let questions = *prepared.into_any().downcast::<Vec<Question>>().unwrap();
+    let Call::Ask(questions) = *prepared.into_any().downcast::<Call>().unwrap() else {
+        panic!("expected ask");
+    };
     assert_eq!(questions[0].header, "Deployment target");
-    let single = block_on(AskUser.prepare(
+    let single = block_on(bare().prepare(
         NAME,
         &json!({"questions": [one("Database", "Q?")]}).to_string(),
     ))
@@ -265,27 +299,16 @@ fn a_long_header_is_shown_cut_but_kept_whole_in_the_question() {
     assert_eq!(single.display().target, "Database");
 }
 
-fn prepared() -> Box<dyn Prepared> {
-    block_on(AskUser.prepare(
+fn prepared_ask() -> Box<dyn Prepared> {
+    block_on(bare().prepare(
         NAME,
         &json!({"questions": [one("Go", "Go on?")]}).to_string(),
     ))
     .unwrap()
 }
 
-type Seen = Arc<Mutex<Vec<Vec<Question>>>>;
-
-fn answering(reply: AskReply) -> (FakeCall, Seen) {
-    let seen: Seen = Arc::default();
-    let kept = seen.clone();
-    let call = FakeCall {
-        ask: Some(Arc::new(move |questions| {
-            kept.lock().unwrap().push(questions);
-            Box::pin(std::future::ready(reply.clone()))
-        })),
-        ..FakeCall::default()
-    };
-    (call, seen)
+fn prepared_withdraw() -> Box<dyn Prepared> {
+    block_on(bare().prepare(NAME, &json!({"withdraw": true}).to_string())).unwrap()
 }
 
 fn ok() -> Outcome {
@@ -296,10 +319,40 @@ fn ok() -> Outcome {
 }
 
 #[test]
-fn without_a_channel_the_question_is_not_asked() {
-    let call = FakeCall::default();
-    let run = block_on(AskUser.run(prepared(), &call));
-    assert_eq!(run.result.as_deref(), Some(UNAVAILABLE));
+fn posting_results_match_open_busy_and_unavailable() {
+    let call = FakeCall {
+        id: "call-1".into(),
+        ..FakeCall::default()
+    };
+
+    let host = FakeHost {
+        post_reply: Some(Posted::Open),
+        ..FakeHost::default()
+    };
+    let seen = host.posted_questions.clone();
+    let run = block_on(plugin(host).run(prepared_ask(), &call));
+    assert_eq!(run.outcome, ok());
+    assert_eq!(run.result, Some(posted()));
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].0, "call-1");
+    assert_eq!(seen[0].1[0].question, "Go on?");
+
+    let host = FakeHost {
+        post_reply: Some(Posted::Busy),
+        ..FakeHost::default()
+    };
+    let run = block_on(plugin(host).run(prepared_ask(), &call));
+    assert_eq!(
+        run.outcome,
+        Outcome::Failed(Failure {
+            message: BUSY_MESSAGE.into(),
+            before_start: false,
+        })
+    );
+    assert_eq!(run.result, Some(busy()));
+
+    let run = block_on(bare().run(prepared_ask(), &call));
     assert_eq!(
         run.outcome,
         Outcome::Failed(Failure {
@@ -307,61 +360,45 @@ fn without_a_channel_the_question_is_not_asked() {
             before_start: false,
         })
     );
+    assert_eq!(run.result.as_deref(), Some(UNAVAILABLE));
 }
 
 #[test]
-fn an_answer_comes_back_as_the_result_text() {
-    let (call, asked) = answering(AskReply::Answered(vec![choose(1)]));
-    let run = block_on(AskUser.run(prepared(), &call));
-    assert_eq!(
-        run.result.as_deref(),
-        Some("The user answered:\n\n1. [Go] Go on?\n   No")
-    );
-    assert_eq!(run.outcome, ok());
-    let asked = asked.lock().unwrap().clone();
-    assert_eq!(asked.len(), 1);
-    assert_eq!(asked[0][0].question, "Go on?");
-}
-
-#[test]
-fn a_message_instead_is_completed_and_says_so() {
-    let (call, _) = answering(AskReply::MessageInstead);
-    let run = block_on(AskUser.run(prepared(), &call));
-    assert_eq!(run.result.as_deref(), Some(MESSAGE_INSTEAD));
-    assert_eq!(run.outcome, ok());
-}
-
-#[test]
-fn a_stop_wins_over_a_reply_that_is_ready_at_the_same_moment() {
-    let (call, _) = answering(AskReply::Answered(vec![choose(0)]));
-    call.cancel.set();
-    let run = block_on(AskUser.run(prepared(), &call));
-    assert_eq!(run.result.as_deref(), Some(STOPPED));
-    assert_eq!(run.outcome, Outcome::Cancelled);
-}
-
-#[test]
-fn a_stop_ends_a_question_nobody_answers() {
+fn withdraw_results_match_open_and_none_open() {
     let call = FakeCall {
-        ask: Some(Arc::new(|_| Box::pin(std::future::pending()))),
+        id: "call-w".into(),
         ..FakeCall::default()
     };
-    let stopper = call.cancel.clone();
-    let stopping = std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        stopper.set();
-    });
-    let run = block_on(AskUser.run(prepared(), &call));
-    stopping.join().unwrap();
-    assert_eq!(run.result.as_deref(), Some(STOPPED));
-    assert_eq!(run.outcome, Outcome::Cancelled);
+
+    let host = FakeHost {
+        withdraw_reply: true,
+        ..FakeHost::default()
+    };
+    let seen = host.withdraw_calls.clone();
+    let run = block_on(plugin(host).run(prepared_withdraw(), &call));
+    assert_eq!(run.outcome, ok());
+    assert_eq!(run.result.as_deref(), Some(WITHDRAWN));
+    assert_eq!(seen.lock().unwrap().as_slice(), ["call-w"]);
+
+    let host = FakeHost::default();
+    let seen = host.withdraw_calls.clone();
+    let run = block_on(plugin(host).run(prepared_withdraw(), &call));
+    assert_eq!(
+        run.outcome,
+        Outcome::Failed(Failure {
+            message: NOTHING_OPEN_MESSAGE.into(),
+            before_start: false,
+        })
+    );
+    assert_eq!(run.result.as_deref(), Some(NOTHING_OPEN));
+    assert_eq!(seen.lock().unwrap().as_slice(), ["call-w"]);
 }
 
 #[test]
 fn the_definition_is_canonical_and_holds_no_dates_paths_or_ids() {
     let canonical =
-        json!({"description": DESCRIPTION, "input_schema": schema(), "name": NAME}).to_string();
-    assert_eq!(canonical.len(), 2129);
+        json!({"description": description(), "input_schema": schema(), "name": NAME}).to_string();
+    assert_eq!(canonical.len(), 2695);
     assert!(canonical.starts_with(r#"{"description":"Ask the user"#));
     assert!(canonical.ends_with(r#""type":"object"},"name":"ask_user"}"#));
     assert!(!canonical.contains('/'));

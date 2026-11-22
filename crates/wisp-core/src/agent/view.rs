@@ -202,6 +202,7 @@ impl Agent {
         if !self.agents.in_tree() {
             state.extend(self.processes.started_events());
         }
+        state.extend(self.posted_event());
         let snapshot = move |mut records: Vec<LogRecord>| {
             let mut ids = input_ids(&records);
             let mut seen = ids.iter().cloned().collect::<BTreeSet<_>>();

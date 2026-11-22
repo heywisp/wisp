@@ -237,6 +237,7 @@ struct Said {
     turn: u64,
     seq: Option<u64>,
     text: String,
+    call_id: Option<String>,
 }
 
 pub(super) type Ledger = VecDeque<LoggedCall>;
@@ -308,6 +309,11 @@ impl CompactionState {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn said_texts(&self) -> Vec<&str> {
+        self.said.iter().map(|s| s.text.as_str()).collect()
+    }
+
     pub(super) fn rewound_to(
         &mut self,
         turn: u64,
@@ -320,7 +326,6 @@ impl CompactionState {
         self.since_seq = since_seq;
         self.said.retain(|s| s.turn < turn);
         self.opening.clear();
-        self.asked.clear();
         self.calls = ledger;
     }
 }
@@ -850,7 +855,12 @@ impl Agent {
         self.compaction.opening = texts
             .into_iter()
             .filter(|text| !text.trim().is_empty())
-            .map(|text| Said { turn, seq, text })
+            .map(|text| Said {
+                turn,
+                seq,
+                text,
+                call_id: None,
+            })
             .collect();
     }
 
@@ -861,7 +871,12 @@ impl Agent {
             texts
                 .into_iter()
                 .filter(|text| !text.trim().is_empty())
-                .map(|text| Said { turn, seq, text }),
+                .map(|text| Said {
+                    turn,
+                    seq,
+                    text,
+                    call_id: None,
+                }),
         );
     }
 
@@ -926,6 +941,9 @@ impl Agent {
                     .iter()
                     .any(wisp_protocol::Question::kept_from_model) =>
             {
+                state
+                    .said
+                    .retain(|s| s.call_id.as_deref() != Some(call_id.as_str()));
                 state.asked.insert(call_id.clone(), questions.clone());
             }
             AgentEvent::QuestionClosed { call_id, how } => {
@@ -939,7 +957,12 @@ impl Agent {
                             std::slice::from_ref(question),
                             std::slice::from_ref(answer),
                         );
-                        state.said.push(Said { turn, seq, text });
+                        state.said.push(Said {
+                            turn,
+                            seq,
+                            text,
+                            call_id: Some(call_id.clone()),
+                        });
                     }
                 }
             }

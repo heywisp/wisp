@@ -368,3 +368,34 @@ fn foreground_compaction_is_a_reply_but_background_preparation_changes_no_reply_
         "an in-turn resend still has a reply in flight"
     );
 }
+
+#[test]
+fn a_finished_calls_question_stops_hiding_unfinished_work() {
+    let mut watch = Watch::default();
+    watch.activity(&AgentEvent::turn_started(1));
+    watch.activity(&requested("q", None, "Plan"));
+    watch.activity(&AgentEvent::QuestionAsked {
+        call_id: "q".into(),
+        questions: Vec::new(),
+    });
+    assert!(watch.unfinished().is_empty());
+    watch.activity(&AgentEvent::ToolCallFinished {
+        call_id: "q".into(),
+        outcome: wisp_protocol::ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+        output: wisp_protocol::ToolOutputView::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 1,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: Vec::new(),
+        typed: None,
+    });
+    watch.activity(&AgentEvent::StepStarted { step: 2 });
+    assert_eq!(watch.unfinished().len(), 1);
+    assert_eq!(watch.unfinished()[0].what, Unfinished::Reply);
+}

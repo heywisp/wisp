@@ -3,17 +3,19 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 use wisp_plugin_api::host::{CallContext, Host};
+use wisp_plugin_api::questions::Posted;
 use wisp_plugin_api::tools::{
     BuildContext, ClientTool, Effect, Prepared, Purpose, Tags, Timeouts, ToolDef, ToolKind,
     ToolMeta,
 };
 use wisp_plugin_api::types::{
-    Action, AskReply, Display, Failure, Outcome, OutputKind, Question, QuestionOption, ToolRun,
+    Action, Display, Failure, Outcome, OutputKind, Question, QuestionOption, ToolRun, Verbs,
 };
 use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
 use wisp_tool_text::output::cut_chars;
 use wisp_tool_text::question::{
-    MESSAGE_INSTEAD, STOPPED, UNAVAILABLE, UNAVAILABLE_MESSAGE, answered_text,
+    BUSY_MESSAGE, NOTHING_OPEN, NOTHING_OPEN_MESSAGE, QUESTION_TOOL, UNAVAILABLE,
+    UNAVAILABLE_MESSAGE, WITHDRAW_FIELD, WITHDRAWN, busy, posted,
 };
 
 pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
@@ -25,15 +27,15 @@ pub fn bundled() -> Bundled {
     }
 }
 
-fn instantiate(_host: Arc<dyn Host>) -> Arc<dyn Plugin> {
-    Arc::new(AskUser)
+fn instantiate(host: Arc<dyn Host>) -> Arc<dyn Plugin> {
+    Arc::new(AskUser { host })
 }
 
 fn invalid(message: impl Into<String>) -> String {
     message.into()
 }
 
-pub const NAME: &str = "ask_user";
+pub const NAME: &str = QUESTION_TOOL;
 pub const MIN_QUESTIONS: usize = 1;
 pub const MAX_QUESTIONS: usize = 4;
 pub const MIN_OPTIONS: usize = 2;
@@ -42,7 +44,11 @@ pub const HEADER_CHARS: usize = 12;
 
 pub const TOO_FEW_OPTIONS: &str = "A question needs at least two options. If only one choice makes sense, don't ask: take it and say so.";
 
-const DESCRIPTION: &str = "Ask the user one to four multiple-choice questions and wait for the answers. Use it only when you are blocked on a decision that is genuinely the user's to make: one you can't settle from the request, the code or a sensible default, such as choosing between approaches or settling an ambiguous requirement. Don't use it for facts you can find out yourself, to ask permission or whether to proceed, or for choices with a conventional default: take the obvious one, say so and go on. Ask everything you need in one call, as the last call of your reply: calls after it in the same reply are not run. The user may see only your questions, not the text before the call, so each must stand alone: give the facts needed to answer it and never refer to \"above\". Give each question two to four distinct options; put the one you recommend first and end its label with \"(Recommended)\". The user can always type their own answer, so never add an \"Other\" option. Read the answers carefully and follow what they actually say; if the user skipped a question, decide yourself and say what you assumed.";
+pub fn description() -> String {
+    format!(
+        "Ask the user one to four multiple-choice questions. Asking doesn't wait for the answers: the call returns at once, the questions stay on the user's screen, and the answers arrive later in a message of their own, whenever the user replies. Use it only for a decision that is genuinely the user's to make: one you can't settle from the request, the code or a sensible default, such as choosing between approaches or settling an ambiguous requirement. Don't use it for facts you can find out yourself, to ask permission or whether to proceed, or for choices with a conventional default: take the obvious one, say so and go on. Ask everything you need in one call, as the last call of your reply: calls after it in the same reply are not run. Only one set of questions is open at a time; while it is, go on with any work the answers don't decide, and end your turn when nothing is left. The user may see only your questions, not the text before the call, so each must stand alone: give the facts needed to answer it and never refer to \"above\". Give each question two to four distinct options; put the one you recommend first and end its label with \"(Recommended)\". The user can always type their own answer, so never add an \"Other\" option. If the questions stop mattering, or you decide yourself, withdraw them by calling {QUESTION_TOOL} with {WITHDRAW_FIELD} set to true, and say what you decided. Read the answers carefully and follow what they actually say; if the user skipped a question, decide yourself and say what you assumed."
+    )
+}
 
 pub fn schema() -> Value {
     json!({
@@ -93,9 +99,12 @@ pub fn schema() -> Value {
                     "required": ["header", "options", "question"],
                     "additionalProperties": false
                 }
+            },
+            WITHDRAW_FIELD: {
+                "type": "boolean",
+                "description": "Set to true, with no other field, to withdraw your open questions instead of asking: the user no longer sees them."
             }
         },
-        "required": ["questions"],
         "additionalProperties": false
     })
 }
@@ -192,9 +201,30 @@ fn parse_question(value: &Value, n: usize) -> Result<Question, String> {
     })
 }
 
-pub fn parse(input: &Value) -> Result<Vec<Question>, String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Call {
+    Ask(Vec<Question>),
+    Withdraw,
+}
+
+pub fn parse(input: &Value) -> Result<Call, String> {
     let map = object(input, "input")?;
-    only_fields(map, &["questions"], "")?;
+    only_fields(map, &["questions", WITHDRAW_FIELD], "")?;
+    let has_questions = map.contains_key("questions");
+    let withdraw = map.get(WITHDRAW_FIELD);
+    if has_questions && withdraw.is_some() {
+        return Err(invalid(format!(
+            "give either questions or {WITHDRAW_FIELD}, not both"
+        )));
+    }
+    if let Some(value) = withdraw {
+        if value.as_bool() == Some(true) {
+            return Ok(Call::Withdraw);
+        }
+        return Err(invalid(format!(
+            "`{WITHDRAW_FIELD}` must be true; to ask, give `questions` instead"
+        )));
+    }
     let items = map
         .get("questions")
         .and_then(Value::as_array)
@@ -220,7 +250,7 @@ pub fn parse(input: &Value) -> Result<Vec<Question>, String> {
         }
         questions.push(question);
     }
-    Ok(questions)
+    Ok(Call::Ask(questions))
 }
 
 pub fn display(questions: &[Question]) -> Display {
@@ -240,24 +270,18 @@ pub fn display(questions: &[Question]) -> Display {
     }
 }
 
-pub fn finish(questions: &[Question], reply: Option<AskReply>) -> ToolRun {
-    match reply {
-        None => ToolRun::new(Outcome::Cancelled).with_result(STOPPED),
-        Some(AskReply::Answered(answers)) => {
-            ToolRun::completed().with_result(answered_text(questions, &answers))
-        }
-        Some(AskReply::MessageInstead) => ToolRun::completed().with_result(MESSAGE_INSTEAD),
-        Some(AskReply::Stopped) => ToolRun::new(Outcome::Cancelled).with_result(STOPPED),
-        Some(
-            AskReply::Unavailable
-            | AskReply::Attached(_)
-            | AskReply::Declined
-            | AskReply::ProcessEnded(_),
-        ) => ToolRun::new(Outcome::Failed(Failure {
-            message: UNAVAILABLE_MESSAGE.to_owned(),
-            before_start: false,
-        }))
-        .with_result(UNAVAILABLE),
+pub fn withdraw_display() -> Display {
+    Display {
+        action: Action::Other(NAME.to_owned()),
+        verbs: Some(Verbs {
+            doing: "Withdrawing".to_owned(),
+            done: "Withdrew".to_owned(),
+            failed: "couldn't withdraw".to_owned(),
+        }),
+        target: "the question".to_owned(),
+        output: OutputKind::None,
+        view: None,
+        title: None,
     }
 }
 
@@ -284,7 +308,7 @@ pub fn def() -> ToolDef {
     ToolDef {
         name: NAME.to_owned(),
         kind: ToolKind::Client(ClientTool {
-            description: DESCRIPTION.to_owned(),
+            description: description(),
             input_schema: schema().to_string(),
             meta: meta(),
         }),
@@ -293,13 +317,24 @@ pub fn def() -> ToolDef {
     }
 }
 
-pub struct AskUser;
+pub struct AskUser {
+    host: Arc<dyn Host>,
+}
 
-struct Asking(Vec<Question>);
+impl AskUser {
+    pub fn new(host: Arc<dyn Host>) -> Self {
+        Self { host }
+    }
+}
 
-impl Prepared for Asking {
+struct PreparedCall(Call);
+
+impl Prepared for PreparedCall {
     fn display(&self) -> Display {
-        display(&self.0)
+        match &self.0 {
+            Call::Ask(questions) => display(questions),
+            Call::Withdraw => withdraw_display(),
+        }
     }
 
     fn into_any(self: Box<Self>) -> Box<dyn Any + Send> {
@@ -307,44 +342,10 @@ impl Prepared for Asking {
     }
 }
 
-pub fn parse_text(input: &str) -> Result<Vec<Question>, String> {
+pub fn parse_text(input: &str) -> Result<Call, String> {
     let value: Value =
         serde_json::from_str(input).map_err(|e| format!("input is not JSON: {e}"))?;
     parse(&value)
-}
-
-async fn ask(questions: Vec<Question>, ctx: &dyn CallContext) -> ToolRun {
-    let asked = futures_select(ctx.wait_cancelled(), ctx.ask(questions.clone())).await;
-    finish(&questions, asked)
-}
-
-async fn futures_select(
-    cancelled: BoxFuture<'_, ()>,
-    asked: BoxFuture<'_, AskReply>,
-) -> Option<AskReply> {
-    Racing { cancelled, asked }.await
-}
-
-struct Racing<'a> {
-    cancelled: BoxFuture<'a, ()>,
-    asked: BoxFuture<'a, AskReply>,
-}
-
-impl std::future::Future for Racing<'_> {
-    type Output = Option<AskReply>;
-
-    fn poll(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<AskReply>> {
-        if self.cancelled.as_mut().poll(cx).is_ready() {
-            return std::task::Poll::Ready(None);
-        }
-        match self.asked.as_mut().poll(cx) {
-            std::task::Poll::Ready(reply) => std::task::Poll::Ready(Some(reply)),
-            std::task::Poll::Pending => std::task::Poll::Pending,
-        }
-    }
 }
 
 impl Plugin for AskUser {
@@ -358,7 +359,7 @@ impl Plugin for AskUser {
         input: &'a str,
     ) -> BoxFuture<'a, Result<Box<dyn Prepared>, String>> {
         Box::pin(async move {
-            let call: Box<dyn Prepared> = Box::new(Asking(parse_text(input)?));
+            let call: Box<dyn Prepared> = Box::new(PreparedCall(parse_text(input)?));
             Ok(call)
         })
     }
@@ -369,9 +370,34 @@ impl Plugin for AskUser {
         ctx: &'a dyn CallContext,
     ) -> BoxFuture<'a, ToolRun> {
         Box::pin(async move {
-            match call.into_any().downcast::<Vec<Question>>() {
-                Ok(questions) => ask(*questions, ctx).await,
-                Err(_) => ToolRun::failed_to_start(wisp_tool_text::output::WRONG_INPUT),
+            let Ok(call) = call.into_any().downcast::<Call>() else {
+                return ToolRun::failed_to_start(wisp_tool_text::output::WRONG_INPUT);
+            };
+            match *call {
+                Call::Ask(questions) => match self.host.questions().post(questions, ctx).await {
+                    Posted::Open => ToolRun::completed().with_result(posted()),
+                    Posted::Busy => ToolRun::new(Outcome::Failed(Failure {
+                        message: BUSY_MESSAGE.to_owned(),
+                        before_start: false,
+                    }))
+                    .with_result(busy()),
+                    Posted::Unavailable => ToolRun::new(Outcome::Failed(Failure {
+                        message: UNAVAILABLE_MESSAGE.to_owned(),
+                        before_start: false,
+                    }))
+                    .with_result(UNAVAILABLE),
+                },
+                Call::Withdraw => {
+                    if self.host.questions().withdraw(ctx).await {
+                        ToolRun::completed().with_result(WITHDRAWN)
+                    } else {
+                        ToolRun::new(Outcome::Failed(Failure {
+                            message: NOTHING_OPEN_MESSAGE.to_owned(),
+                            before_start: false,
+                        }))
+                        .with_result(NOTHING_OPEN)
+                    }
+                }
             }
         })
     }

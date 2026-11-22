@@ -248,7 +248,10 @@ fn repaired(
                 };
             }
             (Some(how), None) => {
-                let is_error = matches!(how, QuestionEnd::Stopped | QuestionEnd::Interrupted);
+                let is_error = matches!(
+                    how,
+                    QuestionEnd::Stopped | QuestionEnd::Interrupted | QuestionEnd::Withdrawn
+                );
                 return made(question::result_text(questions, how), is_error);
             }
             (Some(_), Some(_)) => {}

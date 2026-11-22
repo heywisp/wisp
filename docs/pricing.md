@@ -32,11 +32,11 @@ credentials to collect them. Local serialized client-tool arrays, without native
 
 | Provider | core tools | none tools | core bytes | none bytes |
 |---|---:|---:|---:|---:|
-| Claude | 17 | 2 | 26,934 | 990 |
-| OpenAI | 17 | 2 | 27,461 | 1,052 |
-| Gemini | 17 | 2 | 27,097 | 1,033 |
+| Claude | 17 | 2 | 27,500 | 990 |
+| OpenAI | 17 | 2 | 28,027 | 1,052 |
+| Gemini | 17 | 2 | 27,663 | 1,033 |
 
-These are bytes, not token estimates. Preload-held tools are not declared deferred:
+These are bytes, not token estimates (`ask_user`'s definition is 2,695 bytes after adding `withdraw` and non-blocking wording, +566 bytes over its earlier 2,129 bytes). Preload-held tools are not declared deferred:
 the earlier single-tool measurement below found 93 extra prefix tokens for one
 deferred declaration. Tools switched off retain their existing deferral behavior.
 The N-tool live check is not yet measured.

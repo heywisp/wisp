@@ -1000,6 +1000,15 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
                     host.changed(wisp_plugin_api::instructions::Change::default(), "t".into());
                     assert_eq!(kernel.take_change("t"), None, "{wit}");
                 }
+                Import::QuestionsPost => {
+                    assert_eq!(
+                        host.questions().post(Vec::new(), &ctx).await,
+                        wisp_plugin_api::questions::Posted::Unavailable
+                    );
+                }
+                Import::QuestionsWithdraw => {
+                    assert!(!host.questions().withdraw(&ctx).await);
+                }
             }
         }
     };
@@ -2969,4 +2978,76 @@ fn chat_names_are_cleaned_and_only_accepted_in_a_saved_main_agents_call_or_comma
         );
         assert!(kernel.take_renames().is_empty());
     }
+}
+
+#[tokio::test]
+async fn questions_interface_needs_world_0_4_0_and_a_running_call() {
+    use wisp_plugin_api::questions::Posted;
+    use wisp_plugin_api::types::{Question, QuestionOption};
+    let item = || {
+        vec![Question {
+            header: "H".into(),
+            question: "Q?".into(),
+            options: vec![
+                QuestionOption {
+                    label: "A".into(),
+                    description: String::new(),
+                },
+                QuestionOption {
+                    label: "B".into(),
+                    description: String::new(),
+                },
+            ],
+            multi_select: false,
+        }]
+    };
+    let kernel = Arc::new(KernelHost::new());
+    let old = PluginHost::new("ask-user", "0.3.0", &[], kernel.clone());
+    let current = PluginHost::new("ask-user", "0.4.0", &[], kernel.clone());
+    let ctx = wisp_plugin_testkit::host::FakeCall {
+        id: "call-q".into(),
+        ..Default::default()
+    };
+    assert_eq!(
+        old.questions().post(item(), &ctx).await,
+        Posted::Unavailable
+    );
+    assert!(!old.questions().withdraw(&ctx).await);
+    assert_eq!(
+        current.questions().post(item(), &ctx).await,
+        Posted::Unavailable
+    );
+    assert!(!current.questions().withdraw(&ctx).await);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+    let _call = open_with(&kernel, "call-q", "ask-user", None, UserChannel::new(tx));
+    for render in [Render::Slot, Render::Start] {
+        let got = Caller::rendering(render)
+            .scope(async {
+                (
+                    current.questions().post(item(), &ctx).await,
+                    current.questions().withdraw(&ctx).await,
+                )
+            })
+            .await;
+        assert_eq!(got, (Posted::Unavailable, false));
+    }
+    let server = tokio::spawn(async move {
+        let Some(crate::call::user::AskRequest::Post { reply, .. }) = rx.recv().await else {
+            panic!("expected Post");
+        };
+        let _ = reply.send(Posted::Open);
+        let Some(crate::call::user::AskRequest::Withdraw { reply }) = rx.recv().await else {
+            panic!("expected Withdraw");
+        };
+        let _ = reply.send(true);
+    });
+    assert_eq!(current.questions().post(item(), &ctx).await, Posted::Open);
+    assert!(current.questions().withdraw(&ctx).await);
+    server.await.unwrap();
+    kernel.close_call("call-q");
+    assert_eq!(
+        current.questions().post(item(), &ctx).await,
+        Posted::Unavailable
+    );
+    assert!(!current.questions().withdraw(&ctx).await);
 }

@@ -706,6 +706,10 @@ pub trait Host:
         &()
     }
 
+    fn questions(&self) -> &dyn crate::questions::Questions {
+        &()
+    }
+
     fn index(&self) -> &dyn crate::index::Index {
         &()
     }
