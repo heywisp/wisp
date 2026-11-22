@@ -230,7 +230,9 @@ fn repaired(
             ..made(result.clone(), finished.outcome.is_error())
         };
     }
-    if let Some(questions) = facts.questions {
+    if facts.finished.is_none()
+        && let Some(questions) = facts.questions
+    {
         if questions
             .iter()
             .any(wisp_protocol::Question::kept_from_model)
@@ -240,22 +242,19 @@ fn repaired(
                 ..made(UNKNOWN.to_owned(), true)
             };
         }
-        match (facts.closed, &facts.finished) {
-            (None, _) => {
-                return RepairedCall {
-                    interrupted_question: true,
-                    ..made(INTERRUPTED.to_owned(), true)
-                };
-            }
-            (Some(how), None) => {
+        return match facts.closed {
+            None => RepairedCall {
+                interrupted_question: true,
+                ..made(INTERRUPTED.to_owned(), true)
+            },
+            Some(how) => {
                 let is_error = matches!(
                     how,
                     QuestionEnd::Stopped | QuestionEnd::Interrupted | QuestionEnd::Withdrawn
                 );
-                return made(question::result_text(questions, how), is_error);
+                made(question::result_text(questions, how), is_error)
             }
-            (Some(_), Some(_)) => {}
-        }
+        };
     }
     let saves_output = (context.saves_output)(tool);
     match &facts.finished {

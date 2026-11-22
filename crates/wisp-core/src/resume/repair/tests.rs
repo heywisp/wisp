@@ -375,12 +375,30 @@ fn an_open_question_is_interrupted_and_a_closed_one_keeps_its_answer() {
         },
     });
     let later = repaired_with(
-        &[started("c1"), asked.clone(), answered, asked],
+        &[started("c1"), asked.clone(), answered, asked.clone()],
         "ask_user",
         true,
     );
     assert_eq!(later.text, INTERRUPTED);
     assert!(later.interrupted_question);
+
+    let posted = repaired_with(
+        &[
+            started("c1"),
+            asked,
+            finished(
+                "c1",
+                exit(0),
+                output("posted\n", 7, None),
+                None,
+                Some(vec![]),
+            ),
+        ],
+        "bash",
+        true,
+    );
+    assert!(!posted.is_error && !posted.interrupted_question);
+    assert!(posted.text.contains("posted"), "{}", posted.text);
 }
 
 #[test]
@@ -441,11 +459,30 @@ fn an_unfinished_server_card_never_repairs_its_answer_into_the_model() {
         assert_eq!(answered.text, UNKNOWN);
         assert!(!answered.interrupted_question);
         let later = repaired_with(
-            &[started("c1"), asked.clone(), closed, asked],
+            &[started("c1"), asked.clone(), closed.clone(), asked.clone()],
             "mcp__linear__echo",
             true,
         );
         assert_eq!(later.text, UNKNOWN);
         assert!(later.interrupted_question);
+
+        let failed = finished(
+            "c1",
+            ToolOutcome::Failed {
+                message: "boom".into(),
+                before_start: false,
+            },
+            output("", 0, None),
+            None,
+            Some(vec![]),
+        );
+        for records in [
+            vec![started("c1"), asked.clone(), failed.clone()],
+            vec![started("c1"), asked, closed, failed],
+        ] {
+            let done = repaired_with(&records, "mcp__linear__echo", true);
+            assert_eq!(done.text, "Failed: boom");
+            assert!(done.is_error && !done.interrupted_question);
+        }
     }
 }

@@ -22,6 +22,7 @@ use wisp_protocol::{InstructionsSummary, format_usd, marked_amount};
 
 use super::compact::{Head, Ledger};
 use super::inbox::TurnEnd;
+use super::question::PostedState;
 use super::repair::ReturnedInput;
 use super::search::holds_thinking_from;
 use super::settings::Pending;
@@ -697,6 +698,12 @@ impl Agent {
         );
         self.repair = Some(self.plan_repair(&logged, records, &turns, &recovered.dropped_inputs));
         self.restore_mail(&logged);
+        if let Some(posted) = &mut self.posted
+            && let PostedState::Ending(Some(id)) = &posted.state
+            && !self.inbox.waiting_mail().any(|input| input.id == *id)
+        {
+            posted.state = PostedState::Ending(None);
+        }
         let end = resumed_end(&logged, records);
         self.end_wakes(end);
         let completed = end == TurnEnd::Completed
