@@ -1094,60 +1094,75 @@ fn antigravity_identity_data_renders_and_rejects_invalid_rows() {
         Some("antigravity/cli/1.2.3")
     );
     assert_eq!(identity.default_model, "gemini-4-carbon-medium");
-    assert!(identity.session_id.is_some());
-    let session_line = SHIPPED
-        .lines()
-        .find(|line| line.starts_with("session_id = "))
-        .unwrap();
-    for invalid in [
-        "\"\"",
-        "1",
-        "\"with a space\"",
-        "\"é\"",
-        &format!("{:?}", "a".repeat(65)),
-    ] {
-        let broken = SHIPPED.replacen(session_line, &format!("session_id = {invalid}"), 1);
-        assert!(ModelTable::parse_shipped(&broken).is_err(), "{invalid}");
-    }
-    let without = ModelTable::parse_shipped(&SHIPPED.replacen(session_line, "", 1)).unwrap();
-    assert!(
-        without
-            .provider(ProviderKind::Gemini)
-            .unwrap()
-            .antigravity
-            .as_ref()
-            .unwrap()
-            .session_id
-            .is_none()
+    assert_eq!(
+        identity.session_id,
+        Some(crate::provider::gemini::antigravity::SessionId::CascadeFnv1a64)
     );
-
+    assert_eq!(identity.envelope_user_agent, "antigravity");
     assert!(identity.cache_idle_s.is_some());
-    let idle_line = SHIPPED
-        .lines()
-        .find(|line| line.starts_with("cache_idle_s = "))
-        .unwrap();
-    for invalid in ["0", "\"240\"", "240.5", "29", "86401"] {
-        let broken = SHIPPED.replacen(idle_line, &format!("cache_idle_s = {invalid}"), 1);
-        assert_eq!(
-            shipped_error(&broken),
-            RowProblem::BadValue {
-                field: "providers.gemini.antigravity",
-                allowed: &ANTIGRAVITY_IDENTITY_ALLOWED,
-            },
-            "{invalid}"
-        );
+
+    let bad_antigravity = RowProblem::BadValue {
+        field: "providers.gemini.antigravity",
+        allowed: &ANTIGRAVITY_IDENTITY_ALLOWED,
+    };
+    type OmittedCheck = fn(&AntigravityIdentity) -> bool;
+    let field_checks: [(&str, &[&str], Option<OmittedCheck>); 3] = [
+        (
+            "session_id",
+            &[
+                "\"\"",
+                "1",
+                "\"other\"",
+                "\"-3750763034362895579\"",
+                "\"with a space\"",
+            ],
+            Some(|id| id.session_id.is_none()),
+        ),
+        (
+            "envelope_user_agent",
+            &[
+                "\"\"",
+                "1",
+                "\"antigravity extra\"",
+                "\"antigravity-linux\"",
+                "\"antigravity/{version}\"",
+            ],
+            None,
+        ),
+        (
+            "cache_idle_s",
+            &["0", "\"240\"", "240.5", "29", "86401"],
+            Some(|id| id.cache_idle_s.is_none()),
+        ),
+    ];
+    for (field, invalids, when_omitted) in field_checks {
+        let prefix = format!("{field} = ");
+        let line = SHIPPED
+            .lines()
+            .find(|line| line.starts_with(&prefix))
+            .unwrap();
+        for invalid in invalids {
+            let broken = SHIPPED.replacen(line, &format!("{prefix}{invalid}"), 1);
+            assert_eq!(shipped_error(&broken), bad_antigravity, "{field}={invalid}");
+        }
+        let without = SHIPPED.replacen(line, "", 1);
+        if let Some(is_absent) = when_omitted {
+            let parsed = ModelTable::parse_shipped(&without).unwrap();
+            assert!(
+                is_absent(
+                    parsed
+                        .provider(ProviderKind::Gemini)
+                        .unwrap()
+                        .antigravity
+                        .as_ref()
+                        .unwrap()
+                ),
+                "{field} omitted"
+            );
+        } else {
+            assert_eq!(shipped_error(&without), bad_antigravity, "{field} omitted");
+        }
     }
-    let without = ModelTable::parse_shipped(&SHIPPED.replacen(idle_line, "", 1)).unwrap();
-    assert!(
-        without
-            .provider(ProviderKind::Gemini)
-            .unwrap()
-            .antigravity
-            .as_ref()
-            .unwrap()
-            .cache_idle_s
-            .is_none()
-    );
 
     let target = "[providers.gemini.antigravity]\nbase_url = \"https://daily-cloudcode-pa.googleapis.com\"\nuser_agent = \"antigravity/cli/{version}\"\ndefault_model = \"gemini-4-carbon-medium\"";
     assert!(SHIPPED.contains(target));

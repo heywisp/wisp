@@ -2282,21 +2282,20 @@ pub(crate) mod tests {
         for sent in [&requests[0], &requests[7]] {
             assert!(sent.starts_with("POST /v1internal:fetchAvailableModels "));
         }
+        let envelope_ua = antigravity::data().unwrap().envelope_user_agent.as_str();
         for [old, new, pinned] in requests[1..7].as_chunks::<3>().0 {
-            let body = |raw: &str, agent: &str| {
+            let body = |raw: &str| {
                 assert!(raw.starts_with("POST /v1internal:streamGenerateContent?alt=sse "));
                 let bytes = http::body(raw);
                 let value: Value = serde_json::from_str(bytes).unwrap();
-                assert_eq!(value["userAgent"], agent);
+                assert_eq!(value["userAgent"], envelope_ua);
                 assert!(value["request"]["sessionId"].is_string());
                 assert!(value["request"]["labels"].is_object());
-                bytes
-                    .replace(&format!("\"userAgent\":{}", value["userAgent"]), "")
-                    .replace(&format!("\"requestId\":{}", value["requestId"]), "")
+                bytes.replace(&format!("\"requestId\":{}", value["requestId"]), "")
             };
-            let baseline = body(old, shipped);
-            assert_eq!(baseline, body(new, agent));
-            assert_eq!(baseline, body(pinned, pinned_agent));
+            let baseline = body(old);
+            assert_eq!(baseline, body(new));
+            assert_eq!(baseline, body(pinned));
         }
     }
 
@@ -2597,6 +2596,7 @@ pub(crate) mod tests {
         assert_eq!(reply.usage.billing, Billing::AntigravityPlan);
         assert!(reply.iterations.is_empty());
         let mut ids = Vec::new();
+        let mut sessions = Vec::new();
         for (offset, expected_model) in [default_model(), web_search_model()]
             .into_iter()
             .enumerate()
@@ -2614,6 +2614,7 @@ pub(crate) mod tests {
                     .unwrap()
                     .to_owned(),
             );
+            sessions.push(body["request"]["sessionId"].as_str().unwrap().to_owned());
             let request = &body["request"];
             if offset == 0 {
                 assert_eq!(
@@ -2641,6 +2642,7 @@ pub(crate) mod tests {
             }
         }
         assert_ne!(ids[0], ids[1]);
+        assert_ne!(sessions[0], sessions[1]);
     }
 
     #[tokio::test]
