@@ -34,6 +34,7 @@ pub(super) struct Naming {
 struct Flight {
     handle: JoinHandle<Landed>,
     sent: Arc<AtomicBool>,
+    model: String,
 }
 
 impl Naming {
@@ -167,6 +168,7 @@ impl Agent {
             return;
         }
         let (replies, model) = self.naming_stream();
+        let requested = model.clone();
         let lanes = self.lanes.clone();
         let endpoint = self.endpoint_name().to_owned();
         let generation = self.provider().generation();
@@ -189,11 +191,16 @@ impl Agent {
             }
         });
         self.naming.tried = true;
-        self.naming.flight = Some(Flight { handle, sent });
+        self.naming.flight = Some(Flight {
+            handle,
+            sent,
+            model: requested,
+        });
     }
 
     fn naming_stream(&self) -> (Replies, String) {
         let (mut session, features) = self.bare_request_parts();
+        session.model = side::one_shot_model(self.provider().as_ref(), &session.model);
         session.system = Some(INSTRUCTION.to_owned());
         session.max_tokens = MAX_TOKENS;
         session.effort = self.session.effort;
@@ -253,7 +260,7 @@ impl Agent {
             ),
             None => None,
         };
-        let (spend, model) = self.side_spend(&landed);
+        let (spend, model) = self.side_spend(&landed, &flight.model);
         let cost = self.add_side(spend, &model);
         let record = LogEvent::SessionNamed {
             name: name.clone(),

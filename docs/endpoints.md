@@ -1386,7 +1386,8 @@ versions (`web_search_` and eight digits). A Claude chat declares the bundled
 plugin's fixed `web_search(query)` function; the plugin searches through one
 uncached `model.ask` carrying the native tool and returns the findings and sources.
 The provider row chooses the search-only model on the provider's own origin when
-the account offers it, else the chat's model. Only the ask sends the native tool;
+the account offers it, else the family's low ID on a level-in-ID chat when served, or
+the chat's model. Only the ask sends the native tool;
 no server-added date enters the chat's prefix. A toolbox without the plugin's
 runner keeps the in-reply native form. Gemini's speaks
 `google_search` and declares `web_search(query)` as a function, answered by the
@@ -1475,7 +1476,8 @@ its form, and its `tools` bytes, for the session.
   left to continue, so the turn ends as at the continuation cap. Any other
   error ends the turn as before, never dropping search silently.
   A refused search-only ask on a different side model is tried once on the
-  chat's model, with that model's own search version, for Claude and Gemini.
+  chat's one-shot model (a level-in-ID chat's low ID when served, else the chat's
+  model), with that model's own search version, for Claude and Gemini.
   Only a final refusal switches search off. Gemini marks a search-only ask's
   4xx other than 401 as refused, including 429; a 401 stays an authentication
   error. Other failures return `web search failed: <kind>` and the turn continues.

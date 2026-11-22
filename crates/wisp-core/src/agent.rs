@@ -90,7 +90,7 @@ mod rewind;
 mod search;
 mod sections;
 mod settings;
-mod side;
+pub(crate) mod side;
 mod switches;
 #[cfg(test)]
 pub(crate) mod testing;

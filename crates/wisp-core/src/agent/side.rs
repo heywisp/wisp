@@ -98,13 +98,9 @@ impl Agent {
 }
 
 impl Agent {
-    pub(super) fn side_spend(&self, landed: &Landed) -> (Spend, String) {
+    pub(super) fn side_spend(&self, landed: &Landed, requested: &str) -> (Spend, String) {
         let served = landed.asm.model();
-        let model = if served.is_empty() {
-            self.session.model.as_str()
-        } else {
-            served
-        };
+        let model = if served.is_empty() { requested } else { served };
         let iterations = landed.asm.iterations();
         let usage = landed
             .asm
@@ -252,6 +248,18 @@ static UNMARKED: CompactionAsk = CompactionAsk {
     native_instructions: None,
     tail: None,
 };
+
+pub(crate) fn served_side_model(provider: &dyn Provider, model: &str) -> bool {
+    provider.official() && provider.capabilities(model).is_some()
+}
+
+pub(crate) fn one_shot_model(provider: &dyn Provider, chat: &str) -> String {
+    crate::models::ModelTable::shared()
+        .sibling(chat, Effort::Low)
+        .filter(|model| served_side_model(provider, model))
+        .unwrap_or(chat)
+        .to_owned()
+}
 
 pub(super) fn one_shot(
     provider: &dyn Provider,
