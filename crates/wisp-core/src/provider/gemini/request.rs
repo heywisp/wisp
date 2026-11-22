@@ -954,10 +954,7 @@ mod tests {
             let tagged = super::super::antigravity::tagged(
                 body.clone(),
                 &request.session.model,
-                super::super::antigravity::data()
-                    .unwrap()
-                    .session_id
-                    .as_deref(),
+                super::super::antigravity::data().unwrap().session_id,
             );
             for (key, value) in body.as_object().unwrap() {
                 assert_eq!(
@@ -983,9 +980,12 @@ mod tests {
             json!({"role": "model", "parts": [{"text": crate::provider::NO_TEXT}]})
         );
         let id = tagged1["labels"]["cascade_id"].as_str().unwrap();
+        let session_id = tagged1["sessionId"].as_str().unwrap();
         assert!(uuid::Uuid::parse_str(id).is_ok());
+        assert!(session_id.parse::<i64>().is_ok());
         for (offset, body) in [&tagged1, &tagged2].into_iter().enumerate() {
             let n = offset + 1;
+            assert_eq!(body["sessionId"], session_id);
             assert_eq!(body["labels"]["cascade_id"], id);
             assert_eq!(body["labels"]["trajectory_id"], id);
             assert_eq!(body["labels"]["request_id"], format!("{id}-{n}"));
@@ -1021,6 +1021,7 @@ mod tests {
         assert_eq!(prefix_bytes(&r3, caps, true).unwrap(), pb1);
         assert_eq!(cache_prefix(&r3, caps, true), cache_prefix(&r1, caps, true));
         let tagged3 = tag(&r3);
+        assert_eq!(tagged3["sessionId"], session_id);
         assert_eq!(tagged3["labels"]["cascade_id"], id);
         let contents3 = tagged3["contents"].as_array().unwrap();
         assert_eq!(&contents3[..3], contents2.as_slice());
@@ -1040,7 +1041,9 @@ mod tests {
 
         let other = [Message::user_text("another conversation")];
         let other = make_req(&s1, &other, &[], &[], &rendering);
-        assert_ne!(tag(&other)["labels"]["cascade_id"], id);
+        let tagged_other = tag(&other);
+        assert_ne!(tagged_other["labels"]["cascade_id"], id);
+        assert_ne!(tagged_other["sessionId"], session_id);
 
         let mut searched = turn2.to_vec();
         let call = super::super::search::call_item(
@@ -1083,7 +1086,9 @@ mod tests {
         let mut variant = gemini_session("gemini-4-carbon-medium", Effort::Medium);
         let caps = super::super::model_capabilities(&variant.model).copied();
         let before = make_req(&variant, &turn1, &[], &[], &rendering);
-        assert_ne!(tag(&before)["labels"]["cascade_id"], id);
+        let tagged_before = tag(&before);
+        assert_ne!(tagged_before["labels"]["cascade_id"], id);
+        assert_ne!(tagged_before["sessionId"], session_id);
         let prefix = prefix_bytes(&before, caps, true);
         let cache = cache_prefix(&before, caps, true);
         variant.effort = Effort::Max;

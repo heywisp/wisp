@@ -18,9 +18,10 @@ use crate::models::{ModelTable, RowError, bad_value, integer, table_of};
 
 const MAX_ONBOARD_POLLS: usize = 10;
 pub(super) const DEFAULT_POLL_DELAY: Duration = Duration::from_secs(2);
-const IDENTITY_FIELDS: [&str; 5] = [
+const IDENTITY_FIELDS: [&str; 6] = [
     "base_url",
     "user_agent",
+    "envelope_user_agent",
     "default_model",
     "session_id",
     "cache_idle_s",
@@ -36,12 +37,50 @@ pub(crate) static IDENTITY_ALLOWED: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionId {
+    CascadeFnv1a64,
+}
+
+impl SessionId {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "cascade_fnv1a64" => Some(Self::CascadeFnv1a64),
+            _ => None,
+        }
+    }
+
+    fn format(self, cascade_id: &str) -> String {
+        match self {
+            Self::CascadeFnv1a64 => fnv1a_64_signed(cascade_id),
+        }
+    }
+}
+
+fn is_valid_user_agent(value: &str) -> bool {
+    if value.is_empty()
+        || value.contains(['{', '}'])
+        || value.bytes().any(|b| b.is_ascii_whitespace())
+    {
+        return false;
+    }
+    let lower = value.to_ascii_lowercase();
+    if FORBIDDEN_UA_TOKENS
+        .iter()
+        .any(|token| lower.contains(token))
+    {
+        return false;
+    }
+    HeaderValue::from_str(value).is_ok()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Identity {
     pub base_url: String,
     user_agent_template: String,
+    pub envelope_user_agent: String,
     pub default_model: String,
-    pub session_id: Option<String>,
+    pub session_id: Option<SessionId>,
     pub cache_idle_s: Option<u32>,
 }
 
@@ -51,6 +90,7 @@ impl Identity {
         let [
             Some(base_url),
             Some(user_agent),
+            Some(envelope_user_agent),
             Some(default_model),
             session_id,
             cache_idle_s,
@@ -75,20 +115,15 @@ impl Identity {
             return Err(bad());
         }
         let user_agent_template = user_agent.as_str().ok_or_else(bad)?.to_owned();
+        let envelope_user_agent = envelope_user_agent
+            .as_str()
+            .filter(|s| is_valid_user_agent(s))
+            .ok_or_else(bad)?
+            .to_owned();
         let default_model = default_model.as_str().ok_or_else(bad)?;
         wisp_protocol::check_model_id(default_model).map_err(|_| bad())?;
         let session_id = session_id
-            .map(|value| {
-                value
-                    .as_str()
-                    .filter(|s| {
-                        (1..=64).contains(&s.len())
-                            && s.bytes()
-                                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-                    })
-                    .map(str::to_owned)
-                    .ok_or_else(bad)
-            })
+            .map(|value| value.as_str().and_then(SessionId::parse).ok_or_else(bad))
             .transpose()?;
         let cache_idle_s = cache_idle_s
             .map(|value| {
@@ -101,6 +136,7 @@ impl Identity {
         Ok(Self {
             base_url: base_url.to_owned(),
             user_agent_template,
+            envelope_user_agent,
             default_model: default_model.to_owned(),
             session_id,
             cache_idle_s,
@@ -114,21 +150,7 @@ impl Identity {
         let rendered = self
             .user_agent_template
             .replace("{version}", &version.to_string());
-        if rendered.is_empty()
-            || rendered.contains(['{', '}'])
-            || rendered.bytes().any(|b| b.is_ascii_whitespace())
-        {
-            return None;
-        }
-        let lower_ua = rendered.to_ascii_lowercase();
-        if FORBIDDEN_UA_TOKENS
-            .iter()
-            .any(|token| lower_ua.contains(token))
-        {
-            return None;
-        }
-        HeaderValue::from_str(&rendered).ok()?;
-        Some(rendered)
+        is_valid_user_agent(&rendered).then_some(rendered)
     }
 }
 
@@ -243,7 +265,18 @@ fn conversation_id(model: &str, body: &Value) -> Option<String> {
         .map(|id| id.to_string())
 }
 
-pub(super) fn tagged(mut body: Value, model: &str, session: Option<&str>) -> Value {
+fn fnv1a_64_signed(input: &str) -> String {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0100_0000_01b3;
+    let mut hash = OFFSET_BASIS;
+    for byte in input.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash.cast_signed().to_string()
+}
+
+pub(super) fn tagged(mut body: Value, model: &str, session: Option<SessionId>) -> Value {
     let (Some(session), Some(contents)) = (session, body["contents"].as_array()) else {
         return body;
     };
@@ -255,7 +288,7 @@ pub(super) fn tagged(mut body: Value, model: &str, session: Option<&str>) -> Val
         .filter(|entry| entry["role"] == "model")
         .count()
         + 1;
-    body["sessionId"] = json!(session);
+    body["sessionId"] = json!(session.format(&id));
     body["labels"] = json!({
         "cascade_id": id,
         "trajectory_id": id,
@@ -266,15 +299,13 @@ pub(super) fn tagged(mut body: Value, model: &str, session: Option<&str>) -> Val
 }
 
 pub(super) fn wrap_request(project: &str, model: &str, body: Value, user_agent: &str) -> Value {
-    let body = tagged(
-        body,
-        model,
-        data().and_then(|row| row.session_id.as_deref()),
-    );
+    let row = data();
+    let body = tagged(body, model, row.and_then(|row| row.session_id));
+    let envelope_user_agent = row.map_or(user_agent, |row| row.envelope_user_agent.as_str());
     json!({
         "project": project,
         "model": model,
-        "userAgent": user_agent,
+        "userAgent": envelope_user_agent,
         "requestType": "agent",
         "requestId": format!("agent-{}", uuid::Uuid::new_v4()),
         "request": body,
@@ -543,20 +574,25 @@ mod tests {
         }
 
         let inner = json!({"contents": [{"role": "user", "parts": [{"text": "hi"}]}]});
+        assert_eq!(fnv1a_64_signed(""), "-3750763034362895579");
+        assert_eq!(fnv1a_64_signed("a"), "-5808556873153909620");
+
         let wrapped = wrap_request("proj-123", "gemini-4-carbon-medium", inner.clone(), &ua);
         assert_eq!(wrapped["project"], "proj-123");
         assert_eq!(wrapped["model"], "gemini-4-carbon-medium");
-        assert_eq!(wrapped["userAgent"], ua);
+        assert_eq!(
+            wrapped["userAgent"],
+            data().unwrap().envelope_user_agent.as_str()
+        );
+        assert_ne!(wrapped["userAgent"], ua);
         assert_eq!(wrapped["requestType"], "agent");
         assert!(wrapped["requestId"].as_str().unwrap().starts_with("agent-"));
         for (key, value) in inner.as_object().unwrap() {
             assert_eq!(&wrapped["request"][key], value);
         }
-        assert_eq!(
-            wrapped["request"]["sessionId"],
-            data().unwrap().session_id.as_deref().unwrap()
-        );
         let labels = wrapped["request"]["labels"].as_object().unwrap();
+        let cascade_id = labels["cascade_id"].as_str().unwrap();
+        assert_eq!(wrapped["request"]["sessionId"], fnv1a_64_signed(cascade_id));
         assert_eq!(
             labels.keys().map(String::as_str).collect::<Vec<_>>(),
             [
@@ -598,7 +634,11 @@ mod tests {
         assert_eq!(tagged(body.clone(), "gemini-4-carbon-medium", None), body);
         let body = json!({"tools": []});
         assert_eq!(
-            tagged(body.clone(), "gemini-4-carbon-medium", Some("session")),
+            tagged(
+                body.clone(),
+                "gemini-4-carbon-medium",
+                Some(SessionId::CascadeFnv1a64),
+            ),
             body
         );
     }
