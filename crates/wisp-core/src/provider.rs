@@ -690,6 +690,7 @@ pub struct ProviderError {
     pub rejected: Vec<Feature>,
     pub refused: Option<Refused>,
     pub content_refused: bool,
+    pub malformed_call: bool,
     pub detail: Box<ErrorDetail>,
 }
 
@@ -733,6 +734,7 @@ impl ProviderError {
             rejected: Vec::new(),
             refused: None,
             content_refused: false,
+            malformed_call: false,
             detail: Box::new(detail),
         }
     }

@@ -12,12 +12,11 @@ use crate::models::ModelTable;
 
 use super::super::sse::{Decoder, SseParser, broken};
 use super::super::{Delta, ProviderError, ProviderEvent, REASONING_ITEM, SearchSignal};
-use super::{
-    CALL_SIGNATURES_ITEM, FOLD_TEXT, MALFORMED_FUNCTION_CALL, PART_ITEM, TEXT_SIGNATURE_ITEM,
-};
+use super::{CALL_SIGNATURES_ITEM, FOLD_TEXT, PART_ITEM, TEXT_SIGNATURE_ITEM};
 
 const MAX_DIAGNOSTIC_KEYS: usize = 16;
 const MAX_DIAGNOSTIC_KEY_BYTES: usize = 64;
+const MALFORMED_FUNCTION_CALL: &str = "MALFORMED_FUNCTION_CALL";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ActiveBlock {
@@ -667,11 +666,9 @@ impl GeminiDecoder {
         detail.status = Some(200);
         detail.error_type = Some(reason.to_owned());
         detail.possibly_billed = true;
-        Some(ProviderError::classified(
-            ErrorKind::InvalidResponse,
-            message,
-            detail,
-        ))
+        let mut error = ProviderError::classified(ErrorKind::InvalidResponse, message, detail);
+        error.malformed_call = reason == MALFORMED_FUNCTION_CALL;
+        Some(error)
     }
 }
 
@@ -1344,6 +1341,7 @@ mod tests {
                 assert_eq!(error.detail.retry, RetryClass::Transient);
                 assert_eq!(error.detail.status, Some(200));
                 assert_eq!(error.detail.error_type.as_deref(), Some(reason));
+                assert_eq!(error.malformed_call, reason == MALFORMED_FUNCTION_CALL);
                 assert!(error.detail.possibly_billed && error.possibly_billed);
                 assert!(error.usage_complete);
                 assert!(!error.uncounted(true));

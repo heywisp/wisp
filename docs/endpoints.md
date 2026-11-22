@@ -1311,7 +1311,14 @@ the reply with their mapped stop reason instead of running the calls. Retryable
 `MALFORMED_FUNCTION_CALL` and 3 times per step for other causes—even under
 looser explicit policies, while tighter bounds still win, sharing the step's
 non-busy retry count—before stopping with `step_limit` and the Retry / Switch
-offer. Raw
+offer. After a `MALFORMED_FUNCTION_CALL`, the retry appends one fixed text note
+to the current user message (`Your previous response contained an improperly
+formatted function call. Send the function call again, properly formatted.`),
+leaving earlier committed blocks byte-identical and never stacking notes across
+repeated malformed finishes; if a retry succeeds, that note stays in history and
+later requests (logged via `input_committed` under the internal
+`wisp-call-note-` ID prefix, never drawn as a user message on resume), and if
+the step gives up or cancels, the note is discarded. Raw
 finish diagnostics and attempted arguments stay out. Other unreadable-reply
 diagnostics keep a provider-named lead-in, never a bare parser fragment.
 
@@ -1330,8 +1337,9 @@ other retryable `invalid_response`).
 Keep-warm keeps its separate 58-minute deadline.
 
 In the main agent, Esc during a model retry wait stops automatic retries and leaves Retry available at once, with the same bytes; compaction waits still cancel compaction.
-Closing the session stops any wait without a Retry offer. Retries re-send
-the same bytes. On a session whose conversation tail is cached for
+Closing the session stops any wait without a Retry offer. Ordinary retries
+re-send the same bytes (except after Gemini's `MALFORMED_FUNCTION_CALL`, which
+appends the fixed retry note once, above). On a session whose conversation tail is cached for
 5 minutes, a stretch over 5 minutes without an accepted request lets that
 entry expire, so the next success pays one tail rebuild (its cache miss
 reads `ttl_expired`); a 1-hour cache lasts longer, but can also expire during
