@@ -5,7 +5,10 @@ use wisp_protocol::log::{
     FeatureState, LogEvent, LogRecord, LoggedBlock, LoggedInput, LoggedRequest, ToolsCopy,
     TurnLead, rewind_mask,
 };
-use wisp_protocol::settings::{Applies, Layer, LoggedChange, SettingTarget, SettingValue, names};
+use wisp_protocol::settings::{
+    Applies, Layer, LoggedChange, PLUGIN_ENABLED, PLUGIN_INSTALLED, Place, SettingTarget,
+    SettingValue, names,
+};
 use wisp_protocol::{
     ACCOUNT_FLAG, AccountSpend, CacheEffect, CacheTtl, CompactionTrigger, DeliveryMode, Effort,
     HookChange, InputId, InstructionsSource, InstructionsSummary, MessageTime, RebuildReason,
@@ -329,6 +332,7 @@ pub struct LoggedSession {
     pub instructions_source: Option<InstructionsSource>,
     pub instructions_extra: Option<String>,
     pub tools: LoggedTools,
+    pub inline_search: Option<bool>,
     pub copy: LoggedCopy,
     pub origins: BTreeMap<String, String>,
     pub turns: u64,
@@ -373,6 +377,19 @@ pub struct LoggedSession {
     pub turn_binding: Option<bool>,
     pub refreshed: Option<(u64, String)>,
     pub warm_spell: Option<WarmSpell>,
+}
+
+pub fn search_plugin_id(catalog: &wisp_protocol::plugin::Catalog) -> Option<&str> {
+    catalog
+        .plugins
+        .iter()
+        .find(|plugin| {
+            plugin
+                .tools
+                .iter()
+                .any(wisp_protocol::plugin::ToolEntry::is_search)
+        })
+        .map(|plugin| plugin.id.as_str())
 }
 
 impl LoggedSession {
@@ -537,6 +554,30 @@ impl LoggedSession {
 
     pub fn had_search(&self) -> bool {
         crate::search::had_search(&self.tools.names)
+    }
+
+    pub fn search_on(&self) -> bool {
+        self.inline_search.unwrap_or_else(|| self.had_search())
+    }
+
+    pub fn search_switched_off(&self, plugin_id: Option<&str>) -> bool {
+        self.session_values.iter().any(|entry| match &entry.target {
+            SettingTarget::Path(path)
+                if matches!(&path.place, Place::Plugin(id) if Some(id.as_str()) == plugin_id)
+                    && matches!(path.spec().name, PLUGIN_ENABLED | PLUGIN_INSTALLED) =>
+            {
+                entry.value.as_ref().is_some_and(crate::settings::is_off)
+            }
+            SettingTarget::Name(name) if name.spec().name == names::TOOLS => matches!(
+                &entry.value,
+                Some(SettingValue::List(names)) if !crate::search::had_search(names)
+            ),
+            SettingTarget::Name(name) if name.spec().name == names::TURNED_OFF => matches!(
+                &entry.value,
+                Some(SettingValue::List(names)) if crate::search::had_search(names)
+            ),
+            _ => false,
+        })
     }
 
     pub fn tools_pair(&self) -> (Option<&str>, &str) {
@@ -720,6 +761,7 @@ impl Fold {
                     names,
                     from_change: false,
                 },
+                inline_search: None,
                 copy: LoggedCopy::default(),
                 origins: origins.collect(),
                 turns: 0,
@@ -819,6 +861,7 @@ impl Fold {
         }
         match &record.event {
             LogEvent::ToolsChanged { copy, .. } if copy.system_prompt.is_some() => {
+                self.out.inline_search = None;
                 self.out.copy = LoggedCopy {
                     system_prompt: copy.system_prompt.clone(),
                     base_sha256: copy.system_base_sha256.clone(),
@@ -841,16 +884,24 @@ impl Fold {
                 }
             }
             LogEvent::ToolsChanged {
-                via,
-                added,
-                removed,
+                via: ToolChangeVia::Rebuild,
                 ..
-            } if *via != ToolChangeVia::Rebuild => {
+            } => {
+                self.out.inline_search = None;
+            }
+            LogEvent::ToolsChanged { added, removed, .. } => {
                 if let Some(on) = self.out.copy.on.as_mut() {
                     for name in removed {
                         on.remove(name);
                     }
                     on.extend(added.iter().cloned());
+                }
+                if !masked {
+                    if added.iter().any(|name| name == crate::search::WEB_SEARCH) {
+                        self.out.inline_search = Some(true);
+                    } else if removed.iter().any(|name| name == crate::search::WEB_SEARCH) {
+                        self.out.inline_search = Some(false);
+                    }
                 }
             }
             LogEvent::TurnStarted {
@@ -899,13 +950,19 @@ impl Fold {
                     auto_compact = options.auto_compact.or(auto_compact);
                     self.change = None;
                 }
+                let next_model = model
+                    .clone()
+                    .unwrap_or_else(|| self.out.started.model.clone());
+                if endpoint != self.out.current.endpoint_name
+                    || next_model != self.out.current.model
+                {
+                    self.out.inline_search = None;
+                }
                 self.out.switched |= endpoint != self.out.current.endpoint_name;
                 self.out.current = Current {
                     endpoint_name: endpoint,
                     provider,
-                    model: model
-                        .clone()
-                        .unwrap_or_else(|| self.out.started.model.clone()),
+                    model: next_model,
                     effort: effort.unwrap_or(self.out.started.effort),
                     cache_ttl: cache_ttl.unwrap_or(self.out.started.cache_ttl),
                     debug_cache: debug_cache.unwrap_or(self.out.started.debug_cache),
@@ -1300,6 +1357,17 @@ impl Fold {
                 changes,
                 ..
             } => {
+                let prev_endpoint = self
+                    .change
+                    .as_ref()
+                    .map_or(&self.out.current.endpoint_name, |(e, ..)| e);
+                let prev_model = self
+                    .change
+                    .as_ref()
+                    .map_or(self.out.current.model.as_str(), |(_, m, ..)| m.as_str());
+                let pair_moved = (endpoint_name.is_some()
+                    && endpoint_name.as_deref() != prev_endpoint.as_deref())
+                    || model.as_str() != prev_model;
                 self.change = Some((
                     endpoint_name.clone(),
                     model.clone(),
@@ -1314,6 +1382,9 @@ impl Fold {
                 }
                 if let (Some(name), Some(origin)) = (endpoint_name, endpoint) {
                     self.out.origins.insert(name.clone(), origin.clone());
+                }
+                if tools_sha256.is_some() || pair_moved {
+                    self.out.inline_search = None;
                 }
                 if let Some(sha256) = tools_sha256 {
                     self.logged_tools = ToolsHash::Digest(sha256.clone());
@@ -1357,6 +1428,12 @@ impl Fold {
                     || block_changed
                     || ToolsHash::Started(tools_sha256.clone()).digest()
                         != self.logged_tools.digest();
+                if system_prompt.is_some()
+                    || rebuilt
+                    || Some(endpoint_name.as_str()) != self.out.current.endpoint_name.as_deref()
+                {
+                    self.out.inline_search = None;
+                }
                 self.out
                     .system_prompt_sha256
                     .clone_from(system_prompt_sha256);

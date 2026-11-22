@@ -1420,26 +1420,28 @@ its form, and its `tools` bytes, for the session.
   saved off reads `on · this chat`. The reasons the row, the start banner, the
   line a switch of model or account prints and `wisp doctor` give are one
   list: `not on this model`, `not on this account` (the provider or a
-  gateway refused it), `off for this account` and `not in this chat`.
+  gateway refused it) and `off for this account`.
 
 - **A resumed session keeps the tools it logged.** A Claude chat logged with the
   server tool moves to the fixed function at its next opening with one rebuild.
-  For every other case, the pair it resumes on
-  takes its form from the last tools logged (`settings_changed.tools`, a
-  rebuild's `tools_changed` copy, else `session_started.tools`), not from today's settings, both ways: a session
-  started without search (for example on a gateway before search was on by
-  default) resumes without it, with the reason `off (not in this chat)`, and a session that had search keeps it after
-  `native_web_search = false`. Either way the resumed request sends the same
-  tools as before, so it takes no tools-change cut. Only the pair the log
-  ran on keeps them: a resume onto another endpoint is a resume followed by
-  a switch, and that endpoint takes today's form. Whether `web_search` is
-  on at all follows this run's tools: a log with search resumed by a run
-  started without it adopts the logged prefix, then turns search off at
-  its first turn with one rebuild. Turning `web_search` on in the running
-  session ends `off (not in this chat)`: a run started
-  with search on gets it on such a pair by turning it off for a turn, then
-  on, which rebuilds once (`docs/tools.md`, "Switching tools in a running
-  session"). Every new session takes today's settings.
+  For every other case, a session that had search keeps it after
+  `native_web_search = false` (from `settings_changed.tools`, a rebuild's
+  `tools_changed` copy, else `session_started.tools`, adjusted by inline
+  `tools_changed`), and a session where search was switched off inside the chat
+  resumes with it `off` (and toggleable back on). A session logged without
+  search and with no in-chat switch-off picks search up by itself when today's
+  settings and model have it (and the account hasn't refused it): an interactive
+  or child session adopts the logged prefix, then adds `web_search` on the first
+  turn after that resume — inline, keeping the cache, on a direct Claude API
+  pair with `inline_tools` using the client function, or with one cache
+  rebuild everywhere else — and never again. Only the pair the log ran on keeps
+  its logged form: a resume onto another endpoint is a resume followed by a
+  switch, and that endpoint takes today's form. Whether `web_search` is on at
+  all follows this run's tools: a log with search resumed by a run started
+  without it adopts the logged prefix, then turns search off at its first turn
+  (inline on a direct Claude API pair with `inline_tools` using the client
+  function, else with one rebuild; `docs/tools.md`, "Switching tools in a running session").
+  Every new session takes today's settings.
 - **A switch to a pair of the other form** changes `tools`: the request
   writes the cache again, keeps all earlier thinking for the API to drop (a
   thinking block's checked prefix includes the tools) where binding
@@ -1632,8 +1634,7 @@ its form, and its `tools` bytes, for the session.
     switch would cut, one note under the rows says
     `switching web search on or off drops earlier reasoning`. A row that stays
     without search says why: `web search: off (not on this model)` (no
-    data for the pair), `web search: off (off for this account)`,
-    `web search: off (not in this chat)` or
+    data for the pair), `web search: off (off for this account)` or
     `web search: off (not on this account)` (the organisation's or a
     gateway's refusal); the row of the pair in use is no exception. When every row
     that stays without search would say the same, the picker says it once

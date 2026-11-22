@@ -37,6 +37,7 @@ use crate::resume::{
     FeatureFact, FellBack, LoggedSession, Lost, Recovered, ago, feature_state, lost_notes, recover,
     replayed, with_notes,
 };
+use crate::search::SearchForm;
 use crate::secrets::import::and_words;
 use crate::session::{Line, rebuild_checked, reread, sha256_hex};
 use flags::FlagNotes;
@@ -521,17 +522,35 @@ impl Agent {
         self.search.refused = rebuilt.search_refused.clone();
         let (pair, model) = logged.tools_pair();
         let ran_on = pair.unwrap_or_else(|| self.endpoint_name()).to_owned();
-        self.search
-            .kept
-            .insert((ran_on, model.to_owned()), logged.had_search());
+        let key = (ran_on.clone(), model.to_owned());
+        let search_plugin = crate::resume::search_plugin_id(&self.catalog);
+        let switched_off = logged.search_switched_off(search_plugin);
+        let search_on = logged.search_on();
+        let array_had = logged.had_search();
+        if search_on {
+            self.search.kept.insert(key.clone());
+        }
+        let pickup = !search_on
+            && !switched_off
+            && self.unkept_form(&ran_on, model, self.toolbox.web_search()) == SearchForm::Native;
+        let delay = self.switchable() && self.next_names() == key;
+        if delay && (pickup || array_had != search_on) {
+            self.search.array = Some((key.clone(), array_had));
+        }
         let started_with = self.toolbox.web_search();
-        if logged.had_search() {
+        if search_on {
             self.toolbox.set_web_search(true);
+        } else if switched_off {
+            self.toolbox.set_web_search(false);
         }
         let adopted = self.adopt_copy(&logged);
         if !adopted {
-            self.toolbox.set_web_search(started_with);
+            if !switched_off {
+                self.toolbox.set_web_search(started_with);
+            }
+            self.search.array = None;
         }
+        self.search.pickup = pickup && delay && adopted;
         let whole_copy = !adopted && self.prefix_digests_differ(&logged);
         let block_changed = block.loaded && self.instructions_differ(&logged);
 

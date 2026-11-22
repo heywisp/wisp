@@ -199,6 +199,7 @@ pub struct Rendering {
     pub attachments_as_notes: bool,
     pub tools_point: usize,
     pub array: BTreeSet<String>,
+    pub inline_search: bool,
 }
 
 pub static UNRENDERED: Rendering = Rendering {
@@ -214,6 +215,7 @@ pub static UNRENDERED: Rendering = Rendering {
     attachments_as_notes: false,
     tools_point: 0,
     array: BTreeSet::new(),
+    inline_search: false,
 };
 
 fn added_by_value(block: &ContentBlock) -> Option<&str> {
@@ -230,8 +232,15 @@ pub(crate) fn voided_tool_change(
     point: usize,
     block: &ContentBlock,
     in_array: impl FnOnce(&str) -> bool,
+    inline_search: bool,
 ) -> bool {
-    index < point && added_by_value(block).is_some_and(in_array)
+    added_by_value(block).is_some_and(|name| {
+        if name == crate::search::WEB_SEARCH {
+            !inline_search || in_array(name)
+        } else {
+            index < point && in_array(name)
+        }
+    })
 }
 
 impl Rendering {
@@ -251,9 +260,13 @@ impl Rendering {
     }
 
     pub fn voided(&self, message: usize, block: &ContentBlock) -> bool {
-        voided_tool_change(message, self.tools_point, block, |name| {
-            self.array.contains(name)
-        })
+        voided_tool_change(
+            message,
+            self.tools_point,
+            block,
+            |name| self.array.contains(name),
+            self.inline_search,
+        )
     }
 }
 

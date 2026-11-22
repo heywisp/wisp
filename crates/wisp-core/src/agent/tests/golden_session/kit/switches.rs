@@ -828,11 +828,18 @@ async fn a_mixed_tools_change_with_web_search_off_rebuilds_once_naming_both() {
         assert!(!agent.toolbox.web_search());
         let mut session = Session::start(agent);
         session.turn("u1", "one").await;
-        let rebuilt = CacheEffect::Rebuilt {
-            reason: wisp_protocol::RebuildReason::ToolsChange,
+        let expected_cache = if by_call {
+            CacheEffect::Kept
+        } else {
+            CacheEffect::Rebuilt {
+                reason: wisp_protocol::RebuildReason::ToolsChange,
+            }
         };
         let enabled = session.tools(1, every_default()).await;
-        assert_eq!(answered(&enabled), (When::NextTurn, Some(rebuilt.clone())));
+        assert_eq!(
+            answered(&enabled),
+            (When::NextTurn, Some(expected_cache.clone()))
+        );
         let second = session.turn("u2", "search").await;
         assert!(second.iter().any(|event| matches!(
             event,
@@ -850,7 +857,7 @@ async fn a_mixed_tools_change_with_web_search_off_rebuilds_once_naming_both() {
         let only_search = session.tools(2, without(crate::search::WEB_SEARCH)).await;
         assert_eq!(
             answered(&only_search),
-            (When::NextTurn, Some(rebuilt.clone()))
+            (When::NextTurn, Some(expected_cache.clone()))
         );
         assert!(waits(&only_search).is_empty());
         let mixed: Vec<String> = without(crate::search::WEB_SEARCH)
@@ -858,7 +865,10 @@ async fn a_mixed_tools_change_with_web_search_off_rebuilds_once_naming_both() {
             .filter(|n| n != "show_diff")
             .collect();
         let answer = session.tools(3, mixed).await;
-        assert_eq!(answered(&answer), (When::NextTurn, Some(rebuilt)));
+        assert_eq!(
+            answered(&answer),
+            (When::NextTurn, Some(expected_cache.clone()))
+        );
         let third = session.turn("u3", "three").await;
         assert_eq!(
             changed(&third)
@@ -870,10 +880,7 @@ async fn a_mixed_tools_change_with_web_search_off_rebuilds_once_naming_both() {
         for events in [&second, &third] {
             assert!(waits(events).is_empty());
             assert_eq!(changed(events).len(), 1);
-            assert!(matches!(
-                changed(events)[0].3,
-                Some(CacheEffect::Rebuilt { .. })
-            ));
+            assert_eq!(changed(events)[0].3, Some(expected_cache.clone()));
         }
         session.end().await;
         let off_at = if by_call { 4 } else { 2 };
@@ -884,15 +891,33 @@ async fn a_mixed_tools_change_with_web_search_off_rebuilds_once_naming_both() {
                 .iter()
                 .any(|tool| tool["name"] == "web_search")
         };
-        assert_eq!((has(0), has(1), has(off_at)), (false, true, false));
-        let tool = body(&server, 1)["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|tool| tool["name"] == "web_search")
-            .unwrap()
-            .clone();
-        assert_eq!(tool.get("type").is_none(), by_call);
+        if by_call {
+            assert_eq!((has(0), has(1), has(off_at)), (false, false, false));
+            kept_prefix(&server, 0, 1);
+            kept_prefix(&server, 1, off_at);
+            assert!(
+                tool_message(&body(&server, 1))
+                    .unwrap()
+                    .to_string()
+                    .contains("web_search")
+            );
+            assert!(
+                tool_message(&body(&server, off_at))
+                    .unwrap()
+                    .to_string()
+                    .contains("web_search")
+            );
+        } else {
+            assert_eq!((has(0), has(1), has(off_at)), (false, true, false));
+            let tool = body(&server, 1)["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == "web_search")
+                .unwrap()
+                .clone();
+            assert!(tool.get("type").is_some());
+        }
     }
 }
 

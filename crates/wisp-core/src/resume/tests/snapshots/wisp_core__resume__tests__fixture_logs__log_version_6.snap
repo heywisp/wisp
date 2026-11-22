@@ -73,6 +73,7 @@ Ok(
             names: [],
             from_change: false,
         },
+        inline_search: None,
         copy: LoggedCopy {
             system_prompt: Some(
                 "You are Jarvis.",

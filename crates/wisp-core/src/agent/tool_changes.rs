@@ -206,9 +206,15 @@ impl Agent {
     }
 
     fn voided(&self, index: usize, block: &ContentBlock) -> bool {
-        voided_tool_change(index, self.tool_switches.point, block, |name| {
-            self.sent.iter().any(|s| s.name == name)
-        })
+        let array = self.array_names();
+        let inline_search = self.inline_search_live(self.endpoint, &self.session.model);
+        voided_tool_change(
+            index,
+            self.tool_switches.point,
+            block,
+            |name| array.contains(name),
+            inline_search,
+        )
     }
 
     pub(super) fn rebuilt_at(&mut self, point: usize) {
@@ -588,8 +594,55 @@ impl Agent {
         self.read_offer_with(blocks, &self.deferred_names())
     }
 
+    fn next_array_server_tools(&self) -> &'static [crate::provider::ServerToolSpec] {
+        let (endpoint, model) = self.next_endpoint_model();
+        let endpoint = self.connection_name(endpoint);
+        self.search_tools(endpoint, &model, self.array_search_form(endpoint, &model))
+    }
+
+    fn inline_search_on(
+        &self,
+        endpoint: usize,
+        model: &str,
+        form: crate::search::SearchForm,
+    ) -> Option<&ToolSpec> {
+        let connection = self.connections.get(endpoint)?;
+        let documented = connection
+            .provider
+            .capabilities(model)
+            .is_some_and(|row| row.inline_tools)
+            && self.pair_state(&connection.name, model, Feature::InlineTools)
+                == PairState::Documented;
+        if !documented || self.sent.is_empty() {
+            return None;
+        }
+        let runner = self.toolbox.runner(WEB_SEARCH)?;
+        crate::search::by_call(self.search_tools(&connection.name, model, form))
+            .then(|| runner.spec())
+    }
+
+    pub(super) fn inline_search_live(&self, endpoint: usize, model: &str) -> bool {
+        let name = self.connection_name(endpoint);
+        let form = self.search_form_for(name, model, true);
+        self.inline_search_on(endpoint, model, form).is_some()
+    }
+
+    fn inline_search_spec(&self, endpoint: usize, model: &str) -> Option<ToolSpec> {
+        let name = self.connection_name(endpoint);
+        let form = self.unkept_form(name, model, true);
+        self.inline_search_on(endpoint, model, form).cloned()
+    }
+
     fn read_offer_with(&self, blocks: bool, deferred: &BTreeSet<String>) -> Offer {
-        let array: BTreeSet<String> = self.sent.iter().map(|s| s.name.clone()).collect();
+        let (next_ep, next_model) = self.next_endpoint_model();
+        let (wire, _) = self.wire(&self.sent, self.next_array_server_tools());
+        let array: BTreeSet<String> = wire.iter().map(|s| s.name.clone()).collect();
+        let latest: BTreeMap<String, ToolSpec> = wire
+            .into_iter()
+            .chain(self.deferred.iter().cloned())
+            .map(|spec| (spec.name.clone(), spec))
+            .collect();
+        let inline_search = self.inline_search_live(next_ep, &next_model);
         let undeferred = self
             .deferred
             .iter()
@@ -599,12 +652,7 @@ impl Agent {
         let mut offer = Offer {
             declared: array.iter().chain(deferred).cloned().collect(),
             offered: array.clone(),
-            latest: self
-                .sent
-                .iter()
-                .chain(&self.deferred)
-                .map(|spec| (spec.name.clone(), spec.clone()))
-                .collect(),
+            latest,
             undeferred,
             ..Offer::default()
         };
@@ -620,7 +668,17 @@ impl Agent {
                 for block in message.tool_blocks() {
                     match block {
                         ContentBlock::Text { text } => offer.stated.push(text.clone()),
-                        _ if blocks && !self.voided(index, block) => offer.apply(block),
+                        _ if blocks
+                            && !voided_tool_change(
+                                index,
+                                self.tool_switches.point,
+                                block,
+                                |name| array.contains(name),
+                                inline_search,
+                            ) =>
+                        {
+                            offer.apply(block)
+                        }
                         _ => {}
                     }
                 }
@@ -647,7 +705,12 @@ impl Agent {
         self.toolbox
             .loaded_names()
             .into_iter()
-            .chain(self.toolbox.native_names())
+            .chain(
+                self.toolbox
+                    .native_names()
+                    .into_iter()
+                    .filter(|name| !(self.search.pickup && name == WEB_SEARCH)),
+            )
             .collect()
     }
 
@@ -685,6 +748,9 @@ impl Agent {
         candidates.dedup();
         let off = self.turned_off(&self.settings.session);
         for name in candidates {
+            if name == WEB_SEARCH {
+                continue;
+            }
             let declared = offer.declared.contains(&name);
             let defined = self.toolbox.definition(&name).cloned();
             if defined.is_none()
@@ -750,9 +816,50 @@ impl Agent {
             }
         }
         let wanted = desired.contains(WEB_SEARCH);
-        if wanted != self.toolbox.web_search() {
+        let (next_ep, next_model) = self.next_endpoint_model();
+        let next_ep_name = self.connection_name(next_ep);
+        let inline_search = self.inline_search_spec(next_ep, &next_model);
+        let target_form = if wanted && !self.toolbox.web_search() {
+            self.unkept_form(next_ep_name, &next_model, true)
+        } else {
+            self.search_form_for(next_ep_name, &next_model, wanted)
+        };
+        let target_tools = self.search_tools(next_ep_name, &next_model, target_form);
+        let array_tools = self.next_array_server_tools();
+        let search_offered = if inline_search.is_some()
+            || (crate::search::by_call(target_tools) && offer.offered.contains(WEB_SEARCH))
+        {
+            offer.offered.contains(WEB_SEARCH)
+        } else {
+            !array_tools.is_empty()
+        };
+        let target_offered = !target_tools.is_empty();
+        if wanted != self.toolbox.web_search()
+            || self.search.pickup
+            || target_offered != search_offered
+        {
             decision.search = Some(wanted);
-            if self.search_flip_moves(wanted) {
+            if let Some(spec) = inline_search {
+                let in_array = crate::search::by_call(array_tools);
+                match (
+                    target_offered,
+                    offer.declared.contains(WEB_SEARCH),
+                    search_offered,
+                ) {
+                    (true, true, false) if in_array && self.declaration_current(&offer, &spec) => {
+                        decision.by_name.push(WEB_SEARCH.to_owned());
+                    }
+                    (true, _, false) => {
+                        decision.by_value.push(spec);
+                    }
+                    (false, _, true) => {
+                        decision.removals.push(WEB_SEARCH.to_owned());
+                    }
+                    _ => {}
+                }
+            } else if target_tools != array_tools
+                && !(crate::search::by_call(target_tools) && offer.offered.contains(WEB_SEARCH))
+            {
                 decision.rebuild.insert(WEB_SEARCH.to_owned());
             }
         }
@@ -817,14 +924,6 @@ impl Agent {
         })
     }
 
-    fn search_flip_moves(&self, wanted: bool) -> bool {
-        let (endpoint, model) = self.next_endpoint_model();
-        let endpoint = self.connection_name(endpoint);
-        let tools = |form| self.search_tools(endpoint, &model, form);
-        tools(self.unkept_form(endpoint, &model, wanted))
-            != tools(self.search_form(endpoint, &model))
-    }
-
     fn is_native(&self, name: &str) -> bool {
         self.catalog.tool(name).is_some_and(|t| t.native)
     }
@@ -833,6 +932,8 @@ impl Agent {
         let decision = self.decide()?;
         let enabled = self.toolbox.loaded_names();
         let moves = decision.applied != enabled
+            || !decision.by_value.is_empty()
+            || !decision.by_name.is_empty()
             || !decision.removals.is_empty()
             || !decision.note.off.is_empty();
         Some((
@@ -858,15 +959,26 @@ impl Agent {
             return ToolPart::default();
         };
         let before = self.offered_now();
+        let before_announced = self.announced_tools();
+        let before_search = !self.active_server_tools().is_empty();
         let flip = decision.search;
-        let flip_rebuilds = decision.rebuild.contains(WEB_SEARCH);
-        let rebuilt = (!decision.rebuild.is_empty()).then(|| self.rebuild_tools(&decision));
-        if rebuilt.is_some()
-            && let Some(again) = self.decide()
-        {
-            decision = again;
-        }
-        if let Some(wanted) = flip.filter(|_| !flip_rebuilds) {
+        let inline_search_flip = decision.by_value.iter().any(|s| s.name == WEB_SEARCH)
+            || decision.by_name.iter().any(|n| n == WEB_SEARCH)
+            || decision.removals.iter().any(|n| n == WEB_SEARCH);
+        let rebuilt = !decision.rebuild.is_empty();
+        if rebuilt {
+            self.rebuild_tools(&decision);
+            if let Some(again) = self.decide() {
+                decision = again;
+            }
+        } else if let Some(wanted) = flip {
+            if inline_search_flip {
+                let key = (self.endpoint_name().to_owned(), self.session.model.clone());
+                let had = crate::search::by_call(self.server_tools());
+                if self.search.array.as_ref().is_none_or(|(k, _)| k != &key) {
+                    self.search.array = Some((key, had));
+                }
+            }
             self.flip_search(wanted);
         }
         self.apply_tools(&decision);
@@ -875,21 +987,24 @@ impl Agent {
             .retain(|name| decision.applied.contains(name));
         self.mark_tools_in_catalog(&decision, events).await;
         let after = self.offered_now();
+        let after_search = !self.active_server_tools().is_empty();
         let mut added: Vec<String> = after.difference(&before).cloned().collect();
         let mut removed: Vec<String> = before.difference(&after).cloned().collect();
-        match flip.filter(|_| flip_rebuilds) {
-            Some(true) => added.push(WEB_SEARCH.to_owned()),
-            Some(false) => {
-                removed.push(WEB_SEARCH.to_owned());
+        if !before_search && after_search {
+            added.push(WEB_SEARCH.to_owned());
+        } else if before_search && !after_search {
+            removed.push(WEB_SEARCH.to_owned());
+            if rebuilt {
                 decision.note.off.push(WEB_SEARCH.to_owned());
                 decision.note.off.sort();
             }
-            None => {}
         }
         added.sort();
         removed.sort();
-        if let Some(names) = rebuilt {
-            self.move_sent_tools(&names);
+        if rebuilt || inline_search_flip {
+            self.move_sent_tools(&before_announced);
+        }
+        if rebuilt {
             let copy = self.rebuilt_copy(&after);
             let cache = Some(CacheEffect::Rebuilt {
                 reason: RebuildReason::ToolsChange,
@@ -963,6 +1078,7 @@ impl Agent {
     }
 
     pub(super) fn inline_fell_back(&mut self) {
+        self.search.array = None;
         for name in self.tool_switches.found.keys() {
             self.toolbox.hold(name);
         }
@@ -987,7 +1103,6 @@ impl Agent {
         let Some(decision) = self.decide() else {
             return;
         };
-        let search_waits = self.search_waits();
         let mut changed = false;
         for tool in self
             .catalog
@@ -995,8 +1110,7 @@ impl Agent {
             .iter_mut()
             .flat_map(|p| p.tools.iter_mut())
         {
-            let waits =
-                decision.waiting.contains(&tool.name) || (search_waits && tool.name == WEB_SEARCH);
+            let waits = decision.waiting.contains(&tool.name);
             changed |= tool.waits != waits;
             tool.waits = waits;
         }
@@ -1028,7 +1142,6 @@ impl Agent {
             .chain(decision.waiting.iter().cloned())
             .chain([WEB_SEARCH.to_owned()])
             .collect();
-        let search_waits = self.search_waits();
         let findable = self
             .toolbox
             .provider_of(SEARCH_CAPABILITY)
@@ -1046,8 +1159,7 @@ impl Agent {
             } else {
                 decision.applied.contains(&tool.name)
             };
-            let waits =
-                decision.waiting.contains(&tool.name) || (search_waits && tool.name == WEB_SEARCH);
+            let waits = decision.waiting.contains(&tool.name);
             let held = !on
                 && findable
                     .as_ref()

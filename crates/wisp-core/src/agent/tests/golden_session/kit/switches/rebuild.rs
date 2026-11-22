@@ -648,7 +648,9 @@ async fn a_rebuild_moves_the_logged_tools_so_the_next_settings_change_logs_none(
 const SEARCH: &str = crate::search::WEB_SEARCH;
 
 fn searches(request: &Value) -> bool {
-    client_names(request).contains(&SEARCH.to_owned())
+    request["tools"]
+        .as_array()
+        .is_some_and(|tools| tools.iter().any(|t| t["name"] == SEARCH))
 }
 
 fn tools_records(store: &MemoryStore) -> usize {
@@ -694,7 +696,8 @@ async fn web_search_turned_off_rebuilds_once_with_its_note_and_binds_or_cuts_the
         let server = Server::start(replies).await;
         let store = MemoryStore::default();
         let kit = switching(&server, &env, &store);
-        let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+        let mut built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+        built.agent.toolbox.drop_plugin("web-search");
         let mut session = Session::start(built.agent);
         session.turn("u1", "one").await;
         let answer = if by_switch {
@@ -873,7 +876,8 @@ async fn a_pair_switch_and_a_web_search_flip_in_one_opening_rebuild_once_on_the_
     let store = MemoryStore::default();
     let mut kit = configured(&server, &env, &store, without_search());
     kit.models = models("[models.\"claude-opus-4-7\"]\nweb_search = []\n");
-    let built = kit.build(on(PLAIN, kit::Start::Fresh)).await.unwrap();
+    let mut built = kit.build(on(PLAIN, kit::Start::Fresh)).await.unwrap();
+    built.agent.toolbox.drop_plugin("web-search");
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;
     change(&mut session, 1, model(CAPABLE)).await;
@@ -901,7 +905,8 @@ async fn keep_warm_skips_as_changed_while_a_web_search_rebuild_is_due() {
     let server = Server::start(vec![says("msg_01", 400, "One.")]).await;
     let store = MemoryStore::default();
     let kit = switching(&server, &env, &store);
-    let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+    let mut built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+    built.agent.toolbox.drop_plugin("web-search");
     let mut session = Session::start(built.agent.with_keep_warm(8));
     session.turn("u1", "one").await;
     let answer = session.tools(1, without_search()).await;
@@ -910,7 +915,7 @@ async fn keep_warm_skips_as_changed_while_a_web_search_rebuild_is_due() {
     session.end().await;
 }
 
-fn by_value_additions(request: &Value, name: &str) -> usize {
+pub(super) fn by_value_additions(request: &Value, name: &str) -> usize {
     let wanted = format!("tool_addition {name} by value");
     request["messages"]
         .as_array()
@@ -922,8 +927,43 @@ fn by_value_additions(request: &Value, name: &str) -> usize {
         .count()
 }
 
-fn declared(request: &Value, name: &str) -> usize {
+pub(super) fn declared(request: &Value, name: &str) -> usize {
     client_names(request).iter().filter(|n| *n == name).count() + by_value_additions(request, name)
+}
+
+#[tokio::test]
+async fn a_rebuild_after_an_inline_web_search_addition_declares_search_once() {
+    let env = Env::new("rebuild-voids-inline-search");
+    let server = Server::start(vec![
+        says("msg_01", 400, "One."),
+        says("msg_02", 520, "Two."),
+        says("msg_03", 640, "Three."),
+        says("msg_04", 760, "Four."),
+    ])
+    .await;
+    let store = MemoryStore::default();
+    let initial: Vec<String> = without_search()
+        .into_iter()
+        .filter(|n| n != "show_diff")
+        .collect();
+    let kit = configured(&server, &env, &store, initial);
+    let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+    let mut session = Session::start(built.agent);
+    session.turn("u1", "one").await;
+    session.tools(1, without("show_diff")).await;
+    session.turn("u2", "two").await;
+    change(&mut session, 2, model(PLAIN)).await;
+    session.tools(3, every_default()).await;
+    session.turn("u3", "three").await;
+    change(&mut session, 4, model(CAPABLE)).await;
+    let back = session.turn("u4", "four").await;
+    let agent = session.end().await;
+    assert_eq!(by_value_additions(&body(&server, 1), SEARCH), 1);
+    assert!(searches(&body(&server, 2)));
+    assert!(changed(&back).is_empty(), "{:?}", changed(&back));
+    assert_eq!(declared(&body(&server, 3), SEARCH), 1);
+    assert_eq!(by_value_additions(&body(&server, 3), SEARCH), 0);
+    rebuilds(&store, &agent).await;
 }
 
 #[tokio::test]
@@ -1170,7 +1210,8 @@ async fn a_rebuild_after_by_value_adds_and_a_removal_restores_the_tool_by_name()
     .await;
     let store = MemoryStore::default();
     let kit = configured(&server, &env, &store, vec!["none".to_owned()]);
-    let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+    let mut built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+    built.agent.toolbox.drop_plugin("web-search");
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;
     let bash = || vec!["bash".to_owned()];

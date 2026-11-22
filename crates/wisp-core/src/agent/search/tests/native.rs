@@ -202,26 +202,20 @@ async fn a_native_pair_sends_the_same_tools_on_every_step_and_turn() {
 #[tokio::test]
 async fn turning_search_on_drops_the_logged_mark_and_leaves_the_form_the_facts_give() {
     let off = "[endpoints.env]\nnative_web_search = false\n";
-    let logged = [
-        ("", false, SearchForm::None(NoSearch::NotStarted)),
-        (off, true, SearchForm::Native),
-    ];
-    for (config, had, before) in logged {
-        let mut rig = native_rig(Vec::new(), &[DEFAULT_MODEL]);
-        rig.agent.models = models(&format!("{}\n{config}", listed("env", &[DEFAULT_MODEL])));
-        let pair = (IMPLICIT_ENDPOINT.to_owned(), DEFAULT_MODEL.to_owned());
-        rig.agent.search.kept.insert(pair, had);
-        let form = |rig: &Rig| rig.agent.search_form(IMPLICIT_ENDPOINT, DEFAULT_MODEL);
-        assert_eq!(form(&rig), before, "{config}");
-        rig.agent.flip_search(false);
-        assert_eq!(form(&rig), SearchForm::None(NoSearch::NotRequested));
-        rig.agent.flip_search(true);
-        let facts = rig
-            .agent
-            .unkept_form(IMPLICIT_ENDPOINT, DEFAULT_MODEL, true);
-        assert_eq!(form(&rig), facts, "{config}");
-        assert_ne!(form(&rig), before, "{config}");
-    }
+    let mut rig = native_rig(Vec::new(), &[DEFAULT_MODEL]);
+    rig.agent.models = models(&format!("{}\n{off}", listed("env", &[DEFAULT_MODEL])));
+    let pair = (IMPLICIT_ENDPOINT.to_owned(), DEFAULT_MODEL.to_owned());
+    rig.agent.search.kept.insert(pair);
+    let form = |rig: &Rig| rig.agent.search_form(IMPLICIT_ENDPOINT, DEFAULT_MODEL);
+    assert_eq!(form(&rig), SearchForm::Native);
+    rig.agent.flip_search(false);
+    assert_eq!(form(&rig), SearchForm::None(NoSearch::NotRequested));
+    rig.agent.flip_search(true);
+    let facts = rig
+        .agent
+        .unkept_form(IMPLICIT_ENDPOINT, DEFAULT_MODEL, true);
+    assert_eq!(form(&rig), facts);
+    assert_ne!(form(&rig), SearchForm::Native);
 }
 
 #[tokio::test]

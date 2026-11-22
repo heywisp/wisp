@@ -79,7 +79,7 @@ impl Agent {
         let deferred = specs_of(&copy.tools.deferred_definitions)?;
         let (endpoint, model) = self.next_endpoint_model();
         let name = self.connections.get(endpoint)?.name.clone();
-        let server = self.search_tools(&name, &model, self.search_form(&name, &model));
+        let server = self.search_tools(&name, &model, self.array_search_form(&name, &model));
         let (wire_tools, server) = self.wire(&sent, server);
         let deferred = std::mem::replace(&mut self.deferred, deferred);
         let digest = logged.tools.digest();
@@ -185,8 +185,10 @@ impl Agent {
         if self.found_use().is_none() {
             on.retain(|name| !self.tool_switches.found.contains_key(name));
         }
+        on.remove(crate::search::WEB_SEARCH);
         let natives = self.toolbox.native_names();
         let baseline = self.tool_switches.baseline.as_ref();
+        let session_wanted = self.wanted_tools(&self.settings.session);
         let held: BTreeSet<String> = self
             .toolbox
             .held_names()
@@ -203,6 +205,9 @@ impl Agent {
                             && (tool.on
                                 || baseline.is_some_and(|wanted| wanted.contains(&tool.name)))
                             && !natives.contains(&tool.name)
+                            && session_wanted
+                                .as_ref()
+                                .is_none_or(|wanted| wanted.contains(&tool.name))
                     })
                     .map(|tool| tool.name.clone()),
             )
@@ -277,7 +282,16 @@ impl Agent {
         if self.toolbox.definition(name).is_none() && self.dynamic_plugin(name).is_some() {
             return self.prepare_missing_dynamic(name, input);
         }
-        if self.toolbox.get(name).is_none()
+        let search = if name == crate::search::WEB_SEARCH && self.switchable() {
+            self.active_server_tools()
+        } else {
+            sent_search
+        };
+        let runs_search = name == crate::search::WEB_SEARCH
+            && crate::search::runs_by_call(search)
+            && self.toolbox.runner(name).is_some();
+        if !runs_search
+            && self.toolbox.get(name).is_none()
             && self.switchable()
             && self
                 .read_offer(self.inline_use().is_some())
@@ -293,7 +307,7 @@ impl Agent {
                 wisp_tool_text::index::not_loaded(name),
             ))));
         }
-        self.toolbox.prepare_after(name, input, sent_search)
+        self.toolbox.prepare_after(name, input, search)
     }
 }
 
