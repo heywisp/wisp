@@ -162,6 +162,77 @@ fn resumed_agent(
     (store, provider, agent)
 }
 
+fn question_counts(store: &MemoryStore, id: &str) -> (usize, usize) {
+    let log = log_events(store);
+    let asked = log
+        .iter()
+        .filter(|e| matches!(e, LogEvent::QuestionAsked { call_id, .. } if call_id == id))
+        .count();
+    let closed = log
+        .iter()
+        .filter(|e| matches!(e, LogEvent::QuestionClosed { call_id, .. } if call_id == id))
+        .count();
+    (asked, closed)
+}
+
+enum CloseBy {
+    Withdraw,
+    Answer(u32),
+}
+
+async fn assert_reopened_on_crash(env: &Env, cut: &[LogRecord], id: &str, close: CloseBy) {
+    let steps = match close {
+        CloseBy::Withdraw => vec![
+            uses(&[withdraw("w-crash")]),
+            uses(&[ask("q-next")]),
+            done("ok"),
+        ],
+        CloseBy::Answer(_) => vec![
+            done("answered-after-crash"),
+            uses(&[ask("q-next")]),
+            done("ok"),
+        ],
+    };
+    let (store, _, resumed) = resumed_agent(env, cut, steps);
+    let mut live = Live::start(resumed);
+    let (reopened, next_turn) = match close {
+        CloseBy::Withdraw => {
+            let events = live.turn("m-crash", "withdraw then ask").await;
+            assert_eq!(
+                finished_result(&events, "w-crash").as_deref(),
+                Some(question::WITHDRAWN)
+            );
+            (events.clone(), events)
+        }
+        CloseBy::Answer(choice) => {
+            live.send(answer(id, vec![Answer::choose(choice)])).await;
+            let events = live
+                .until("answer turn or refusal", |e| {
+                    matches!(
+                        e,
+                        AgentEvent::TurnEnded { .. } | AgentEvent::Rejected { .. }
+                    )
+                })
+                .await;
+            assert_eq!(closings(&events), [answered(id, choice)]);
+            let next = live.turn("m-next", "ask another").await;
+            (events, next)
+        }
+    };
+    assert!(
+        reopened
+            .iter()
+            .any(|e| matches!(e, AgentEvent::QuestionAsked { call_id, .. } if call_id == id)),
+        "crash mid-rewind reopens {id}: {reopened:#?}"
+    );
+    assert_eq!(
+        finished_result(&next_turn, "q-next").as_deref(),
+        Some(question::posted().as_str())
+    );
+    let _ = live.finish().await;
+    assert_eq!(question_counts(&store, id), (2, 2));
+}
+
 #[tokio::test]
 async fn every_ending_of_ask_user_gives_one_close_one_finish_and_its_exact_text() {
     let arrangements: [&[&str]; 4] = [
@@ -702,16 +773,7 @@ async fn resume_reopens_a_posted_question_and_still_repairs_an_old_blocking_one(
     let crashed_events = crashed_live.turn_end().await;
     assert_eq!(closings(&crashed_events), [answered("q1", 1)]);
     let crashed_agent = crashed_live.finish().await;
-    let crashed_log = log_events(&crashed_store);
-    let asked_count = crashed_log
-        .iter()
-        .filter(|e| matches!(e, LogEvent::QuestionAsked { .. }))
-        .count();
-    let closed_count = crashed_log
-        .iter()
-        .filter(|e| matches!(e, LogEvent::QuestionClosed { .. }))
-        .count();
-    assert_eq!((asked_count, closed_count), (2, 2));
+    assert_eq!(question_counts(&crashed_store, "q1"), (2, 2));
     assert!(
         crashed_agent
             .compaction
@@ -722,6 +784,34 @@ async fn resume_reopens_a_posted_question_and_still_repairs_an_old_blocking_one(
         crashed_agent.compaction.said_texts()
     );
 
+    let answer_started_pos = records_after_answer
+        .iter()
+        .position(|r| {
+            matches!(
+                &r.event,
+                LogEvent::TurnStarted { turn: 2, inputs, .. }
+                    if inputs.iter().any(|i| i.id.0.starts_with("wisp-question-"))
+            )
+        })
+        .unwrap();
+    let (_, started_provider, crashed_started) = resumed_agent(
+        &env,
+        &records_after_answer[..=answer_started_pos],
+        vec![done("got-after-crash")],
+    );
+    assert!(crashed_started.posted_event().is_none());
+    let mut started_live = Live::start(crashed_started);
+    let mut started_events = started_live.turn_end().await;
+    started_events.extend(started_live.turn("m-after-crash", "continue").await);
+    assert!(
+        !started_events
+            .iter()
+            .any(|e| matches!(e, AgentEvent::QuestionAsked { .. })),
+        "crash after TurnStarted with waiting question letter must not reopen: {started_events:#?}"
+    );
+    let _ = started_live.finish().await;
+    assert!(user_text(started_provider.sent()[0].messages.last().unwrap()).contains(KEEP));
+
     let finished_pos = saved
         .iter()
         .position(
@@ -729,35 +819,59 @@ async fn resume_reopens_a_posted_question_and_still_repairs_an_old_blocking_one(
         )
         .unwrap();
     let mid_records = saved[..=finished_pos].to_vec();
-    let (mid_store, mid_provider, mid_resumed) =
-        resumed_agent(&env, &mid_records, vec![done("after-mid-resume")]);
-    assert!(matches!(
-        mid_resumed.posted_event(),
-        Some(AgentEvent::QuestionAsked { ref call_id, .. }) if call_id == "q1"
-    ));
-    let mut mid_live = Live::start(mid_resumed);
-    let mut mid_events = mid_live.turn_end().await;
-    assert!(closings(&mid_events).is_empty());
-    mid_live.send(answer("q1", vec![Answer::choose(0)])).await;
-    mid_events.extend(mid_live.turn_end().await);
-    check_posted(&mid_events);
-    assert_eq!(closings(&mid_events), [answered("q1", 0)]);
-    let _ = mid_live.finish().await;
-    let mid_req = &mid_provider.sent()[0];
-    assert_eq!(
-        mid_req
+    let mut no_result = mid_records.clone();
+    let expected_recovered = match &mut no_result[finished_pos].event {
+        LogEvent::ToolCallFinished {
+            outcome,
+            output,
+            result,
+            notes,
+            ..
+        } => {
+            *result = None;
+            crate::resume::recovered_text(
+                outcome,
+                output,
+                notes.as_deref().unwrap_or(&[]),
+                false,
+                &crate::resume::RepairContext {
+                    home: None,
+                    exists: &|_| false,
+                    saves_output: &|_| false,
+                },
+            )
+        }
+        other => panic!("expected ToolCallFinished, got {other:?}"),
+    };
+    for (cut, want) in [
+        (mid_records, question::posted()),
+        (no_result, expected_recovered),
+    ] {
+        let (mid_store, mid_provider, mid_resumed) =
+            resumed_agent(&env, &cut, vec![done("after-mid-resume")]);
+        assert!(matches!(
+            mid_resumed.posted_event(),
+            Some(AgentEvent::QuestionAsked { ref call_id, .. }) if call_id == "q1"
+        ));
+        let mut mid_live = Live::start(mid_resumed);
+        let mut mid_events = mid_live.turn_end().await;
+        assert!(closings(&mid_events).is_empty(), "{mid_events:#?}");
+        mid_live.send(answer("q1", vec![Answer::choose(0)])).await;
+        mid_events.extend(mid_live.turn_end().await);
+        check_posted(&mid_events);
+        assert_eq!(closings(&mid_events), [answered("q1", 0)]);
+        let _ = mid_live.finish().await;
+        let mid_sent = mid_provider.sent();
+        let mid_req = &mid_sent[0];
+        let repaired = mid_req
             .messages
             .iter()
             .flat_map(|m| results(m))
-            .find(|(id, _, _)| *id == "q1"),
-        Some(("q1", question::posted().as_str(), false))
-    );
-    assert!(user_text(mid_req.messages.last().unwrap()).contains(KEEP));
-    assert!(
-        !log_events(&mid_store)[mid_records.len()..]
-            .iter()
-            .any(|e| matches!(e, LogEvent::QuestionAsked { .. }))
-    );
+            .find(|(id, _, _)| *id == "q1");
+        assert_eq!(repaired, Some(("q1", want.as_str(), false)));
+        assert!(user_text(mid_req.messages.last().unwrap()).contains(KEEP));
+        assert_eq!(question_counts(&mid_store, "q1"), (1, 1));
+    }
 
     let asked_pos = saved
         .iter()
@@ -799,7 +913,13 @@ async fn an_undelivered_answer_survives_a_stop_and_a_resume_and_is_delivered_onc
     let saved = records(&store);
     let (_, provider2, resumed) = resumed_agent(&env, &saved, vec![done("got-it"), done("second")]);
     let mut live2 = Live::start(resumed);
-    live2.turn("m2", "resume now").await;
+    let resumed_turn = live2.turn("m2", "resume now").await;
+    assert!(
+        !resumed_turn
+            .iter()
+            .any(|e| matches!(e, AgentEvent::QuestionAsked { .. })),
+        "a waiting question letter keeps the slot ending without reopening: {resumed_turn:#?}"
+    );
     live2.turn("m3", "later").await;
     let _ = live2.finish().await;
 
@@ -867,15 +987,18 @@ async fn rewind_past_the_ask_withdraws_the_question_and_drops_its_waiting_note()
     let _ = live2.finish().await;
     let clean = user_text(provider2.sent()[3].messages.last().unwrap());
     assert!(!clean.contains(question::CLOSED_NOTE), "{clean}");
+    let withdrawn_question = |event: &LogEvent| {
+        matches!(
+            event,
+            LogEvent::InputWithdrawn {
+                by: WithdrawnBy::Rewound,
+                ids,
+                ..
+            } if ids.iter().any(|id| id.0.starts_with("wisp-question-"))
+        )
+    };
     let logged = log_events(&store2);
-    assert!(logged.iter().any(|e| matches!(
-        e,
-        LogEvent::InputWithdrawn {
-            by: WithdrawnBy::Rewound,
-            ids,
-            ..
-        } if ids.iter().any(|id| id.0.starts_with("wisp-question-"))
-    )));
+    assert!(logged.iter().any(withdrawn_question));
 
     let (_, resumed_provider, resumed) =
         resumed_agent(&env2, &after_rewind, vec![done("clean-after-resume")]);
@@ -888,6 +1011,18 @@ async fn rewind_past_the_ask_withdraws_the_question_and_drops_its_waiting_note()
         !resumed_text.contains(question::CLOSED_NOTE),
         "{resumed_text}"
     );
+
+    let withdrawn_pos = after_rewind
+        .iter()
+        .position(|r| withdrawn_question(&r.event))
+        .unwrap();
+    assert_reopened_on_crash(
+        &env2,
+        &after_rewind[..=withdrawn_pos],
+        "q2",
+        CloseBy::Withdraw,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -940,6 +1075,12 @@ async fn rewind_to_the_answers_turn_reopens_accepts_a_second_rewind_and_agrees_o
     }
     assert!(resumed_reopen.posted_event().is_none());
     same_prefix(&[provider.texts()[2].clone(), provider.texts()[4].clone()]);
+
+    let rewound_pos = recs
+        .iter()
+        .position(|r| matches!(r.event, LogEvent::Rewound { .. }))
+        .unwrap();
+    assert_reopened_on_crash(&env, &recs[..=rewound_pos], "q1", CloseBy::Answer(1)).await;
 
     let (_, _, _, mut live2) = logged_live(
         "ask-user-second-rewind",
