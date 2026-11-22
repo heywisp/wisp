@@ -237,6 +237,7 @@ async fn rows(s: Stage) {
     s.wait(1000).await.send("Ask and stop").await;
     asked(&s, 1, "f", vec![naming()], 0.02).await;
     s.wait(700).await.shot("open");
+    s.event(closed("f", QuestionEnd::Stopped)).await;
     s.event(ended(cancelled(), 2_000)).await;
     s.wait(500).await.shot("rows");
 }

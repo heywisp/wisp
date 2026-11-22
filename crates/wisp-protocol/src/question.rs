@@ -87,6 +87,7 @@ pub enum QuestionEnd {
     Stopped,
     MessageInstead,
     Interrupted,
+    Withdrawn,
 }
 
 pub fn answer_refusal(kind: &RejectKind, call_id: &str, why: Option<&str>) -> String {

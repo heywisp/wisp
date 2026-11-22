@@ -337,7 +337,7 @@ impl Agent {
                 answers: answers.clone(),
             }),
             QuestionEnd::MessageInstead => Some(AskReply::MessageInstead),
-            QuestionEnd::Stopped | QuestionEnd::Interrupted => None,
+            QuestionEnd::Stopped | QuestionEnd::Interrupted | QuestionEnd::Withdrawn => None,
         };
         let event = AgentEvent::QuestionClosed {
             call_id: open.call_id,

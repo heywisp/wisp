@@ -928,6 +928,38 @@ fn mail_from_another_agent_never_joins_your_waiting_messages() {
     inputs.apply(&ended(completed()), &mut t);
     assert!(inputs.tracked().is_empty());
     assert!(inputs.editable().is_none());
+    for wake in [false, true] {
+        let q = id(if wake {
+            "wisp-question-1"
+        } else {
+            "wisp-question-2"
+        });
+        let qfrom = wisp_protocol::MailFrom {
+            agent: wisp_protocol::AgentPath::root(),
+            kind: wisp_protocol::MailKind::Question,
+            mail: wisp_protocol::MailId("q1".into()),
+            wake,
+            plugin: None,
+        };
+        inputs.apply(
+            &AgentEvent::InputAccepted {
+                opening: true,
+                front: false,
+                id: q.clone(),
+                mode: DeliveryMode::Steer,
+                text: String::new(),
+                images: Vec::new(),
+                replaces: None,
+                held: false,
+                from: Some(qfrom),
+            },
+            &mut t,
+        );
+        assert_eq!(inputs.waiting(), 0);
+        assert_eq!(inputs.mail_waiting(), 0);
+        assert!(!inputs.mail_waking());
+        assert!(inputs.tracked_by(&q).is_none());
+    }
 }
 
 fn row_texts(inputs: &Inputs) -> Vec<String> {

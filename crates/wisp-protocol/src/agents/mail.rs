@@ -124,6 +124,7 @@ pub enum MailKind {
     Message,
     Report,
     Notice,
+    Question,
     #[serde(other)]
     Unknown,
 }
@@ -135,6 +136,7 @@ impl MailKind {
             Self::Message => "message",
             Self::Report => "report",
             Self::Notice => "notice",
+            Self::Question => "question",
             Self::Unknown => "unknown",
         }
     }

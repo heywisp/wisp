@@ -939,20 +939,6 @@ fn a_replayed_background_call_takes_its_end_from_a_restore_or_reads_before_the_r
     );
 }
 
-fn rewound(turn: u64) -> AgentEvent {
-    AgentEvent::Rewound {
-        answers: None,
-        point: wisp_protocol::RewindPoint::Turn { turn },
-        reason: wisp_protocol::RewindReason::User,
-        dropped: wisp_protocol::Dropped {
-            turns: vec![turn],
-            messages: 2,
-        },
-        returned: Vec::new(),
-        cache: wisp_protocol::CacheEffect::Kept,
-    }
-}
-
 #[test]
 fn a_cut_drops_cell_links_at_or_past_it_and_keeps_names_and_descriptions() {
     let mut after = transcript();

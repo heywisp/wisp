@@ -11,6 +11,7 @@ pub const STOPPED: &str = "Not answered: the user stopped the turn while this qu
 pub const MESSAGE_INSTEAD: &str = "Not answered: the user wrote a message instead.";
 pub const UNAVAILABLE: &str = "Not asked: no one can answer questions in this session. Decide yourself and say what you assumed.";
 pub const INTERRUPTED: &str = "Not answered: Wisp stopped while this question was open.";
+pub const WITHDRAWN: &str = "Withdrawn: the user no longer sees your questions.";
 pub const UNAVAILABLE_MESSAGE: &str = "no one can answer questions in this session";
 
 const INDENT: &str = "   ";

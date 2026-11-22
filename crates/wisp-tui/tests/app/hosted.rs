@@ -299,3 +299,87 @@ async fn opening_acceptance_does_not_change_the_window_that_typed_it() {
     )
     .await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_window_reopened_while_idle_shows_the_card_and_a_repeat_keeps_typed_text() {
+    let mut history = turn(1, "plan it");
+    history.push(AgentEvent::BlockStarted {
+        index: 1,
+        kind: wisp_protocol::BlockKind::ToolUse {
+            writing: None,
+            name: "ask_user".into(),
+        },
+    });
+    history.push(crate::events::tool_requested(crate::events::Requested {
+        block: 1,
+        call_id: "q1".into(),
+        tool: "ask_user".into(),
+        action: wisp_protocol::ToolAction::Other {
+            name: "ask_user".into(),
+        },
+        target: "Database".into(),
+        output: wisp_protocol::OutputKind::None,
+        ..crate::events::Requested::default()
+    }));
+    history.push(AgentEvent::call_started("q1", ""));
+    let asked = AgentEvent::QuestionAsked {
+        call_id: "q1".into(),
+        questions: vec![super::questions::database()],
+    };
+    history.push(asked.clone());
+    history.push(AgentEvent::call_finished(
+        "q1",
+        wisp_protocol::ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+    ));
+    history.push(completed());
+    let screen = Screen::new(30, 80);
+    let mut opts = options(Start::Stalled);
+    opts.motion = wisp_render::motion::MotionPolicy::Reduced;
+    agent_session(
+        screen,
+        opts,
+        super::facts(),
+        Some(Resumed {
+            view: SessionView {
+                events: history,
+                ..Default::default()
+            },
+            continuing: None,
+        }),
+        without_terminal(16),
+        |agent| async move {
+            agent.emit(asked.clone()).await;
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+            let lines = agent.settle().await;
+            assert!(
+                lines.iter().any(|l| l.contains("question 1 of 1")),
+                "{lines:#?}"
+            );
+            let status = lines
+                .iter()
+                .find(|l| l.contains("Waiting for your answer"))
+                .unwrap_or_else(|| panic!("{lines:#?}"));
+            assert!(
+                status.contains("Waiting for your answer   esc close"),
+                "{status}"
+            );
+            agent.paste("keep my draft");
+            let typed = agent.settle().await;
+            assert!(
+                typed.iter().any(|l| l.contains("keep my draft")),
+                "{typed:#?}"
+            );
+            agent.emit(asked).await;
+            let again = agent.settle().await;
+            assert!(
+                again.iter().any(|l| l.contains("keep my draft")),
+                "{again:#?}"
+            );
+            agent.ctrl('c').ctrl('c').ctrl('c');
+        },
+    )
+    .await;
+}

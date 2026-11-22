@@ -804,7 +804,7 @@ fn mail_kind(kind: wisp_protocol::MailKind) -> tree::MailKind {
         K::Message => tree::MailKind::Message,
         K::Report => tree::MailKind::Report,
         K::Notice => tree::MailKind::Notice,
-        K::Unknown => tree::MailKind::Unknown,
+        K::Question | K::Unknown => tree::MailKind::Unknown,
     }
 }
 

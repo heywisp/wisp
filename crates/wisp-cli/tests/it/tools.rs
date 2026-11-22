@@ -741,12 +741,14 @@ fn esc_on_a_question_stops_the_turn_and_gives_the_typed_text_back() {
             pty.press(b"teal instead");
             pty.press(b"\x1b");
             pty.wait_shown(wisp_render::transcript::copy::ANSWER_BACK);
-            pty.wait_idle();
+            let after_esc = pty.wait_screen("returned text in composer", |shown| {
+                shown.contains("teal instead")
+                    && !shown.contains(wisp_render::transcript::copy::OWN_PREFIX)
+                    && !shown.contains(wisp_render::transcript::copy::TO_STOP)
+            });
             assert!(
-                !pty.shown()
-                    .contains(wisp_render::transcript::copy::OWN_PREFIX),
-                "{}",
-                pty.shown()
+                !after_esc.contains(wisp_render::transcript::copy::READY),
+                "{after_esc}"
             );
             pty.press(b"\r");
             pty.wait_for(DONE.as_bytes());

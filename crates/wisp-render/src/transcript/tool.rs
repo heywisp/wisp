@@ -19,7 +19,7 @@ use crate::text::{
     spans_width, strip_ansi, trim_end, width, wrap,
 };
 use crate::theme::Token;
-use crate::theme::glyphs::Glyphs;
+use crate::theme::glyphs::{GlyphSet, Glyphs};
 
 pub const LIVE_LINES: usize = 3;
 pub const OUTPUT_INDENT: usize = 2;
@@ -131,6 +131,7 @@ pub fn clean_lines(text: &str) -> Vec<String> {
 struct Asked {
     questions: Vec<Question>,
     end: Option<QuestionEnd>,
+    late: bool,
 }
 
 impl Asked {
@@ -139,6 +140,20 @@ impl Asked {
             Some(QuestionEnd::Answered { answers }) => answers,
             _ => &[],
         }
+    }
+
+    fn answered(&self) -> Vec<(String, String)> {
+        self.questions
+            .iter()
+            .zip(self.answers())
+            .filter(|(_, a)| !a.is_skipped())
+            .map(|(q, a)| {
+                (
+                    cut_header(&q.header, GlyphSet::Unicode),
+                    answer_words(q, a, GlyphSet::Unicode),
+                )
+            })
+            .collect()
     }
 }
 
@@ -528,7 +543,12 @@ impl ToolCell {
         self.asked = Some(Box::new(Asked {
             questions: questions.to_vec(),
             end: None,
+            late: false,
         }));
+    }
+
+    pub(super) fn answered(&self) -> Vec<(String, String)> {
+        self.asked.as_deref().map_or_else(Vec::new, Asked::answered)
     }
 
     pub(super) fn ask_attach(&mut self, id: u32, reason: &str) {
@@ -614,8 +634,10 @@ impl ToolCell {
     }
 
     pub(super) fn answer(&mut self, how: &QuestionEnd) {
+        let late = matches!(self.state, ToolState::Finished);
         if let Some(asked) = &mut self.asked {
             asked.end = Some(how.clone());
+            asked.late = late;
         }
     }
 
@@ -1141,9 +1163,11 @@ impl ToolCell {
             Some(QuestionEnd::Answered { .. }) => {
                 head(g.done, Look::fg(Token::Ok), copy::ASKED, vec![])
             }
+            Some(QuestionEnd::Stopped) if asked.late => not_answered(copy::ANSWER_CLOSED),
             Some(QuestionEnd::Stopped) => not_answered(copy::ANSWER_STOPPED),
             Some(QuestionEnd::MessageInstead) => not_answered(copy::ANSWER_MESSAGE_INSTEAD),
             Some(QuestionEnd::Interrupted) => not_answered(copy::ANSWER_INTERRUPTED),
+            Some(QuestionEnd::Withdrawn) => not_answered(copy::ANSWER_WITHDRAWN),
             None if self.asking(asked) => {
                 let local = self
                     .started
@@ -1155,6 +1179,12 @@ impl ToolCell {
                     vec![Said::time(copy::clock(local.as_secs()))],
                 )
             }
+            None if self.waiting(asked) => head(
+                g.needs_you,
+                Look::fg(Token::Accent),
+                copy::ASKED,
+                vec![Said::state(copy::waiting_fact())],
+            ),
             None => not_answered(copy::ANSWER_STOPPED),
         }
     }
@@ -1165,6 +1195,20 @@ impl ToolCell {
                 self.state,
                 ToolState::Running | ToolState::Queued | ToolState::Preparing
             )
+    }
+
+    fn waiting(&self, asked: &Asked) -> bool {
+        asked.end.is_none()
+            && self.state == ToolState::Finished
+            && self.finish.as_ref().is_some_and(|f| {
+                matches!(
+                    f.outcome,
+                    ToolOutcome::Completed {
+                        is_error: false,
+                        ..
+                    }
+                )
+            })
     }
 
     fn head(&self, pen: &Pen, show: Show) -> Head {
@@ -1522,7 +1566,11 @@ impl ToolCell {
     }
 
     fn answer_rows(&self, pen: &Pen, r: &Renderer<'_>) -> Vec<StyledLine> {
-        let Some(asked) = self.asked.as_ref().filter(|a| !self.asking(a)) else {
+        let Some(asked) = self
+            .asked
+            .as_ref()
+            .filter(|a| !self.asking(a) && !self.waiting(a))
+        else {
             return vec![];
         };
         let muted = Look::fg(Token::TextMuted);
@@ -1605,12 +1653,17 @@ impl ToolCell {
                     }
                     words
                 }
+                (Some(QuestionEnd::Stopped), _) if asked.late => {
+                    vec![copy::ANSWER_CLOSED.to_owned()]
+                }
                 (Some(QuestionEnd::Stopped), _) => vec![copy::ANSWER_STOPPED.to_owned()],
                 (Some(QuestionEnd::MessageInstead), _) => {
                     vec![copy::ANSWER_MESSAGE_INSTEAD.to_owned()]
                 }
                 (Some(QuestionEnd::Interrupted), _) => vec![copy::ANSWER_INTERRUPTED.to_owned()],
+                (Some(QuestionEnd::Withdrawn), _) => vec![copy::ANSWER_WITHDRAWN.to_owned()],
                 (None, _) if self.asking(asked) => vec![],
+                (None, _) if self.waiting(asked) => vec![copy::waiting_fact()],
                 _ => vec![copy::ANSWER_STOPPED.to_owned()],
             };
             for line in ending {

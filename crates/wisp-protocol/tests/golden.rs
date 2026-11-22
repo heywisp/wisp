@@ -2833,6 +2833,7 @@ fn endings() -> Vec<(&'static str, QuestionEnd)> {
         ("stopped", QuestionEnd::Stopped),
         ("message_instead", QuestionEnd::MessageInstead),
         ("interrupted", QuestionEnd::Interrupted),
+        ("withdrawn", QuestionEnd::Withdrawn),
     ]
 }
 
@@ -2867,6 +2868,15 @@ fn question_wire_types_match_their_fixtures() {
     );
     golden("answer_choices_and_own", &answers()[1]);
     golden("answer_skipped", &Answer::skipped());
+    assert_eq!(
+        serde_json::to_string(&wisp_protocol::MailKind::Question).unwrap(),
+        "\"question\""
+    );
+    assert_eq!(
+        serde_json::from_str::<wisp_protocol::MailKind>("\"question\"").unwrap(),
+        wisp_protocol::MailKind::Question
+    );
+    assert_eq!(wisp_protocol::MailKind::Question.as_str(), "question");
     for (name, how) in endings() {
         golden(&format!("question_end_{name}"), &how);
         golden(
