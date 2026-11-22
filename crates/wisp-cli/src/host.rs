@@ -153,7 +153,7 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
         .book
         .log_context()
         .redactions
-        .union([&built.sources.redactions()]);
+        .union([&built.sources.redactions(), &wisp_core::session::held()]);
     built.agent = built.agent.with_opening_replay();
     let started = start::start(built);
     let host = wispd::Host::new(wispd::Session {

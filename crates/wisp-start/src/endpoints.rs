@@ -113,6 +113,7 @@ pub struct Sources {
     pub secrets: Prefetched,
     pub choice: Option<String>,
     pub choice_reason: StartReason,
+    pub only: Option<String>,
     pub variable: Option<Chosen>,
     pub set: Vec<wisp_core::settings::Given>,
     pub off: wisp_core::plugin::registry::ProvidersOff,
@@ -227,11 +228,17 @@ impl Sources {
             )),
             config,
             secrets,
+            only: crate::paths::in_job().then(|| choice.clone()).flatten(),
             choice,
             choice_reason,
             variable: chosen_variable(),
             set: flags.set.to_vec(),
         }
+    }
+
+    pub fn filter(&self, entries: &mut BTreeMap<EndpointName, Availability>) {
+        wisp_core::endpoints::without_providers(entries, &self.off);
+        wisp_core::endpoints::only_account(entries, self.only.as_deref());
     }
 
     pub fn resolve(&self) -> Result<EndpointBook, Failure> {
@@ -242,7 +249,7 @@ impl Sources {
             reason: self.choice_reason,
         });
         let mut entries = EndpointBook::entries(config.as_ref(), &self.secrets, &keychain);
-        wisp_core::endpoints::without_providers(&mut entries, &self.off);
+        self.filter(&mut entries);
         EndpointBook::pick_among(config.as_ref(), entries, &keychain, choice)
             .and_then(|book| book.without_providers(&self.off))
             .map(|book| book.with_flags(&self.set).with_marks(config.as_ref()))
@@ -258,7 +265,7 @@ impl Sources {
         let config = self.config.as_ref().map_err(Clone::clone)?;
         let mut entries = EndpointBook::entries(config.as_ref(), &self.secrets, &keychain);
         wisp_core::endpoints::account_flagged(&mut entries, None, &self.set);
-        wisp_core::endpoints::without_providers(&mut entries, &self.off);
+        self.filter(&mut entries);
         Ok(entries)
     }
 

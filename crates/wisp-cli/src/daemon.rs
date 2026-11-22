@@ -109,8 +109,7 @@ fn spawn(program: &Path, data: &Path) -> io::Result<Child> {
 }
 
 pub(super) async fn ensure(program: &Path, data: &Path) {
-    if std::env::var_os(wisp_protocol::WISP_JOB).is_some() || state(data).await != State::NotStarted
-    {
+    if wisp_start::paths::in_job() || state(data).await != State::NotStarted {
         return;
     }
     if let Ok(child) = spawn(program, data) {

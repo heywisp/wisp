@@ -1,6 +1,6 @@
 ---
 name: live-testing
-description: How to keep a run of wisp from reaching a real provider, how to smoke-run a change the user sees against a local fake server, how to run wisp or the ignored live tests against a real model with this repository's test credentials without leaking them, how to keep the cost down, and which tools a session started from another session gets. Read before reporting an MR that changes what the user sees, before any run of wisp, fake keys included, or of a live test, and before starting or resuming a Wisp session from another.
+description: How to keep a run of wisp from reaching a real provider, how to smoke-run a change the user sees against a local fake server, how to run wisp or the ignored live tests against a real model with this repository's test credentials or on the user's accounts without leaking them, how to keep the cost down, and which tools a session started from another session gets. Read before reporting an MR that changes what the user sees, before any run of wisp, fake keys included, or of a live test, and before starting or resuming a Wisp session from another.
 ---
 
 # Live testing
@@ -47,6 +47,19 @@ including `doctor`, for a chat started before jobs carried the mark.
 A job-marked run opens only the chat it started: a second window on a chat that
 is still running is refused and shows only `wisp: the chat connection closed`.
 Never start a daemon in a live test: its data folder is the real one.
+
+## Running on the user's accounts
+
+- Start a run on the user's accounts only on the main session's word for the task, and only while the test credentials cannot do the job or the behaviour depends on a signed-in account.
+- Use a Claude subscription account chosen as `flows/projects/preferences.md`'s Accounts line says, or `claude-api`, on the cheapest model that shows the behaviour (never `claude-fable-5-2`), with `--effort low` unless testing effort itself, and keep the run to a handful of requests.
+- Keep `HOME` and the config home (`XDG_CONFIG_HOME` left as the user's) so Wisp loads `~/.config/wisp/{config.toml,credentials.json,oauth/}` (and any keychain) in-process; moving them or copying `config.toml` breaks sign-in.
+- Create `<scratch>/{data,cache,tmp,cwd}` at a short absolute `<scratch>` path before the first command (Wisp ignores a relative `XDG_DATA_HOME` or `XDG_CACHE_HOME` and falls back to `~/.local/share` and `~/.cache`, does not create `TMPDIR`, and needs the host socket path to fit). Prefix every command with `WISP_JOB=1 XDG_DATA_HOME=<scratch>/data XDG_CACHE_HOME=<scratch>/cache TMPDIR=<scratch>/tmp`, run in `<scratch>/cwd`, and pass `--account <account> --model <model> --effort low --instructions none --set plugins.mcp.enabled=false --set keep_warm=false --set claude_usage=false` (drop `plugins.mcp.enabled=false` only when testing MCP), plus `--tools` with only the tools the check needs, or `--tools none` when it needs none (use a terminal when tools are needed, since `--output jsonl` refuses tools; `--account` also keeps the default untouched).
+- Run `wisp … doctor` first with the exact same environment and flags; it sends nothing, confirms `attachments` and `images` point inside `<scratch>/data`, and lists `<account>`'s non-local host so the run that follows is a live run under Before any run.
+- Resume a scratch chat only by starting a new run with the same absolute `<scratch>` environment and flags plus `--resume <id>` (from `<scratch>/data/wisp/sessions/`), never `/resume` or `/restart` inside the chat. End with `/quit`, stop any process you started by its process number, and delete `<scratch>`.
+- For `#[ignore]` `wisp-core` tests that use `signed_in()`, run `WISP_LIVE_ACCOUNT=<account> heavy cargo nextest run -p wisp-core --run-ignored only <test>` (touches only that single account and in-memory or temporary stores).
+- Every file of the run goes under `<scratch>` and is removed afterwards. A job-marked (`WISP_JOB=1`) chat or `wisp doctor` run with `--account <account>` (or `WISP_ACCOUNT=<account>`) reaches only that account, so the only write outside `<scratch>` is Wisp's own refresh of that account's expired sign-in token in `~/.config/wisp/oauth/` (or the keychain).
+- Never read, copy, export or print a key, `~/.config/wisp/.env`, `credentials.json`, `~/.config/wisp/oauth/` or the keychain, and never ask the model for the config folder or those files; never put a key into an environment (so raw probes that expect a key in the environment cannot run this way); under the live check's prefix, run only chats and `wisp doctor`, never `wisp account`, `wisp status`, `wisp setup` or any command that saves settings, accounts, MCP servers or sign-ins (such as `/config` save, `/mcp`, `/logout`, `wisp config set` or sign-in); never run without an absolute scratch `XDG_DATA_HOME`; and never resume, open or write to the user's own chats or read their session logs.
+- Output and the scratch session log of a signed-in run may hold an email address, an account ID, a conversation ID or a path under the user's home; none of it goes into the repository, a fixture, a report or a note — record only the numbers and fields asked for.
 
 ## Sessions started as processes
 

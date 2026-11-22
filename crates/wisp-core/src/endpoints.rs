@@ -2358,6 +2358,21 @@ pub fn without_providers(
     }
 }
 
+pub fn only_account(entries: &mut BTreeMap<EndpointName, Availability>, chosen: Option<&str>) {
+    let Some(chosen) = chosen else {
+        return;
+    };
+    crate::session::register(&entry_redactions(entries));
+    let Some(name) = EndpointName::parse(chosen) else {
+        entries.clear();
+        return;
+    };
+    let target = account(entries, &name).clone();
+    entries.retain(|key, value| {
+        *key == name || *key == target || matches!(value, Availability::SameAs(t) if *t == target)
+    });
+}
+
 pub fn listed(
     entries: &BTreeMap<EndpointName, Availability>,
 ) -> impl Iterator<Item = (&EndpointName, &Availability)> {
@@ -2369,6 +2384,18 @@ pub fn held_secrets(entries: &BTreeMap<EndpointName, Availability>) -> Redaction
         Availability::Unavailable(u) => Some(u.secrets()),
         _ => None,
     }))
+}
+
+pub fn entry_redactions(entries: &BTreeMap<EndpointName, Availability>) -> Redactions {
+    entries
+        .values()
+        .filter_map(|a| match a {
+            Availability::Ready(r) => Some(r),
+            _ => None,
+        })
+        .fold(held_secrets(entries), |items, r| {
+            items.union([&redaction_items(&r.credential, &r.base_url)])
+        })
 }
 
 pub fn account<'a>(
@@ -2555,14 +2582,11 @@ impl EndpointBook {
     }
 
     pub fn log_context(&self) -> LogContext {
-        let items = self
-            .ready()
-            .chain(std::iter::once(&self.active))
-            .fold(held_secrets(&self.entries), |items, r| {
-                items.union([&redaction_items(&r.credential, &r.base_url)])
-            });
         LogContext {
-            redactions: items,
+            redactions: entry_redactions(&self.entries).union([&redaction_items(
+                &self.active.credential,
+                &self.active.base_url,
+            )]),
             ..self.active.log_context()
         }
     }

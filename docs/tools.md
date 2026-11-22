@@ -3,7 +3,9 @@
 Wisp.Core runs tools inside a turn: the model asks for a call, the kernel runs it, appends the result and asks the model again, until a reply makes no more calls. The design is in `docs/plans/tools-bash.md`; this page describes what is built.
 
 Every job carries `WISP_JOB=1`, inherited by the programs it starts. A `wisp`
-started there keeps its host in the job, so ending the job ends that chat too.
+started there keeps its host in the job, so ending the job ends that chat too;
+a chat or `wisp doctor` started there with an explicit account (`--account` or
+`WISP_ACCOUNT`) reaches only that account.
 
 ## What running tools means today
 

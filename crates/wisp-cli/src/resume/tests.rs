@@ -491,6 +491,7 @@ pub(crate) fn sources_with(config: &str) -> crate::endpoints::Sources {
         secrets: Default::default(),
         choice: None,
         choice_reason: StartReason::Flag,
+        only: None,
         variable: None,
         set: Vec::new(),
         off,
