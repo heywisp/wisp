@@ -1801,7 +1801,9 @@ impl ResolvedEndpoint {
             let base = self.base_url.trim_end_matches('/');
             let key = crate::models::list::key(base, &self.credential, self.name.as_str());
             if let Some(live_default) =
-                crate::models::list::SavedList::take_with_default(models_folder, key.as_deref()).1
+                crate::models::list::SavedList::take_with_meta(models_folder, key.as_deref())
+                    .1
+                    .default_model
             {
                 return live_default;
             }

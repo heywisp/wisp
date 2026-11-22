@@ -151,61 +151,77 @@ fn gemini_by_call_rig(steps: Vec<Step>) -> Rig {
 
 #[tokio::test]
 async fn gemini_searches_by_call_without_changing_its_chat_declaration() {
-    let model = crate::provider::gemini::web_search_model();
-    let mut rig = gemini_by_call_rig(vec![
-        uses(&[B::Call("q", WEB_SEARCH, json!({"query": "rust release"}))]),
-        report_on(model).into(),
-        done(&[B::Text("Answer.")]),
-    ]);
-    let (outcome, events) = rig.turn("search").await;
-    assert!(matches!(outcome, TurnOutcome::Completed { .. }));
-    let sent = rig.provider.sent();
-    assert_eq!(sent.len(), 3);
-    for n in [0, 2] {
+    let shipped = crate::provider::gemini::web_search_model();
+    for (listed, model) in [
+        (None, shipped),
+        (Some("gemini-3.5-flash-lite"), "gemini-3.5-flash-lite"),
+        (Some("gemini-9-future-lite"), shipped),
+    ] {
+        let mut rig = gemini_by_call_rig(vec![
+            uses(&[B::Call("q", WEB_SEARCH, json!({"query": "rust release"}))]),
+            report_on(model).into(),
+            done(&[B::Text("Answer.")]),
+        ]);
+        if let Some(id) = listed {
+            rig.provider.knobs(|k| {
+                k.list = Some(crate::agent::testing::gemini_list(&[
+                    crate::provider::gemini::default_model(),
+                    shipped,
+                    id,
+                ]));
+                k.web_search_models = vec![id.to_owned()];
+            });
+        }
+        let (outcome, events) = rig.turn("search").await;
+        assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+        let sent = rig.provider.sent();
+        assert_eq!(sent.len(), 3);
+        for n in [0, 2] {
+            assert_eq!(
+                sent[n].server_tools,
+                [
+                    crate::search::tool(wisp_protocol::settings::GEMINI_WEB_SEARCH)
+                        .unwrap()
+                        .clone()
+                ]
+            );
+            assert!(sent[n].tools.iter().all(|tool| tool.name != WEB_SEARCH));
+            assert!(!sent[n].rendering.search_only);
+        }
+        assert_eq!(sent[1].session.model, model);
+        assert!(sent[1].rendering.search_only);
+        assert!(sent[1].tools.is_empty());
+        assert!(sent[2].messages.iter().flat_map(|message| &message.content).any(|block| matches!(block, ContentBlock::ToolResult { tool_use_id, content, is_error: false } if tool_use_id == "q" && matches!(&content[0], ContentBlock::Text { text } if text.contains("Findings")))));
         assert_eq!(
-            sent[n].server_tools,
-            [
-                crate::search::tool(wisp_protocol::settings::GEMINI_WEB_SEARCH)
-                    .unwrap()
-                    .clone()
-            ]
+            pick!(&events, AgentEvent::SearchStarted { call_id, query, .. } => (call_id.clone(), query.clone())),
+            [("q".to_owned(), "first search query".to_owned())]
         );
-        assert!(sent[n].tools.iter().all(|tool| tool.name != WEB_SEARCH));
-        assert!(!sent[n].rendering.search_only);
+        assert!(
+            matches!(&ended(&events)[0].1, SearchEnd::Done(SearchOutcome::Results { hits }) if hits.len() == 1)
+        );
+        assert_eq!(
+            pick!(&events, AgentEvent::Citations { sources, .. } => sources.len()),
+            [1]
+        );
+        let rows = log_events(&rig.store);
+        let asks = pick!(&rows, LogEvent::ModelAsked { usage: Some(usage), cost_usd: Some(cost), model: Some(model), .. } => (*usage, *cost, model.clone()));
+        assert_eq!(asks.len(), 1);
+        assert_eq!(asks[0].2, model);
+        assert_eq!(asks[0].0.web_search_requests, 1);
+        let expected = crate::pricing::estimate_usd(
+            crate::pricing::model_info(model).unwrap(),
+            &asks[0].0,
+            CacheTtl::OneHour,
+        );
+        assert!((asks[0].1 - expected).abs() < 1e-10);
+        assert_eq!(
+            crate::agent::tests::kinds(&rig.store)
+                .iter()
+                .filter(|kind| kind.as_str() == "model_asked")
+                .count(),
+            1
+        );
     }
-    assert_eq!(sent[1].session.model, model);
-    assert!(sent[1].rendering.search_only);
-    assert!(sent[1].tools.is_empty());
-    assert!(sent[2].messages.iter().flat_map(|message| &message.content).any(|block| matches!(block, ContentBlock::ToolResult { tool_use_id, content, is_error: false } if tool_use_id == "q" && matches!(&content[0], ContentBlock::Text { text } if text.contains("Findings")))));
-    assert_eq!(
-        pick!(&events, AgentEvent::SearchStarted { call_id, query, .. } => (call_id.clone(), query.clone())),
-        [("q".to_owned(), "first search query".to_owned())]
-    );
-    assert!(
-        matches!(&ended(&events)[0].1, SearchEnd::Done(SearchOutcome::Results { hits }) if hits.len() == 1)
-    );
-    assert_eq!(
-        pick!(&events, AgentEvent::Citations { sources, .. } => sources.len()),
-        [1]
-    );
-    let rows = log_events(&rig.store);
-    let asks = pick!(&rows, LogEvent::ModelAsked { usage: Some(usage), cost_usd: Some(cost), model: Some(model), .. } => (*usage, *cost, model.clone()));
-    assert_eq!(asks.len(), 1);
-    assert_eq!(asks[0].2, model);
-    assert_eq!(asks[0].0.web_search_requests, 1);
-    let expected = crate::pricing::estimate_usd(
-        crate::pricing::model_info(model).unwrap(),
-        &asks[0].0,
-        CacheTtl::OneHour,
-    );
-    assert!((asks[0].1 - expected).abs() < 1e-10);
-    assert_eq!(
-        crate::agent::tests::kinds(&rig.store)
-            .iter()
-            .filter(|kind| kind.as_str() == "model_asked")
-            .count(),
-        1
-    );
 }
 
 #[tokio::test]
@@ -280,7 +296,12 @@ async fn a_refused_or_missing_side_model_uses_the_chats_one_shot_model_without_t
         assert_eq!(sent.len(), 4);
         assert_eq!(
             sent[1].session.model,
-            crate::search::side_model(rig.provider.as_ref(), chat)
+            crate::search::side_model(rig.provider.as_ref(), chat, |m| {
+                rig.agent
+                    .search_facts(rig.agent.endpoint_name(), m)
+                    .native()
+                    .is_some()
+            })
         );
         assert_eq!(sent[2].session.model, retry);
         assert!(sent[2].rendering.search_only);
@@ -464,16 +485,15 @@ async fn live_search_by_call() {
             HAIKU.to_owned(),
         ),
     };
-    let model = crate::search::side_model(provider.as_ref(), &chat);
     let mut rig = by_call_rig(Vec::new());
     let session = SessionConfig {
-        model: chat,
+        model: chat.clone(),
         effort: Effort::Low,
         max_tokens: 1024,
         cache_ttl: CacheTtl::OneHour,
         ..default_session()
     };
-    rig.agent = Agent::new(provider, session)
+    rig.agent = Agent::new(provider.clone(), session)
         .with_tools(rig.agent.toolbox, rig._env.workspace())
         .with_web_search(true)
         .with_log(
@@ -481,6 +501,12 @@ async fn live_search_by_call() {
             implicit_context(),
         )
         .with_retry_policy(retry::quick());
+    let model = crate::search::side_model(provider.as_ref(), &chat, |m| {
+        rig.agent
+            .search_facts(rig.agent.endpoint_name(), m)
+            .native()
+            .is_some()
+    });
     let (outcome, _) = rig.turn("Use web_search exactly once to find the latest stable Rust release, then answer in one short sentence.").await;
     match &outcome {
         TurnOutcome::Error { kind, detail, .. } => eprintln!(

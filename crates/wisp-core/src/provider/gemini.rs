@@ -35,7 +35,7 @@ use crate::endpoints::{
     UrlSource, clean,
 };
 use crate::models::ModelTable;
-use crate::models::list::{self, ListCell, ModelList, SavedList, Unusable};
+use crate::models::list::{self, ListCell, ListMeta, ModelList, SavedList, Unusable};
 
 pub const ID_PREFIX: &str = "gemini-";
 pub const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com";
@@ -157,6 +157,25 @@ fn is_gemini_model(id: &str, entry: &antigravity::AvailableModelEntry) -> bool {
         Some(_) => false,
     };
     allowed_provider && crate::endpoints::goes::model_provider(id) == Some(ProviderKind::Gemini)
+}
+
+fn listed_gemini_id(
+    models: &std::collections::BTreeMap<String, antigravity::AvailableModelEntry>,
+    raw: &str,
+) -> Option<String> {
+    let trimmed = raw.trim();
+    let id = trimmed.strip_prefix("models/").unwrap_or(trimmed);
+    let entry = models
+        .get(id)
+        .or_else(|| models.get(&format!("models/{id}")));
+    let allowed = match entry {
+        Some(entry) => is_gemini_model(id, entry),
+        None => {
+            valid_model_id(id)
+                && crate::endpoints::goes::model_provider(id) == Some(ProviderKind::Gemini)
+        }
+    };
+    allowed.then(|| id.to_owned())
 }
 
 pub(crate) fn implicit_endpoint(
@@ -452,10 +471,10 @@ impl GeminiProvider {
     #[must_use]
     pub fn with_saved_list(mut self, folder: Option<&Path>) -> Self {
         self.models_folder = folder.map(Path::to_path_buf);
-        let (list, default_model) = SavedList::take_with_default(folder, self.list_key.as_deref());
-        let preferred = self.preferred_default(default_model.as_deref());
+        let (list, meta) = SavedList::take_with_meta(folder, self.list_key.as_deref());
+        let preferred = self.preferred_default(meta.default_model.as_deref());
         let list = list.map(|list| Arc::new(list.sorted_gemini(preferred)));
-        self.list = ListCell::new_with_default(list, default_model);
+        self.list = ListCell::new_with_meta(list, meta);
         self
     }
 
@@ -615,10 +634,10 @@ impl GeminiProvider {
     async fn fetch_models(
         &self,
         folder: Option<&Path>,
-    ) -> Result<(ModelList, Option<String>), ProviderError> {
-        let (entries, default_model) = self.fetch_model_limits(folder).await?;
-        let list = self.listed(entries, default_model.as_deref())?;
-        Ok((list, default_model))
+    ) -> Result<(ModelList, ListMeta), ProviderError> {
+        let (entries, meta) = self.fetch_model_limits(folder).await?;
+        let list = self.listed(entries, meta.default_model.as_deref())?;
+        Ok((list, meta))
     }
 
     fn listed(
@@ -633,7 +652,7 @@ impl GeminiProvider {
     async fn fetch_model_limits(
         &self,
         folder: Option<&Path>,
-    ) -> Result<(Vec<ModelLimits>, Option<String>), ProviderError> {
+    ) -> Result<(Vec<ModelLimits>, ListMeta), ProviderError> {
         if let Some(user_agent) = self.user_agent.as_deref() {
             let _ = self.project_id(user_agent).await?;
             let token = self.credential.access_token().await?;
@@ -672,23 +691,16 @@ impl GeminiProvider {
             let default_model = parsed
                 .default_agent_model_id
                 .as_deref()
-                .map(str::trim)
-                .map(|id| id.strip_prefix("models/").unwrap_or(id))
-                .filter(|id| {
-                    let entry = parsed
-                        .models
-                        .get(*id)
-                        .or_else(|| parsed.models.get(&format!("models/{id}")));
-                    match entry {
-                        Some(e) => is_gemini_model(id, e),
-                        None => {
-                            valid_model_id(id)
-                                && crate::endpoints::goes::model_provider(id)
-                                    == Some(ProviderKind::Gemini)
-                        }
-                    }
-                })
-                .map(str::to_owned);
+                .and_then(|id| listed_gemini_id(&parsed.models, id));
+            let web_search_models = parsed
+                .web_search_model_ids
+                .iter()
+                .filter_map(|id| listed_gemini_id(&parsed.models, id))
+                .collect();
+            let meta = ListMeta {
+                default_model,
+                web_search_models,
+            };
             let entries = parsed.models.into_iter().filter_map(|(raw_id, entry)| {
                 let id = raw_id.strip_prefix("models/").unwrap_or(&raw_id).to_owned();
                 is_gemini_model(&id, &entry).then_some((
@@ -697,7 +709,7 @@ impl GeminiProvider {
                     entry.max_output_tokens,
                 ))
             });
-            return Ok((entries.collect(), default_model));
+            return Ok((entries.collect(), meta));
         }
 
         let token = self.credential.access_token().await?;
@@ -756,7 +768,7 @@ impl GeminiProvider {
                 _ => break,
             }
         }
-        Ok((collected, None))
+        Ok((collected, ListMeta::default()))
     }
 
     async fn fetch_and_save(self, folder: PathBuf, always: bool) {
@@ -769,21 +781,21 @@ impl GeminiProvider {
         self.save_fetched(fetched, &folder);
     }
 
-    pub(crate) fn save_fetched(&self, fetched: Option<(ModelList, Option<String>)>, folder: &Path) {
+    pub(crate) fn save_fetched(&self, fetched: Option<(ModelList, ListMeta)>, folder: &Path) {
         let now = self.clock.now().as_second();
-        let (list, default_model) = match fetched {
-            Some((list, default_model)) => (Some(list), default_model),
-            None => (None, None),
+        let (list, meta) = match fetched {
+            Some((list, meta)) => (Some(list), meta),
+            None => (None, ListMeta::default()),
         };
-        SavedList::record_with_default(
+        SavedList::record_with_meta(
             folder,
             self.list_key.as_deref(),
             list.clone(),
-            default_model.clone(),
+            meta.clone(),
             now,
         );
         if let Some(list) = list {
-            self.list.add_with_default(&list, default_model);
+            self.list.add_with_meta(&list, meta);
         }
     }
 }
@@ -805,6 +817,10 @@ impl Provider for GeminiProvider {
         } else {
             default_model().to_owned()
         }
+    }
+
+    fn web_search_models(&self) -> Vec<String> {
+        self.list.web_search_models()
     }
 
     fn billing(&self) -> Billing {
@@ -857,9 +873,9 @@ impl Provider for GeminiProvider {
 
     fn model_ids(&self) -> BoxFuture<'_, Result<Vec<String>, ProviderError>> {
         async move {
-            let (list, default_model) = self.fetch_models(self.models_folder.as_deref()).await?;
+            let (list, meta) = self.fetch_models(self.models_folder.as_deref()).await?;
             if let Some(folder) = &self.models_folder {
-                self.save_fetched(Some((list.clone(), default_model)), folder);
+                self.save_fetched(Some((list.clone(), meta)), folder);
             }
             Ok(list.ids())
         }
@@ -2307,6 +2323,11 @@ pub(crate) mod tests {
         let listed_max_output = 65_536;
         let models_resp = json!({
             "defaultAgentModelId": "models/gemini-4-carbon-high",
+            "webSearchModelIds": [
+                "models/gemini-3.5-flash-lite",
+                "claude-opus-5-5",
+                "bad id"
+            ],
             "models": {
                 "gemini-3.1-flash-image": {
                     "displayName": "Gemini 3.1 Flash Image",
@@ -2362,6 +2383,7 @@ pub(crate) mod tests {
             .unwrap()
             .with_saved_list(Some(dir.path()));
         assert_eq!(provider.default_model(), antigravity_default_model());
+        assert!(provider.web_search_models().is_empty());
         assert!(provider.complete_model_list().is_none());
         assert_eq!(
             provider.capabilities("gemini-4-carbon"),
@@ -2370,6 +2392,7 @@ pub(crate) mod tests {
 
         provider.refresh_list(dir.path().to_path_buf(), true).await;
         assert_eq!(provider.default_model(), "gemini-4-carbon-high");
+        assert_eq!(provider.web_search_models(), vec!["gemini-3.5-flash-lite"]);
         assert_eq!(
             sub_ep.default_model(Some(dir.path())),
             "gemini-4-carbon-high"
@@ -2379,6 +2402,7 @@ pub(crate) mod tests {
             .unwrap()
             .with_saved_list(Some(dir.path()));
         assert_eq!(reopened.default_model(), "gemini-4-carbon-high");
+        assert_eq!(reopened.web_search_models(), vec!["gemini-3.5-flash-lite"]);
         assert!(reopened.complete_model_list().is_some());
         assert_eq!(reopened.capabilities("gemini-4-carbon"), None);
         assert_eq!(
@@ -2711,31 +2735,46 @@ pub(crate) mod tests {
             DEFAULT_BASE_URL,
         );
         let mut provider = GeminiProvider::from_endpoint(&ep).unwrap();
-        assert_eq!(
-            crate::search::side_model(&provider, default_model()),
-            web_search_model()
-        );
-        let list =
-            ModelList::from_gemini_ids([(default_model().to_owned(), None, None)], None).unwrap();
-        provider.list = ListCell::new(Some(Arc::new(list)));
-        assert_eq!(
-            crate::search::side_model(&provider, default_model()),
-            default_model()
-        );
-        let (tier, low) = ("gemini-4-neon-xhigh", "gemini-4-neon-low");
-        for (ids, want) in [(&[tier, low][..], low), (&[tier][..], tier)] {
+        let shipped = web_search_model();
+        let listed_new = "gemini-3.5-flash-lite";
+        let unrowed = "gemini-9-future-lite";
+        let pick = |provider: &GeminiProvider, chat: &str| {
+            crate::search::side_model(provider, chat, |m| m == shipped || m == listed_new)
+        };
+        assert_eq!(pick(&provider, default_model()), shipped);
+        let with_meta = |ids: &[&str], search: &[&str]| {
             let entries = ids.iter().map(|&id| (id.to_owned(), None, None));
             let list = ModelList::from_gemini_ids(entries, None).unwrap();
-            provider.list = ListCell::new(Some(Arc::new(list)));
-            assert_eq!(crate::search::side_model(&provider, tier), want);
+            ListCell::new_with_meta(
+                Some(Arc::new(list)),
+                ListMeta {
+                    default_model: None,
+                    web_search_models: search.iter().map(|&id| id.to_owned()).collect(),
+                },
+            )
+        };
+        provider.list = with_meta(&[default_model(), shipped, listed_new], &[listed_new]);
+        assert_eq!(pick(&provider, default_model()), listed_new);
+        provider.list = with_meta(&[default_model(), shipped, unrowed], &[unrowed]);
+        assert!(provider.capabilities(unrowed).is_some());
+        assert_eq!(pick(&provider, default_model()), shipped);
+        provider.list = with_meta(
+            &[default_model(), shipped, unrowed, listed_new],
+            &[unrowed, listed_new],
+        );
+        assert_eq!(pick(&provider, default_model()), listed_new);
+        provider.list = with_meta(&[default_model()], &[]);
+        assert_eq!(pick(&provider, default_model()), default_model());
+        let (tier, low) = ("gemini-4-neon-xhigh", "gemini-4-neon-low");
+        for (ids, want) in [(&[tier, low][..], low), (&[tier][..], tier)] {
+            provider.list = with_meta(ids, &[]);
+            assert_eq!(pick(&provider, tier), want);
         }
         ep.base_url = "https://gateway.example.com".into();
-        let gw = GeminiProvider::from_endpoint(&ep).unwrap();
-        assert_eq!(
-            crate::search::side_model(&gw, default_model()),
-            default_model()
-        );
-        assert_eq!(crate::search::side_model(&gw, tier), tier);
+        let mut gw = GeminiProvider::from_endpoint(&ep).unwrap();
+        gw.list = with_meta(&[default_model(), shipped, listed_new], &[listed_new]);
+        assert_eq!(pick(&gw, default_model()), default_model());
+        assert_eq!(pick(&gw, tier), tier);
     }
 
     fn report_live_failure(error: &ProviderError) {
@@ -2750,15 +2789,17 @@ pub(crate) mod tests {
     ) -> (GeminiProvider, String, Vec<ModelLimits>) {
         let mut provider = GeminiProvider::from_endpoint(endpoint)
             .unwrap_or_else(|_| panic!("the Gemini account's provider failed"));
-        let (limits, default) = provider
+        let (limits, meta) = provider
             .fetch_model_limits(None)
             .await
             .unwrap_or_else(|error| {
                 report_live_failure(&error);
                 panic!("listing Gemini models failed")
             });
-        let list = provider.listed(limits.clone(), default.as_deref()).unwrap();
-        provider.list = ListCell::new_with_default(Some(Arc::new(list)), default);
+        let list = provider
+            .listed(limits.clone(), meta.default_model.as_deref())
+            .unwrap();
+        provider.list = ListCell::new_with_meta(Some(Arc::new(list)), meta);
         let default = provider.default_model();
         let model = crate::agent::side::one_shot_model(&provider, &default);
         (provider, model, limits)
@@ -2774,7 +2815,9 @@ pub(crate) mod tests {
         session.max_tokens = 1024;
         let models = [
             session.model.clone(),
-            crate::search::side_model(&provider, &session.model),
+            crate::search::side_model(&provider, &session.model, |m| {
+                crate::models::ModelTable::shared().find(m).is_some()
+            }),
         ];
         for model in &models {
             let listed = limits.iter().find(|(id, _, _)| id == model).unwrap();

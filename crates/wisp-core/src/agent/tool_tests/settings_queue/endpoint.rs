@@ -348,7 +348,7 @@ async fn an_account_only_switch_adjusts_effort_but_named_choices_still_refuse() 
 async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_only_model_warns() {
     use crate::agent::leave::{Leave, Left};
     use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, UrlSource};
-    use crate::models::list::{ModelList, SavedList};
+    use crate::models::list::{ListMeta, ModelList, SavedList};
     use crate::provider::credential::{Credential, Source, SubscriptionKind};
     use crate::provider::gemini::{GeminiProvider, antigravity_base_url};
 
@@ -405,11 +405,14 @@ async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_onl
         Some("gemini-4-carbon-medium"),
     )
     .unwrap();
-    SavedList::record_with_default(
+    SavedList::record_with_meta(
         dir.path(),
         key.as_deref(),
         Some(list),
-        Some("gemini-4-carbon-medium".to_owned()),
+        ListMeta {
+            default_model: Some("gemini-4-carbon-medium".to_owned()),
+            web_search_models: Vec::new(),
+        },
         1_800_000_000,
     );
     let ag_provider = Arc::new(
@@ -434,7 +437,7 @@ async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_onl
         ..sub_ep.clone()
     };
     let api = GeminiProvider::from_endpoint(&api_ep).unwrap();
-    SavedList::record_with_default(
+    SavedList::record_with_meta(
         dir.path(),
         api.list_key(),
         Some(
@@ -444,7 +447,7 @@ async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_onl
             )
             .unwrap(),
         ),
-        None,
+        ListMeta::default(),
         1_800_000_000,
     );
     let api = Arc::new(api.with_saved_list(Some(dir.path())));

@@ -55,11 +55,20 @@ pub fn wire<'a>(
     (specs, sent(entries))
 }
 
-pub fn side_model(provider: &dyn crate::provider::Provider, chat: &str) -> String {
-    crate::models::ModelTable::shared()
+pub fn side_model(
+    provider: &dyn crate::provider::Provider,
+    chat: &str,
+    searches: impl Fn(&str) -> bool,
+) -> String {
+    let listed = provider.web_search_models();
+    let shipped = crate::models::ModelTable::shared()
         .provider(provider.kind())
-        .and_then(|row| row.web_search_model.as_deref())
-        .filter(|model| crate::agent::side::served_side_model(provider, model))
+        .and_then(|row| row.web_search_model.as_deref());
+    listed
+        .iter()
+        .map(String::as_str)
+        .chain(shipped)
+        .find(|model| crate::agent::side::served_side_model(provider, model) && searches(model))
         .map(str::to_owned)
         .unwrap_or_else(|| crate::agent::side::one_shot_model(provider, chat))
 }

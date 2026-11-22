@@ -488,6 +488,7 @@ mod tests {
             failed: false,
             list,
             default_model: None,
+            web_search_models: Vec::new(),
         };
         saved.save(&dir.root, &key).unwrap();
         let provider = ProviderKind::Anthropic.connect(&endpoint, Some(&dir.root));

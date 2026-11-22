@@ -1075,6 +1075,7 @@ fn lists_are_due_when_missing_hourly_after_success_and_next_round_after_failure(
             failed,
             list,
             default_model: None,
+            web_search_models: Vec::new(),
         };
         saved.save(&folder, &key(name).unwrap()).unwrap();
     }

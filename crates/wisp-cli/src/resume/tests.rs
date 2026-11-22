@@ -1462,6 +1462,7 @@ fn a_started_model_goes_where_an_accounts_own_list_offers_it() {
         failed: false,
         list: listed(&[("gemini-4-carbon-high", "list", "low")]),
         default_model: None,
+        web_search_models: Vec::new(),
     };
     saved.save(&folder, provider.list_key().unwrap()).unwrap();
     let (ready, unavailable) =

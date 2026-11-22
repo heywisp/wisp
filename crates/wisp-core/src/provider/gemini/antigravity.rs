@@ -228,6 +228,8 @@ pub(super) struct AvailableModelsResponse {
     pub(super) models: BTreeMap<String, AvailableModelEntry>,
     #[serde(default, rename = "defaultAgentModelId")]
     pub(super) default_agent_model_id: Option<String>,
+    #[serde(default, rename = "webSearchModelIds")]
+    pub(super) web_search_model_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
