@@ -5,7 +5,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep};
 use wisp_client::QuitBound;
 use wisp_protocol::{AgentEvent, AgentState, ClientCommand, RequestId};
-use wisp_render::theme::glyphs::{ASCII, GlyphSet};
+use wisp_render::theme::glyphs::{ASCII, GlyphSet, UNICODE};
 use wisp_render::transcript::copy;
 use wisp_tui::app::highlight::Start;
 use wisp_tui::app::{Exit, Finished, Session, run_to_end};
@@ -102,12 +102,17 @@ async fn a_quit_with_a_shortcut_waiting_says_applying_settings_until_it_is_answe
         let request = effort_asked(&mut agent).await;
         agent.say("/quit");
         let lines = agent.settle().await;
-        assert!(shows(&lines, copy::APPLYING_SETTINGS), "{lines:#?}");
+        let waiting = copy::shutting_down(Some(copy::APPLYING_SETTINGS), &UNICODE);
+        assert!(shows(&lines, &waiting), "{lines:#?}");
         assert!(!shows(&lines, copy::SAVING_SETTINGS), "{lines:#?}");
         sleep(Duration::from_secs(3)).await;
-        assert!(shows(&agent.screen.visible(), copy::APPLYING_SETTINGS));
+        assert!(shows(&agent.screen.visible(), &waiting));
         agent.emit(answer(request)).await;
         let lines = agent.settle().await;
+        assert!(
+            shows(&lines, &copy::shutting_down(None, &UNICODE)),
+            "{lines:#?}"
+        );
         assert!(!shows(&lines, copy::APPLYING_SETTINGS), "{lines:#?}");
     })
     .await;
@@ -120,22 +125,30 @@ async fn the_quit_status_ends_in_ascii_dots_with_ascii_glyphs() {
         let request = effort_asked(&mut agent).await;
         agent.say("/quit");
         let lines = agent.settle().await;
-        let status = copy::ongoing(copy::APPLYING_SETTINGS, &ASCII);
-        assert_eq!(status, "applying settings...");
+        let status = copy::shutting_down(Some(copy::APPLYING_SETTINGS), &ASCII);
+        assert_eq!(status, "Shutting down, please wait: applying settings...");
         assert!(shows(&lines, &status), "{lines:#?}");
         assert!(lines.iter().all(|l| l.is_ascii()), "{lines:#?}");
         agent.emit(answer(request)).await;
-        let _ = agent.settle().await;
+        let lines = agent.settle().await;
+        assert!(
+            shows(&lines, &copy::shutting_down(None, &ASCII)),
+            "{lines:#?}"
+        );
     })
     .await;
     assert_eq!(exit, Exit::Quit);
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_quit_with_nothing_waiting_shows_no_settings_status() {
+async fn a_quit_with_nothing_waiting_says_shutting_down_without_settings_detail() {
     let (exit, _) = quitting(|agent, _worst| async move {
         agent.say("/quit");
         let lines = agent.settle().await;
+        assert!(
+            shows(&lines, &copy::shutting_down(None, &UNICODE)),
+            "{lines:#?}"
+        );
         assert!(!shows(&lines, copy::APPLYING_SETTINGS), "{lines:#?}");
     })
     .await;
@@ -208,10 +221,7 @@ async fn a_quit_with_processes_running_says_it_is_stopping_them() {
         }
         agent.say("/quit");
         let lines = agent.settle().await;
-        let status = copy::ongoing(
-            &copy::stopping_processes(2),
-            &wisp_render::theme::glyphs::UNICODE,
-        );
+        let status = copy::shutting_down(Some(&copy::stopping_processes(2)), &UNICODE);
         assert!(shows(&lines, &status), "{lines:#?}");
     })
     .await;

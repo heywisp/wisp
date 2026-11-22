@@ -249,27 +249,6 @@ impl Presenter {
         }
     }
 
-    pub(super) fn exit_command(&mut self, at: Duration) {
-        if self.agents_busy() == 0 || self.armed || self.exit_armed {
-            self.quit();
-            return;
-        }
-        self.armed = true;
-        let hint = self.quit_hint();
-        self.hint(&hint, at);
-    }
-
-    pub(super) fn exit_typing(&self) -> bool {
-        let text = self.composer.text();
-        let text = text.trim();
-        text.strip_prefix('/').is_some_and(|typed| {
-            commands::get(CommandId::Exit)
-                .into_iter()
-                .flat_map(commands::names)
-                .any(|name| name.starts_with(typed))
-        })
-    }
-
     pub(super) fn stopped_hint(&mut self, at: Duration) {
         let busy = self.agents_busy();
         if busy > 0 {

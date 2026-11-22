@@ -11,7 +11,7 @@ use wisp_protocol::{
     ToolView, TurnOrigin, TurnStats, Verbs, WakeSource, render_mail, report_text,
 };
 use wisp_render::chrome::EndpointFacts;
-use wisp_render::theme::glyphs::GlyphSet;
+use wisp_render::theme::glyphs::{GlyphSet, UNICODE};
 use wisp_render::theme::{Depth, Mode, Theme};
 use wisp_render::transcript::copy;
 use wisp_tui::app::highlight::Start;
@@ -551,8 +551,11 @@ async fn a_worker_under_an_idle_coordinator_is_listed_counted_and_arms_quit() {
         let lines = a.settle().await;
         line_with(&lines, &copy::quit_with_agents(1));
         a.paste("/exit").key(KeyCode::Enter);
-        a.settle().await;
-        a.paste("/exit").key(KeyCode::Enter);
+        let lines = a.settle().await;
+        line_with(
+            &lines,
+            &copy::shutting_down(Some(&copy::stopping_agents(1)), &UNICODE),
+        );
     })
     .await;
 }
@@ -1160,16 +1163,35 @@ async fn a_mail_the_resumed_transcript_drew_keeps_one_row_when_delivered_live() 
 }
 
 #[tokio::test(start_paused = true)]
-async fn with_an_agent_running_the_first_exit_arms_and_the_second_quits() {
-    steering_on(screen(), options(Start::Stalled), |a| async move {
-        a.emit(spawned(entry("/review", AgentState::Running, 0.2)))
-            .await;
-        a.settle().await;
-        a.paste("/exit").key(KeyCode::Enter);
-        let lines = a.settle().await;
-        line_with(&lines, &copy::quit_with_agents(1));
-        a.paste("/exit").key(KeyCode::Enter);
-    })
+async fn with_agents_running_exit_quits_at_once_and_counts_them_live() {
+    steering_on(
+        Screen::new(30, 80),
+        options(Start::Stalled),
+        |mut a| async move {
+            a.emit(spawned(entry("/review", AgentState::Running, 0.2)))
+                .await;
+            a.emit(spawned(entry("/coder", AgentState::Running, 0.3)))
+                .await;
+            a.settle().await;
+            a.paste("/exit").key(KeyCode::Enter);
+            let lines = a.settle().await;
+            assert!(a.commands.recv().await.is_none());
+            line_with(&lines, "Shutting down, please wait: stopping 2 agents…");
+            none_with(&lines, &copy::quit_with_agents(2));
+            a.emit(changed("/review", AgentState::Ended, Activity::Idle, 0.2))
+                .await;
+            let lines = a.settle().await;
+            line_with(
+                &lines,
+                &copy::shutting_down(Some(&copy::stopping_agents(1)), &UNICODE),
+            );
+            a.emit(changed("/coder", AgentState::Ended, Activity::Idle, 0.3))
+                .await;
+            let lines = a.settle().await;
+            line_with(&lines, &copy::shutting_down(None, &UNICODE));
+            none_with(&lines, &copy::stopping_agents(1));
+        },
+    )
     .await;
 }
 

@@ -26,12 +26,20 @@ pub use wisp_protocol::COMPACT_BETWEEN_TURNS;
 pub use wisp_protocol::format_usd as usd;
 
 pub const STOPPED: &str = "Stopped.";
+pub const SHUTTING_DOWN: &str = "Shutting down, please wait";
 pub const SAVING_SETTINGS: &str = "saving settings";
 pub const CHECKING_COMPACTION: &str = "checking for a compaction";
 pub const APPLYING_SETTINGS: &str = "applying settings";
 
 pub fn ongoing(phrase: &str, glyphs: &Glyphs) -> String {
     format!("{phrase}{}", glyphs.more)
+}
+
+pub fn shutting_down(detail: Option<&str>, glyphs: &Glyphs) -> String {
+    match detail {
+        Some(detail) => ongoing(&format!("{SHUTTING_DOWN}: {detail}"), glyphs),
+        None => ongoing(SHUTTING_DOWN, glyphs),
+    }
 }
 
 pub const NOTHING_KEPT: &str = "Nothing from this turn was kept.";
@@ -1653,6 +1661,10 @@ pub fn stopping_processes(n: usize) -> String {
     } else {
         format!("stopping {n} processes")
     }
+}
+
+pub fn stopping_agents(n: usize) -> String {
+    format!("stopping {}", agents_count(n))
 }
 
 pub fn process_state(end: Option<&ProcessEnd>, terminal: Option<TermSize>) -> String {
