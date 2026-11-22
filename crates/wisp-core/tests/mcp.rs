@@ -1045,8 +1045,18 @@ async fn an_expired_http_sign_in_is_replaced_and_removing_it_closes_the_listener
     let link = service.sign_in_start("local").await.unwrap().unwrap();
     assert_ne!(first, link);
     let callback = reqwest::Url::parse(&http::redirected(&link, None)).unwrap();
+    let address = ("127.0.0.1", callback.port().unwrap());
+    let one = TcpStream::connect(address).await.unwrap();
+    let other = TcpStream::connect(address).await.unwrap();
     service.remove("local").await.unwrap();
-    assert!(reqwest::get(callback).await.is_err());
+    let (one_reply, other_reply) = tokio::join!(
+        read_callback_reply(one, &[]),
+        read_callback_reply(other, &[]),
+    );
+    assert!(
+        one_reply.is_empty() && other_reply.is_empty(),
+        "the removed sign-in answered its callback"
+    );
     assert!(service.rows().is_empty());
     assert_eq!(private_profiles(&scratch.root.join("oauth")), 0);
 }
@@ -1115,7 +1125,7 @@ async fn read_callback_reply(mut connection: TcpStream, request: &[u8]) -> Vec<u
     .await;
     assert!(
         read.is_ok(),
-        "the declined listener kept its connection open"
+        "the callback listener kept its connection open"
     );
     if let Ok(Err(error)) = read {
         assert_eq!(error.kind(), ErrorKind::ConnectionReset);
