@@ -481,31 +481,32 @@ fn cut_off_stream_is_an_error() {
     assert!(err.message.contains("cut off"), "{}", err.message);
 }
 
+fn tool_use_sse(name: &str, parts: &[&str]) -> String {
+    let mut sse = format!(
+        "event: message_start\n\
+data: {{\"type\":\"message_start\",\"message\":{{\"id\":\"m\",\"model\":\"claude-opus-5-5\",\"usage\":{{\"input_tokens\":1,\"output_tokens\":1}}}}}}\n\n\
+event: content_block_start\n\
+data: {{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"{name}\",\"input\":{{}}}}}}\n\n"
+    );
+    for part in parts {
+        let delta = json!({"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": part}});
+        sse.push_str(&format!("event: content_block_delta\ndata: {delta}\n\n"));
+    }
+    sse.push_str(
+        "event: content_block_stop\n\
+data: {\"type\":\"content_block_stop\",\"index\":0}\n\n\
+event: message_delta\n\
+data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"},\"usage\":{\"output_tokens\":20}}\n\n\
+event: message_stop\n\
+data: {\"type\":\"message_stop\"}\n\n",
+    );
+    sse
+}
+
 #[test]
 fn tool_use_input_is_assembled() {
-    let sse = r#"event: message_start
-data: {"type":"message_start","message":{"id":"m","model":"claude-opus-5-5","usage":{"input_tokens":1,"output_tokens":1}}}
-
-event: content_block_start
-data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{}}}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"location\": \"Pa"}}
-
-event: content_block_delta
-data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"ris\"}"}}
-
-event: content_block_stop
-data: {"type":"content_block_stop","index":0}
-
-event: message_delta
-data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":20}}
-
-event: message_stop
-data: {"type":"message_stop"}
-
-"#;
-    let msg = run_fixture(sse).1.unwrap();
+    let sse = tool_use_sse("get_weather", &[r#"{"location": "Pa"#, r#"ris"}"#]);
+    let msg = run_fixture(&sse).1.unwrap();
     assert_eq!(msg.stop_reason, StopReason::ToolUse);
     assert_eq!(
         msg.content,
@@ -769,6 +770,31 @@ fn prompt_prefix_is_stable_across_turns() {
             assert_eq!(prefix_bytes(&request), prefix_bytes(&logical));
             assert_eq!(wire_print(&request), wire_print(&logical));
         }
+    }
+
+    for (partial, reencoded, wire) in [
+        (
+            r#"{"to":"a","text":"b"}"#,
+            true,
+            r#""input":{"text":"b","to":"a"}"#,
+        ),
+        (
+            r#"{"text": "b", "to": "a"}"#,
+            false,
+            r#""input":{"text":"b","to":"a"}"#,
+        ),
+    ] {
+        let assembled = run_fixture(&tool_use_sse("send_message", &[partial]))
+            .1
+            .unwrap();
+        assert_eq!(assembled.reencoded_input, reencoded, "{partial}");
+        let msgs = [
+            Message::user_text("hi"),
+            assembled.into_message(),
+            Message::user_text("next"),
+        ];
+        let full = body_with(options, &s, &msgs, None);
+        assert!(full.contains(wire), "{full}");
     }
 
     let last: Value = serde_json::from_str(&raws[2]).unwrap();

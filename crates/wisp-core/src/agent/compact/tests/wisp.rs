@@ -907,6 +907,7 @@ fn a_block_between_text_blocks_starts_a_new_paragraph() {
         iterations: Vec::new(),
         diagnostics: None,
         drops: Vec::new(),
+        reencoded_input: false,
     };
     let around = message(vec![text("Searching."), search, text("Found it.")]);
     assert_eq!(

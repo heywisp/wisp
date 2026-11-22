@@ -823,6 +823,7 @@ pub struct AssembledMessage {
     pub iterations: Vec<Iteration>,
     pub diagnostics: Option<Value>,
     pub drops: Vec<ThinkingDrop>,
+    pub reencoded_input: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -869,6 +870,7 @@ pub struct Assembler {
     started: bool,
     usage_known: bool,
     stopped: bool,
+    reencoded_input: bool,
 }
 
 impl Assembler {
@@ -1034,11 +1036,15 @@ impl Assembler {
                         ))
                     })?;
                     match &mut partial.block {
-                        ContentBlock::ToolUse { input: slot, .. } => *slot = input,
+                        ContentBlock::ToolUse { input: slot, .. } => {
+                            self.reencoded_input |= reencoded_json(&partial.json, &input);
+                            *slot = input;
+                        }
                         ContentBlock::Opaque {
                             raw: Value::Object(map),
                             ..
                         } => {
+                            self.reencoded_input |= reencoded_json(&partial.json, &input);
                             map.insert("input".into(), input);
                         }
                         _ => {}
@@ -1090,6 +1096,7 @@ impl Assembler {
             iterations: self.iterations,
             diagnostics: self.diagnostics,
             drops: self.drops,
+            reencoded_input: self.reencoded_input,
         })
     }
 
@@ -1503,4 +1510,31 @@ fn fold_unknown_delta(provider: &str, block: &mut ContentBlock, delta: Value) {
 
 fn push_unknown(deltas: &mut Vec<Value>, delta: Value) {
     deltas.push(without_identity(delta));
+}
+
+fn reencoded_json(raw: &str, value: &Value) -> bool {
+    let Ok(encoded) = serde_json::to_string(value) else {
+        return true;
+    };
+    let mut compact = String::with_capacity(raw.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    for ch in raw.chars() {
+        if in_string {
+            compact.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else if ch == '"' {
+            in_string = true;
+            compact.push(ch);
+        } else if !matches!(ch, ' ' | '\t' | '\n' | '\r') {
+            compact.push(ch);
+        }
+    }
+    compact != encoded
 }
