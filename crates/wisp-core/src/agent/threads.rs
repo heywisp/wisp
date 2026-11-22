@@ -125,7 +125,7 @@ impl Threads {
         clock: &dyn Clock,
     ) {
         let stopped = matches!(reply.stop_reason, StopReason::EndTurn | StopReason::ToolUse);
-        if self.sent.take().is_none() || from_fallback || !stopped {
+        if self.sent.take().is_none() || from_fallback || !stopped || reply.reencoded_input {
             return;
         }
         let (Some(id), Some(wire), Some(digest)) =

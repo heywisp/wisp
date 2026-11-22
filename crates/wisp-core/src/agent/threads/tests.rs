@@ -5,17 +5,19 @@ use jiff::tz::TimeZone;
 use tokio::sync::mpsc;
 use wisp_protocol::log::{LogEvent, ThreadSend};
 use wisp_protocol::{
-    Effort, ErrorKind, RequestId, RetryClass, RewindPoint, StopReason, TurnOutcome, Usage,
+    ContentBlock, Effort, ErrorKind, RequestId, RetryClass, RewindPoint, StopReason, TurnOutcome,
+    Usage,
 };
 
 use crate::agent::testing::{
-    B, Caps, Fake, Knobs, Step, adaptations, done, dropping, failing, failure, step, turn,
-    with_iterations,
+    B, Caps, Fake, Knobs, Step, adaptations, block_of, done, dropping, ended, failing, failure,
+    step, turn, with_iterations,
 };
+use crate::agent::tests::{start, usage};
 use crate::agent::{Agent, default_session};
 use crate::clock::ShiftedClock;
 use crate::provider::anthropic::{FALLBACK_ITERATION, capabilities};
-use crate::provider::{Iteration, Refused, Thread};
+use crate::provider::{Delta, Iteration, ProviderEvent, Refused, Thread};
 use crate::session::{MemoryStore, SessionLog};
 use crate::test_guard::{log_context, log_events, pick};
 
@@ -396,4 +398,98 @@ async fn a_continue_answered_by_the_fallback_model_keeps_its_own_drops() {
     assert!(continued(rig.threads()[1]));
     let last = rig.agent.last.as_ref().unwrap();
     assert_eq!(last.print.as_ref().unwrap().drops[0].path, path);
+}
+
+fn input_step(block: ContentBlock, parts: &[&str], tail: &[B], stop: StopReason) -> Step {
+    let mut script = vec![
+        Ok(ProviderEvent::Sending),
+        Ok(start(600, 0)),
+        Ok(ProviderEvent::BlockStart { index: 0, block }),
+    ];
+    script.extend(parts.iter().map(|part| {
+        Ok(ProviderEvent::BlockDelta {
+            index: 0,
+            delta: Delta::InputJson((*part).into()),
+        })
+    }));
+    script.push(Ok(ProviderEvent::BlockStop { index: 0 }));
+    for (offset, b) in tail.iter().enumerate() {
+        let index = offset + 1;
+        script.push(Ok(ProviderEvent::BlockStart {
+            index,
+            block: block_of(b),
+        }));
+        script.push(Ok(ProviderEvent::BlockStop { index }));
+    }
+    script.extend(ended(stop, usage(600, 0, 10), Vec::new()));
+    Step::from(script)
+}
+
+#[tokio::test]
+async fn a_reencoded_tool_input_starts_a_new_thread_and_matching_inputs_continue() {
+    let call = |parts: &[&str]| {
+        input_step(
+            ContentBlock::ToolUse {
+                id: "t1".into(),
+                name: "send_message".into(),
+                input: serde_json::json!({}),
+            },
+            parts,
+            &[],
+            StopReason::ToolUse,
+        )
+    };
+    let search = |parts: &[&str]| {
+        input_step(
+            ContentBlock::opaque(
+                "anthropic",
+                serde_json::json!({"type": "server_tool_use", "id": "s1", "name": "web_search", "input": {}}),
+            ),
+            parts,
+            &[B::Found("s1"), B::Text("Done.")],
+            StopReason::EndTurn,
+        )
+    };
+    let cases = [
+        (
+            "unsorted keys",
+            call(&[r#"{"to":"a","#, r#""text":"b"}"#]),
+            false,
+        ),
+        ("sorted keys", call(&[r#"{"text":"b","to":"a"}"#]), true),
+        (
+            "whitespace outside strings",
+            call(&[r#"{ "text": "a \" b", "to": "c \\" }"#]),
+            true,
+        ),
+        ("unicode escape", call(&[r#"{"text":"\u00e9"}"#]), false),
+        ("exponent number", call(&[r#"{"n":1e3}"#]), false),
+        (
+            "nested unsorted object",
+            call(&[r#"{"a":{"z":1,"a":2}}"#]),
+            false,
+        ),
+        (
+            "opaque server_tool_use unsorted",
+            search(&[r#"{"z":1,"a":2}"#]),
+            false,
+        ),
+        (
+            "opaque server_tool_use sorted",
+            search(&[r#"{"a":2,"z":1}"#]),
+            true,
+        ),
+    ];
+    for (case, first, continues) in cases {
+        let mut rig = rig(vec![first, says(), says()]);
+        rig.turn("one").await;
+        if rig.provider.sent().len() < 2 {
+            rig.turn("two").await;
+        }
+        rig.turn("three").await;
+        let threads = rig.threads();
+        assert_eq!(threads[0], CREATE, "{case}");
+        assert_eq!(continued(threads[1]), continues, "{case}: {threads:?}");
+        assert!(continued(threads[2]), "{case}: {threads:?}");
+    }
 }
