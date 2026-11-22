@@ -371,7 +371,7 @@ pub struct ModelCapabilities {
     pub efforts: &'static [Effort],
     pub default_effort: Option<Effort>,
     pub per_message_effort: bool,
-    pub effort_in_id: bool,
+    pub effort_in_id: Option<Effort>,
     pub inline_tools: bool,
     pub tools_after_results: bool,
     pub deferred_tools: bool,
@@ -410,7 +410,8 @@ impl ModelCapabilities {
 
     pub(crate) fn accepts_effort(&self, named: Option<Effort>, inherited: Effort) -> bool {
         (named.is_none()
-            && (self.effort_in_id || wisp_protocol::settings::takes_no_effort(Some(self.efforts))))
+            && (self.effort_in_id.is_some()
+                || wisp_protocol::settings::takes_no_effort(Some(self.efforts))))
             || self.takes_effort(named.unwrap_or(inherited))
     }
 

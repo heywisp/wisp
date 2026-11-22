@@ -116,7 +116,7 @@ fn the_shipped_file_parses() {
             &[Effort::Low, Effort::Medium, Effort::High]
         };
         assert_eq!(caps.efforts, expected_efforts, "{}", row.id);
-        assert!(caps.effort_in_id);
+        assert_eq!(caps.effort_in_id, Some(own.effort), "{}", row.id);
         assert_eq!(caps.default_effort, None);
         assert_eq!(table.own_effort(&row.id, Effort::Max), own.effort);
         assert_eq!(table.sibling(&row.id, own.effort), Some(row.id.as_str()));

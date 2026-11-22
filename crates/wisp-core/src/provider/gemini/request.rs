@@ -219,8 +219,8 @@ pub(super) fn thinking_config(
             "thinkingBudget": budget,
         }));
     }
-    if caps.adaptive_thinking && !caps.efforts.is_empty() && !caps.effort_in_id {
-        let level = match effort {
+    if caps.adaptive_thinking && !caps.efforts.is_empty() {
+        let level = match caps.effort_in_id.unwrap_or(effort) {
             Effort::Low => "LOW",
             Effort::Medium => "MEDIUM",
             Effort::Xhigh if caps.efforts.contains(&Effort::Xhigh) => "XHIGH",
@@ -1260,51 +1260,56 @@ mod tests {
                     "{family}"
                 );
             }
+        }
 
-            let xhigh_id = format!("{family}-xhigh");
-            let caps_x = super::super::model_capabilities(&xhigh_id).copied();
-            for effort in [Effort::Low, Effort::Medium, Effort::High, Effort::Xhigh] {
-                let s_x = gemini_session(&xhigh_id, effort);
-                let b_x = build_body(
-                    &make_req(&s_x, &messages, &[], &[], &rendering),
-                    caps_x,
+        let (mut tier_rows, mut plain_adaptive) = (0, 0);
+        for row in crate::models::ModelTable::shared()
+            .rows()
+            .iter()
+            .filter(|r| {
+                r.provider == Some(crate::endpoints::ProviderKind::Gemini)
+                    && r.capabilities.is_some_and(|c| {
+                        c.adaptive_thinking && (c.effort_in_id.is_some() || c.efforts.is_empty())
+                    })
+            })
+        {
+            let expected = if let Some(variant) = &row.effort_variant {
+                tier_rows += 1;
+                let level = row
+                    .id
+                    .strip_prefix(&format!("{}-", variant.family))
+                    .unwrap()
+                    .to_ascii_uppercase();
+                json!({"includeThoughts": true, "thinkingLevel": level})
+            } else {
+                assert_eq!(row.id, "gemini-3.8-flash-tiered");
+                plain_adaptive += 1;
+                json!({"includeThoughts": true})
+            };
+            let caps = super::super::model_capabilities(&row.id).copied();
+            let mut first = None;
+            for effort in Effort::ALL {
+                let s = gemini_session(&row.id, effort);
+                let b = build_body(
+                    &make_req(&s, &messages, &[], &[], &rendering),
+                    caps,
                     TEST_ID,
                     true,
                 )
                 .unwrap();
                 assert_eq!(
-                    b_x.body["generationConfig"]["thinkingConfig"],
-                    json!({"includeThoughts": true}),
-                    "{xhigh_id}"
+                    b.body["generationConfig"]["thinkingConfig"], expected,
+                    "{} at {effort:?}",
+                    row.id
                 );
+                if let Some(prev) = &first {
+                    assert_eq!(&b.body, prev, "{} at {effort:?}", row.id);
+                } else {
+                    first = Some(b.body);
+                }
             }
         }
-
-        let s_pretier = gemini_session("gemini-4-carbon-medium", Effort::High);
-        let caps_pretier = super::super::model_capabilities(&s_pretier.model).copied();
-        let b_pretier = build_body(
-            &make_req(&s_pretier, &messages, &[], &[], &rendering),
-            caps_pretier,
-            TEST_ID,
-            true,
-        )
-        .unwrap();
-        assert_eq!(
-            b_pretier.body["generationConfig"]["thinkingConfig"],
-            json!({"includeThoughts": true})
-        );
-
-        for effort in [Effort::Low, Effort::Medium, Effort::High] {
-            let session = gemini_session("gemini-4-carbon-medium", effort);
-            let body = build_body(
-                &make_req(&session, &messages, &[], &[], &rendering),
-                caps_pretier,
-                TEST_ID,
-                true,
-            )
-            .unwrap();
-            assert_eq!(body.body, b_pretier.body);
-        }
+        assert_eq!((tier_rows, plain_adaptive), (17, 1));
 
         let s25 = gemini_session("gemini-2.5-pro", Effort::Max);
         let caps25 = super::super::model_capabilities(&s25.model).copied();

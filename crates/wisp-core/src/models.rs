@@ -891,7 +891,7 @@ pub fn walk_row(
             _ => return Err(RowError::at(at, RowProblem::UnknownField { site })),
         }
     }
-    if row.effort_variant.is_some() {
+    if let Some(variant) = &row.effort_variant {
         if described.is_some() {
             return Err(bad_value(
                 "effort_variant",
@@ -900,7 +900,7 @@ pub fn walk_row(
             ));
         }
         described = Some(&[]);
-        caps.effort_in_id = true;
+        caps.effort_in_id = Some(variant.effort);
     }
     row.capabilities = described.map(|efforts| ModelCapabilities {
         efforts,

@@ -44,7 +44,7 @@ static ADAPTIVE: crate::provider::ModelCapabilities = crate::provider::ModelCapa
     efforts: &[],
     default_effort: None,
     per_message_effort: false,
-    effort_in_id: false,
+    effort_in_id: None,
     adaptive_thinking: true,
     thinking_budgets: None,
     max_output: None,

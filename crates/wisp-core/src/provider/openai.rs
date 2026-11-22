@@ -89,7 +89,7 @@ pub(crate) const GPT: ModelCapabilities = ModelCapabilities {
     efforts: &Effort::ALL,
     default_effort: Some(Effort::Medium),
     per_message_effort: false,
-    effort_in_id: false,
+    effort_in_id: None,
     inline_tools: false,
     tools_after_results: false,
     deferred_tools: false,

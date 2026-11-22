@@ -98,7 +98,7 @@ const NARROW: crate::provider::ModelCapabilities = crate::provider::ModelCapabil
     ],
     default_effort: Some(Effort::Medium),
     per_message_effort: false,
-    effort_in_id: false,
+    effort_in_id: None,
     adaptive_thinking: true,
     thinking_budgets: None,
     max_output: Some(64_000),
