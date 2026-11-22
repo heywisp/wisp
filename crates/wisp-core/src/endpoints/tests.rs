@@ -2716,6 +2716,44 @@ key_env = "GEMINI_KEY"
 }
 
 #[test]
+fn only_account_keeps_the_chosen_account_and_its_aliases_and_clears_unknown_names() {
+    let config = config(
+        "[endpoints.a]\nauth = \"api_key\"\nkey_env = \"KEY_A\"\n[endpoints.b]\nauth = \"api_key\"\nkey_env = \"KEY_B\"\n",
+    );
+    let env = env_of(&[
+        ("KEY_A", "sk-ant-CANARY_KEY_A_ONLY_TEST"),
+        ("KEY_B", "sk-ant-CANARY_KEY_B_ONLY_TEST"),
+    ]);
+    let mut base = EndpointBook::entries(Some(&config), &NoSecrets, &absent(&env, None, false));
+    base.insert(name("twin"), Availability::SameAs(name("a")));
+    assert_eq!(
+        crate::session::held().mask("sk-ant-CANARY_KEY_B_ONLY_TEST"),
+        "sk-ant-CANARY_KEY_B_ONLY_TEST"
+    );
+    let keys = |chosen| {
+        let mut entries = base.clone();
+        only_account(&mut entries, chosen);
+        entries
+            .keys()
+            .map(|k| k.as_str().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(keys(None), ["a", "b", "twin"]);
+    assert_eq!(keys(Some("a")), ["a", "twin"]);
+    assert_eq!(
+        crate::session::held().mask("output sk-ant-CANARY_KEY_B_ONLY_TEST end"),
+        format!("output {} end", crate::session::REDACTED)
+    );
+    assert_eq!(
+        crate::session::held().scrub("output sk-ant-CANARY_KEY_B_ONLY_TEST end"),
+        format!("output {} end", crate::session::REDACTED)
+    );
+    assert_eq!(keys(Some("twin")), ["a", "twin"]);
+    assert_eq!(keys(Some("missing")), Vec::<String>::new());
+    assert_eq!(keys(Some("Bad Name!")), Vec::<String>::new());
+}
+
+#[test]
 fn an_off_account_keeps_every_redaction_and_an_existing_failure_keeps_its_reason() {
     let config = config(
         r#"[endpoints.g1]

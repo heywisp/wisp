@@ -37,7 +37,7 @@ enum Control {
 
 pub(super) async fn find(data: &Path) -> io::Result<Vec<Found>> {
     let ids = wispd::daemon::running(data).await?;
-    let titles = if std::env::var_os(wisp_protocol::WISP_JOB).is_none() {
+    let titles = if !wisp_start::paths::in_job() {
         let data = data.to_owned();
         let ids = ids.clone();
         tokio::task::spawn_blocking(move || {
@@ -120,7 +120,7 @@ fn ask_older(older: &[Kept], terminal: bool, prompter: &Prompter, layout: Layout
 }
 
 pub(super) async fn run() -> ExitCode {
-    if std::env::var_os(wisp_protocol::WISP_JOB).is_some() {
+    if wisp_start::paths::in_job() {
         let caps = crate::prompt_caps(&caps::SavedDisplay::default());
         let layout = Layout::new(prompt::terminal_columns(), prompt::glyphs().set);
         let _ = io::stderr().write_all(&print::styled(

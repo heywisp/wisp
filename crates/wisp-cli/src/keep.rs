@@ -205,7 +205,7 @@ pub(super) fn spawn(
         .write(true)
         .mode(0o600)
         .open(error_file)?;
-    let mut command = if std::env::var_os(wisp_protocol::WISP_JOB).is_some() {
+    let mut command = if wisp_start::paths::in_job() {
         Command::new(program)
     } else if let Some(setsid) = wisp_core::jobs::exec::find_program("setsid") {
         let mut command = Command::new(setsid);
@@ -476,7 +476,7 @@ pub(super) async fn read_ready<R: tokio::io::AsyncRead + Unpin>(
 }
 
 fn may_ask(chosen: &Chosen, at: Option<&wisp_start::start::StartAt>) -> bool {
-    crate::asks(chosen, at) && std::env::var_os(wisp_protocol::WISP_JOB).is_none()
+    crate::asks(chosen, at) && !wisp_start::paths::in_job()
 }
 
 fn restart(
@@ -548,7 +548,7 @@ fn by_id(data: &Path, prefix: &str) -> Result<(wisp_core::session::JsonlStore, S
 }
 
 pub(super) async fn quit(ids: &[String]) -> std::process::ExitCode {
-    if std::env::var_os(wisp_protocol::WISP_JOB).is_some() {
+    if wisp_start::paths::in_job() {
         return crate::manage::fail("run by an agent, wisp quit quits nothing");
     }
     let Some(data) = data() else {

@@ -1108,6 +1108,59 @@ fn lists_are_due_when_missing_hourly_after_success_and_next_round_after_failure(
     assert_eq!(due.listed, listed);
 }
 
+#[test]
+fn only_on_sources_scopes_entries_book_and_due_lists_to_the_chosen_account() {
+    let home = Home::new();
+    let cfg = home.write(
+        ".config/wisp/config.toml",
+        &format!(
+            "store_id = \"{ID}\"\n[endpoints.chosen]\nauth = \"api_key\"\nkey_env = \"KEY_A\"\n[endpoints.other]\nauth = \"api_key\"\nkey_env = \"KEY_B\"\n[endpoints.stored]\nauth = \"api_key\"\nkey_store = \"file\"\n"
+        ),
+    );
+    let env_file = home.write(
+        ".config/wisp/.env",
+        "KEY_A=sk-ant-CANARY_ONLY_A\nKEY_B=sk-ant-CANARY_ONLY_B\n",
+    );
+    let stored_key = "sk-ant-CANARY_STORED_OTHER_KEY";
+    home.write(
+        ".config/wisp/credentials.json",
+        &format!("{{\"version\": 1, \"stores\": {{\"{ID}\": {{\"stored\": {{\"key\": \"{stored_key}\"}}}}}}}}"),
+    );
+    let keychain = crate::keychain::Keychain::off();
+    let flags = Flags {
+        env_file: Some(&env_file),
+        config: Some(&cfg),
+        endpoint: Some("chosen"),
+        keychain: &keychain,
+        set: &[],
+    };
+    let mut sources = Sources::load(&flags, None, Some(home.root()));
+    assert_eq!(sources.only, None);
+    let all = sources.entries().unwrap();
+    assert_eq!(
+        super::due(&all, &home.path("models"), 1_000).listed,
+        ["chosen", "other", "stored"]
+    );
+    assert_eq!(wisp_core::session::held().mask(stored_key), stored_key);
+    sources.only = Some("chosen".to_owned());
+    let scoped = sources.entries().unwrap();
+    assert_eq!(
+        super::due(&scoped, &home.path("models"), 1_000).listed,
+        ["chosen"]
+    );
+    let book = sources.book().unwrap();
+    assert_eq!(book.start.as_str(), "chosen");
+    assert_eq!(book.entries.len(), 1);
+    assert_eq!(
+        wisp_core::session::held().mask(&format!("output {stored_key} end")),
+        format!("output {} end", wisp_core::session::REDACTED)
+    );
+    assert_eq!(
+        wisp_core::session::held().scrub(&format!("output {stored_key} end")),
+        format!("output {} end", wisp_core::session::REDACTED)
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn the_wait_for_missing_lists_ends_at_its_deadline_and_leaves_the_rest_running() {
     use futures::FutureExt;

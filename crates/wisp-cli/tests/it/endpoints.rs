@@ -600,6 +600,46 @@ fn check_run(home: &Home, args: &[&str], envs: &[(&str, &str)]) -> (bool, String
 }
 
 #[test]
+fn a_job_marked_run_with_an_explicit_account_reaches_only_that_account() {
+    let chosen = Server::replying(json("200 OK", r#"{"input_tokens": 3}"#));
+    let other = Server::replying(json("200 OK", r#"{"input_tokens": 3}"#));
+    let home = Home::configured("job-only-account");
+    home.write(
+        CONFIG,
+        &format!(
+            "default = \"other\"\n{}",
+            check_config(&[("chosen", &chosen), ("other", &other)])
+        ),
+    );
+    let probe = |args: &[&str], extra: &[(&str, &str)]| {
+        chosen.seen.lock().unwrap().clear();
+        other.seen.lock().unwrap().clear();
+        let mut envs = vec![("GW_TOKEN", GW_TOKEN)];
+        envs.extend_from_slice(extra);
+        let (ok, out) = check_run(&home, args, &envs);
+        assert!(ok, "{out}");
+        (
+            out,
+            chosen.seen.lock().unwrap().len(),
+            other.seen.lock().unwrap().len(),
+        )
+    };
+    let (out, a, b) = probe(&["--account", "chosen"], &[(wisp_protocol::WISP_JOB, "1")]);
+    assert_eq!((a, b), (1, 0), "{out}");
+    assert!(!out.contains("  other "), "{out}");
+    assert!(!out.contains("is unavailable"), "{out}");
+    let (out, a, b) = probe(
+        &[],
+        &[(wisp_protocol::WISP_JOB, "1"), ("WISP_ACCOUNT", "chosen")],
+    );
+    assert_eq!((a, b), (1, 0), "{out}");
+    let (out, a, b) = probe(&["--account", "chosen"], &[]);
+    assert_eq!((a, b), (1, 1), "{out}");
+    let (out, a, b) = probe(&[], &[(wisp_protocol::WISP_JOB, "1")]);
+    assert_eq!((a, b), (1, 1), "{out}");
+}
+
+#[test]
 fn a_hidden_duplicate_and_an_unset_endpoint_pass_unless_named() {
     let ok = Server::replying(json("200 OK", r#"{"input_tokens": 3}"#));
     let home = Home::configured("check-twin");

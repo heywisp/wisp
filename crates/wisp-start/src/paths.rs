@@ -54,6 +54,14 @@ pub(crate) fn process_env_used() -> bool {
     PROCESS_ENV.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+pub fn in_job() -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    if !process_env_used() {
+        return false;
+    }
+    std::env::var_os(wisp_protocol::WISP_JOB).is_some()
+}
+
 pub fn real_env(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }

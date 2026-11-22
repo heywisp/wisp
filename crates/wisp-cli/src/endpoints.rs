@@ -345,7 +345,7 @@ pub(crate) fn doctor(
         Err(e) => text.push_str(&row("would start on", &format!("nothing: {e}"))),
     }
     let mut entries = EndpointBook::entries(config.as_ref(), &sources.secrets, variables);
-    wisp_core::endpoints::without_providers(&mut entries, &sources.off);
+    sources.filter(&mut entries);
     for (name, entry) in wisp_core::endpoints::listed(&entries) {
         let line = match entry {
             Availability::Ready(r) => {
@@ -450,7 +450,8 @@ pub(crate) fn doctor(
             }
         }
         warnings.extend(wisp_core::endpoints::shadowed(&entries).map(str::to_owned));
-        if let Some(default) = &config.default
+        if sources.only.is_none()
+            && let Some(default) = &config.default
             && !matches!(
                 entries.get(default),
                 Some(Availability::Ready(_) | Availability::SameAs(_))
@@ -522,7 +523,7 @@ pub(crate) fn check_targets(
         return None;
     };
     let mut entries = EndpointBook::entries(config.as_ref(), &sources.secrets, variables);
-    wisp_core::endpoints::without_providers(&mut entries, &sources.off);
+    sources.filter(&mut entries);
     let named = !names.is_empty();
     let target = |entry: &Availability| match entry {
         Availability::Ready(r) => Target::Probe(Box::new(r.clone())),
