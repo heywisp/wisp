@@ -114,6 +114,7 @@ Ok(
             names: [],
             from_change: false,
         },
+        inline_search: None,
         copy: LoggedCopy {
             system_prompt: None,
             base_sha256: None,

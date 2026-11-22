@@ -733,7 +733,8 @@ fn names_once(request: &Value) -> bool {
 }
 
 async fn flipped_with_one_surfaced(kit: &Kit, server: &Server) -> Agent {
-    let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+    let mut built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
+    built.agent.toolbox.drop_plugin("web-search");
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;
     session.tools(1, without("view_file")).await;

@@ -60,14 +60,22 @@ impl Agent {
         )
     }
 
+    pub(super) fn search_form_for(
+        &self,
+        endpoint: &str,
+        model: &str,
+        requested: bool,
+    ) -> SearchForm {
+        let kept = self
+            .search
+            .kept
+            .contains(&(endpoint.to_owned(), model.to_owned()))
+            .then_some(true);
+        self.unkept_form(endpoint, model, requested).kept(kept)
+    }
+
     pub fn search_form(&self, endpoint: &str, model: &str) -> SearchForm {
-        self.unkept_form(endpoint, model, self.toolbox.web_search())
-            .kept(
-                self.search
-                    .kept
-                    .get(&(endpoint.to_owned(), model.to_owned()))
-                    .copied(),
-            )
+        self.search_form_for(endpoint, model, self.toolbox.web_search())
     }
 
     pub(super) fn unkept_form(&self, endpoint: &str, model: &str, requested: bool) -> SearchForm {
@@ -82,19 +90,45 @@ impl Agent {
 
     pub(super) fn flip_search(&mut self, wanted: bool) {
         self.toolbox.set_web_search(wanted);
+        self.search.pickup = false;
         if wanted {
             self.search.kept.clear();
         }
     }
 
-    pub(super) fn search_waits(&self) -> bool {
-        self.search_form(self.endpoint_name(), &self.session.model)
-            == SearchForm::None(NoSearch::NotStarted)
+    pub(super) fn array_search_form(&self, endpoint: &str, model: &str) -> SearchForm {
+        match self
+            .search
+            .array
+            .as_ref()
+            .filter(|((ep, m), _)| ep == endpoint && m == model)
+            .map(|(_, had)| *had)
+        {
+            Some(true) => self.unkept_form(endpoint, model, true).kept(Some(true)),
+            Some(false) => SearchForm::None(NoSearch::NotRequested),
+            None => self.search_form(endpoint, model),
+        }
     }
 
     pub(super) fn server_tools(&self) -> &'static [ServerToolSpec] {
         let (endpoint, model) = (self.endpoint_name(), &self.session.model);
+        self.search_tools(endpoint, model, self.array_search_form(endpoint, model))
+    }
+
+    pub(super) fn active_server_tools(&self) -> &'static [ServerToolSpec] {
+        if self.search.pickup {
+            return &[];
+        }
+        let (endpoint, model) = (self.endpoint_name(), &self.session.model);
         self.search_tools(endpoint, model, self.search_form(endpoint, model))
+    }
+
+    pub(super) fn array_names(&self) -> std::collections::BTreeSet<String> {
+        self.wire(&self.sent, self.step_server_tools())
+            .0
+            .into_iter()
+            .map(|s| s.name)
+            .collect()
     }
 
     pub(super) fn wire<'a>(
@@ -113,7 +147,7 @@ impl Agent {
 
     pub(super) fn tool_set(&self, endpoint: &str, model: &str) -> ToolSet {
         let deferred = self.deferred_on(endpoint, model);
-        let server = self.search_tools(endpoint, model, self.search_form(endpoint, model));
+        let server = self.search_tools(endpoint, model, self.array_search_form(endpoint, model));
         self.tools_with(server, deferred)
     }
 
@@ -258,15 +292,20 @@ impl Agent {
         self.emit(events, event).await;
     }
 
+    pub(super) fn announced_tools(&self) -> Vec<String> {
+        self.tools_with(self.active_server_tools(), self.pair_deferred())
+            .names
+    }
+
     pub(super) fn note_sent_tools(&mut self) {
-        self.search.sent_tools = Some(self.pair_tools().names);
+        self.search.sent_tools = Some(self.announced_tools());
     }
 
     pub(super) async fn announce_tools(&mut self, events: &mpsc::Sender<AgentEvent>) {
         let Some(sent) = self.search.sent_tools.clone() else {
             return;
         };
-        let now = self.pair_tools().names;
+        let now = self.announced_tools();
         let added: Vec<String> = now.iter().filter(|n| !sent.contains(n)).cloned().collect();
         let removed: Vec<String> = sent.iter().filter(|n| !now.contains(n)).cloned().collect();
         if added.is_empty() && removed.is_empty() {
@@ -413,6 +452,7 @@ impl Agent {
             self.search.built_with = Some(before.digest.clone());
         }
         self.end_kept_tools();
+        self.search.array = None;
         if self.search.refused.insert(endpoint.clone()) {
             let state = FeatureState::FallenBack;
             let record = state_record(Feature::NativeWebSearch, &endpoint, &model, state);

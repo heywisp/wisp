@@ -803,19 +803,21 @@ pub async fn build(
     );
     let ids: Vec<String> = facts.models.iter().map(|m| m.id.clone()).collect();
     facts.on_accounts = context::account_facts(&models.settings, &search_endpoints(&book));
+    let search_plugin = wisp_core::resume::search_plugin_id(&started.catalog);
+    let logged = spec.logged();
+    let web_search = toolbox.web_search()
+        && !logged.is_some_and(|logged| logged.search_switched_off(search_plugin));
     facts.search = context::search_forms(
         &models,
         &search_endpoints(&book),
         &ids,
-        toolbox.web_search(),
+        web_search,
         toolbox.is_empty(),
-        spec.logged().map(|logged| {
-            let (endpoint, model) = logged.tools_pair();
-            (
-                endpoint.unwrap_or(book.start.as_str()),
-                model,
-                logged.had_search(),
-            )
+        logged.and_then(|logged| {
+            logged.search_on().then(|| {
+                let (endpoint, model) = logged.tools_pair();
+                (endpoint.unwrap_or(book.start.as_str()), model, true)
+            })
         }),
         &ready,
     );

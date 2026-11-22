@@ -403,12 +403,17 @@ impl Agent {
     pub(super) fn apply_pending_binding(&mut self) -> Result<(), String> {
         if let Some(pending) = self.settings.pending.clone() {
             let switching = pending.endpoint != self.endpoint;
+            let moved = switching || pending.model != self.session.model;
             self.use_connection(pending.endpoint)?;
             self.settings.binding_controls |= switching;
             self.settings.pending = None;
             self.pending_endpoint_binding = None;
             self.session.model = pending.model;
             self.session.effort = pending.effort;
+            if moved {
+                self.search.array = None;
+                self.search.pickup = false;
+            }
         }
         Ok(())
     }
@@ -431,6 +436,10 @@ impl Agent {
         opens: bool,
     ) -> Result<Option<EffortMarker>, String> {
         let next = self.next_pair();
+        if retry.endpoint != self.endpoint {
+            self.search.array = None;
+            self.search.pickup = false;
+        }
         self.use_connection(retry.endpoint)?;
         let unchanged = next.endpoint == self.endpoint
             && next.model == self.session.model

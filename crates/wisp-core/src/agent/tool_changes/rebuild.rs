@@ -10,16 +10,13 @@ use crate::session::sha256_hex;
 use crate::tool::{ToolSpec, definitions_of};
 
 impl Agent {
-    pub(super) fn rebuild_tools(&mut self, decision: &Decision) -> Vec<String> {
+    pub(super) fn rebuild_tools(&mut self, decision: &Decision) {
         self.check_prefix();
-        let before = self.pair_tools().names;
         if self.search.built_with.is_none() {
             self.search.built_with = Some(self.current_tools().digest);
         }
-        if let Some(wanted) = decision
-            .search
-            .filter(|_| decision.rebuild.contains(WEB_SEARCH))
-        {
+        self.search.array = None;
+        if let Some(wanted) = decision.search {
             self.flip_search(wanted);
         }
         let offer = self.read_offer(self.inline_use().is_some());
@@ -27,7 +24,7 @@ impl Agent {
         let names: BTreeSet<&String> = offer
             .declared
             .iter()
-            .filter(|name| !set.contains(name.as_str()))
+            .filter(|name| *name != WEB_SEARCH && !set.contains(name.as_str()))
             .chain(decision.rebuild.iter().filter(|name| *name != WEB_SEARCH))
             .collect();
         let sent: Vec<ToolSpec> = names
@@ -66,11 +63,10 @@ impl Agent {
         self.sent = sent;
         self.tool_switches.copy = Some(copy);
         self.epoch.rebuilt(MarkReason::ToolsChange);
-        before
     }
 
     pub(super) fn move_sent_tools(&mut self, before: &[String]) {
-        let now = self.pair_tools().names;
+        let now = self.announced_tools();
         if let Some(sent) = self.search.sent_tools.as_mut() {
             sent.retain(|name| now.contains(name) || !before.contains(name));
             for name in now.iter().filter(|name| !before.contains(name)) {

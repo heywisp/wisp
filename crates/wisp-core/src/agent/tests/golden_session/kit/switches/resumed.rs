@@ -140,7 +140,7 @@ async fn a_resumed_preload_keeps_its_start_and_surfaces_tools_it_no_longer_holds
             if before == "none" && now == "core" {
                 let changes = changed(&events);
                 assert_eq!(changes.len(), 1, "{events:?}");
-                assert!(!changes[0].0.is_empty());
+                assert!(changes[0].0.contains(&SEARCH.to_owned()), "{changes:?}");
                 assert!(changes[0].1.is_empty());
                 assert_eq!(
                     changes[0].2,
@@ -152,7 +152,14 @@ async fn a_resumed_preload_keeps_its_start_and_surfaces_tools_it_no_longer_holds
                 );
                 if model == CAPABLE {
                     kept_prefix(&server, 0, 1);
+                    let message = tool_message(&body(&server, 1)).unwrap();
+                    assert!(
+                        by_value_in(&message)
+                            .contains(&"tool_addition web_search by value".to_owned()),
+                        "{message:#}"
+                    );
                 } else {
+                    assert!(searches(&body(&server, 1)));
                     assert!(loaded(&body(&server, 1)).len() > loaded(&first).len());
                     assert_ne!(body(&server, 1)["system"], first["system"]);
                 }
@@ -2777,29 +2784,27 @@ async fn web_search_turned_on_appears_with_one_mark_and_one_record_fresh_or_resu
         };
         let opened = session.turn("u2", "two").await;
         let agent = session.end().await;
-        assert_eq!(answered(&answer).1, search_rebuilt(), "{resume}");
+        assert_eq!(answered(&answer).1, Some(CacheEffect::Kept), "{resume}");
         assert_eq!(
             changed(&opened),
             [(
                 vec![SEARCH.to_owned()],
                 Vec::new(),
-                ToolChangeVia::Rebuild,
-                search_rebuilt()
+                ToolChangeVia::Inline,
+                Some(CacheEffect::Kept)
             )],
             "{resume}"
         );
         assert!(!searches(&body(&server, 0)), "{resume}");
-        assert!(searches(&body(&server, 1)), "{resume}");
-        assert!(form(&agent).is_native(), "{resume}");
+        assert!(!searches(&body(&server, 1)), "{resume}");
+        kept_prefix(&server, 0, 1);
         assert_eq!(
-            marked(&store)
-                .iter()
-                .filter(|m| *m == "\"tools_change\"")
-                .count(),
-            1,
+            by_value_in(&tool_message(&body(&server, 1)).unwrap()),
+            ["tool_addition web_search by value"],
             "{resume}"
         );
-        assert_eq!(tools_records(&store), (1, 0), "{resume}");
+        assert!(form(&agent).is_native(), "{resume}");
+        assert_eq!(tools_records(&store), (0, 1), "{resume}");
         rebuilds(&store, &agent).await;
         kit.start_layers.flags.clear();
         let agent = resumed(&kit, &store, &server, CAPABLE).await;
@@ -2807,7 +2812,10 @@ async fn web_search_turned_on_appears_with_one_mark_and_one_record_fresh_or_resu
         let mut session = Session::start(agent);
         let reopened = session.turn("u3", "three").await;
         let agent = session.end().await;
-        prefix::assert_prefix_stable(&[body(&server, 1), body(&server, 2)], None);
+        prefix::assert_prefix_stable(
+            &[body(&server, 0), body(&server, 1), body(&server, 2)],
+            None,
+        );
         assert!(
             changed(&reopened).is_empty(),
             "{resume}, by_switch={by_switch}: {:?}",
@@ -2815,7 +2823,7 @@ async fn web_search_turned_on_appears_with_one_mark_and_one_record_fresh_or_resu
         );
         assert_eq!(
             tools_records(&store),
-            (1, 0),
+            (0, 1),
             "{resume}, by_switch={by_switch}"
         );
         rebuilds(&store, &agent).await;
@@ -2857,83 +2865,257 @@ async fn a_refusal_after_web_search_was_turned_on_takes_the_refusal_path() {
 }
 
 #[tokio::test]
-async fn a_log_with_web_search_resumed_by_a_run_without_it_adopts_then_rebuilds_once() {
-    let env = Env::new("resumed-search-seeded");
-    let server = Server::start(three()).await;
-    let store = MemoryStore::default();
-    one_session(&switching(&server, &env, &store), CAPABLE).await;
-    let kit = configured(&server, &env, &store, without(SEARCH));
-    let agent = resumed(&kit, &store, &server, CAPABLE).await;
-    assert!(!rebuilt(&agent), "{:?}", agent.cache_rebuild());
-    let mut session = Session::start(agent);
-    let opened = session.turn("u2", "two").await;
-    let next = session.turn("u3", "three").await;
-    let agent = session.end().await;
-    assert_eq!(
-        changed(&opened),
-        [(
-            Vec::new(),
-            vec![SEARCH.to_owned()],
-            ToolChangeVia::Rebuild,
-            search_rebuilt()
-        )]
-    );
-    assert!(changed(&next).is_empty());
-    assert!(searches(&body(&server, 0)));
-    assert!(!searches(&body(&server, 1)));
-    assert_eq!(body(&server, 2)["tools"], body(&server, 1)["tools"]);
-    rebuilds(&store, &agent).await;
+async fn a_log_with_web_search_resumed_by_a_run_without_it_adopts_then_removes_once() {
+    for model in [CAPABLE, PLAIN] {
+        let env = Env::new("resumed-search-seeded");
+        let server = Server::start(three()).await;
+        let store = MemoryStore::default();
+        one_session(&switching(&server, &env, &store), model).await;
+        let kit = configured(&server, &env, &store, without(SEARCH));
+        let agent = resumed(&kit, &store, &server, model).await;
+        assert!(!rebuilt(&agent), "{model}: {:?}", agent.cache_rebuild());
+        let mut session = Session::start(agent);
+        let opened = session.turn("u2", "two").await;
+        let next = session.turn("u3", "three").await;
+        let agent = session.end().await;
+        let (via, cache) = if model == CAPABLE {
+            (ToolChangeVia::Inline, Some(CacheEffect::Kept))
+        } else {
+            (ToolChangeVia::Rebuild, search_rebuilt())
+        };
+        assert_eq!(
+            changed(&opened),
+            [(Vec::new(), vec![SEARCH.to_owned()], via, cache)],
+            "{model}"
+        );
+        assert!(changed(&next).is_empty(), "{model}");
+        assert!(searches(&body(&server, 0)), "{model}");
+        if model == CAPABLE {
+            kept_prefix(&server, 0, 1);
+            kept_prefix(&server, 1, 2);
+            assert_eq!(
+                removal_of(&tool_message(&body(&server, 1)).unwrap()),
+                ["tool_removal web_search"]
+            );
+        } else {
+            assert!(!searches(&body(&server, 1)));
+            assert_eq!(body(&server, 2)["tools"], body(&server, 1)["tools"]);
+        }
+        rebuilds(&store, &agent).await;
+    }
 }
 
 #[tokio::test]
-async fn a_log_without_web_search_resumed_by_a_run_with_it_keeps_its_cache_and_waits() {
-    let env = Env::new("resumed-search-not-started");
-    let mut replies = three();
-    replies.push(says("msg_04", 760, "Four."));
-    let server = Server::start(replies).await;
+async fn a_log_without_web_search_resumed_with_search_on_now_switches_it_on_once() {
+    for model_gained in [false, true] {
+        let env = Env::new("resumed-search-pickup");
+        let replies = if model_gained {
+            vec![
+                says("msg_01", 40_000, "One."),
+                says("msg_02", 40_100, "Two."),
+                reply("msg_03", 40_200, vec![Part::Text(SUMMARY)], "end_turn"),
+                says("msg_04", 760, "Four."),
+            ]
+        } else {
+            vec![
+                says("msg_01", 400, "One."),
+                says("msg_02", 520, "Two."),
+                says("msg_03", 640, "Three."),
+                says("msg_04", 760, "Four."),
+            ]
+        };
+        let server = Server::start(replies).await;
+        let store = MemoryStore::default();
+        let mut old_kit = if model_gained {
+            switching(&server, &env, &store)
+        } else {
+            configured(&server, &env, &store, without(SEARCH))
+        };
+        if model_gained {
+            old_kit.models = models(
+                "[models.\"claude-opus-5-5\"]\nweb_search = []\nnative_compaction = false\n",
+            );
+        }
+        one_session(&old_kit, CAPABLE).await;
+        assert!(!searches(&body(&server, 0)));
+
+        let mut kit = switching(&server, &env, &store);
+        if model_gained {
+            kit.models = models("[models.\"claude-opus-5-5\"]\nnative_compaction = false\n");
+        }
+        let agent = resumed(&kit, &store, &server, CAPABLE).await;
+        assert!(!rebuilt(&agent));
+        assert!(form(&agent).is_native());
+        assert_eq!(catalog_marks(&agent, SEARCH), Some((true, false)));
+        assert!(
+            agent
+                .snapshot(RequestId(0), None)
+                .plugins
+                .iter()
+                .flat_map(|p| &p.tools)
+                .find(|t| t.is_search())
+                .and_then(|t| t.unavailable.as_deref())
+                .is_none()
+        );
+
+        let mut session = Session::start(agent);
+        let second = session.turn("u2", "two").await;
+        assert_eq!(
+            changed(&second),
+            [(
+                vec![SEARCH.to_owned()],
+                Vec::new(),
+                ToolChangeVia::Inline,
+                Some(CacheEffect::Kept)
+            )],
+            "{model_gained}"
+        );
+        kept_prefix(&server, 0, 1);
+        assert_eq!(
+            by_value_in(&tool_message(&body(&server, 1)).unwrap()),
+            ["tool_addition web_search by value"]
+        );
+        if model_gained {
+            session.compact(7).await;
+            let after_compact = session.turn("u3", "three").await;
+            let agent = session.end().await;
+            assert!(changed(&after_compact).is_empty());
+            assert_eq!(body(&server, 2)["tools"], body(&server, 0)["tools"]);
+            assert_eq!(body(&server, 3)["tools"], body(&server, 0)["tools"]);
+            assert_eq!(
+                by_value_in(&tool_message(&body(&server, 3)).unwrap()),
+                ["tool_addition web_search by value"]
+            );
+            rebuilds(&store, &agent).await;
+        } else {
+            let third = session.turn("u3", "three").await;
+            let agent = session.end().await;
+            assert!(changed(&third).is_empty());
+            assert_eq!(tools_records(&store), (0, 1));
+            prefix::assert_prefix_stable(
+                &[body(&server, 0), body(&server, 1), body(&server, 2)],
+                None,
+            );
+            rebuilds(&store, &agent).await;
+
+            let again = resumed(&kit, &store, &server, CAPABLE).await;
+            assert!(!rebuilt(&again));
+            let mut session = Session::start(again);
+            let fourth = session.turn("u4", "four").await;
+            let agent = session.end().await;
+            assert!(changed(&fourth).is_empty());
+            assert_eq!(tools_records(&store), (0, 1));
+            prefix::assert_prefix_stable(
+                &[
+                    body(&server, 0),
+                    body(&server, 1),
+                    body(&server, 2),
+                    body(&server, 3),
+                ],
+                None,
+            );
+            rebuilds(&store, &agent).await;
+        }
+    }
+
+    let env = Env::new("resumed-search-pickup-cancelled");
+    let server = Server::start(three()).await;
     let store = MemoryStore::default();
     one_session(&configured(&server, &env, &store, without(SEARCH)), CAPABLE).await;
     let kit = switching(&server, &env, &store);
     let agent = resumed(&kit, &store, &server, CAPABLE).await;
-    assert!(!rebuilt(&agent));
-    assert_eq!(
-        form(&agent),
-        crate::search::SearchForm::None(crate::search::NoSearch::NotStarted)
+    assert!(
+        agent
+            .snapshot(RequestId(0), None)
+            .plugins
+            .iter()
+            .flat_map(|p| &p.tools)
+            .find(|t| t.is_search())
+            .and_then(|t| t.unavailable.as_deref())
+            .is_none()
     );
-    assert_eq!(catalog_marks(&agent, SEARCH), Some((true, true)));
     let mut session = Session::start(agent);
-    let kept = session.tools(1, every_default()).await;
-    assert_eq!(answered(&kept).0, When::NextTurn);
-    let agent = session.end().await;
-    assert_eq!(catalog_marks(&agent, SEARCH), Some((true, true)));
-    let mut session = Session::start(agent);
+    session.switched(1, "web-search", ENABLED_KEY, false).await;
     let second = session.turn("u2", "two").await;
     let agent = session.end().await;
     assert!(changed(&second).is_empty(), "{:?}", changed(&second));
-    assert_eq!(catalog_marks(&agent, SEARCH), Some((true, true)));
+    assert_eq!(tool_message(&body(&server, 1)), None);
     kept_prefix(&server, 0, 1);
-    assert!(!searches(&body(&server, 1)));
-    let mut session = Session::start(agent);
-    session.tools(2, without(SEARCH)).await;
-    let third = session.turn("u3", "three").await;
-    session.tools(3, every_default()).await;
-    let fourth = session.turn("u4", "four").await;
-    let agent = session.end().await;
-    assert!(changed(&third).is_empty(), "{:?}", changed(&third));
-    assert!(!searches(&body(&server, 2)));
-    assert_eq!(body(&server, 2)["tools"], body(&server, 1)["tools"]);
-    assert_eq!(
-        changed(&fourth),
-        [(
-            vec![SEARCH.to_owned()],
-            Vec::new(),
-            ToolChangeVia::Rebuild,
-            search_rebuilt()
-        )]
-    );
-    assert!(searches(&body(&server, 3)));
-    assert_eq!(catalog_marks(&agent, SEARCH), Some((true, false)));
+    assert!(!form(&agent).is_native());
     rebuilds(&store, &agent).await;
+}
+
+#[tokio::test]
+async fn a_chat_with_search_switched_off_in_chat_stays_off_on_resume_and_can_turn_back_on() {
+    for (had_before, by_switch) in [(true, false), (true, true), (false, false), (false, true)] {
+        let env = Env::new("resumed-search-switched-off");
+        let mut replies = three();
+        replies.push(says("msg_04", 760, "Four."));
+        let server = Server::start(replies).await;
+        let store = MemoryStore::default();
+        let mut first_kit = switching(&server, &env, &store);
+        if !had_before {
+            first_kit.models = models("[models.\"claude-opus-5-5\"]\nweb_search = []\n");
+        }
+        let agent = first_kit
+            .build(on(CAPABLE, kit::Start::Fresh))
+            .await
+            .unwrap()
+            .agent;
+        let mut session = Session::start(agent);
+        session.turn("u1", "one").await;
+        if by_switch {
+            session.switched(1, "web-search", ENABLED_KEY, false).await;
+        } else {
+            session.tools(1, without(SEARCH)).await;
+        }
+        session.turn("u2", "two").await;
+        session.end().await;
+
+        let kit = switching(&server, &env, &store);
+        let agent = resumed(&kit, &store, &server, CAPABLE).await;
+        assert!(!rebuilt(&agent), "{had_before} {by_switch}");
+        assert!(!form(&agent).is_native(), "{had_before} {by_switch}");
+        let mut session = Session::start(agent);
+        let third = session.turn("u3", "three").await;
+        assert!(
+            changed(&third).is_empty(),
+            "{had_before} {by_switch}: {:?}",
+            changed(&third)
+        );
+        kept_prefix(&server, 1, 2);
+
+        if by_switch {
+            session.switched(2, "web-search", ENABLED_KEY, true).await;
+        } else {
+            session.tools(2, every_default()).await;
+        }
+        let fourth = session.turn("u4", "four").await;
+        let agent = session.end().await;
+        assert_eq!(
+            changed(&fourth),
+            [(
+                vec![SEARCH.to_owned()],
+                Vec::new(),
+                ToolChangeVia::Inline,
+                Some(CacheEffect::Kept)
+            )],
+            "{had_before} {by_switch}"
+        );
+        assert!(form(&agent).is_native(), "{had_before} {by_switch}");
+        kept_prefix(&server, 2, 3);
+        let expected = if had_before {
+            "tool_addition web_search"
+        } else {
+            "tool_addition web_search by value"
+        };
+        assert_eq!(
+            additions_in(&tool_message(&body(&server, 3)).unwrap()),
+            [expected],
+            "{had_before} {by_switch}"
+        );
+        rebuilds(&store, &agent).await;
+    }
 }
 
 #[tokio::test]
@@ -3038,58 +3220,382 @@ pub(super) fn child_with(cwd: std::path::PathBuf, tools: &[&str]) -> kit::ChildS
 }
 
 #[tokio::test]
-async fn a_resumed_child_whose_log_had_web_search_and_whose_tools_leave_it_out_rebuilds_once() {
-    let env = Env::new("resumed-search-child");
-    let server = Server::start(three()).await;
+async fn a_resumed_child_removes_or_picks_up_web_search_inline_once() {
+    for had_before in [true, false] {
+        let env = Env::new("resumed-search-child");
+        let mut replies = three();
+        replies.push(says("msg_04", 760, "Four."));
+        let server = Server::start(replies).await;
+        let store = MemoryStore::default();
+        let make_kit = |no_search: bool| {
+            let mut kit = switching(&server, &env, &store);
+            if no_search {
+                kit.models = models("[models.\"claude-opus-5-5\"]\nweb_search = []\n");
+            }
+            let provider = server.provider();
+            let ready = ready(&server);
+            kit.connect = Arc::new(move |_: &str| {
+                Ok(kit::Connected {
+                    provider: provider.clone(),
+                    ready: ready.clone(),
+                    unavailable: unavailable(),
+                    active: "env".into(),
+                    env_account: None,
+                })
+            });
+            kit
+        };
+        let child = make_kit(!had_before)
+            .build_child(child_with(env.work(), &["bash", SEARCH]))
+            .await
+            .unwrap();
+        assert_pinned_environment(&child);
+        let mut session = Session::start(child);
+        session.turn("u1", "one").await;
+        session.end().await;
+        assert_eq!(searches(&body(&server, 0)), had_before, "{had_before}");
+
+        let (log, recovered, logged, handed) = reopen(&store, &server);
+        let resume = kit::Resume {
+            log,
+            recovered: &recovered,
+            truncated_bytes: 0,
+            logged: logged.as_ref(),
+            rebuilt: handed,
+        };
+        let next_tools: &[&str] = if had_before {
+            &["bash"]
+        } else {
+            &["bash", SEARCH]
+        };
+        let (child, _) = make_kit(false)
+            .resume_child(child_with(env.work(), next_tools), resume)
+            .await
+            .unwrap();
+        assert_pinned_environment(&child);
+        assert!(
+            !rebuilt(&child),
+            "{had_before}: {:?}",
+            child.cache_rebuild()
+        );
+        let mut session = Session::start(child);
+        let opened = session.turn("u2", "two").await;
+        let third = session.turn("u3", "three").await;
+        session.end().await;
+        let (added, removed) = if had_before {
+            (Vec::new(), vec![SEARCH.to_owned()])
+        } else {
+            (vec![SEARCH.to_owned()], Vec::new())
+        };
+        assert_eq!(
+            changed(&opened),
+            [(
+                added,
+                removed,
+                ToolChangeVia::Inline,
+                Some(CacheEffect::Kept)
+            )],
+            "{had_before}"
+        );
+        assert!(changed(&third).is_empty(), "{had_before}");
+        prefix::assert_prefix_stable(
+            &[body(&server, 0), body(&server, 1), body(&server, 2)],
+            None,
+        );
+        if had_before {
+            let (log, recovered, logged, handed) = reopen(&store, &server);
+            let resume = kit::Resume {
+                log,
+                recovered: &recovered,
+                truncated_bytes: 0,
+                logged: logged.as_ref(),
+                rebuilt: handed,
+            };
+            let (child, _) = make_kit(false)
+                .resume_child(child_with(env.work(), &["bash", SEARCH]), resume)
+                .await
+                .unwrap();
+            assert!(!rebuilt(&child));
+            let mut session = Session::start(child);
+            let fourth = session.turn("u4", "four").await;
+            session.end().await;
+            assert_eq!(
+                changed(&fourth),
+                [(
+                    vec![SEARCH.to_owned()],
+                    Vec::new(),
+                    ToolChangeVia::Inline,
+                    Some(CacheEffect::Kept)
+                )]
+            );
+            assert_eq!(
+                additions_in(&tool_message(&body(&server, 3)).unwrap()),
+                ["tool_addition web_search"]
+            );
+            prefix::assert_prefix_stable(
+                &[
+                    body(&server, 0),
+                    body(&server, 1),
+                    body(&server, 2),
+                    body(&server, 3),
+                ],
+                None,
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_chat_resumed_without_web_search_picks_it_back_up_when_resumed_with_search_on() {
+    let env = Env::new("resumed-search-re-pickup");
+    let server = Server::start(vec![
+        says("msg_01", 400, "One."),
+        says("msg_02", 520, "Two."),
+        says("msg_03", 640, "Three."),
+        says("msg_04", 760, "Four."),
+    ])
+    .await;
     let store = MemoryStore::default();
-    let mut kit = switching(&server, &env, &store);
-    let provider = server.provider();
-    let ready = ready(&server);
+    one_session(&switching(&server, &env, &store), CAPABLE).await;
+    let agent = resumed(
+        &configured(&server, &env, &store, without(SEARCH)),
+        &store,
+        &server,
+        CAPABLE,
+    )
+    .await;
+    assert!(!rebuilt(&agent));
+    let mut session = Session::start(agent);
+    let second = session.turn("u2", "two").await;
+    session.end().await;
+    assert_eq!(
+        changed(&second),
+        [(
+            Vec::new(),
+            vec![SEARCH.to_owned()],
+            ToolChangeVia::Inline,
+            Some(CacheEffect::Kept)
+        )]
+    );
+
+    let kit = switching(&server, &env, &store);
+    let agent = resumed(&kit, &store, &server, CAPABLE).await;
+    assert!(!rebuilt(&agent));
+    assert!(form(&agent).is_native());
+    let mut session = Session::start(agent);
+    let third = session.turn("u3", "three").await;
+    let fourth = session.turn("u4", "four").await;
+    let agent = session.end().await;
+    assert_eq!(
+        changed(&third),
+        [(
+            vec![SEARCH.to_owned()],
+            Vec::new(),
+            ToolChangeVia::Inline,
+            Some(CacheEffect::Kept)
+        )]
+    );
+    assert!(changed(&fourth).is_empty(), "{:?}", changed(&fourth));
+    assert_eq!(
+        additions_in(&tool_message(&body(&server, 2)).unwrap()),
+        ["tool_addition web_search"]
+    );
+    prefix::assert_prefix_stable(
+        &[
+            body(&server, 0),
+            body(&server, 1),
+            body(&server, 2),
+            body(&server, 3),
+        ],
+        None,
+    );
+    rebuilds(&store, &agent).await;
+}
+
+fn with_extra_endpoint(
+    mut kit: Kit,
+    primary: Arc<dyn Provider>,
+    name: &str,
+    extra: Arc<dyn Provider>,
+    active: &str,
+) -> Kit {
+    let use_extra = active == name;
+    let active_name = active.to_owned();
+    let active_provider = if use_extra {
+        extra.clone()
+    } else {
+        primary.clone()
+    };
+    let both = vec![
+        Connection {
+            name: "env".into(),
+            provider: primary,
+            context: log_context(),
+            priced: true,
+        },
+        Connection {
+            name: name.into(),
+            provider: extra,
+            context: log_context(),
+            priced: true,
+        },
+    ];
     kit.connect = Arc::new(move |_: &str| {
         Ok(kit::Connected {
-            provider: provider.clone(),
-            ready: ready.clone(),
+            provider: active_provider.clone(),
+            ready: both.clone(),
             unavailable: unavailable(),
-            active: "env".into(),
+            active: active_name.clone(),
             env_account: None,
         })
     });
-    let child = kit
-        .build_child(child_with(env.work(), &["bash", SEARCH]))
-        .await
-        .unwrap();
-    assert_pinned_environment(&child);
-    let mut session = Session::start(child);
-    session.turn("u1", "one").await;
+    kit
+}
+
+#[tokio::test]
+async fn an_inline_search_pickup_stays_single_across_model_openai_and_gateway_switches() {
+    let env = Env::new("resumed-search-switches");
+    let server = Server::start(vec![
+        says("msg_01", 400, "One."),
+        says("msg_02", 520, "Two."),
+        says("msg_03", 640, "Three."),
+        says("msg_04", 760, "Four."),
+    ])
+    .await;
+    let store = MemoryStore::default();
+    one_session(&configured(&server, &env, &store, without(SEARCH)), CAPABLE).await;
+    let kit = switching(&server, &env, &store);
+    let agent = resumed(&kit, &store, &server, CAPABLE).await;
+    let mut session = Session::start(agent);
+    session.turn("u2", "two").await;
+    change(&mut session, 1, model("claude-opus-5")).await;
+    let third = session.turn("u3", "three").await;
     session.end().await;
-    assert!(searches(&body(&server, 0)));
-    let (log, recovered, logged, handed) = reopen(&store, &server);
-    let resume = kit::Resume {
-        log,
-        recovered: &recovered,
-        truncated_bytes: 0,
-        logged: logged.as_ref(),
-        rebuilt: handed,
+    assert!(changed(&third).is_empty(), "{:?}", changed(&third));
+    assert_eq!(super::rebuild::declared(&body(&server, 2), SEARCH), 1);
+    assert_eq!(
+        super::rebuild::by_value_additions(&body(&server, 2), SEARCH),
+        0
+    );
+    let again = resumed(&kit, &store, &server, "claude-opus-5").await;
+    assert!(!rebuilt(&again));
+    let mut session = Session::start(again);
+    let fourth = session.turn("u4", "four").await;
+    let agent = session.end().await;
+    assert!(changed(&fourth).is_empty(), "{:?}", changed(&fourth));
+    assert_eq!(super::rebuild::declared(&body(&server, 3), SEARCH), 1);
+    assert_eq!(
+        super::rebuild::by_value_additions(&body(&server, 3), SEARCH),
+        0
+    );
+    rebuilds(&store, &agent).await;
+
+    let env = Env::new("resumed-search-to-openai");
+    let server = Server::start(vec![
+        says("msg_01", 400, "One."),
+        says("msg_02", 520, "Two."),
+        super::openai::gpt(&[crate::provider::openai::tests::message()]),
+    ])
+    .await;
+    let store = MemoryStore::default();
+    one_session(&configured(&server, &env, &store, without(SEARCH)), CAPABLE).await;
+    let kit = with_extra_endpoint(
+        switching(&server, &env, &store),
+        server.provider(),
+        "oa",
+        super::openai::subscribed(&server),
+        "env",
+    );
+    let agent = resumed(&kit, &store, &server, CAPABLE).await;
+    let mut session = Session::start(agent);
+    session.turn("u2", "two").await;
+    change(
+        &mut session,
+        1,
+        vec![
+            SettingChange::named("endpoint", SettingValue::Text("oa".into())).unwrap(),
+            SettingChange::named("model", SettingValue::Text("gpt-6.1-sol".into())).unwrap(),
+        ],
+    )
+    .await;
+    let third = session.turn("u3", "three").await;
+    let agent = session.end().await;
+    assert!(changed(&third).is_empty(), "{:?}", changed(&third));
+    let oa_req = body(&server, 2);
+    assert!(
+        oa_req["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t["type"] == "web_search")
+    );
+    assert!(
+        !oa_req["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["type"] == "additional_tools")
+            .flat_map(|item| item["tools"].as_array().into_iter().flatten())
+            .any(|tool| tool["name"] == SEARCH),
+        "{oa_req:#}"
+    );
+    rebuilds(&store, &agent).await;
+
+    let env = Env::new("resumed-search-to-gw-off");
+    let server = Server::start(vec![
+        says("msg_01", 400, "One."),
+        says("msg_02", 520, "Two."),
+        says("msg_03", 640, "Three."),
+        says("msg_04", 760, "Four."),
+    ])
+    .await;
+    let store = MemoryStore::default();
+    one_session(&configured(&server, &env, &store, without(SEARCH)), CAPABLE).await;
+    let make_gw_kit = |active: &str| {
+        let mut kit = with_extra_endpoint(
+            switching(&server, &env, &store),
+            server.provider(),
+            "gw",
+            server.provider(),
+            active,
+        );
+        kit.models = models("[endpoints.gw]\nnative_web_search = false\n");
+        kit
     };
-    let (child, _) = kit
-        .resume_child(child_with(env.work(), &["bash"]), resume)
-        .await
-        .unwrap();
-    assert_pinned_environment(&child);
-    assert!(!rebuilt(&child), "{:?}", child.cache_rebuild());
-    let mut session = Session::start(child);
-    let opened = session.turn("u2", "two").await;
+    let kit = make_gw_kit("env");
+    let agent = resumed(&kit, &store, &server, CAPABLE).await;
+    let mut session = Session::start(agent);
+    session.turn("u2", "two").await;
+    change(
+        &mut session,
+        1,
+        vec![SettingChange::named("endpoint", SettingValue::Text("gw".into())).unwrap()],
+    )
+    .await;
+    let third = session.turn("u3", "three").await;
     session.end().await;
     assert_eq!(
-        changed(&opened),
+        changed(&third),
         [(
             Vec::new(),
             vec![SEARCH.to_owned()],
             ToolChangeVia::Rebuild,
-            search_rebuilt()
+            None
         )]
     );
-    assert!(!searches(&body(&server, 1)));
+    assert_eq!(super::rebuild::declared(&body(&server, 2), SEARCH), 0);
+
+    let again = resumed(&make_gw_kit("gw"), &store, &server, CAPABLE).await;
+    assert_eq!(
+        again.search_form("gw", CAPABLE),
+        crate::search::SearchForm::None(crate::search::NoSearch::TurnedOff)
+    );
+    let mut session = Session::start(again);
+    let fourth = session.turn("u4", "four").await;
+    let agent = session.end().await;
+    assert!(changed(&fourth).is_empty(), "{:?}", changed(&fourth));
+    assert_eq!(super::rebuild::declared(&body(&server, 3), SEARCH), 0);
+    rebuilds(&store, &agent).await;
 }
 
 fn show_diff_declared(request: &Value) -> usize {

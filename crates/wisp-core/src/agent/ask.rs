@@ -228,7 +228,7 @@ impl Agent {
                     .is_some()
             });
         let native = |model: &str| {
-            if self.server_tools().is_empty() {
+            if self.active_server_tools().is_empty() {
                 Vec::new()
             } else {
                 self.search_facts(self.endpoint_name(), model)

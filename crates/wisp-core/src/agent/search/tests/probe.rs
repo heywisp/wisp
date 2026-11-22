@@ -258,26 +258,57 @@ async fn a_resumed_session_after_a_suspected_refusal_sends_no_tool_byte_for_byte
     assert_eq!(live.provider.bodies()[2], provider.bodies()[0]);
 }
 
-async fn resumed_on(live: &Rig, config: &str) -> Result<(Agent, Arc<Fake>), String> {
-    let records = records(&live.store);
-    let (tx, _rx) = mpsc::channel(64);
-    let provider = searching(vec![done(&[B::Text("later")])], tx);
-    let seq = u64::try_from(records.len()).unwrap();
-    let agent = Agent::new(provider.clone(), default_session())
+fn probe_agent(
+    provider: Arc<Fake>,
+    session: SessionConfig,
+    workspace: Workspace,
+    config: &str,
+    log: SessionLog,
+) -> Agent {
+    Agent::new(provider, session)
         .with_clock(Arc::new(StillClock))
         .with_tools(
             Toolbox::new(samples().into_iter().map(|s| s.tool)),
-            live._env.workspace(),
+            workspace,
         )
         .with_platform("Linux")
         .with_resources(None)
         .with_model_settings(models(config))
         .with_web_search(true)
-        .with_log(
-            SessionLog::continuing(Box::new(MemoryStore::default()), "s1", seq),
-            implicit_context(),
-        )
-        .resume(&records, 0)?;
+        .with_log(log, implicit_context())
+}
+
+fn resume_with(
+    provider: Arc<Fake>,
+    session: SessionConfig,
+    workspace: Workspace,
+    config: &str,
+    store: &MemoryStore,
+    logged: &[LogRecord],
+) -> Result<Agent, String> {
+    let seq = u64::try_from(logged.len()).unwrap();
+    probe_agent(
+        provider,
+        session,
+        workspace,
+        config,
+        SessionLog::continuing(Box::new(store.clone()), "s1", seq),
+    )
+    .resume(logged, 0)
+}
+
+async fn resumed_on(live: &Rig, config: &str) -> Result<(Agent, Arc<Fake>), String> {
+    let logged = records(&live.store);
+    let (tx, _rx) = mpsc::channel(64);
+    let provider = searching(vec![done(&[B::Text("later")])], tx);
+    let agent = resume_with(
+        provider.clone(),
+        default_session(),
+        live._env.workspace(),
+        config,
+        &MemoryStore::default(),
+        &logged,
+    )?;
     Ok((agent, provider))
 }
 
@@ -294,8 +325,8 @@ async fn one_turn(agent: &mut Agent) {
 const OFF: &str = "[endpoints.env]\nnative_web_search = false\n";
 
 #[tokio::test]
-async fn a_pre_upgrade_gateway_log_resumes_with_the_same_tools_and_no_cut() {
-    let mut live = rig(vec![done(&[B::Text("a")]), done(&[B::Text("b")])]);
+async fn a_pre_upgrade_gateway_log_resumes_with_search_on_now_once() {
+    let mut live = rig(vec![done(&[B::Text("a")])]);
     let placeholder = Agent::new(live.provider.clone(), default_session());
     live.agent = std::mem::replace(&mut live.agent, placeholder)
         .with_clock(Arc::new(StillClock))
@@ -303,18 +334,143 @@ async fn a_pre_upgrade_gateway_log_resumes_with_the_same_tools_and_no_cut() {
         .with_web_search(true);
     live.turn("one").await;
     assert!(!searches(&live.provider.bodies()[0]));
-    let (mut agent, provider) = resumed_on(&live, "").await.unwrap();
+
+    let logged = records(&live.store);
+    let (tx, _rx) = mpsc::channel(64);
+    let provider = searching(vec![done(&[B::Text("two")]), done(&[B::Text("three")])], tx);
+    let store = MemoryStore::default();
+    let mut agent = resume_with(
+        provider.clone(),
+        default_session(),
+        live._env.workspace(),
+        "",
+        &store,
+        &logged,
+    )
+    .unwrap();
+    assert!(agent.cache_rebuild().is_some());
     assert_eq!(
         agent.search_form(IMPLICIT_ENDPOINT, DEFAULT_MODEL),
-        SearchForm::None(NoSearch::NotStarted)
+        SearchForm::Native
     );
     one_turn(&mut agent).await;
-    live.turn("later").await;
-    let resumed = &provider.bodies()[0];
-    assert!(!searches(resumed));
-    assert_eq!(resumed["tools"], live.provider.bodies()[0]["tools"]);
-    assert_eq!(*resumed, live.provider.bodies()[1]);
-    assert!(provider.sent()[0].rendering.cuts.is_empty());
+    one_turn(&mut agent).await;
+    assert!(searches(&provider.bodies()[0]));
+    assert_eq!(provider.bodies()[0]["tools"], provider.bodies()[1]["tools"]);
+
+    let mut combined = logged;
+    combined.extend(records(&store));
+    let (tx2, _rx2) = mpsc::channel(64);
+    let provider2 = searching(vec![done(&[B::Text("four")])], tx2);
+    let mut again = resume_with(
+        provider2.clone(),
+        default_session(),
+        live._env.workspace(),
+        "",
+        &MemoryStore::default(),
+        &combined,
+    )
+    .unwrap();
+    assert!(again.cache_rebuild().is_none());
+    one_turn(&mut again).await;
+    assert!(searches(&provider2.bodies()[0]));
+    assert_eq!(
+        provider2.bodies()[0]["tools"],
+        provider.bodies()[1]["tools"]
+    );
+}
+
+#[tokio::test]
+async fn gemini_and_openai_resumed_chats_pick_up_native_search_once() {
+    use crate::endpoints::ProviderKind;
+    for (kind, model, no_search, with_search, expected_kind) in [
+        (
+            ProviderKind::Gemini,
+            "gemini-4-carbon",
+            "[models.\"gemini-4-carbon\"]\nweb_search = []\n",
+            "[models.\"gemini-4-carbon\"]\nweb_search = [\"google_search\"]\n",
+            "google_search",
+        ),
+        (
+            ProviderKind::OpenAi,
+            "gpt-6-astra",
+            "[models.\"gpt-6-astra\"]\nweb_search = []\n",
+            "[models.\"gpt-6-astra\"]\nweb_search = [\"web_search\"]\n",
+            "web_search",
+        ),
+    ] {
+        let env = ScratchDir::new("search", &format!("pickup-{}", kind.as_str()));
+        let store = MemoryStore::default();
+        let mut session = default_session();
+        session.model = model.into();
+        let fake = |steps| {
+            Fake::with(
+                Knobs {
+                    kind: Some(kind),
+                    ..Knobs::default()
+                },
+                steps,
+            )
+        };
+        let p1 = fake(vec![done(&[B::Text("one")])]);
+        let mut live = probe_agent(
+            p1.clone(),
+            session.clone(),
+            env.workspace(),
+            no_search,
+            SessionLog::new(Box::new(store.clone()), "s1"),
+        );
+        one_turn(&mut live).await;
+        assert!(p1.sent()[0].server_tools.is_empty(), "{kind:?}");
+
+        let logged = records(&store);
+        let p2 = fake(vec![done(&[B::Text("two")]), done(&[B::Text("three")])]);
+        let store2 = MemoryStore::default();
+        let mut resumed = resume_with(
+            p2.clone(),
+            session.clone(),
+            env.workspace(),
+            with_search,
+            &store2,
+            &logged,
+        )
+        .unwrap();
+        assert!(resumed.cache_rebuild().is_some(), "{kind:?}");
+        assert_eq!(
+            resumed.search_form(IMPLICIT_ENDPOINT, model),
+            SearchForm::Native
+        );
+        one_turn(&mut resumed).await;
+        one_turn(&mut resumed).await;
+        assert_eq!(p2.sent()[0].server_tools.len(), 1, "{kind:?}");
+        assert_eq!(p2.sent()[0].server_tools[0].kind, expected_kind, "{kind:?}");
+        assert_eq!(
+            p2.sent()[1].server_tools,
+            p2.sent()[0].server_tools,
+            "{kind:?}"
+        );
+        assert_eq!(p2.sent()[1].tools, p2.sent()[0].tools, "{kind:?}");
+
+        let mut combined = logged;
+        combined.extend(records(&store2));
+        let p3 = fake(vec![done(&[B::Text("four")])]);
+        let mut again = resume_with(
+            p3.clone(),
+            session,
+            env.workspace(),
+            with_search,
+            &MemoryStore::default(),
+            &combined,
+        )
+        .unwrap();
+        assert!(again.cache_rebuild().is_none(), "{kind:?}");
+        one_turn(&mut again).await;
+        assert_eq!(
+            p3.sent()[0].server_tools,
+            p2.sent()[0].server_tools,
+            "{kind:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -597,10 +753,7 @@ async fn a_resume_onto_another_endpoint_pins_only_the_logged_one() {
         )
         .resume(&records, 0)
         .unwrap();
-    assert_eq!(
-        resumed.search_form("a", DEFAULT_MODEL),
-        SearchForm::None(NoSearch::NotStarted)
-    );
+    assert_eq!(resumed.search_form("a", DEFAULT_MODEL), SearchForm::Native);
     assert_eq!(
         resumed.search_form("b", DEFAULT_MODEL),
         SearchForm::None(NoSearch::TurnedOff)

@@ -2215,4 +2215,112 @@ fn a_fallback_writes_the_dropped_plan_part_and_reads_it_back() {
         }
     }
 }
+
+#[test]
+fn search_switched_off_and_search_on_follow_in_chat_settings() {
+    let plugin_entry = |key: &str, value: Option<bool>, unset: bool| {
+        serde_json::to_value(LoggedChange {
+            target: SettingTarget::Path(
+                wisp_protocol::settings::SitePath::plugin_switch("web-search", key).unwrap(),
+            )
+            .into(),
+            value: value.map(SettingValue::Bool),
+            layer: Layer::Session,
+            when: When::NextTurn,
+            saved: None,
+            unset,
+            by: None,
+        })
+        .unwrap()
+    };
+    let settings = |entries: Vec<Value>| change(OPUS, "medium", "env", entries);
+    let read = |events: &[Value]| LoggedSession::read(&log(events)).unwrap();
+    let plugin = Some("web-search");
+
+    let plain = read(&[started()]);
+    assert!(!plain.search_switched_off(plugin));
+    assert!(!plain.search_on());
+
+    let mut with_search = started();
+    with_search["tools"] = json!(["bash", "web_search"]);
+    assert!(read(&[with_search.clone()]).search_on());
+
+    let enabled_off = settings(vec![plugin_entry("enabled", Some(false), false)]);
+    let enabled_on = settings(vec![plugin_entry("enabled", Some(true), false)]);
+    let enabled_unset = settings(vec![plugin_entry("enabled", None, true)]);
+    let installed_off = settings(vec![plugin_entry("installed", Some(false), false)]);
+    let tools_off = settings(vec![entry(
+        "tools",
+        SettingValue::List(vec!["bash".into()]),
+        false,
+    )]);
+    let tools_on = settings(vec![entry(
+        "tools",
+        SettingValue::List(vec!["bash".into(), "web_search".into()]),
+        false,
+    )]);
+    let turned_off_search = settings(vec![entry(
+        "turned_off",
+        SettingValue::List(vec!["web_search".into()]),
+        false,
+    )]);
+    let turned_off_other = settings(vec![entry(
+        "turned_off",
+        SettingValue::List(vec!["bash".into()]),
+        false,
+    )]);
+    for (events, off) in [
+        (vec![started(), enabled_off.clone()], true),
+        (vec![started(), enabled_off.clone(), enabled_on], false),
+        (vec![started(), enabled_off, enabled_unset], false),
+        (vec![started(), installed_off], true),
+        (vec![started(), tools_off], true),
+        (vec![started(), tools_on], false),
+        (vec![started(), turned_off_search], true),
+        (vec![started(), turned_off_other], false),
+    ] {
+        assert_eq!(read(&events).search_switched_off(plugin), off, "{events:?}");
+    }
+
+    let inline_add = json!({
+        "type": "tools_changed",
+        "turn": 1,
+        "added": ["web_search"],
+        "removed": [],
+        "via": "inline",
+        "cache": {"type": "kept"},
+    });
+    let inline_remove = json!({
+        "type": "tools_changed",
+        "turn": 1,
+        "added": [],
+        "removed": ["web_search"],
+        "via": "inline",
+        "cache": {"type": "kept"},
+    });
+    assert!(read(&[started(), inline_add.clone()]).search_on());
+    assert!(!read(&[with_search.clone(), inline_remove.clone()]).search_on());
+
+    let mut replaced_tools = change(OPUS, "medium", "env", vec![]);
+    replaced_tools["tools"] = json!(["bash"]);
+    replaced_tools["tools_sha256"] = json!("deadbeef");
+    let switched_ep = change(OPUS, "medium", "gw", vec![]);
+    let effort_only = change(OPUS, "low", "env", vec![]);
+    let rewound_to_start = json!({
+        "type": "rewound",
+        "to": 0,
+        "point": {"type": "turn", "turn": 1},
+        "reason": "user",
+        "messages": 0,
+        "blocks": 0,
+        "dropped": {"turns": [1], "messages": 2},
+        "cache": {"type": "kept"},
+    });
+    assert!(!read(&[started(), inline_add.clone(), replaced_tools]).search_on());
+    assert!(!read(&[started(), inline_add.clone(), switched_ep]).search_on());
+    assert!(read(&[started(), inline_add.clone(), effort_only]).search_on());
+    assert!(!read(&[started(), inline_add, rewound_to_start.clone()]).search_on());
+    assert!(read(&[with_search, inline_remove, rewound_to_start]).search_on());
+}
+
 mod listing;

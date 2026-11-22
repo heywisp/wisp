@@ -35,7 +35,9 @@ pub(super) struct SearchState {
     pub(super) form: RenderingForm,
     pub(super) trial: Option<Trial>,
     pub(super) refused: BTreeSet<String>,
-    pub(super) kept: BTreeMap<(String, String), bool>,
+    pub(super) kept: BTreeSet<(String, String)>,
+    pub(super) array: Option<((String, String), bool)>,
+    pub(super) pickup: bool,
     pub(super) probe: Option<Probe>,
     pub(super) built_with: Option<String>,
     pub(super) logged_tools: Option<String>,
@@ -292,7 +294,9 @@ impl Agent {
     pub(super) fn kept_rendering(&self, len: usize) -> Rendering {
         let current = self.endpoint_name();
         let as_text = self.search.rendered_on.contains(current);
-        let unreadable = if crate::search::by_call(self.step_server_tools()) {
+        let unreadable = if crate::search::by_call(self.active_server_tools())
+            || crate::search::by_call(self.step_server_tools())
+        {
             self.history.len()
         } else {
             self.search.unreadable.get(current).copied().unwrap_or(0)
@@ -323,7 +327,8 @@ impl Agent {
             sends_media: false,
             attachments_as_notes: self.kept_notes(),
             tools_point: self.view_index(self.tools_point()),
-            array: self.sent.iter().map(|s| s.name.clone()).collect(),
+            array: self.array_names(),
+            inline_search: self.inline_search_live(self.endpoint, &self.session.model),
         }
     }
 

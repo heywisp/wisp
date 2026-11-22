@@ -137,16 +137,20 @@ fn command(home: &Path, config: &Path) -> Command {
     cmd
 }
 
-fn write_config(home: &Path, url: &str) -> std::path::PathBuf {
-    let path = home.join("config.toml");
+fn write_config_named(home: &Path, name: &str, url: &str, extra: &str) -> std::path::PathBuf {
+    let path = home.join(name);
     std::fs::write(
         &path,
         format!(
-            "default = \"gemini\"\n[endpoints.gemini]\nprovider = \"gemini\"\nauth = \"api_key\"\nkey_env = \"WORK_GEMINI_KEY\"\nurl = \"{url}\"\n"
+            "default = \"gemini\"\n[endpoints.gemini]\nprovider = \"gemini\"\nauth = \"api_key\"\nkey_env = \"WORK_GEMINI_KEY\"\nurl = \"{url}\"\n{extra}"
         ),
     )
     .unwrap();
     path
+}
+
+fn write_config(home: &Path, url: &str) -> std::path::PathBuf {
+    write_config_named(home, "config.toml", url, "")
 }
 
 #[test]
@@ -237,6 +241,75 @@ fn cli_search_continues_and_resumes_with_the_same_chat_prefix_and_tool_results()
             .contains("Facts found")
     );
     assert!(!requests[2].to_string().contains("\"sources\""));
+}
+
+#[test]
+fn cli_resumed_gemini_chat_picks_up_search_once_and_keeps_prefix_after() {
+    let home = Home::new("gemini-search-pickup");
+    let r1 = sse_chunk(
+        "gemini-4-carbon",
+        vec![json!({"text": "GEM-ONE"})],
+        Some("STOP"),
+    );
+    let r2 = sse_chunk(
+        "gemini-4-carbon",
+        vec![json!({"text": "GEM-TWO"})],
+        Some("STOP"),
+    );
+    let r3 = sse_chunk(
+        "gemini-4-carbon",
+        vec![json!({"text": "GEM-THREE"})],
+        Some("STOP"),
+    );
+    let (url, seen, server) = serve(vec![r1, r2, r3]);
+    let old_cfg = write_config_named(
+        &home.0,
+        "old-config.toml",
+        &url,
+        "[models.\"gemini-4-carbon\"]\nweb_search = []\n",
+    );
+    let new_cfg = write_config(&home.0, &url);
+    pty::run(
+        &mut command(&home.0, &old_cfg),
+        "First\n",
+        "GEM-ONE",
+        TEST_KEY,
+    );
+    let resumed = pty::run(
+        command(&home.0, &new_cfg).arg("--resume"),
+        "Second\n",
+        "GEM-TWO",
+        TEST_KEY,
+    );
+    assert!(resumed.contains("tools added: web_search"), "{resumed}");
+    let again = pty::run(
+        command(&home.0, &new_cfg).arg("--resume"),
+        "Third\n",
+        "GEM-THREE",
+        TEST_KEY,
+    );
+    assert_eq!(
+        again.matches("tools added: web_search").count(),
+        1,
+        "{again}"
+    );
+    server.join().unwrap();
+    let requests: Vec<Value> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|body| serde_json::from_str(body).unwrap())
+        .collect();
+    assert_eq!(requests.len(), 3);
+    let has_search = |req: &Value| {
+        req["tools"][0]["functionDeclarations"]
+            .as_array()
+            .is_some_and(|decls| decls.iter().any(|d| d["name"] == "web_search"))
+    };
+    assert!(!has_search(&requests[0]));
+    assert!(has_search(&requests[1]));
+    assert!(has_search(&requests[2]));
+    assert_gemini_prefix_stable(&[requests[1].clone(), requests[2].clone()]);
 }
 
 #[test]
