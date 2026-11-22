@@ -127,7 +127,7 @@ async fn attempts(order: Order, sent: Arc<AtomicBool>, spent: Attempts) -> Lande
             spent_usd: 0.0,
         };
         let Decision::Retry { delay } = decide(
-            &order.policy.for_kind(error.kind),
+            &order.policy.for_kind(error.kind, &error.detail),
             &state,
             &error.detail,
             false,

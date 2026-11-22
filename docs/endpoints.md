@@ -1307,14 +1307,17 @@ search, and so does a `STOP` reply with nothing in it (`docs/gemini.md`); Wisp
 shows the plain cause and keeps known billed usage. `SAFETY`,
 `MAX_TOKENS`, and other non-`STOP` Gemini finishes after a decoded call stop
 the reply with their mapped stop reason instead of running the calls. Retryable
-`invalid_response` failures retry at most 3 times per step—even under looser
-explicit policies, while tighter bounds still win, sharing the step's non-busy
-retry count—before stopping with `step_limit` and the Retry / Switch offer. Raw
+`invalid_response` failures retry at most 8 times per step for
+`MALFORMED_FUNCTION_CALL` and 3 times per step for other causes—even under
+looser explicit policies, while tighter bounds still win, sharing the step's
+non-busy retry count—before stopping with `step_limit` and the Retry / Switch
+offer. Raw
 finish diagnostics and attempted arguments stay out. Other unreadable-reply
 diagnostics keep a provider-named lead-in, never a bare parser fragment.
 
 Native and background compaction keep finite counted bounds: 5 retries per
-step (3 for retryable `invalid_response`), 10 total (shared with the
+step (3 for non-malformed-call retryable `invalid_response`, while the tighter
+5-retry bound still caps `MALFORMED_FUNCTION_CALL`), 10 total (shared with the
 enclosing turn for in-turn compaction) and a 60 s `retry-after` ceiling.
 Only a native compaction's busy rate limits take the 10 min busy window;
 background compaction never busy-waits. A native compaction refused as
@@ -1322,7 +1325,8 @@ overloaded falls back to Wisp's own engine after its quick tries, whether or
 not a gateway kept the `compaction_unavailable` code. Background compaction
 yields to foreground compaction when its retries run out. Ordinary foreground
 Wisp compaction uses the same defaults as a turn. Explicit finite policies
-keep their bounds (still capped at 3 for retryable `invalid_response`).
+keep their bounds (still capped at 8 for `MALFORMED_FUNCTION_CALL` and 3 for
+other retryable `invalid_response`).
 Keep-warm keeps its separate 58-minute deadline.
 
 In the main agent, Esc during a model retry wait stops automatic retries and leaves Retry available at once, with the same bytes; compaction waits still cancel compaction.
