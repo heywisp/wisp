@@ -970,53 +970,68 @@ async fn every_step_and_retry_logs_its_estimate_and_model() {
 
 #[tokio::test(start_paused = true)]
 async fn invalid_response_retries_cap_at_three_on_default_policy() {
-    let bad = || {
-        failing(
-            half_reply(crate::provider::NO_TEXT, 600),
-            failure(ErrorKind::InvalidResponse, RetryClass::Transient, true),
-        )
+    let bad_with = |error_type: Option<&str>| {
+        let mut error = failure(ErrorKind::InvalidResponse, RetryClass::Transient, true);
+        error.detail.error_type = error_type.map(str::to_owned);
+        failing(half_reply(crate::provider::NO_TEXT, 600), error)
     };
+    let bad = || bad_with(None);
     let deterministic = RetryPolicy {
         jitter: || 0.0,
         ..RetryPolicy::default()
     };
 
-    let provider = Fake::new((0..4).map(|_| bad()));
-    let mut agent =
-        Agent::new(provider.clone(), default_session()).with_retry_policy(deterministic);
-    let began = tokio::time::Instant::now();
-    let (outcome, events) = turn(&mut agent, "hi").await;
-    assert_eq!(began.elapsed(), Duration::from_secs(1 + 2 + 4));
-    assert!(
-        matches!(
-            outcome,
-            TurnOutcome::Error {
-                kind: ErrorKind::InvalidResponse,
-                attempts: 4,
-                gave_up: Some(GaveUp::StepLimit),
-                offer: Some(RetryOffer { retry: true, .. }),
-                ..
-            }
+    for (error_type, cap, wait_secs) in [
+        (None, 3u32, 1u64 + 2 + 4),
+        (Some("UNEXPECTED_TOOL_CALL"), 3, 1 + 2 + 4),
+        (
+            Some(crate::provider::gemini::MALFORMED_FUNCTION_CALL),
+            8,
+            1 + 2 + 4 + 8 + 16 + 32 + 64 + 128,
         ),
-        "{outcome:?}"
-    );
-    let retries = retrying(&events);
-    assert_eq!(retries.len(), 3);
-    assert!(retries.iter().enumerate().all(|(i, event)| matches!(
-        event,
-        AgentEvent::Retrying {
-            step: 1,
-            attempt,
-            max_attempts: 3,
-            kind: ErrorKind::InvalidResponse,
-            discarded_chars: 9,
-            ..
-        } if *attempt == i as u32 + 1
-    )));
-    let sent = provider.texts();
-    assert_eq!(sent.len(), 4);
-    assert!(sent.iter().all(|body| *body == sent[0]));
-    assert!(agent.history().is_empty());
+    ] {
+        let total = cap + 1;
+        let provider = Fake::new((0..total).map(|_| bad_with(error_type)));
+        let mut agent =
+            Agent::new(provider.clone(), default_session()).with_retry_policy(deterministic);
+        let began = tokio::time::Instant::now();
+        let (outcome, events) = turn(&mut agent, "hi").await;
+        assert_eq!(
+            began.elapsed(),
+            Duration::from_secs(wait_secs),
+            "{error_type:?}"
+        );
+        assert!(
+            matches!(
+                outcome,
+                TurnOutcome::Error {
+                    kind: ErrorKind::InvalidResponse,
+                    attempts,
+                    gave_up: Some(GaveUp::StepLimit),
+                    offer: Some(RetryOffer { retry: true, .. }),
+                    ..
+                } if attempts == total
+            ),
+            "{error_type:?}: {outcome:?}"
+        );
+        let retries = retrying(&events);
+        assert_eq!(retries.len(), cap as usize, "{error_type:?}");
+        assert!(retries.iter().enumerate().all(|(i, event)| matches!(
+            event,
+            AgentEvent::Retrying {
+                step: 1,
+                attempt,
+                max_attempts,
+                kind: ErrorKind::InvalidResponse,
+                discarded_chars: 9,
+                ..
+            } if *attempt == i as u32 + 1 && *max_attempts == cap
+        )));
+        let sent = provider.texts();
+        assert_eq!(sent.len(), total as usize, "{error_type:?}");
+        assert!(sent.iter().all(|body| *body == sent[0]));
+        assert!(agent.history().is_empty());
+    }
 
     let mut script = vec![bad(), bad(), Step::from(tool_call("t", "x"))];
     script.extend((0..3).map(|_| bad()));

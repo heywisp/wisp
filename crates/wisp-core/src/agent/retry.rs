@@ -19,6 +19,7 @@ pub const MAX_DELAY: Duration = Duration::from_secs(300);
 pub const LIMIT_WAIT: Duration = Duration::from_secs(5 * 60 * 60);
 pub const JITTER: f64 = 0.2;
 pub const INVALID_RESPONSE_RETRIES: u32 = 3;
+pub const MALFORMED_CALL_RETRIES: u32 = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RetryPolicy {
@@ -56,12 +57,17 @@ impl RetryPolicy {
         }
     }
 
-    pub(crate) fn for_kind(self, kind: ErrorKind) -> Self {
+    pub(crate) fn for_kind(self, kind: ErrorKind, detail: &ErrorDetail) -> Self {
         if kind == ErrorKind::InvalidResponse {
+            let cap = if detail.error_type.as_deref()
+                == Some(crate::provider::gemini::MALFORMED_FUNCTION_CALL)
+            {
+                MALFORMED_CALL_RETRIES
+            } else {
+                INVALID_RESPONSE_RETRIES
+            };
             Self {
-                step_retries: Some(self.step_retries.map_or(INVALID_RESPONSE_RETRIES, |max| {
-                    max.min(INVALID_RESPONSE_RETRIES)
-                })),
+                step_retries: Some(self.step_retries.map_or(cap, |max| max.min(cap))),
                 ..self
             }
         } else {
@@ -433,7 +439,7 @@ impl Agent {
             } else {
                 policy
             }
-            .for_kind(error.kind);
+            .for_kind(error.kind, &error.detail);
         let counted = !self.provider().busy_waits_5xx()
             && error.detail.status.is_some_and(classify::status_billed);
         let may_wait =

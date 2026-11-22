@@ -12,7 +12,9 @@ use crate::models::ModelTable;
 
 use super::super::sse::{Decoder, SseParser, broken};
 use super::super::{Delta, ProviderError, ProviderEvent, REASONING_ITEM, SearchSignal};
-use super::{CALL_SIGNATURES_ITEM, FOLD_TEXT, PART_ITEM, TEXT_SIGNATURE_ITEM};
+use super::{
+    CALL_SIGNATURES_ITEM, FOLD_TEXT, MALFORMED_FUNCTION_CALL, PART_ITEM, TEXT_SIGNATURE_ITEM,
+};
 
 const MAX_DIAGNOSTIC_KEYS: usize = 16;
 const MAX_DIAGNOSTIC_KEY_BYTES: usize = 64;
@@ -652,7 +654,7 @@ impl GeminiDecoder {
 
     fn invalid_finish(&self, reason: &str) -> Option<ProviderError> {
         let message = match reason {
-            "MALFORMED_FUNCTION_CALL" => "Gemini returned a malformed tool call",
+            MALFORMED_FUNCTION_CALL => "Gemini returned a malformed tool call",
             "UNEXPECTED_TOOL_CALL" => "Gemini returned an unexpected tool call",
             "STOP" if !self.said && self.search_id.is_none() => "Gemini returned an empty reply",
             _ => return None,
@@ -1351,7 +1353,7 @@ mod tests {
 
         for (reason, message) in [
             (
-                "MALFORMED_FUNCTION_CALL",
+                MALFORMED_FUNCTION_CALL,
                 "Gemini returned a malformed tool call",
             ),
             (

@@ -357,8 +357,9 @@ ended the retries, `outcome.gave_up`: `not_retryable` means the same request
 would fail again, and `budget` means the next attempt would exceed the
 opt-in `--retry-budget`. A typed subscription limit past its default wait
 bound also stops with `retry_after_too_long`, and retryable
-`invalid_response` failures stop with `step_limit` after 3 retries per step
-even under default or looser policies (see [Busy endpoints](endpoints.md#busy-endpoints)).
+`invalid_response` failures stop with `step_limit` after 8 retries per step
+for `MALFORMED_FUNCTION_CALL` and 3 retries per step for other causes even
+under default or looser policies (see [Busy endpoints](endpoints.md#busy-endpoints)).
 The finite-policy values are `step_limit`, `turn_limit`, `retry_after_too_long`
 and, from version 34, `busy_window`. Their former defaults (5 step retries, 10 turn retries,
 a 60 s Retry-After ceiling and a 10-minute busy window) remain the fallback
@@ -366,7 +367,7 @@ and native-compaction bounds, not the meaning of custom-policy values;
 background compaction uses the counted bounds without busy waits.
 
 Ordinary requests are otherwise unbounded by default: they stop for `never`,
-`step_limit` on retryable `invalid_response` (3 retries per step), a budget,
+`step_limit` on retryable `invalid_response` (8 retries per step for `MALFORMED_FUNCTION_CALL`, 3 for other causes), a budget,
 or the user's stop; typed subscription limits use the bounds linked above. When an opt-in budget cannot be priced, the finite
 fallback counts apply and the error says the budget could not be checked.
 In the main agent, Esc during a model retry wait ends with the last failure and an offer;
