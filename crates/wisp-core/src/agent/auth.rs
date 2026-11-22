@@ -1249,7 +1249,7 @@ mod tests {
             assert_eq!(replacement.sent().len(), 1);
         }
         assert!(
-            matches!(host.catalog.begin_logout("plan"), Err(crate::endpoints::generation::Unavailable::Bound(ref path)) if path == "/worker")
+            matches!(host.catalog.begin_logout("plan"), Err(crate::endpoints::generation::Unavailable::Bound(ref paths)) if paths == &["/worker"])
         );
     }
 

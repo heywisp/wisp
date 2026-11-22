@@ -382,7 +382,21 @@ async fn tui_and_real_host_activate_reauthorize_select_and_remove_both_providers
                     .text()
                     .contains("x is working on work. Try again once it's done.")
             );
-            drop(binding);
+            let other = current.generation().unwrap().bind("/y").unwrap();
+            ui.say("/logout work");
+            assert!(matches!(
+                ui.auth().await.outcome,
+                AuthOutcome::Failed {
+                    kind: AuthFailureKind::ChildReference,
+                    ..
+                }
+            ));
+            assert!(
+                ui.screen
+                    .text()
+                    .contains("x and y are working on work. Try again once they're done.")
+            );
+            drop((binding, other));
             ui.say("/logout work");
             assert!(matches!(
                 ui.auth().await.outcome,

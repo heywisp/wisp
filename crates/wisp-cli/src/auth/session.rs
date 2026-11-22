@@ -786,9 +786,9 @@ fn asked(
 fn logout_refusal(error: wisp_core::endpoints::generation::Unavailable, name: &str) -> Failure {
     use wisp_core::endpoints::generation::Unavailable;
     match error {
-        Unavailable::Bound(agent) => (
+        Unavailable::Bound(agents) => (
             AuthFailureKind::ChildReference,
-            wisp_core::endpoints::goes::working_on(&[agent], name),
+            wisp_core::endpoints::goes::working_on(&agents, name),
         ),
         Unavailable::Retired => (AuthFailureKind::Unavailable, error.to_string()),
         _ => (

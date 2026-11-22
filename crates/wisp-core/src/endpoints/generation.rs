@@ -26,8 +26,8 @@ enum Phase {
 pub enum Unavailable {
     #[error("switch account first (/account OTHER)")]
     RootBound,
-    #[error("used by agent {0}; end it first")]
-    Bound(String),
+    #[error("{}", bound_text(.0))]
+    Bound(Vec<String>),
     #[error("this account is busy; cancel its work first and retry")]
     Busy,
     #[error("this account is being updated; retry after authentication completes")]
@@ -36,6 +36,18 @@ pub enum Unavailable {
     Retired,
     #[error("this account was signed out in another window; /account chooses another")]
     Closing,
+}
+
+fn bound_text(agents: &[String]) -> String {
+    let (noun, pronoun) = if agents.len() == 1 {
+        ("agent", "it")
+    } else {
+        ("agents", "them")
+    };
+    format!(
+        "used by {noun} {}; end {pronoun} first",
+        wisp_tool_text::output::and_list(agents)
+    )
 }
 
 fn ready(phase: Phase) -> Result<(), Unavailable> {
@@ -99,19 +111,17 @@ impl Generation {
     fn change_inner(&self, removing: bool) -> Result<Change, Unavailable> {
         let mut state = self.state();
         ready(state.phase)?;
-        if removing
-            && let Some(path) = state
+        if removing {
+            let bindings = state
                 .bindings
                 .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .keys()
-                .next()
-        {
-            return Err(if path == "/" {
-                Unavailable::RootBound
-            } else {
-                Unavailable::Bound(path.clone())
-            });
+                .unwrap_or_else(PoisonError::into_inner);
+            if bindings.contains_key("/") {
+                return Err(Unavailable::RootBound);
+            }
+            if !bindings.is_empty() {
+                return Err(Unavailable::Bound(bindings.keys().cloned().collect()));
+            }
         }
         if state.uses != 0 {
             return Err(Unavailable::Busy);
@@ -272,12 +282,24 @@ mod binding_tests {
     fn idle_child_binding_blocks_removal_but_not_safe_reauthorization() {
         let generation = Generation::default();
         let binding = generation.bind("/worker").unwrap();
+        let single = generation.remove().unwrap_err();
+        assert_eq!(single, Unavailable::Bound(vec!["/worker".to_owned()]));
+        assert_eq!(single.to_string(), "used by agent /worker; end it first");
+        let alpha = generation.bind("/alpha").unwrap();
+        let both = generation.remove().unwrap_err();
         assert_eq!(
-            generation.remove().unwrap_err(),
-            Unavailable::Bound("/worker".to_owned())
+            both,
+            Unavailable::Bound(vec!["/alpha".to_owned(), "/worker".to_owned()])
         );
+        assert_eq!(
+            both.to_string(),
+            "used by agents /alpha and /worker; end them first"
+        );
+        let root = generation.bind("/").unwrap();
+        assert_eq!(generation.remove().unwrap_err(), Unavailable::RootBound);
+        drop(root);
         drop(generation.change().unwrap());
-        drop(binding);
+        drop((binding, alpha));
         assert!(generation.remove().is_ok());
     }
 }
