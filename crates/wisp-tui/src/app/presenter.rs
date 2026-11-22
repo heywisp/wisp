@@ -711,7 +711,6 @@ pub(super) struct Presenter {
     armed: bool,
     restores: u8,
     exit: Option<Exit>,
-    quit_note: Option<String>,
     pager: Option<Pager>,
     pager_rows: RowCounts,
     pager_welcome: Vec<StyledLine>,
@@ -791,7 +790,6 @@ pub(super) struct Presenter {
     chat: Option<agents::AgentChat>,
     agent_models: super::agents::Models,
     main_since: Option<Duration>,
-    exit_armed: bool,
     sidebar: super::sidebar::Side,
     panel_area: Option<sidebar::PanelArea>,
     painted: Vec<(Layer, Rect)>,
@@ -1181,7 +1179,6 @@ impl Presenter {
             start: Instant::now(),
             cancel: false,
             quitting: false,
-            quit_note: None,
             armed: false,
             restores: 0,
             exit: None,
@@ -1269,7 +1266,6 @@ impl Presenter {
             chat: None,
             agent_models,
             main_since: None,
-            exit_armed: false,
             sidebar: super::sidebar::Side::new(options.sidebar, usize::from(size.width)),
             panel_area: None,
             painted: Vec::new(),
@@ -1710,9 +1706,6 @@ impl Presenter {
             }
             self.commands = None;
         }
-        if self.quitting {
-            self.quit_status(at);
-        }
         self.set_modes(console)?;
         self.auth_copy(console, at)?;
         if self.suspended {
@@ -1730,6 +1723,9 @@ impl Presenter {
         self.sync_choice(at);
         self.edge_tick(at);
         self.open_tick(at);
+        if self.quitting {
+            self.quit_status(at);
+        }
         if self.transcript.next_release().is_some_and(|r| r <= at)
             || self.chrome_due.is_some_and(|c| c <= at)
             || self
@@ -2800,24 +2796,22 @@ impl Presenter {
 
     fn quit_status(&mut self, at: Duration) {
         let glyphs = Glyphs::of(self.glyphs);
+        let agents = self.agents_busy();
         let running = self.processes.stopping();
         let note = match self.tracker.quit_status() {
-            Some(phrase) => Some(copy::ongoing(phrase, &glyphs)),
-            None if running > 0 => Some(copy::ongoing(&copy::stopping_processes(running), &glyphs)),
-            None => None,
+            Some(phrase) => copy::shutting_down(Some(phrase), &glyphs),
+            None if agents > 0 => {
+                copy::shutting_down(Some(&copy::stopping_agents(agents)), &glyphs)
+            }
+            None if running > 0 => {
+                copy::shutting_down(Some(&copy::stopping_processes(running)), &glyphs)
+            }
+            None => copy::shutting_down(None, &glyphs),
         };
-        if note == self.quit_note {
+        if self.status.shown_hint(at) == Some(note.as_str()) {
             return;
         }
-        if let Some(old) = &self.quit_note
-            && self.status.shown_hint(at) == Some(old.as_str())
-        {
-            self.status.clear_hint();
-        }
-        if let Some(note) = &note {
-            self.status.hint(note, at, None);
-        }
-        self.quit_note = note;
+        self.status.hint(&note, at, None);
         self.frames.mark();
     }
 
@@ -2988,8 +2982,6 @@ impl Presenter {
             }
             return Ok(());
         }
-        let was_armed = self.armed;
-        self.exit_armed = was_armed;
         self.armed = act == Action::ArmQuit;
         self.status.clear_hint();
         if matches!(
@@ -3076,10 +3068,6 @@ impl Presenter {
             }
             Action::Nothing => {}
         }
-        if was_armed && !self.armed && self.agents_busy() > 0 && self.exit_typing() {
-            self.armed = true;
-        }
-        self.exit_armed = false;
         self.typed_changed(at);
         Ok(())
     }
@@ -3398,7 +3386,7 @@ impl Presenter {
 
     fn run_command(&mut self, id: CommandId, args: &str, at: Duration) {
         match (id, args) {
-            (CommandId::Exit, _) => self.exit_command(at),
+            (CommandId::Exit, _) => self.quit(),
             (CommandId::Leave, _) => {
                 if let Some(note) = &self.leave_note {
                     self.hint(&note.clone(), at);

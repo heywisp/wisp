@@ -2,6 +2,7 @@ use wisp_protocol::ALREADY_COMPACTING;
 use wisp_render::chrome::config_screen::TOO_SMALL;
 use wisp_render::chrome::endpoint_card::NO_CARD;
 use wisp_render::text::{WidthMode, width};
+use wisp_render::theme::glyphs::UNICODE;
 use wisp_render::transcript::copy;
 
 use super::pager::page_clock;
@@ -43,6 +44,11 @@ fn every_status_notice_fits_in_60_columns() {
         copy::no_images_for("claude-sonnet-5-5"),
         copy::too_many_images(20),
         copy::resend_status(),
+        copy::shutting_down(None, &UNICODE),
+        copy::shutting_down(Some(copy::SAVING_SETTINGS), &UNICODE),
+        copy::shutting_down(Some(copy::APPLYING_SETTINGS), &UNICODE),
+        copy::shutting_down(Some(&copy::stopping_agents(13)), &UNICODE),
+        copy::shutting_down(Some(&copy::stopping_processes(2)), &UNICODE),
     ];
     let all = fixed.iter().map(|s| (*s).to_owned()).chain(built);
     for notice in all {
