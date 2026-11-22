@@ -34,7 +34,8 @@ async fn the_default_tools_through_one_turn() {
         ),
         calls("msg_05", 880, vec![call("toolu_05", "bash", json!({}))]),
         says("msg_06", 900, "Done."),
-        says("msg_07", 960, "You're welcome."),
+        says("msg_07", 960, "Got your answer."),
+        says("msg_08", 1020, "You're welcome."),
     ];
     let rig = Rig::new("tools_default", setup, script).await;
     fs::write(rig.env.work().join("red.png"), crate::tool::snap::png()).unwrap();
@@ -46,6 +47,8 @@ async fn the_default_tools_through_one_turn() {
     let AgentEvent::QuestionAsked { call_id, .. } = asked else {
         unreachable!()
     };
+    let outcome = live.ended().await;
+    assert!(completed(&outcome), "{outcome:?}");
     live.send(answer_first(&call_id)).await;
     let outcome = live.ended().await;
     assert!(completed(&outcome), "{outcome:?}");

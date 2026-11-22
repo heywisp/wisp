@@ -1,0 +1,1 @@
+Nothing to withdraw: none of your questions is open. If the user answered them, their answers come in a message.

@@ -50,6 +50,7 @@ pub type Halted = Arc<Mutex<Vec<(String, String, bool)>>>;
 pub type Renames = Arc<Mutex<Vec<(String, String, String)>>>;
 pub type Instructed = Arc<Mutex<Vec<Report>>>;
 pub type SecretCalls = Arc<Mutex<Vec<(String, SecretAsk)>>>;
+pub type PostedCalls = Arc<Mutex<Vec<(String, Vec<Question>)>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Report {
@@ -117,6 +118,10 @@ pub struct FakeHost {
     pub manage_reply: Option<Result<String, String>>,
     pub chat_renamed: Arc<Mutex<Vec<String>>>,
     pub rename_reply: Option<Result<String, String>>,
+    pub posted_questions: PostedCalls,
+    pub post_reply: Option<wisp_plugin_api::questions::Posted>,
+    pub withdraw_calls: Arc<Mutex<Vec<String>>>,
+    pub withdraw_reply: bool,
 }
 
 pub fn identity(path: &str) -> Identity {
@@ -684,8 +689,37 @@ impl wisp_plugin_api::chat::Chat for FakeHost {
     }
 }
 
+impl wisp_plugin_api::questions::Questions for FakeHost {
+    fn post<'a>(
+        &'a self,
+        items: Vec<Question>,
+        ctx: &'a dyn CallContext,
+    ) -> BoxFuture<'a, wisp_plugin_api::questions::Posted> {
+        self.posted_questions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((ctx.id(), items));
+        let reply = self
+            .post_reply
+            .unwrap_or(wisp_plugin_api::questions::Posted::Unavailable);
+        Box::pin(std::future::ready(reply))
+    }
+
+    fn withdraw<'a>(&'a self, ctx: &'a dyn CallContext) -> BoxFuture<'a, bool> {
+        self.withdraw_calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ctx.id());
+        Box::pin(std::future::ready(self.withdraw_reply))
+    }
+}
+
 impl Host for FakeHost {
     fn chat(&self) -> &dyn wisp_plugin_api::chat::Chat {
+        self
+    }
+
+    fn questions(&self) -> &dyn wisp_plugin_api::questions::Questions {
         self
     }
 

@@ -627,6 +627,7 @@ impl Agent {
 
         self.turns = logged.turns_seen;
         self.queue.lane.seed(records);
+        self.seed_question_letters(records);
         self.session_usd = logged.session_usd;
         self.session_billing = resumed_billing(records, fell_back);
         self.session_plan_usd = logged.plan_usd;
@@ -662,6 +663,7 @@ impl Agent {
         if self.has_todos() {
             self.todos.clone_from(&logged.todos);
         }
+        self.posted.clone_from(&logged.posted);
         if let (Some(env), Some(path)) = (&mut self.tools, &logged.tool_cwd) {
             env.cwd = Some(PathBuf::from(path));
         }
@@ -796,6 +798,7 @@ impl Agent {
         self.session_lower_bound = true;
         self.apply_carried(records);
         self.queue.lane.seed(records);
+        self.seed_question_letters(records);
         let unmasked = vec![false; records.len()];
         self.restore_processes(
             (records, &unmasked),

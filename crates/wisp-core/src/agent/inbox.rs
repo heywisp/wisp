@@ -274,6 +274,21 @@ impl Inbox {
         above.into()
     }
 
+    pub(super) fn take_question_mail(&mut self) -> Vec<InputId> {
+        let mut taken = Vec::new();
+        self.mail.retain(|input| {
+            let question = input
+                .from
+                .as_ref()
+                .is_some_and(|l| l.from.kind == wisp_protocol::MailKind::Question);
+            if question {
+                taken.push(input.id.clone());
+            }
+            !question
+        });
+        taken
+    }
+
     pub(super) fn take_mail_id(&mut self, id: &InputId) -> bool {
         let Some(position) = self.mail.iter().position(|i| &i.id == id) else {
             return false;
@@ -1034,6 +1049,7 @@ impl Agent {
 
     pub(super) async fn idle_cancel(&mut self, events: &mpsc::Sender<AgentEvent>) {
         let settling = self.cancel_wake();
+        self.stop_posted(events).await;
         self.cancel_commands(None, events).await;
         self.cancel_retries(events).await;
         self.cancel_rewinds(wisp_protocol::REWIND_CANCELLED, events)

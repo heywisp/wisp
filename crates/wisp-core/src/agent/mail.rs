@@ -181,10 +181,11 @@ impl Agent {
     }
 
     pub(super) fn letter(&self, from: MailFrom) -> Letter {
-        let above = self
-            .agents
-            .resolve(&from.agent)
-            .is_ancestor_of(&self.path());
+        let above = from.kind == MailKind::Question
+            || self
+                .agents
+                .resolve(&from.agent)
+                .is_ancestor_of(&self.path());
         Letter {
             from,
             above,
@@ -297,29 +298,39 @@ impl Agent {
                     bytes,
                 }));
             }
-            let letter = self.letter(from.clone());
-            let owes = letter.above && letter.from.kind == MailKind::Task;
-            let input = Input {
-                id,
-                mode: DeliveryMode::Steer,
-                text,
-                images: Vec::new(),
-                refs: Vec::new(),
-                held: false,
-                from: Some(letter),
-                arrival: None,
-                note: None,
-            };
-            self.emit(events, input.accepted(None, false, false, Some(from)))
-                .await;
-            if owes {
-                self.owed.get_or_insert(self.processes.next_number());
-                self.told = 0;
-                self.agents.set_owes(true);
-            }
-            let arrival = Some(self.inbox.arrive());
-            self.inbox.push_mail(Input { arrival, ..input });
+            self.push_letter(id, from, text, events).await;
         }
+    }
+
+    pub(super) async fn push_letter(
+        &mut self,
+        id: InputId,
+        from: MailFrom,
+        text: String,
+        events: &mpsc::Sender<AgentEvent>,
+    ) {
+        let letter = self.letter(from.clone());
+        let owes = letter.above && letter.from.kind == MailKind::Task;
+        let input = Input {
+            id,
+            mode: DeliveryMode::Steer,
+            text,
+            images: Vec::new(),
+            refs: Vec::new(),
+            held: false,
+            from: Some(letter),
+            arrival: None,
+            note: None,
+        };
+        self.emit(events, input.accepted(None, false, false, Some(from)))
+            .await;
+        if owes {
+            self.owed.get_or_insert(self.processes.next_number());
+            self.told = 0;
+            self.agents.set_owes(true);
+        }
+        let arrival = Some(self.inbox.arrive());
+        self.inbox.push_mail(Input { arrival, ..input });
     }
 
     pub(super) async fn announce_waiting_mail(&mut self, events: &mpsc::Sender<AgentEvent>) {
@@ -337,7 +348,9 @@ impl Agent {
     }
 
     pub(super) fn restore_letter(&mut self, input: Input) {
-        if let Some(letter) = &input.from {
+        if let Some(letter) = &input.from
+            && letter.from.kind != MailKind::Question
+        {
             self.mailbox.count(&letter.from.agent);
         }
         self.inbox.push_mail(input);
@@ -346,6 +359,10 @@ impl Agent {
     pub(super) fn mail_committed(&mut self, mail: &[Input]) {
         for input in mail {
             if let Some(letter) = &input.from {
+                if letter.from.kind == MailKind::Question {
+                    self.posted_committed(&input.id);
+                    continue;
+                }
                 self.mailbox.committed(&letter.from.agent);
                 let path = self.path();
                 let sibling = !path.is_root()

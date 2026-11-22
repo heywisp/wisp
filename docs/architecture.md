@@ -431,6 +431,7 @@ The Rust sketch is in Appendix A.1.
 | Progress | **Never enters model history.** It updates the status projection, which tools can read | No | No |
 | Trigger (P38) | Turn end, as a `<wisp:trigger>` block | **Yes** | No |
 | User message | Steer: the next step boundary of the running turn; it keeps the turn going until answered. Queue: the turn's end; after a stop or failure queued messages are held until the user's next send or `Release` | Yes | No. Neither mode preempts. Stop and failure return waiting steers to the sender |
+| Answer to a question | Next step boundary while a turn runs (keeping it going and cancelling a running tool's steered wait), or immediately as a new turn when idle (lapsing a Retry offer and releasing held messages). A user stop note (`wake: false`) rides the next turn without waking | **Yes** (answers); **No** (stop note) | No. Plain user-role text on the mail lane (`MailKind::Question`); survives stops and resume |
 
 - **Debounce (P15).** When a waking message reaches an idle thread, the kernel waits briefly, then starts **one** turn with everything pending.
   - Window: **one 2 s settle for every wake source**, mail and process ends alike (amended by `docs/plans/subagents.md`; this replaces per-role windows of 1 s, 3 s and 0.5 s).

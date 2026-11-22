@@ -111,6 +111,7 @@ fn a_slot_render_may_call_only_the_reads_that_answer_at_once() {
             || import.wit().starts_with("secrets.")
             || import.wit().starts_with("config.")
             || import.wit().starts_with("accounts.")
+            || import.wit().starts_with("questions.")
             || matches!(
                 import,
                 Import::JobsSpawn

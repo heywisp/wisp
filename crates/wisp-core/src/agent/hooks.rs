@@ -375,7 +375,10 @@ impl Agent {
                 self.window_gone(events, true).await;
                 true
             }
-            Some(ClientCommand::Cancel) => true,
+            Some(ClientCommand::Cancel) => {
+                self.stop_posted(events).await;
+                true
+            }
             Some(command) => {
                 let arrival = self.inbox.arrive();
                 if let ClientCommand::RunPluginCommand { request, .. } = &command {

@@ -1698,9 +1698,51 @@ impl wisp_plugin_api::model::Model for PluginHost {
     }
 }
 
+impl wisp_plugin_api::questions::Questions for PluginHost {
+    fn post<'a>(
+        &'a self,
+        items: Vec<Question>,
+        ctx: &'a dyn CallContext,
+    ) -> BoxFuture<'a, wisp_plugin_api::questions::Posted> {
+        use wisp_plugin_api::questions::Posted;
+        async move {
+            if self.refuses(Import::QuestionsPost) {
+                return Posted::Unavailable;
+            }
+            let Some(call) = self.kernel.call(&ctx.id()) else {
+                return Posted::Unavailable;
+            };
+            let questions = items.into_iter().map(convert::question).collect();
+            call.user.post(questions).await
+        }
+        .boxed()
+    }
+
+    fn withdraw<'a>(&'a self, ctx: &'a dyn CallContext) -> BoxFuture<'a, bool> {
+        async move {
+            if self.refuses(Import::QuestionsWithdraw) {
+                return false;
+            }
+            let Some(call) = self.kernel.call(&ctx.id()) else {
+                return false;
+            };
+            call.user.withdraw().await
+        }
+        .boxed()
+    }
+}
+
 impl Host for PluginHost {
     fn chat(&self) -> &dyn Chat {
         if Import::ChatRename.spoken_in(&self.world) {
+            self
+        } else {
+            &()
+        }
+    }
+
+    fn questions(&self) -> &dyn wisp_plugin_api::questions::Questions {
+        if Import::QuestionsPost.spoken_in(&self.world) {
             self
         } else {
             &()

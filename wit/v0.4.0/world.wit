@@ -9,4 +9,5 @@ world plugin {
   import mcp;
   import manage;
   import todos;
+  import questions;
 }

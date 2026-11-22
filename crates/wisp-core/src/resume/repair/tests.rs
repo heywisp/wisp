@@ -343,6 +343,22 @@ fn an_open_question_is_interrupted_and_a_closed_one_keeps_its_answer() {
     );
     assert!(stopped.is_error && !stopped.interrupted_question);
 
+    let withdrawn = repaired_with(
+        &[
+            started("c1"),
+            asked.clone(),
+            record(LogEvent::QuestionClosed {
+                turn: 1,
+                call_id: "c1".into(),
+                how: QuestionEnd::Withdrawn,
+            }),
+        ],
+        "ask_user",
+        true,
+    );
+    assert_eq!(withdrawn.text, question::WITHDRAWN);
+    assert!(withdrawn.is_error && !withdrawn.interrupted_question);
+
     let older = record(LogEvent::QuestionClosed {
         turn: 1,
         call_id: "c1".into(),

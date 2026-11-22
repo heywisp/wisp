@@ -552,8 +552,12 @@ fn choice(header: &str, question: &str) -> serde_json::Value {
 }
 
 fn scripted(questions: &serde_json::Value) -> Vec<wisp_protocol::Question> {
-    wisp_plugin_ask_user::parse(&serde_json::json!({"questions": questions}))
-        .unwrap()
+    let wisp_plugin_ask_user::Call::Ask(parsed) =
+        wisp_plugin_ask_user::parse(&serde_json::json!({"questions": questions})).unwrap()
+    else {
+        panic!("expected questions");
+    };
+    parsed
         .into_iter()
         .map(wisp_core::plugin::convert::question)
         .collect()
@@ -649,6 +653,21 @@ fn ask_in_tui(
     server.bodies()
 }
 
+fn last_user_text(turns: &[serde_json::Value]) -> String {
+    let last = turns.last().unwrap()["messages"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap();
+    last["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|b| (b["type"] == "text").then(|| b["text"].as_str()).flatten())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn a_question_answered_by_number_skips_the_call_after_it() {
     if !usable() {
@@ -659,9 +678,11 @@ fn a_question_answered_by_number_skips_the_call_after_it() {
         "ask-number",
         vec![
             ask_reply(&questions, Some("touch MARKER")),
+            text_reply("WAITING-FOR-CHOICE"),
             text_reply(DONE),
         ],
         |home, pty| {
+            pty.wait_for(b"WAITING-FOR-CHOICE");
             pty.wait_for_card("Which colour should the button be?");
             pty.press(b"2");
             pty.wait_for(DONE.as_bytes());
@@ -670,22 +691,21 @@ fn a_question_answered_by_number_skips_the_call_after_it() {
         },
     );
     let turns = turns(&requests);
-    assert_eq!(turns.len(), 2, "{turns:#?}");
+    assert_eq!(turns.len(), 3, "{turns:#?}");
     assert_prefix_stable(&turns);
     let asked = result_of(&turns, "toolu_ask");
-    let expected = wisp_core::tool::question::result_text(
-        &scripted(&questions),
-        &wisp_protocol::QuestionEnd::Answered {
-            answers: vec![wisp_protocol::Answer::choose(1)],
-        },
-    );
-    assert_eq!(result_text(&asked), expected);
+    assert_eq!(result_text(&asked), wisp_core::tool::question::posted());
     assert_ne!(asked["is_error"], true, "{asked}");
     let skipped = result_of(&turns, "toolu_bash");
     assert_eq!(
         result_text(&skipped),
         wisp_core::agent::not_run_text(&wisp_protocol::NotRunReason::AfterQuestion)
     );
+    let expected = wisp_core::tool::question::answered_text(
+        &scripted(&questions),
+        &[wisp_protocol::Answer::choose(1)],
+    );
+    assert!(last_user_text(&turns).contains(&expected), "{turns:#?}");
 }
 
 #[test]
@@ -699,8 +719,13 @@ fn a_question_set_takes_an_own_answer_and_a_skip_from_the_review_page() {
     ]);
     let requests = ask_in_tui(
         "ask-set",
-        vec![ask_reply(&questions, None), text_reply(DONE)],
+        vec![
+            ask_reply(&questions, None),
+            text_reply("WAITING-FOR-SET"),
+            text_reply(DONE),
+        ],
         |_, pty| {
+            pty.wait_for(b"WAITING-FOR-SET");
             pty.wait_for_card("Which colour should the button be?");
             pty.press(b"green like moss");
             pty.press(b"\r");
@@ -713,18 +738,20 @@ fn a_question_set_takes_an_own_answer_and_a_skip_from_the_review_page() {
         },
     );
     let turns = turns(&requests);
-    assert_eq!(turns.len(), 2, "{turns:#?}");
+    assert_eq!(turns.len(), 3, "{turns:#?}");
     assert_prefix_stable(&turns);
-    let expected = wisp_core::tool::question::result_text(
+    let expected = wisp_core::tool::question::answered_text(
         &scripted(&questions),
-        &wisp_protocol::QuestionEnd::Answered {
-            answers: vec![
-                wisp_protocol::Answer::own("green like moss"),
-                wisp_protocol::Answer::skipped(),
-            ],
-        },
+        &[
+            wisp_protocol::Answer::own("green like moss"),
+            wisp_protocol::Answer::skipped(),
+        ],
     );
-    assert_eq!(result_text(&result_of(&turns, "toolu_ask")), expected);
+    assert_eq!(
+        result_text(&result_of(&turns, "toolu_ask")),
+        wisp_core::tool::question::posted()
+    );
+    assert!(last_user_text(&turns).contains(&expected), "{turns:#?}");
 }
 
 #[test]
@@ -735,16 +762,24 @@ fn esc_on_a_question_stops_the_turn_and_gives_the_typed_text_back() {
     let questions = serde_json::json!([choice("Colour", "Which colour should the button be?")]);
     let requests = ask_in_tui(
         "ask-esc",
-        vec![ask_reply(&questions, None), text_reply(DONE)],
+        vec![
+            ask_reply(&questions, None),
+            text_reply("WAITING-FOR-ESC"),
+            text_reply(DONE),
+        ],
         |_, pty| {
+            pty.wait_for(b"WAITING-FOR-ESC");
             pty.wait_for_card("Which colour should the button be?");
             pty.press(b"teal instead");
             pty.press(b"\x1b");
             pty.wait_shown(wisp_render::transcript::copy::ANSWER_BACK);
+            let waiting = wisp_render::transcript::copy::waiting_for_answer();
             let after_esc = pty.wait_screen("returned text in composer", |shown| {
                 shown.contains("teal instead")
                     && !shown.contains(wisp_render::transcript::copy::OWN_PREFIX)
                     && !shown.contains(wisp_render::transcript::copy::TO_STOP)
+                    && !shown.contains(wisp_render::transcript::copy::STOPPED)
+                    && !shown.contains(&waiting)
             });
             assert!(
                 !after_esc.contains(wisp_render::transcript::copy::READY),
@@ -756,36 +791,17 @@ fn esc_on_a_question_stops_the_turn_and_gives_the_typed_text_back() {
         },
     );
     let turns = turns(&requests);
-    assert_eq!(turns.len(), 2, "{turns:#?}");
+    assert_eq!(turns.len(), 3, "{turns:#?}");
     assert_prefix_stable(&turns);
-    let expected = wisp_core::tool::question::result_text(
-        &scripted(&questions),
-        &wisp_protocol::QuestionEnd::Stopped,
+    let posted = result_of(&turns, "toolu_ask");
+    assert_eq!(result_text(&posted), wisp_core::tool::question::posted());
+    assert_ne!(posted["is_error"], true, "{posted}");
+    let text = last_user_text(&turns);
+    assert!(text.contains("teal instead"), "{text}");
+    assert!(
+        text.contains(wisp_core::tool::question::CLOSED_NOTE),
+        "{text}"
     );
-    let stopped = result_of(&turns, "toolu_ask");
-    assert_eq!(result_text(&stopped), expected);
-    assert_eq!(stopped["is_error"], true, "{stopped}");
-    let last = turns[1]["messages"]
-        .as_array()
-        .unwrap()
-        .last()
-        .unwrap()
-        .clone();
-    let content = last["content"].as_array().unwrap();
-    let at_result = content
-        .iter()
-        .position(|b| b["type"] == "tool_result")
-        .unwrap_or_else(|| panic!("{last}"));
-    let at_message = content
-        .iter()
-        .position(|b| {
-            b["type"] == "text"
-                && b["text"]
-                    .as_str()
-                    .is_some_and(|t| t.contains("teal instead"))
-        })
-        .unwrap_or_else(|| panic!("{last}"));
-    assert!(at_result < at_message, "{last}");
 }
 
 #[test]

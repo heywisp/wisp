@@ -168,7 +168,8 @@ returns a Rust connection with `chats`, `start`, `open` and `stop` methods;
 
 Stopping and restarting the daemon drops no turn, agent or program. Reopening
 through it catches up exactly as a direct opening does: history through the
-last completed turn, current state, events since that cut, then live events.
+last completed turn, current state (an open posted question included), events
+since that cut, then live events.
 This writes no record, makes no model request and changes no cached prefix.
 A client must reconnect itself; the daemon retains no queue or client state.
 
@@ -238,7 +239,13 @@ by a client; the host answers one with `Rejected`, without any of its text.
 `Hello`, `Welcome`, `Refused` and `End` are permanent. Their golden fixtures
 pin their bytes. Re-bless a permanent frame only when the new fixture adds
 optional fields: never remove, rename or reinterpret an existing field.
-Additions elsewhere need no contract change; changed meanings do.
+Additions elsewhere need no contract change; changed meanings do. One
+accepted exception: non-blocking posted questions (log version 40) keep
+`CONTRACT` at `1`, because bumping it would refuse every older hosted chat and
+force a restart that stops its turn and may rebuild its cache. A newer window
+on an older host sees only old events; an old window kept open through
+`wisp restart` closes a posted card at turn end and skips `withdrawn` closes
+until reopened.
 
 Each connection gets a distinct `REQUEST_RANGE` beginning at
 `Welcome.first_request`. Clients count up within that range. The host counts

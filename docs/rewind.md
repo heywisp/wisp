@@ -103,6 +103,11 @@ runs, and run otherwise.
 - **Steers** committed inside the restored turn are not returned.
 - **A Retry offer lapses:** the failed request is no longer the
   conversation's.
+- **Posted questions** follow the kept history: an open question asked in a
+  dropped turn closes `withdrawn`; waiting question letters are withdrawn with
+  `input_withdrawn { by: rewound }` and never returned to the box; a question
+  that was open or ending at the point and is no longer open reopens with a
+  fresh `question_asked` (dropping compaction's earlier answered entry).
 - **Background processes** started in the turns you left keep running. The
   next turn's `<processes>` block tells the model about each one still
   running (`it was started in turns the user rewound`), and an end it

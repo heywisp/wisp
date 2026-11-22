@@ -1,4 +1,5 @@
 use tokio::sync::{mpsc, oneshot};
+use wisp_plugin_api::questions::Posted;
 use wisp_plugin_api::types as api;
 use wisp_protocol::{Answer, Ends, ImageData, Question, Secret, SecretDestination};
 
@@ -35,6 +36,13 @@ pub enum AskRequest {
     Report {
         reply: oneshot::Sender<ScreenReport>,
     },
+    Post {
+        questions: Vec<Question>,
+        reply: oneshot::Sender<Posted>,
+    },
+    Withdraw {
+        reply: oneshot::Sender<bool>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +69,12 @@ impl AskRequest {
                 let _ = reply.send(SecretReply::Unavailable);
             }
             Self::Report { .. } => {}
+            Self::Post { reply, .. } => {
+                let _ = reply.send(Posted::Unavailable);
+            }
+            Self::Withdraw { reply } => {
+                let _ = reply.send(false);
+            }
         }
     }
 }
@@ -115,6 +129,19 @@ impl UserChannel {
             AskReply::Unavailable,
         )
         .await
+    }
+
+    pub async fn post(&self, questions: Vec<Question>) -> Posted {
+        self.request(
+            |reply| AskRequest::Post { questions, reply },
+            Posted::Unavailable,
+        )
+        .await
+    }
+
+    pub async fn withdraw(&self) -> bool {
+        self.request(|reply| AskRequest::Withdraw { reply }, false)
+            .await
     }
 
     pub async fn attach(&self, id: u32, reason: String) -> AskReply {

@@ -107,6 +107,8 @@ pub enum Import {
     McpRemove,
     McpSignInStart,
     McpSignInFinish,
+    QuestionsPost,
+    QuestionsWithdraw,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,7 +119,7 @@ pub enum Inside {
     NeedsCall,
 }
 
-pub const ALL: [Import; 103] = [
+pub const ALL: [Import; 105] = [
     Import::SessionCurrent,
     Import::WorkspaceRoot,
     Import::WorkspaceHome,
@@ -221,6 +223,8 @@ pub const ALL: [Import; 103] = [
     Import::McpRemove,
     Import::McpSignInStart,
     Import::McpSignInFinish,
+    Import::QuestionsPost,
+    Import::QuestionsWithdraw,
 ];
 
 impl Import {
@@ -329,6 +333,8 @@ impl Import {
             Self::McpRemove => "mcp.remove",
             Self::McpSignInStart => "mcp.sign-in-start",
             Self::McpSignInFinish => "mcp.sign-in-finish",
+            Self::QuestionsPost => "questions.post",
+            Self::QuestionsWithdraw => "questions.withdraw",
         }
     }
 
@@ -436,6 +442,8 @@ impl Import {
             | Self::ConfigSettings
             | Self::ChatRename
             | Self::ManageManage
+            | Self::QuestionsPost
+            | Self::QuestionsWithdraw
             | Self::AccountsList => (NeedsCall, NeedsCall),
         };
         match render {
@@ -463,7 +471,9 @@ impl Import {
             | Self::McpAdd
             | Self::McpSignInStart
             | Self::McpSignInFinish
-            | Self::McpRemove => "0.4.0",
+            | Self::McpRemove
+            | Self::QuestionsPost
+            | Self::QuestionsWithdraw => "0.4.0",
             Self::IndexEntries
             | Self::IndexOpen
             | Self::IndexChanged
