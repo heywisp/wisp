@@ -207,6 +207,7 @@ pub(crate) struct Knobs {
     pub(crate) billing: Option<Billing>,
     pub(crate) wire: Option<(Arc<Wire>, String)>,
     pub(crate) list: Option<Arc<crate::models::list::ModelList>>,
+    pub(crate) web_search_models: Vec<String>,
     pub(crate) fresh: Option<Arc<crate::models::list::ModelList>>,
     pub(crate) stall_list: bool,
     pub(crate) plan_usage: Option<PlanUsage>,
@@ -591,6 +592,10 @@ impl Provider for Fake {
         list.as_deref()
             .and_then(|list| list.capabilities(self.kind(), model, Some(row), row))
             .or_else(|| self.complete_model_list().is_none().then_some(row))
+    }
+
+    fn web_search_models(&self) -> Vec<String> {
+        self.knobs(|k| k.web_search_models.clone())
     }
 
     fn model_list(&self) -> Option<Arc<crate::models::list::ModelList>> {

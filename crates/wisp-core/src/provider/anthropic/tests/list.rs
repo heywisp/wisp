@@ -158,6 +158,7 @@ async fn a_fetched_list_is_saved_under_its_sign_in_and_read_once_by_each_connect
         failed: false,
         list: newer.clone(),
         default_model: None,
+        web_search_models: Vec::new(),
     }
     .save(&folder, &key)
     .unwrap();
@@ -273,6 +274,7 @@ async fn connections_that_find_one_list_stale_send_one_request_and_a_failed_chec
         failed: false,
         list: old.clone(),
         default_model: None,
+        web_search_models: Vec::new(),
     };
     stale(now - REFRESH_AFTER).save(&folder, &key).unwrap();
     let (first, second) = (
@@ -341,6 +343,7 @@ async fn a_name_a_connection_has_sent_keeps_its_facts_when_a_fetched_list_first_
         failed: false,
         list: old,
         default_model: None,
+        web_search_models: Vec::new(),
     }
     .save(&folder, &key)
     .unwrap();

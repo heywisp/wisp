@@ -2947,6 +2947,7 @@ fn a_connection_reads_its_list_once_so_a_newer_save_changes_no_byte_it_sends() {
         failed: false,
         list: first.clone(),
         default_model: None,
+        web_search_models: Vec::new(),
     }
     .save(dir.path(), &key)
     .unwrap();
@@ -2970,6 +2971,7 @@ fn a_connection_reads_its_list_once_so_a_newer_save_changes_no_byte_it_sends() {
         failed: false,
         list: newer.clone(),
         default_model: None,
+        web_search_models: Vec::new(),
     }
     .save(dir.path(), &key)
     .unwrap();
@@ -2994,6 +2996,7 @@ async fn a_connections_own_fetch_adds_models_and_changes_no_byte_it_sends_for_a_
         failed: false,
         list: first.clone(),
         default_model: None,
+        web_search_models: Vec::new(),
     };
     saved.save(dir.path(), &key).unwrap();
     let clock = crate::clock::TickingClock::new();

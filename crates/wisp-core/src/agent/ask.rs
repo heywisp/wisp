@@ -221,7 +221,12 @@ impl Agent {
         let provider = self.provider().clone();
         let (mut session, features) = self.bare_request_parts();
         session.model = side::one_shot_model(provider.as_ref(), &session.model);
-        let side_model = crate::search::side_model(provider.as_ref(), &self.session.model);
+        let side_model =
+            crate::search::side_model(provider.as_ref(), &self.session.model, |model| {
+                self.search_facts(self.endpoint_name(), model)
+                    .native()
+                    .is_some()
+            });
         let native = |model: &str| {
             if self.server_tools().is_empty() {
                 Vec::new()

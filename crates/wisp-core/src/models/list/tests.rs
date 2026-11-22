@@ -343,6 +343,7 @@ fn a_saved_list_round_trips_into_a_new_private_folder_and_goes_stale_after_an_ho
         failed: false,
         list: sample(),
         default_model: None,
+        web_search_models: Vec::new(),
     };
     saved.save(&folder, KEY).unwrap();
     assert_eq!(SavedList::load(&folder, KEY), Some(saved.clone()));
@@ -350,12 +351,14 @@ fn a_saved_list_round_trips_into_a_new_private_folder_and_goes_stale_after_an_ho
     let read = || serde_json::from_slice::<Value>(&std::fs::read(&file).unwrap()).unwrap();
     let mut old = read();
     assert!(old.get("failed").is_none());
-    let failed = SavedList {
+    assert!(old.get("web_search_models").is_none());
+    let with_search = SavedList {
         failed: true,
+        web_search_models: vec!["gemini-3.5-flash-lite".into()],
         ..saved.clone()
     };
-    failed.save(&folder, KEY).unwrap();
-    assert_eq!(SavedList::load(&folder, KEY), Some(failed));
+    with_search.save(&folder, KEY).unwrap();
+    assert_eq!(SavedList::load(&folder, KEY), Some(with_search));
     let previous: PreviousSavedList = record::read(&folder, KEY).unwrap();
     assert_eq!(previous.attempted, saved.attempted);
     assert_eq!(previous.list, saved.list);
@@ -391,6 +394,7 @@ fn a_saved_list_round_trips_into_a_new_private_folder_and_goes_stale_after_an_ho
         failed: false,
         list: ModelList::default(),
         default_model: None,
+        web_search_models: Vec::new(),
     };
     assert_eq!(empty.into_list(), None);
     assert_eq!(saved.into_list(), Some(sample()));
@@ -454,11 +458,13 @@ fn a_bad_id_in_a_saved_file_is_dropped() {
         failed: false,
         list: sample(),
         default_model: None,
+        web_search_models: vec!["gemini-3.5-flash-lite".into(), "not a slug".into()],
     };
     saved.list.0[0].id = "not a slug".into();
     saved.save(dir.path(), KEY).unwrap();
     let loaded = SavedList::load(dir.path(), KEY).unwrap();
     assert_eq!(loaded.list.ids(), ["gpt-new"]);
+    assert_eq!(loaded.web_search_models, vec!["gemini-3.5-flash-lite"]);
 }
 
 #[test]
@@ -562,6 +568,7 @@ fn a_stale_list_is_claimed_by_one_cell_with_its_attempt_saved_first_and_a_fresh_
             failed: false,
             list,
             default_model: None,
+            web_search_models: Vec::new(),
         }
         .save(dir.path(), KEY)
         .unwrap();

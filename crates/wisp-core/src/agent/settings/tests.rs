@@ -2184,6 +2184,7 @@ fn model_validation_substitutes_the_default_for_each_provider_and_keeps_gateway_
         )
         .unwrap(),
         default_model: None,
+        web_search_models: Vec::new(),
     };
     saved
         .save(dir.path(), provider.list_key().unwrap())

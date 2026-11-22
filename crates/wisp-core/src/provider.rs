@@ -509,6 +509,10 @@ pub trait Provider: Send + Sync {
         self.kind().default_model().to_owned()
     }
 
+    fn web_search_models(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     fn features_documented(&self) -> bool {
         false
     }

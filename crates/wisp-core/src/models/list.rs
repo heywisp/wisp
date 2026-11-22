@@ -105,10 +105,16 @@ pub struct ListedModel {
 #[derive(Clone, Default)]
 pub struct ListCell(Arc<Mutex<Held>>);
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ListMeta {
+    pub default_model: Option<String>,
+    pub web_search_models: Vec<String>,
+}
+
 #[derive(Default)]
 struct Held {
     list: Option<Arc<ModelList>>,
-    default_model: Option<String>,
+    meta: ListMeta,
     sent: BTreeSet<String>,
 }
 
@@ -120,6 +126,8 @@ pub struct SavedList {
     pub list: ModelList,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub web_search_models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -466,13 +474,13 @@ impl ListedModel {
 
 impl ListCell {
     pub fn new(list: Option<Arc<ModelList>>) -> Self {
-        Self::new_with_default(list, None)
+        Self::new_with_meta(list, ListMeta::default())
     }
 
-    pub fn new_with_default(list: Option<Arc<ModelList>>, default_model: Option<String>) -> Self {
+    pub fn new_with_meta(list: Option<Arc<ModelList>>, meta: ListMeta) -> Self {
         Self(Arc::new(Mutex::new(Held {
             list,
-            default_model,
+            meta,
             sent: BTreeSet::new(),
         })))
     }
@@ -486,7 +494,11 @@ impl ListCell {
     }
 
     pub fn default_model(&self) -> Option<String> {
-        self.held().default_model.clone()
+        self.held().meta.default_model.clone()
+    }
+
+    pub fn web_search_models(&self) -> Vec<String> {
+        self.held().meta.web_search_models.clone()
     }
 
     pub fn sent(&self, model: &str) {
@@ -497,14 +509,15 @@ impl ListCell {
     }
 
     pub fn add(&self, fetched: &ModelList) {
-        self.add_with_default(fetched, None);
+        self.add_with_meta(fetched, ListMeta::default());
     }
 
-    pub fn add_with_default(&self, fetched: &ModelList, default_model: Option<String>) {
+    pub fn add_with_meta(&self, fetched: &ModelList, meta: ListMeta) {
         let mut held = self.held();
-        if let Some(model) = default_model {
-            held.default_model = Some(model);
+        if let Some(model) = meta.default_model {
+            held.meta.default_model = Some(model);
         }
+        held.meta.web_search_models = meta.web_search_models;
         let Some(list) = held.list.as_deref() else {
             return;
         };
@@ -525,7 +538,10 @@ impl ListCell {
         let current = || SavedList::load(folder, key).filter(|saved| !saved.stale(now));
         let served = || {
             current()
-                .map(|saved| self.add_with_default(&saved.list, saved.default_model))
+                .map(|saved| {
+                    let meta = saved.meta();
+                    self.add_with_meta(&saved.list, meta);
+                })
                 .is_some()
         };
         let mut claim = Claim::Unshared;
@@ -544,48 +560,54 @@ impl ListCell {
 }
 
 impl SavedList {
+    pub fn meta(&self) -> ListMeta {
+        ListMeta {
+            default_model: self.default_model.clone(),
+            web_search_models: self.web_search_models.clone(),
+        }
+    }
+
     pub fn load(folder: &Path, key: &str) -> Option<Self> {
         let mut saved: Self = record::read(folder, key)?;
         saved.list.0.retain(|model| valid_model_id(&model.id));
         saved.default_model = saved.default_model.filter(|id| valid_model_id(id));
+        saved.web_search_models.retain(|id| valid_model_id(id));
         Some(saved)
     }
 
     pub fn take(folder: Option<&Path>, key: Option<&str>) -> Option<Arc<ModelList>> {
-        Self::take_with_default(folder, key).0
+        Self::take_with_meta(folder, key).0
     }
 
-    pub fn take_with_default(
+    pub fn take_with_meta(
         folder: Option<&Path>,
         key: Option<&str>,
-    ) -> (Option<Arc<ModelList>>, Option<String>) {
+    ) -> (Option<Arc<ModelList>>, ListMeta) {
         let Some(saved) = folder.zip(key).and_then(|(f, key)| Self::load(f, key)) else {
-            return (None, None);
+            return (None, ListMeta::default());
         };
-        let default_model = saved.default_model.clone();
-        (saved.into_list().map(Arc::new), default_model)
+        let meta = saved.meta();
+        (saved.into_list().map(Arc::new), meta)
     }
 
     pub fn record(folder: &Path, key: Option<&str>, fetched: Option<ModelList>, now: i64) {
-        Self::record_with_default(folder, key, fetched, None, now);
+        Self::record_with_meta(folder, key, fetched, ListMeta::default(), now);
     }
 
-    pub fn record_with_default(
+    pub fn record_with_meta(
         folder: &Path,
         key: Option<&str>,
         fetched: Option<ModelList>,
-        default_model: Option<String>,
+        meta: ListMeta,
         now: i64,
     ) {
         let Some(key) = key else {
             return;
         };
         let previous = Self::load(folder, key);
-        let default_model = match &fetched {
-            Some(_) => default_model,
-            None => previous
-                .as_ref()
-                .and_then(|saved| saved.default_model.clone()),
+        let meta = match &fetched {
+            Some(_) => meta,
+            None => previous.as_ref().map(Self::meta).unwrap_or_default(),
         };
         let failed = fetched.is_none();
         let list = fetched
@@ -595,7 +617,8 @@ impl SavedList {
             attempted: now,
             failed,
             list,
-            default_model,
+            default_model: meta.default_model,
+            web_search_models: meta.web_search_models,
         }
         .save(folder, key);
     }
