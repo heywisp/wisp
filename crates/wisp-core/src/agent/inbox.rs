@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use tokio::sync::mpsc;
 use wisp_protocol::log::{ImageRef, LoggedInput, input_blocks};
 use wisp_protocol::{
-    ALREADY_COMPACTING, AgentEvent, COMPACT_BETWEEN_TURNS, ClientCommand, ContentBlock,
+    ALREADY_COMPACTING, AgentEvent, AgentPath, COMPACT_BETWEEN_TURNS, ClientCommand, ContentBlock,
     DeliveryMode, ImageData, InputId, MailFrom, NOTHING_HELD, NOTHING_TO_COMPACT, NOTHING_TO_STEER,
     RejectKind, WakeSource, WithdrawnBy, answer_refusal, process_refusal,
 };
@@ -310,6 +310,20 @@ impl Inbox {
 
     pub(super) fn mail_wakes(&self) -> bool {
         self.mail.iter().any(|i| !i.above() && i.stirs())
+    }
+
+    pub(super) fn retry_mail_arrival(&self, me: &AgentPath, skip: &[InputId]) -> Option<u64> {
+        self.mail
+            .iter()
+            .filter(|input| input.wakes() && !input.above() && !skip.contains(&input.id))
+            .filter(|input| {
+                input
+                    .from
+                    .as_ref()
+                    .is_some_and(|letter| letter.from.plugin.is_none() && letter.from.agent != *me)
+            })
+            .filter_map(|input| input.arrival)
+            .max()
     }
 
     pub(super) fn waking_mail(&self) -> Vec<WakeSource> {

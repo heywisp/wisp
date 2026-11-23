@@ -33,10 +33,11 @@ pub(super) struct Offered {
     kind: ErrorKind,
     pub(super) offer: RetryOffer,
     switch: bool,
+    pub(super) on_mail: bool,
     pub(super) endpoint: usize,
     tools: &'static [ServerToolSpec],
-    opening: Vec<Input>,
-    steers: Vec<Input>,
+    pub(super) opening: Vec<Input>,
+    pub(super) steers: Vec<Input>,
     lapsed: Option<&'static str>,
     lead: KeptLead,
     ends: Vec<ReportedEnd>,
@@ -289,6 +290,7 @@ impl Agent {
                 kind,
                 offer: offer.clone(),
                 switch: retry::rule(kind, detail.as_ref(), gave_up).is_some_and(|r| r.1),
+                on_mail: self.retry_on_mail(offer, kind, gave_up),
                 endpoint: self.endpoint,
                 tools: self.step_server_tools(),
                 opening,
@@ -324,6 +326,13 @@ impl Agent {
             retries_at: reset.map(|at| at.saturating_add(RESET_MARGIN)),
             ..offer
         }
+    }
+
+    fn retry_on_mail(&self, offer: &RetryOffer, kind: ErrorKind, gave_up: Option<GaveUp>) -> bool {
+        offer.retry
+            && kind == ErrorKind::InvalidResponse
+            && gave_up == Some(GaveUp::StepLimit)
+            && self.path().is_root()
     }
 
     pub(super) fn standing_size(&self) -> Option<(usize, u64)> {
@@ -371,20 +380,24 @@ impl Agent {
         let offer = retry::offer(kind, detail.as_ref(), gave_up, &self.retry_endpoints())
             .map(|offer| self.at_reset(offer, detail.as_ref()));
         let tools = self.step_server_tools();
-        self.offered = offer.map(|offer| Offered {
-            turn,
-            kind,
-            offer,
-            switch: retry::rule(kind, detail.as_ref(), gave_up).is_some_and(|r| r.1),
-            endpoint,
-            tools,
-            opening,
-            steers,
-            lapsed,
-            lead: KeptLead::default(),
-            ends: Vec::new(),
-            rerun: None,
-            size: 0,
+        self.offered = offer.map(|offer| {
+            let on_mail = self.retry_on_mail(&offer, kind, gave_up);
+            Offered {
+                turn,
+                kind,
+                offer,
+                switch: retry::rule(kind, detail.as_ref(), gave_up).is_some_and(|r| r.1),
+                on_mail,
+                endpoint,
+                tools,
+                opening,
+                steers,
+                lapsed,
+                lead: KeptLead::default(),
+                ends: Vec::new(),
+                rerun: None,
+                size: 0,
+            }
         });
         if self.offer_stands()
             && let Some(offered) = &self.offered

@@ -63,35 +63,7 @@ async fn serve_until(
 }
 
 fn resumed(name: &str, plan: Vec<Step>, records: &[LogRecord]) -> (Harness, MailSender) {
-    let env = Env::new(name);
-    let (tx, rx) = mpsc::channel(128);
-    let (mailing, inner) = staged(plan);
-    inner.send_to(tx.clone());
-    let (store, log) = continued(records);
-    let agent = Agent::new(mailing, default_session())
-        .with_clock(TickingClock::new())
-        .with_tools(
-            ScriptTool::toolbox(tx.clone(), Duration::from_secs(10), Ops::default()),
-            env.workspace(),
-        )
-        .with_platform("Linux")
-        .with_resources(None)
-        .with_cancel_grace(Duration::from_millis(300))
-        .with_log(log, log_context())
-        .with_path(AgentPath::new(HERE))
-        .resume(records, 0)
-        .unwrap();
-    let mail = agent.mail_sender();
-    inner.mail_to(mail.clone());
-    let harness = Harness {
-        agent,
-        provider: inner,
-        tx,
-        rx,
-        store,
-        _env: env,
-    };
-    (harness, mail)
+    resumed_at(name, HERE, plan, records)
 }
 
 fn turn_ended(records: &[LogRecord]) -> bool {

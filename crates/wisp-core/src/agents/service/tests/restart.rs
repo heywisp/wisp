@@ -1222,3 +1222,83 @@ async fn a_step_resent_after_overflow_compaction_still_counts_as_a_reply() {
     restart(&mut run, RestartState::Ready).await;
     run.quit().await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_mail_retry_offer_waits_while_wisp_restarts() {
+    let gate = Arc::new(Semaphore::new(0));
+    let mut root: Vec<Step> = (0..=crate::agent::retry::INVALID_RESPONSE_RETRIES)
+        .map(|_| {
+            Step::from(vec![
+                Ok(ProviderEvent::Sending),
+                Err(crate::agent::testing::failure(
+                    ErrorKind::InvalidResponse,
+                    RetryClass::Transient,
+                    false,
+                )),
+            ])
+        })
+        .collect();
+    root.extend([done("back"), done("delivered")]);
+    let mut run = start(
+        "restart-mail-retry",
+        Setup::default(),
+        vec![
+            ("/", root),
+            ("/a", vec![gated(uses(&[report_call("r1", "done")]), &gate)]),
+        ],
+    )
+    .await;
+    run.spawn(spawn_request("a", "Work.")).await;
+    run.until("child request", |e| {
+        matches!(inner(e, "/a"), Some(AgentEvent::StepStarted { .. }))
+    })
+    .await;
+    run.say("Work.").await;
+    run.root_ended().await;
+    assert_eq!(run.requests("/").len(), 4);
+
+    run.send(ClientCommand::GetReady { on: true }).await;
+    restart(&mut run, RestartState::GettingReady).await;
+    gate.add_permits(1);
+    run.child_ended("/a").await;
+    run.until("the report", |e| {
+        matches!(e, AgentEvent::InputAccepted { from: Some(_), .. })
+    })
+    .await;
+    restart(&mut run, RestartState::Ready).await;
+
+    let (view, _) = run.describe().await;
+    assert!(view.events.iter().any(|e| matches!(
+        e,
+        AgentEvent::TurnEnded {
+            outcome: TurnOutcome::Error {
+                offer: Some(offer),
+                ..
+            },
+            ..
+        } if offer.retry
+    )));
+    assert_eq!(run.requests("/").len(), 4);
+
+    run.send(ClientCommand::GetReady { on: false }).await;
+    run.root_ended().await;
+    run.root_ended().await;
+    let run = run.quit().await;
+    assert_eq!(run.requests("/").len(), 6);
+    assert_eq!(
+        pick!(
+            &run.seen,
+            AgentEvent::TurnStarted {
+                turn,
+                retry_of,
+                origin,
+                ..
+            } => (*turn, *retry_of, *origin)
+        ),
+        [
+            (1, None, None),
+            (2, Some(1), None),
+            (3, None, Some(wisp_protocol::TurnOrigin::Mail)),
+        ]
+    );
+}

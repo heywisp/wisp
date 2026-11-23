@@ -112,6 +112,43 @@ fn mailed(name: &str, plan: Vec<Step>) -> (Harness, MailSender) {
     mailed_with(name, plan, None)
 }
 
+fn resumed_at(
+    name: &str,
+    path: &str,
+    plan: Vec<Step>,
+    records: &[LogRecord],
+) -> (Harness, MailSender) {
+    let env = Env::new(name);
+    let (tx, rx) = mpsc::channel(128);
+    let (mailing, inner) = staged(plan);
+    inner.send_to(tx.clone());
+    let (store, log) = continued(records);
+    let agent = Agent::new(mailing, default_session())
+        .with_clock(TickingClock::new())
+        .with_tools(
+            ScriptTool::toolbox(tx.clone(), Duration::from_secs(10), Ops::default()),
+            env.workspace(),
+        )
+        .with_platform("Linux")
+        .with_resources(None)
+        .with_cancel_grace(Duration::from_millis(300))
+        .with_log(log, log_context())
+        .with_path(AgentPath::new(path))
+        .resume(records, 0)
+        .unwrap();
+    let mail = agent.mail_sender();
+    inner.mail_to(mail.clone());
+    let harness = Harness {
+        agent,
+        provider: inner,
+        tx,
+        rx,
+        store,
+        _env: env,
+    };
+    (harness, mail)
+}
+
 fn wake_helds(events: &[AgentEvent]) -> Vec<(Vec<WakeSource>, HoldReason)> {
     pick!(events, AgentEvent::WakeHeld { sources, reason } => (sources.clone(), *reason))
 }
@@ -878,4 +915,302 @@ async fn with_the_notice_off_a_mail_wake_still_runs() {
         "{:?}",
         records(&h.store)
     );
+}
+
+fn retry_starts(events: &[AgentEvent]) -> Vec<(u64, Option<u64>, Option<TurnOrigin>)> {
+    pick!(
+        events,
+        AgentEvent::TurnStarted { turn, retry_of, origin, .. } => (*turn, *retry_of, *origin)
+    )
+}
+
+fn transient(kind: ErrorKind) -> Step {
+    Step::from(vec![
+        Ok(ProviderEvent::Sending),
+        Err(crate::agent::testing::failure(
+            kind,
+            RetryClass::Transient,
+            false,
+        )),
+    ])
+}
+
+fn unreadable_loss() -> Vec<Step> {
+    (0..=crate::agent::retry::INVALID_RESPONSE_RETRIES)
+        .map(|_| transient(ErrorKind::InvalidResponse))
+        .collect()
+}
+
+fn root_letter(id: &str, from: &str, wake: bool) -> Mail {
+    Mail {
+        to: AgentPath::root(),
+        ..letter(id, from, wake)
+    }
+}
+
+fn root_mailed(name: &str, plan: Vec<Step>) -> (Harness, MailSender) {
+    let (mut h, mail) = mailed(name, plan);
+    h.agent = h.agent.with_path(AgentPath::root());
+    (h, mail)
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_waking_message_retries_a_turn_lost_to_unreadable_replies_once_per_message() {
+    let first = root_letter("m1", "/coder", true);
+    let later = root_letter("m2", "/docs", true);
+    let mut plan = vec![two_calls()];
+    let mut loss = unreadable_loss();
+    loss[0] = transient(ErrorKind::InvalidResponse).mail(first.clone());
+    plan.extend(loss);
+    plan.extend(unreadable_loss());
+    plan.extend([done("back"), done("delivered")]);
+    let (mut h, mail) = root_mailed("mail-restart-rounds", plan);
+
+    let rounds = h.run(vec![steer("go")], 2).await;
+    assert_eq!(retry_starts(&rounds), [(1, None, None), (2, Some(1), None)]);
+    for outcome in outcomes(&rounds) {
+        assert!(
+            matches!(
+                outcome,
+                TurnOutcome::Error {
+                    kind: ErrorKind::InvalidResponse,
+                    gave_up: Some(GaveUp::StepLimit),
+                    offer: Some(offer),
+                    ..
+                } if offer.retry && offer.retries_at.is_none()
+            ),
+            "{outcome:#?}"
+        );
+    }
+    let bodies = h.provider.texts();
+    assert_eq!(bodies.len(), 9);
+    assert_eq!(
+        bodies[5], bodies[4],
+        "the restart resends the failed request"
+    );
+
+    let resting = settle_quietly(&mut h).await;
+    assert_eq!(started(&resting), Vec::<u64>::new(), "{resting:#?}");
+    let held_events: Vec<_> = wake_helds(&rounds)
+        .into_iter()
+        .chain(wake_helds(&resting))
+        .collect();
+    assert_eq!(
+        held_events,
+        [(vec![from_mail("m1", "/coder")], HoldReason::RetryOffer)]
+    );
+    assert_eq!(
+        logged_helds(&records(&h.store)),
+        [(2, HoldReason::RetryOffer)]
+    );
+
+    mail.send(later.clone()).unwrap();
+    let woke = h.run(Vec::new(), 2).await;
+    assert_eq!(
+        retry_starts(&woke),
+        [(3, Some(2), None), (4, None, Some(TurnOrigin::Mail))]
+    );
+    let bodies = h.provider.texts();
+    assert_eq!(bodies.len(), 11);
+    assert_eq!(bodies[9], bodies[8]);
+    assert_bodies_extend(&h.provider, &[(9, 10)]);
+    let requests = h.requests();
+    assert_eq!(text_count(&requests[9], &shown(&first)), 0);
+    assert_eq!(text_count(&requests[9], &shown(&later)), 0);
+    ends_with(&last_texts(&h), &[shown(&first), shown(&later)]);
+    assert!(h.agent.inbox.mail_ids().is_empty());
+    h.assert_rebuilds();
+}
+
+#[tokio::test(start_paused = true)]
+async fn unrelated_stops_senders_own_letters_and_refused_retries_never_restart_on_mail() {
+    let wake_coder = root_letter("m1", "/coder", true);
+    let loss_then = |tail: Step| unreadable_loss().into_iter().chain([tail]).collect();
+
+    let (mut h, mail) = root_mailed(
+        "mail-restart-esc",
+        vec![
+            transient(ErrorKind::InvalidResponse),
+            transient(ErrorKind::InvalidResponse),
+            done("no"),
+        ],
+    );
+    let stopped = h
+        .drive(
+            vec![steer("go")],
+            |e| match e {
+                AgentEvent::Retrying { .. } => vec![ClientCommand::Cancel],
+                _ => Vec::new(),
+            },
+            turns(1),
+            PATIENT,
+        )
+        .await;
+    assert!(matches!(
+        outcomes(&stopped)[..],
+        [TurnOutcome::Error {
+            kind: ErrorKind::InvalidResponse,
+            gave_up: None,
+            offer: Some(offer),
+            ..
+        }] if offer.retry
+    ));
+    mail.send(wake_coder.clone()).unwrap();
+    let waiting = settle_quietly(&mut h).await;
+    assert!(started(&waiting).is_empty(), "esc: {waiting:#?}");
+    assert_eq!(
+        wake_helds(&waiting),
+        [(vec![from_mail("m1", "/coder")], HoldReason::RetryOffer)]
+    );
+
+    let (mut h, mail) = mailed("mail-restart-child", loss_then(done("no")));
+    h.run(vec![steer("go")], 1).await;
+    mail.send(letter("m1", CHILD, true)).unwrap();
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+
+    let (mut h, mail) = root_mailed(
+        "mail-restart-server",
+        vec![
+            transient(ErrorKind::Server),
+            transient(ErrorKind::Server),
+            done("no"),
+        ],
+    );
+    h.agent = h.agent.with_retry_policy(crate::agent::retry::RetryPolicy {
+        step_retries: Some(1),
+        ..crate::agent::retry::quick()
+    });
+    let failed = h.run(vec![steer("go")], 1).await;
+    assert!(matches!(
+        outcomes(&failed)[..],
+        [TurnOutcome::Error {
+            kind: ErrorKind::Server,
+            gave_up: Some(GaveUp::StepLimit),
+            offer: Some(offer),
+            ..
+        }] if offer.retry
+    ));
+    mail.send(wake_coder.clone()).unwrap();
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+
+    let (gate, open) = watch::channel(true);
+    let (mut h, mail) = mailed_with(
+        "mail-restart-above",
+        loss_then(done("answered")),
+        Some(open),
+    );
+    h.agent = h.agent.with_path(AgentPath::root());
+    h.run(vec![steer("go")], 1).await;
+    gate.send_replace(false);
+    mail.send(Mail {
+        kind: MailKind::Question,
+        ..root_letter("q1", "/coder", true)
+    })
+    .unwrap();
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+    assert!(h.agent.reset_retry_at().is_none());
+    assert!(h.agent.retry_offer().is_some());
+    gate.send_replace(true);
+    let answered = h.run(Vec::new(), 1).await;
+    assert_eq!(retry_starts(&answered), [(2, None, Some(TurnOrigin::Mail))]);
+
+    let (mut h, mail) = root_mailed("mail-restart-notices", loss_then(done("no")));
+    h.run(vec![steer("go")], 1).await;
+    mail.send(Mail {
+        kind: MailKind::Notice,
+        ..root_letter("own", wisp_protocol::agents::ROOT_PATH, true)
+    })
+    .unwrap();
+    mail.send(root_letter("quiet", "/coder", false)).unwrap();
+    let (ev_tx, _ev_rx) = mpsc::channel(16);
+    h.agent
+        .push_letter(
+            mid("plug"),
+            MailFrom {
+                agent: AgentPath::new("/coder"),
+                kind: MailKind::Notice,
+                mail: MailId("plug".into()),
+                wake: true,
+                plugin: Some("mcp".into()),
+            },
+            "notice".into(),
+            &ev_tx,
+        )
+        .await;
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+    assert!(h.agent.reset_retry_at().is_none());
+
+    let (mut h, mail) = root_mailed("mail-restart-own-open", loss_then(done("no")));
+    mail.send(wake_coder.clone()).unwrap();
+    let failed = h.run(Vec::new(), 1).await;
+    assert_eq!(origins(&failed), [Some(TurnOrigin::Mail)]);
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+    h.agent.inbox.clear_returned();
+    assert!(h.agent.reset_retry_at().is_none());
+
+    let mut plan = vec![two_calls().mail(wake_coder.clone())];
+    plan.extend(loss_then(done("no")));
+    let (mut h, _mail) = root_mailed("mail-restart-own-steer", plan);
+    let failed = h.run(vec![steer("go")], 1).await;
+    assert_eq!(delivered(&failed)[1], (vec![mid("m1")], 2));
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+    h.agent.inbox.clear_returned();
+    assert!(h.agent.reset_retry_at().is_none());
+
+    let (mut h, mail) = root_mailed("mail-restart-refused", loss_then(done("no")));
+    h.run(vec![steer("go")], 1).await;
+    let original = h.agent.connections[0].provider.clone();
+    let guarded = crate::endpoints::generation::Guarded::wrap(original.clone());
+    guarded.generation().unwrap().change().unwrap().retire();
+    h.agent.connections[0].provider = guarded;
+    mail.send(wake_coder).unwrap();
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+    assert!(h.agent.retry_offer().is_some());
+    assert!(h.agent.reset_retry_at().is_none());
+    assert!(h.agent.mail_retried > 0);
+    h.agent.connections[0].provider = original;
+    assert!(started(&settle_quietly(&mut h).await).is_empty());
+    assert_eq!(h.requests().len(), 4);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resumed_unreadable_offer_waits_for_a_message_that_arrives_after_the_resume() {
+    let before = root_letter("m1", "/coder", true);
+    let after = root_letter("m2", "/docs", true);
+    let mut plan = unreadable_loss();
+    plan[0] = transient(ErrorKind::InvalidResponse).mail(before.clone());
+    plan.extend(unreadable_loss());
+    let (mut h, _mail) = root_mailed("mail-restart-resume-live", plan);
+    h.run(vec![steer("go")], 2).await;
+    let saved = records(&h.store);
+
+    let (mut again, mail) = resumed_at(
+        "mail-restart-resume-again",
+        wisp_protocol::agents::ROOT_PATH,
+        vec![done("back"), done("delivered")],
+        &saved,
+    );
+    assert_eq!(again.agent.inbox.mail_ids(), [mid("m1")]);
+    let (_, offer) = again.agent.retry_offer().expect("offer restored");
+    assert!(offer.retry && offer.retries_at.is_none());
+
+    let waiting = settle_quietly(&mut again).await;
+    assert!(started(&waiting).is_empty(), "{waiting:#?}");
+    assert_eq!(
+        wake_helds(&waiting),
+        [(vec![from_mail("m1", "/coder")], HoldReason::RetryOffer)]
+    );
+
+    mail.send(after.clone()).unwrap();
+    let woke = again.run(Vec::new(), 2).await;
+    assert_eq!(
+        retry_starts(&woke),
+        [(3, Some(2), None), (4, None, Some(TurnOrigin::Mail))]
+    );
+    assert_bodies_extend(&again.provider, &[(0, 1)]);
+    assert_eq!(text_count(&again.requests()[0], &shown(&before)), 0);
+    assert_eq!(text_count(&again.requests()[0], &shown(&after)), 0);
+    ends_with(&last_texts(&again), &[shown(&before), shown(&after)]);
+    assert!(again.agent.inbox.mail_ids().is_empty());
+    again.assert_rebuilds();
 }

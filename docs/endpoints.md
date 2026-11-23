@@ -1160,6 +1160,16 @@ another account queued for your next message holds it until you switch back;
 the line shows only while the retry is still to come. Esc only closes the
 choice, and the line and the retry stay. An agent below the chat never
 retries by itself, and a resumed chat does so only while the reset or retry time is ahead.
+When the chat's own agent instead stops at the step retry limit on an
+unreadable reply (`invalid_response` with `step_limit`) and Retry where it
+failed is offered, no line is added, and a waking message from another agent
+takes that Retry on the failed account through the same path, under the same
+cancel and switch-hold rules. Each message starts at most one retry round,
+whether it already waits when the turn stops or arrives later; the failed
+turn's own messages don't count, nor do the agent's own notices, plugin
+notices or messages from above. After a resume or `wisp restart`, messages
+already waiting start nothing, and only a message that arrives after the
+resume restarts the turn.
 
 The kernel side: a switch applies from the next turn, and
 the running turn, tool steps included, stays where it started. Every switch
