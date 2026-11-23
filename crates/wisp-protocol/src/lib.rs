@@ -2190,7 +2190,7 @@ impl ErrorKind {
             Self::InvalidRequest => format!("{provider} rejected the request."),
             Self::Network => format!("The connection to {provider} failed."),
             Self::Refusal => format!("{provider} declined to answer."),
-            Self::InvalidResponse => format!("{provider} sent a reply Wisp couldn't read."),
+            Self::InvalidResponse => format!("{provider} sent a reply Wisp couldn't use."),
             Self::ThinkingBinding => format!("{provider} stopped this turn."),
             Self::Server => format!("{provider} had a server error."),
             Self::Timeout => format!("{provider} stopped responding."),

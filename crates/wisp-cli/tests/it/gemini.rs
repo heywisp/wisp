@@ -47,6 +47,13 @@ pub(super) fn sse_chunk(model: &str, parts: Vec<Value>, finish: Option<&str>) ->
 }
 
 fn serve(replies: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>, std::thread::JoinHandle<()>) {
+    serve_model("gemini-4-carbon", replies)
+}
+
+fn serve_model(
+    model: &'static str,
+    replies: Vec<String>,
+) -> (String, Arc<Mutex<Vec<String>>>, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
@@ -80,9 +87,9 @@ fn serve(replies: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>, std::thread:
                 let _ = s.write_all(refused.as_bytes());
             };
             assert!(
-                request.head.starts_with(
-                    "POST /v1beta/models/gemini-4-carbon:streamGenerateContent?alt=sse "
-                ),
+                request.head.starts_with(&format!(
+                    "POST /v1beta/models/{model}:streamGenerateContent?alt=sse "
+                )),
                 "{}",
                 request.head
             );
@@ -445,6 +452,78 @@ fn cli_runs_two_resumed_gemini_tool_turns_with_stable_prefix_and_distinct_idless
             "sig_t2_call"
         ]
     );
+}
+
+#[test]
+fn cli_neon_reply_cut_at_the_cap_is_resent_with_the_full_limit_and_a_stable_prefix() {
+    let home = Home::new("gemini-neon-cap");
+    let model = "gemini-4-neon";
+    let cap = wisp_core::models::ModelTable::shared()
+        .reply_cap(model)
+        .unwrap();
+    let full = wisp_core::agent::DEFAULT_MAX_TOKENS;
+    let cut = sse_chunk(
+        model,
+        vec![json!({"text": "NEON-CUT-DRAFT"})],
+        Some("MAX_TOKENS"),
+    );
+    let step1_call = sse_chunk(
+        model,
+        vec![json!({
+            "functionCall": {"name": "bash", "args": {"command": "printf neon-ok"}},
+            "thoughtSignature": "sig_neon_call"
+        })],
+        Some("STOP"),
+    );
+    let step2_done = sse_chunk(
+        model,
+        vec![json!({"text": "NEON-CAP-RECOVERED"})],
+        Some("STOP"),
+    );
+    let (url, seen, server) = serve_model(model, vec![cut, step1_call, step2_done]);
+    let cfg = write_config(&home.0, &url);
+    let out = pty::run(
+        command(&home.0, &cfg).args(["--model", model]),
+        "Run command\n",
+        "NEON-CAP-RECOVERED",
+        TEST_KEY,
+    );
+    assert!(out.contains("NEON-CAP-RECOVERED"), "{out}");
+    server.join().unwrap();
+
+    let requests: Vec<Value> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|body| serde_json::from_str(body).unwrap())
+        .collect();
+    assert_eq!(requests.len(), 3);
+    let limits: Vec<u64> = requests
+        .iter()
+        .map(|r| r["generationConfig"]["maxOutputTokens"].as_u64().unwrap())
+        .collect();
+    assert_eq!(limits, [u64::from(cap), u64::from(full), u64::from(cap)]);
+    let without_limit = |request: &Value| {
+        let mut copy = request.clone();
+        copy["generationConfig"]
+            .as_object_mut()
+            .unwrap()
+            .remove("maxOutputTokens");
+        copy
+    };
+    assert_eq!(without_limit(&requests[1]), without_limit(&requests[0]));
+    assert!(!requests[1].to_string().contains("NEON-CUT-DRAFT"));
+    assert!(!requests[2].to_string().contains("NEON-CUT-DRAFT"));
+    let responses: Vec<&str> = requests[2]["contents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|c| c["parts"].as_array().into_iter().flatten())
+        .filter_map(|p| p["functionResponse"]["response"]["output"].as_str())
+        .collect();
+    assert_eq!(responses.len(), 1, "{responses:?}");
+    assert!(responses[0].contains("neon-ok"), "{responses:?}");
+    assert_gemini_prefix_stable(&[without_limit(&requests[1]), without_limit(&requests[2])]);
 }
 
 #[test]

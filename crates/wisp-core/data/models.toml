@@ -752,12 +752,13 @@ provider = "gemini"
 web_search = ["google_search"]
 listed = true
 context_window = 1048576
+reply_cap = 32768
 efforts = ["low", "medium", "high", "xhigh"]
 default_effort = "high"
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
 source = "https://ai.google.dev/gemini-api/docs/models"
-sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding", reply_cap = "Wisp's own measurement, 2026-11-23: a reply that ran to 64,000 tokens took 9 minutes; of 28,696 Neon replies, 8 passed 32,768 tokens of thinking plus output and 105 passed 16,384; see docs/gemini.md" }
 
 [models."gemini-4-carbon"]
 provider = "gemini"

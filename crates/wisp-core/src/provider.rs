@@ -770,6 +770,20 @@ impl ProviderError {
         .possibly_billed()
     }
 
+    pub(crate) fn reply_cut(provider: &str, retry: RetryClass) -> Self {
+        let mut detail = ErrorDetail::new(FailurePhase::Stream, FailureSource::Endpoint, retry);
+        detail.status = Some(200);
+        detail.error_type = Some(StopReason::MaxTokens.as_str().to_owned());
+        detail.possibly_billed = true;
+        let mut error = Self::classified(
+            ErrorKind::InvalidResponse,
+            format!("{provider} returned a reply that ran to the output limit"),
+            detail,
+        );
+        error.usage_complete = true;
+        error
+    }
+
     #[must_use]
     pub fn possibly_billed(mut self) -> Self {
         if self.rejected.is_empty() {

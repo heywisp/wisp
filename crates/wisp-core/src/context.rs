@@ -756,6 +756,10 @@ impl ModelSettings {
         own.find_map(|row| row.max_output).or(documented)
     }
 
+    pub fn reply_cap(&self, model: &str) -> Option<u32> {
+        self.shipped.reply_cap(model)
+    }
+
     pub fn reply_limit(
         &self,
         endpoint: &str,

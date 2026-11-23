@@ -21,9 +21,9 @@ use wisp_protocol::{
     AccountSpend, AgentEvent, BlockKind, CLOSED_PAUSE_NOTE, CacheTtl, ClientCommand, ContentBlock,
     Cost, DeliveryMode, DetachReason, DiscardReason, Effort, EffortMarker, ErrorDetail, ErrorKind,
     FailureSource, GaveUp, ImageData, InputId, InstructionsSource, InstructionsSummary, Message,
-    MessageTime, MissCause, NotRunReason, PluginRecord, ReportedEnd, Role, SessionConfig,
-    StopReason, TodoItem, ToolOutcome, ToolOutputView, TurnOrigin, TurnOutcome, TurnStats, Typed,
-    UnfinishedReason, Usage, WorkspaceChange,
+    MessageTime, MissCause, NotRunReason, PluginRecord, ReportedEnd, RetryClass, Role,
+    SessionConfig, StopReason, TodoItem, ToolOutcome, ToolOutputView, TurnOrigin, TurnOutcome,
+    TurnStats, Typed, UnfinishedReason, Usage, WorkspaceChange,
 };
 use wisp_tool_text::output::{Captured, failed_text, invalid_input_text};
 
@@ -3435,6 +3435,7 @@ impl Agent {
             let mut resending = false;
             let mut attempt: u32 = 0;
             let mut failure_charged = false;
+            let mut cap_reply = true;
             let streamed = loop {
                 if resending {
                     self.background_at_resend(events).await;
@@ -3447,6 +3448,9 @@ impl Agent {
                     messages = self.request_messages(&pending);
                 }
                 (session, features) = self.request_parts();
+                if cap_reply && let Some(cap) = self.models.reply_cap(&session.model) {
+                    session.max_tokens = session.max_tokens.min(cap);
+                }
                 attempt = attempt.saturating_add(1);
                 let pass = if self.before_request(step, attempt, commands, events).await {
                     None
@@ -3477,6 +3481,11 @@ impl Agent {
                 let Streamed::Failed(mut failure) = streamed else {
                     break streamed;
                 };
+                if failure.error.detail.error_type.as_deref()
+                    == Some(StopReason::MaxTokens.as_str())
+                {
+                    cap_reply = false;
+                }
                 self.track().failed_tokens = self
                     .fill_estimate()
                     .saturating_add(compact::auto::pending_tokens(&pending));
@@ -4623,6 +4632,7 @@ impl Agent {
         if finished.is_ok() {
             watch.succeeded(sent_model, sent_at);
         }
+        let finished = finished.and_then(|message| self.within_reply_cap(message, session));
         let shown = finished.as_ref().is_ok_and(|m| !self.is_quiet(m));
         self.release(&mut unshown, shown, events).await;
         match finished {
@@ -4824,6 +4834,28 @@ impl Agent {
 
     fn keep_partial(&mut self, asm: &Assembler) {
         self.track().partial_output = asm.partial_text();
+    }
+
+    fn within_reply_cap(
+        &mut self,
+        message: AssembledMessage,
+        session: &SessionConfig,
+    ) -> Result<AssembledMessage, ProviderError> {
+        if message.stop_reason != StopReason::MaxTokens
+            || self.models.reply_cap(&session.model).is_none()
+        {
+            return Ok(message);
+        }
+        self.track().partial_output = reply_text(&message.content).unwrap_or_default();
+        let retry = if session.max_tokens < self.session.max_tokens {
+            RetryClass::Transient
+        } else {
+            RetryClass::Never
+        };
+        Err(ProviderError::reply_cut(
+            self.provider_kind().title(),
+            retry,
+        ))
     }
 
     fn resolve_cwd(&self) -> Result<(PathBuf, Option<String>), String> {
