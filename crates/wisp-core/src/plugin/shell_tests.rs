@@ -278,3 +278,16 @@ async fn capture(
         }
     }
 }
+
+pub(super) const LONG_SIZES: [usize; 2] = [200 * 1024, wisp_plugin_shell::MAX_COMMAND_BYTES];
+
+pub(super) fn long_command(size: usize, body: &str) -> String {
+    let head = "cat >/dev/null <<'WISP_PAD'\n";
+    let tail = format!("\nWISP_PAD\n{body}");
+    let pad = size
+        .checked_sub(head.len() + tail.len())
+        .expect("body exceeds target size");
+    let command = format!("{head}{}{tail}", "a".repeat(pad));
+    assert_eq!(command.len(), size);
+    command
+}

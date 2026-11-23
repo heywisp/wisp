@@ -306,3 +306,89 @@ fn time_limits_and_moving_follow_the_input() {
         None
     );
 }
+
+struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    fn new(name: &str) -> Self {
+        let dir =
+            std::env::temp_dir().join(format!("wisp-shell-unit-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        Self(dir)
+    }
+
+    fn file(&self, suffix: &str) -> std::path::PathBuf {
+        self.0.join(format!("call.{suffix}"))
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+fn large_scripts_use_a_private_file_and_clean_up_on_spawn_failure() {
+    let dir = TempDir::new("script");
+    let call = FakeCall {
+        private_dir: Some(dir.0.clone()),
+        ..FakeCall::default()
+    };
+    let near = "x".repeat(bash::INLINE_SCRIPT_BYTES - 16);
+    let (built, file) = bash::prepare_script(&near, None, &call);
+    assert!(file.is_none());
+    assert_eq!(built.len(), near.len());
+    assert!(!dir.file("sh").exists());
+
+    let (built, file) = bash::prepare_script(&near, Some("/tmp/a.cwd"), &call);
+    let file = file.unwrap();
+    assert_eq!(std::fs::read_to_string(file.path()).unwrap(), near);
+    assert!(built.starts_with("trap "));
+    assert!(built.ends_with(&bash::file_bootstrap(file.path())));
+    drop(file);
+    assert!(!dir.file("sh").exists());
+
+    let small = "x".repeat(bash::INLINE_SCRIPT_BYTES);
+    let (built, file) = bash::prepare_script(&small, None, &call);
+    assert!(file.is_none());
+    assert_eq!(built.len(), bash::INLINE_SCRIPT_BYTES);
+    assert!(!dir.file("sh").exists());
+
+    let nul = format!("{}\0tail", "x".repeat(bash::INLINE_SCRIPT_BYTES + 1));
+    let (built, file) = bash::prepare_script(&nul, None, &call);
+    assert!(file.is_none());
+    assert_eq!(built, nul);
+    assert!(!dir.file("sh").exists());
+
+    let large = "y".repeat(bash::INLINE_SCRIPT_BYTES + 1);
+    let (built, file) = bash::prepare_script(&large, None, &FakeCall::default());
+    assert!(file.is_none());
+    assert_eq!(built, large);
+
+    let (built, file) = bash::prepare_script(&large, Some("/tmp/it's.cwd"), &call);
+    let file = file.unwrap();
+    assert_eq!(std::fs::read_to_string(file.path()).unwrap(), large);
+    assert!(built.starts_with("trap "));
+    assert!(built.ends_with(&bash::file_bootstrap(file.path())));
+    drop(file);
+    assert!(!dir.file("sh").exists());
+
+    let shell = Shell::new(host(None, Some("/no/such/bash")));
+    block_on(shell.describe(&context(&[SHELL])));
+    for bg in [false, true] {
+        let input = json!({"command": large, "run_in_background": bg});
+        let prepared = block_on(shell.prepare(BASH, &input.to_string())).unwrap();
+        let ran = block_on(shell.run(prepared, &call));
+        assert!(matches!(
+            ran.outcome,
+            Outcome::Failed(Failure {
+                before_start: true,
+                ..
+            })
+        ));
+        assert!(!dir.file("sh").exists());
+        assert!(!dir.file("cwd").exists());
+    }
+}

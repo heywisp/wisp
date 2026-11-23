@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use wisp_plugin_api::host::{
-    CallContext, HandedBack, Host, Job, JobEnd, Settled, SpawnSpec, StoppedBy,
-};
+use wisp_plugin_api::host::{CallContext, HandedBack, Host, Job, JobEnd, Settled, StoppedBy};
 use wisp_plugin_api::types::{
     BackgroundReason, Completed, ExitStatus, Fact, Failure, Outcome, ToolRun,
 };
@@ -10,7 +8,7 @@ use wisp_tool_text::jobs::{ended_sentence_named, kept_result_line};
 use wisp_tool_text::output::{group, seconds, time_limit_text};
 use wisp_tool_text::terminal::size_text;
 
-use super::{Bash, BashInput, spawn_message};
+use super::Bash;
 use crate::process::echo_off_line;
 use crate::process::view::{screen_rows_text, whole_text};
 
@@ -159,15 +157,10 @@ fn ended_outcome(end: &JobEnd) -> (Outcome, Option<String>) {
 impl Bash<'_> {
     pub(super) async fn background(
         &self,
-        spec: SpawnSpec,
-        input: &BashInput,
+        job: Box<dyn Job>,
+        target: String,
         ctx: &dyn CallContext,
     ) -> ToolRun {
-        let target = spec.label.clone();
-        let job = match self.host.spawn(spec, ctx).await {
-            Ok(job) => job,
-            Err(error) => return ToolRun::failed_to_start(spawn_message(error, input)),
-        };
         let waited = job
             .settle(self.timing.start_quiet_ms, self.timing.start_max_ms)
             .await;

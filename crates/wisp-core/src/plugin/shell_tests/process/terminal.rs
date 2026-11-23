@@ -688,3 +688,33 @@ async fn a_job_numbered_without_a_reason_never_repaints() {
         "{notes:?}"
     );
 }
+
+#[tokio::test]
+async fn long_commands_run_in_tty_and_clean_up() {
+    if !has_ctty() {
+        return;
+    }
+    let _serial = TERMINAL_TESTS.lock().await;
+    let mut rig = Rig::new("long-tty");
+    for size in crate::plugin::shell_tests::LONG_SIZES {
+        let cmd = crate::plugin::shell_tests::long_command(
+            size,
+            "test -t 0 && echo isatty; IFS= read -r line; printf 'tty:%s:%s\n' \"$line\" \"$0\"; exit 4",
+        );
+        let done = rig.bash(terminal(&cmd)).await;
+        let id = done.number.expect("tty process number");
+        let sh = rig.file(rig.shell.calls()).with_extension("sh");
+        assert!(!sh.exists(), "{}", sh.display());
+        assert!(!done.text.contains(".sh"), "{}", done.text);
+        rig.process(json!({"id": id, "wait_ms": 10_000, "until": "isatty"}))
+            .await;
+        let typed = rig
+            .process(json!({"id": id, "input": "from-tty", "keys": ["Enter"], "wait_ms": 10_000, "quiet_ms": 10_000}))
+            .await;
+        assert!(typed.text.contains("tty:from-tty:"), "{}", typed.text);
+        assert!(typed.text.contains("bash"), "{}", typed.text);
+        assert!(typed.text.contains("exited with code 4"), "{}", typed.text);
+        assert!(!typed.text.contains(".sh"), "{}", typed.text);
+    }
+    rig.finish().await;
+}
