@@ -1086,8 +1086,8 @@ async fn invalid_response_retries_cap_on_default_policy() {
 
     for (step_two, is_malformed, cap, wait_secs) in [
         (false, false, 3u32, 7u64),
-        (false, true, 8, 255),
-        (true, true, 8, 255),
+        (false, true, 16, 1_928),
+        (true, true, 16, 1_928),
     ] {
         let (total, first, expected_step, msg_idx) = (
             cap + 1,
@@ -1268,7 +1268,7 @@ async fn invalid_response_retries_cap_on_default_policy() {
             _ => unreachable!(),
         })
         .collect();
-    assert_eq!(maxes, [3, 8, 3, 8, 0]);
+    assert_eq!(maxes, [3, 16, 3, 16, 0]);
     let sent = provider.texts();
     assert!(
         !sent[0].contains(note) && !sent[1].contains(note) && sent[2].matches(note).count() == 1
