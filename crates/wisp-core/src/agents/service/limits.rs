@@ -112,13 +112,21 @@ impl AgentsService {
             .before_queue
             .remove(path)
             .unwrap_or(AgentState::Idle { outcome: None });
-        let entry = tree
-            .get_mut(path)
-            .filter(|e| !e.permit && waits_for_permit(e.state))?;
-        entry.state = restored;
-        entry.track_running();
-        entry.activity = state::activity_of(restored).unwrap_or(Activity::Idle);
-        Some(entry.announce(self.now_ms(), &self.shared.news))
+        if !tree
+            .get(path)
+            .is_some_and(|e| !e.permit && waits_for_permit(e.state))
+        {
+            return None;
+        }
+        let now = self.now_ms();
+        let news = &self.shared.news;
+        tree.track_active(path, |entry| {
+            entry.state = restored;
+            entry.waking = false;
+            entry.track_running();
+            entry.activity = state::activity_of(restored).unwrap_or(Activity::Idle);
+            entry.announce(now, news)
+        })
     }
 
     pub(super) fn ask_permit(&self, path: &AgentPath) -> bool {

@@ -1535,6 +1535,28 @@ fn a_call_after_a_question_reads_not_run_came_after_a_question() {
         head.ends_with("not run \u{b7} came after a question"),
         "{rows}"
     );
+    let mut t = transcript();
+    apply(
+        &mut t,
+        &[
+            AgentEvent::turn_started(1),
+            requested(1, 0, "b", "cargo new notes"),
+            finished(
+                "b",
+                ToolOutcome::NotRun {
+                    reason: NotRunReason::AfterRefusal,
+                },
+                ToolOutputView::default(),
+                0,
+            ),
+        ],
+    );
+    let rows = text(&t.rows(&r(80), Detail::Scrollback));
+    let head = rows.lines().find(|l| l.contains("not run")).unwrap();
+    assert!(
+        head.ends_with("not run \u{b7} came after a refused call"),
+        "{rows}"
+    );
 }
 
 #[test]

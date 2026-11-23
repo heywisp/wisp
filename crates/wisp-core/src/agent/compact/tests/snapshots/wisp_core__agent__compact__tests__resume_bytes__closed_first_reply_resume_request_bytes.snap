@@ -3,7 +3,7 @@ source: crates/wisp-core/src/agent/compact/tests/resume_bytes.rs
 expression: "(crate::session::sha256_json_hex(&records).unwrap(), bytes,)"
 ---
 (
-    "7974e93187d0facd649e841d6f183b6e6550f3a4af8d426d370d350d3c209835",
+    "931fe78c3ca9d2a2961017b212e25a8ae2c80ec97e5b6570131bf861f83669c6",
     [
         (
             "server-side-fallback-2026-07-01,mid-conversation-output-config-2026-07-01",

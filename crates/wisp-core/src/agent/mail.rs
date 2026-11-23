@@ -33,10 +33,16 @@ pub enum MailRefused {
     Closed,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct Waiting {
+    letters: usize,
+    reports: usize,
+}
+
 #[derive(Debug, Default)]
 struct Shared {
     arrived: VecDeque<Mail>,
-    waiting: BTreeMap<AgentPath, usize>,
+    waiting: BTreeMap<AgentPath, Waiting>,
     closed: bool,
 }
 
@@ -71,10 +77,13 @@ impl MailSender {
                 return Err(MailRefused::Closed);
             }
             let count = state.waiting.entry(mail.from.clone()).or_default();
-            if *count >= MAX_MAIL_PER_SENDER && !mail.kind.from_kernel() {
+            if count.letters >= MAX_MAIL_PER_SENDER && !mail.kind.from_kernel() {
                 return Err(MailRefused::TooMany);
             }
-            *count += 1;
+            count.letters += 1;
+            if mail.kind == MailKind::Report {
+                count.reports += 1;
+            }
             state.arrived.push_back(mail);
         }
         self.inner.notify.notify_one();
@@ -82,7 +91,19 @@ impl MailSender {
     }
 
     pub fn waiting_from(&self, sender: &AgentPath) -> usize {
-        self.inner.state().waiting.get(sender).copied().unwrap_or(0)
+        self.inner
+            .state()
+            .waiting
+            .get(sender)
+            .map_or(0, |w| w.letters)
+    }
+
+    pub fn unread_report(&self, mut matches: impl FnMut(&AgentPath) -> bool) -> Option<AgentPath> {
+        self.inner
+            .state()
+            .waiting
+            .iter()
+            .find_map(|(sender, w)| (w.reports > 0 && matches(sender)).then(|| sender.clone()))
     }
 }
 
@@ -112,20 +133,23 @@ impl Mailbox {
         state.arrived.drain(..).collect()
     }
 
-    fn count(&self, sender: &AgentPath) {
-        *self
-            .inner
-            .state()
-            .waiting
-            .entry(sender.clone())
-            .or_default() += 1;
+    fn count(&self, sender: &AgentPath, kind: MailKind) {
+        let mut state = self.inner.state();
+        let count = state.waiting.entry(sender.clone()).or_default();
+        count.letters += 1;
+        if kind == MailKind::Report {
+            count.reports += 1;
+        }
     }
 
-    fn committed(&self, sender: &AgentPath) {
+    fn committed(&self, sender: &AgentPath, kind: MailKind) {
         let mut state = self.inner.state();
         if let Some(count) = state.waiting.get_mut(sender) {
-            *count = count.saturating_sub(1);
-            if *count == 0 {
+            count.letters = count.letters.saturating_sub(1);
+            if kind == MailKind::Report {
+                count.reports = count.reports.saturating_sub(1);
+            }
+            if count.letters == 0 {
                 state.waiting.remove(sender);
             }
         }
@@ -258,7 +282,7 @@ impl Agent {
         let Some(mail) = self.agents.notice(self.agents.path(), text) else {
             return false;
         };
-        self.mailbox.count(&mail.from);
+        self.mailbox.count(&mail.from, mail.kind);
         self.accept_letters(vec![mail], Some(plugin), events).await;
         true
     }
@@ -276,7 +300,7 @@ impl Agent {
         for mail in arrived {
             let id = mail_input_id(&mail.id);
             if self.inbox.fate(&id).is_some() {
-                self.mailbox.committed(&mail.from);
+                self.mailbox.committed(&mail.from, mail.kind);
                 continue;
             }
             let from = MailFrom {
@@ -351,7 +375,7 @@ impl Agent {
         if let Some(letter) = &input.from
             && letter.from.kind != MailKind::Question
         {
-            self.mailbox.count(&letter.from.agent);
+            self.mailbox.count(&letter.from.agent, letter.from.kind);
         }
         self.inbox.push_mail(input);
     }
@@ -363,7 +387,7 @@ impl Agent {
                     self.posted_committed(&input.id);
                     continue;
                 }
-                self.mailbox.committed(&letter.from.agent);
+                self.mailbox.committed(&letter.from.agent, letter.from.kind);
                 let path = self.path();
                 let sibling = !path.is_root()
                     && self.agents.resolve(&letter.from.agent).parent() == path.parent();

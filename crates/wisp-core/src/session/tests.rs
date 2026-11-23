@@ -3233,18 +3233,21 @@ fn a_reason_from_a_newer_version_is_skipped_but_one_claimed_by_this_version_must
     assert!(parse_jsonl(format!("{newer}\n")).unwrap().is_empty());
     let claimed = after_question_line(LOG_SCHEMA_VERSION, "something_newer");
     assert!(parse_jsonl(format!("{claimed}\n")).is_err());
-    let known = after_question_line(LOG_SCHEMA_VERSION, "after_question");
-    let records = parse_jsonl(format!("{known}\n")).unwrap();
-    assert!(matches!(
-        &records[0].event,
-        LogEvent::ToolCallFinished {
-            outcome: wisp_protocol::ToolOutcome::NotRun {
-                reason: wisp_protocol::NotRunReason::AfterQuestion
-            },
-            result: None,
-            ..
-        }
-    ));
+    for (wire, want) in [
+        ("after_question", wisp_protocol::NotRunReason::AfterQuestion),
+        ("after_refusal", wisp_protocol::NotRunReason::AfterRefusal),
+    ] {
+        let known = after_question_line(LOG_SCHEMA_VERSION, wire);
+        let records = parse_jsonl(format!("{known}\n")).unwrap();
+        assert!(matches!(
+            &records[0].event,
+            LogEvent::ToolCallFinished {
+                outcome: wisp_protocol::ToolOutcome::NotRun { reason },
+                result: None,
+                ..
+            } if *reason == want
+        ));
+    }
 }
 
 #[test]

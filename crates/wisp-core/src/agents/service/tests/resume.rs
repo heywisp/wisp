@@ -427,6 +427,7 @@ async fn ended_agents_stay_ended_unloaded_and_named_and_their_spend_comes_from_t
                         spawn_call("s1", "g", "Look."),
                         spawn_call("s2", "x", "Try."),
                     ]),
+                    uses(&[stop_call("k0", "x", false)]),
                     uses(&[stop_call("k1", "x", true)]),
                     done("waiting on g"),
                 ],
@@ -4307,4 +4308,77 @@ fn jsonl_ended_facts_survive_a_reopen_and_fall_back_per_stale_or_bad_line() {
     }
     logs.keep_ended("../invalid", &text);
     assert!(logs.ended("../invalid").is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unread_report_survives_a_resume_and_refuses_end_until_committed() {
+    use wisp_protocol::NotRunReason;
+    use wisp_tool_text::agents::{EndRefusal, LIST_AGENTS, end_refused};
+    let mut run = start(
+        "resume-unread-report-end",
+        Setup::default(),
+        vec![
+            ("/", vec![crate::test_guard::server_error_step()]),
+            ("/c", vec![uses(&[report_call("r1", "c finished")])]),
+        ],
+    )
+    .await;
+    run.say("go").await;
+    let outcome = run.root_ended().await;
+    assert!(matches!(outcome, TurnOutcome::Error { .. }), "{outcome:?}");
+    run.spawn(spawn_request("c", "Work c.")).await;
+    run.child_ended("/c").await;
+    run.until("the report held on retry offer", |e| {
+        matches!(
+            e,
+            AgentEvent::WakeHeld {
+                reason: HoldReason::RetryOffer,
+                ..
+            }
+        )
+    })
+    .await;
+    let run = run.quit().await;
+    let back = resume(
+        run,
+        Setup::default(),
+        vec![(
+            "/",
+            vec![
+                uses(&[
+                    stop_call("k1", "c", true),
+                    call("l1", LIST_AGENTS, json!({})),
+                ]),
+                uses(&[stop_call("k2", "c", true)]),
+                done("ended c"),
+            ],
+        )],
+    )
+    .await;
+    let mut run = back.run;
+    run.send(ClientCommand::Retry {
+        turn: 1,
+        endpoint: None,
+        request: RequestId(7),
+    })
+    .await;
+    run.root_ended().await;
+    let root = run.requests("/");
+    let after = crate::agent::not_run_text(&NotRunReason::AfterRefusal);
+    assert_eq!(
+        result_of(&root[2], "k1"),
+        (true, end_refused("/c", None, EndRefusal::UnreadReport))
+    );
+    assert_eq!(result_of(&root[2], "l1"), (true, after));
+    assert!(root[2].all_text().contains("c finished"));
+    assert_eq!(
+        result_of(&root[3], "k2"),
+        (
+            false,
+            "Ended /c. Ended agents take no more messages and no longer count toward the agent limit."
+                .to_owned()
+        )
+    );
+    let run = run.quit().await;
+    assert_eq!(super::messages::ended_in(&run, "/"), ["/c"]);
 }

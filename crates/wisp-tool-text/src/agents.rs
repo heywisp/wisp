@@ -229,6 +229,34 @@ pub fn failed(path: &str, kind: &str, limit: Option<(&str, &str, &Cause)>) -> St
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EndRefusal {
+    Running,
+    Queued,
+    UnreadReport,
+}
+
+pub fn end_refused(target: &str, below: Option<&str>, reason: EndRefusal) -> String {
+    let state = match reason {
+        EndRefusal::Running => "was still running",
+        EndRefusal::Queued => "was queued to run",
+        EndRefusal::UnreadReport => {
+            let who = below.unwrap_or(target);
+            return format!(
+                "{who}'s report is waiting for you and arrives as a message. Read it before ending {target} in a later reply."
+            );
+        }
+    };
+    match below {
+        None => format!(
+            "{target} {state} and hasn't reported yet; its report arrives as a message. To end it anyway, stop it first ({STOP_AGENT} with end: false) and end it in a later reply."
+        ),
+        Some(who) => format!(
+            "{who} below {target} {state} and hasn't reported yet. To end {target} anyway, stop it first ({STOP_AGENT} with end: false) and end it in a later reply."
+        ),
+    }
+}
+
 pub fn stopped(stopped: &Stopped) -> String {
     let below = match stopped.below {
         0 => String::new(),

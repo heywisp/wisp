@@ -139,6 +139,7 @@ pub enum NotRunReason {
     ReplyStopped { stop_reason: StopReason },
     TurnStopped,
     AfterQuestion,
+    AfterRefusal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
