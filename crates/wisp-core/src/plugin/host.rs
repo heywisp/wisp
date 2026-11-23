@@ -35,7 +35,7 @@ use wisp_tool_text::files::NO_DATA_FOLDER;
 
 use super::convert;
 use super::imports::{Import, Inside};
-use crate::agents::{AgentsHandle, Reach, endpoints};
+use crate::agents::{AgentsHandle, Reach, endpoints, still_working};
 use crate::call::OutputSink;
 use crate::call::user::UserChannel;
 use crate::clock::{Clock as KernelClock, SystemClock};
@@ -1240,7 +1240,10 @@ fn row(reach: Reach, entry: wisp_protocol::AgentEntry, agents: &AgentsHandle) ->
             completed: u32::try_from(p.completed).unwrap_or(u32::MAX),
             total: u32::try_from(p.total).unwrap_or(u32::MAX),
         }),
-        last_report: entry.last_report.clone(),
+        last_report: entry
+            .last_report
+            .clone()
+            .filter(|_| !still_working(entry.state)),
         cwd: entry.cwd.clone(),
         running_ms: entry.running_ms,
         context_used: entry.context.map(|c| c.used),

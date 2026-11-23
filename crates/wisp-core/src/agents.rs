@@ -31,7 +31,7 @@ mod names;
 pub(crate) mod news;
 pub mod report;
 mod service;
-pub(crate) use service::{OnAccount, ROOT_COMMANDS, ROOT_EVENTS};
+pub(crate) use service::{OnAccount, ROOT_COMMANDS, ROOT_EVENTS, still_working};
 pub mod state;
 #[cfg(test)]
 pub(crate) mod testing;
