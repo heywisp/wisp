@@ -1012,6 +1012,41 @@ async fn a_line_the_logged_prompt_states_is_not_sent_again() {
 }
 
 #[tokio::test]
+async fn a_tool_sentence_changed_since_the_log_stays_as_logged() {
+    let line = started(Tools::Default)
+        .toolbox
+        .system_line_of("spawn_agent")
+        .unwrap();
+    let earlier = "An earlier sentence.";
+    for model in [CAPABLE, PLAIN] {
+        let env = Env::new("resumed-changed-sentence");
+        let server = Server::start(three()).await;
+        let store = MemoryStore::default();
+        one_session(&switching(&server, &env, &store), model).await;
+        let store = rehashed(&retold(&store, &line, earlier));
+        let kit = switching(&server, &env, &store);
+        let agent = resumed(&kit, &store, &server, model).await;
+        assert!(!rebuilt(&agent), "{model}");
+        let mut session = Session::start(agent);
+        let second = session.turn("u2", "two").await;
+        let third = session.turn("u3", "three").await;
+        let agent = session.end().await;
+        let system = system_text(&body(&server, 1));
+        assert!(system.contains(earlier), "{model}: {system}");
+        assert!(!system.contains(&line), "{model}: {system}");
+        assert_eq!(tool_message(&body(&server, 1)), None, "{model}");
+        assert!(
+            changed(&second).is_empty(),
+            "{model}: {:?}",
+            changed(&second)
+        );
+        assert!(changed(&third).is_empty(), "{model}: {:?}", changed(&third));
+        prefix::assert_prefix_stable(&[body(&server, 1), body(&server, 2)], None);
+        rebuilds(&store, &agent).await;
+    }
+}
+
+#[tokio::test]
 async fn a_line_mode_resume_with_a_difference_takes_the_rebuild() {
     let (env, server, store, _) =
         rebased_session(CAPABLE, three(), |_| "Older base.".to_owned(), true).await;

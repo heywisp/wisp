@@ -339,7 +339,8 @@ fn spawn_agent_brings_its_followers_but_never_report_and_each_matches_its_golden
         toolbox.system_lines(),
         [
             wisp_tool_text::agents::MESSAGES_SENTENCE,
-            wisp_tool_text::agents::REPORT_SENTENCE
+            wisp_tool_text::agents::REPORT_SENTENCE,
+            wisp_tool_text::agents::SPAWN_LINE,
         ]
     );
     for spec in toolbox.specs() {

@@ -1,6 +1,6 @@
 use wisp_protocol::agents::LIST_AGENTS;
 use wisp_protocol::todos::checklist;
-use wisp_tool_text::agents::{MESSAGES_SENTENCE, REPORT_SENTENCE};
+use wisp_tool_text::agents::{MESSAGES_SENTENCE, REPORT_SENTENCE, SPAWN_LINE};
 
 use super::*;
 
@@ -528,6 +528,8 @@ async fn the_agent_tools_text_is_byte_identical_in_every_agent_preset_and_depth(
             assert_eq!(system.matches(MESSAGES_SENTENCE).count(), 1, "{agent}");
             let reports = usize::from(agent != "/");
             assert_eq!(system.matches(REPORT_SENTENCE).count(), reports, "{agent}");
+            let spawns = usize::from(agent != "/two");
+            assert_eq!(system.matches(SPAWN_LINE).count(), spawns, "{agent}");
         }
     }
     assert!(seen >= 12, "{seen}");

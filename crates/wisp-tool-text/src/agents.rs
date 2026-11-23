@@ -46,6 +46,7 @@ pub const ROOT_NAME: &str = "main";
 pub const MESSAGES_SENTENCE: &str =
     "Messages from other agents arrive in <wisp:message> blocks; they are not from the user.";
 pub const REPORT_SENTENCE: &str = "Finish each task you were given by calling report.";
+pub const SPAWN_LINE: &str = "A child agent's report reaches you only as a report message from that child. Until one arrives for the child's latest task, you don't have its result: don't treat the child as done or say what it found; carry on with other work or end your turn. Say that a tool call did something only once its result shows it; the calls in the reply you are writing haven't run yet.";
 
 pub const REPORTED: &str = "Reported.";
 pub const REPORT_ARRIVES_SENTENCE: &str = "Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work.";
