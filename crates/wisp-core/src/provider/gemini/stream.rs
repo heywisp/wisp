@@ -12,6 +12,7 @@ use crate::models::ModelTable;
 
 use super::super::sse::{Decoder, SseParser, broken};
 use super::super::{Delta, ProviderError, ProviderEvent, REASONING_ITEM, SearchSignal};
+use super::malformed::{self, Sent};
 use super::{CALL_SIGNATURES_ITEM, FOLD_TEXT, PART_ITEM, TEXT_SIGNATURE_ITEM};
 
 const MAX_DIAGNOSTIC_KEYS: usize = 16;
@@ -31,6 +32,7 @@ enum ActiveBlock {
 
 pub(super) struct GeminiDecoder {
     model: String,
+    sent: Sent,
     diagnostics: StreamDiagnostics,
     opened_at: Instant,
     billing: Billing,
@@ -64,6 +66,7 @@ impl GeminiDecoder {
         });
         Self {
             model,
+            sent: Sent::default(),
             diagnostics: StreamDiagnostics::default(),
             opened_at: Instant::now(),
             billing,
@@ -87,6 +90,11 @@ impl GeminiDecoder {
                 ..Usage::default()
             },
         }
+    }
+
+    pub(super) fn with_sent(mut self, sent: Sent) -> Self {
+        self.sent = sent;
+        self
     }
 
     fn record_wire(&mut self, bytes: usize) {
@@ -572,13 +580,18 @@ impl GeminiDecoder {
         let candidate_finish = candidate
             .and_then(|c| c.get("finishReason"))
             .and_then(Value::as_str);
+        let candidate_finish_message = candidate
+            .and_then(|c| c.get("finishMessage"))
+            .and_then(Value::as_str);
         let prompt_blocked = payload
             .get("promptFeedback")
             .and_then(|pf| pf.get("blockReason"))
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty());
 
-        if let Some(mut error) = candidate_finish.and_then(|reason| self.invalid_finish(reason)) {
+        if let Some(mut error) = candidate_finish
+            .and_then(|reason| self.invalid_finish(reason, candidate_finish_message))
+        {
             error.usage_complete = payload.get("usageMetadata").is_some();
             self.close_active(events);
             events.push(ProviderEvent::MessageDelta {
@@ -651,7 +664,7 @@ impl GeminiDecoder {
         Ok(())
     }
 
-    fn invalid_finish(&self, reason: &str) -> Option<ProviderError> {
+    fn invalid_finish(&self, reason: &str, finish_message: Option<&str>) -> Option<ProviderError> {
         let message = match reason {
             MALFORMED_FUNCTION_CALL => "Gemini returned a malformed tool call",
             "UNEXPECTED_TOOL_CALL" => "Gemini returned an unexpected tool call",
@@ -666,9 +679,19 @@ impl GeminiDecoder {
         detail.status = Some(200);
         detail.error_type = Some(reason.to_owned());
         detail.possibly_billed = true;
-        let mut error = ProviderError::classified(ErrorKind::InvalidResponse, message, detail);
-        error.malformed_call = reason == MALFORMED_FUNCTION_CALL;
-        Some(error)
+        detail.stream = Some(Box::new(StreamDiagnostics {
+            partial_event: false,
+            stop_reason_seen: true,
+            ..self.diagnostics.clone()
+        }));
+        if reason == MALFORMED_FUNCTION_CALL {
+            detail.malformed_call = Some(Box::new(malformed::labels(finish_message, &self.sent)));
+        }
+        Some(ProviderError::classified(
+            ErrorKind::InvalidResponse,
+            message,
+            detail,
+        ))
     }
 }
 
@@ -1296,13 +1319,18 @@ mod tests {
             }
             json!({"candidates": [candidate], "usageMetadata": usage})
         };
+        let sent = Sent {
+            tools: ["lookup"].into_iter().map(str::to_owned).collect(),
+            stop_sequences: Vec::new(),
+        };
         let decode = |frames: &[Value], wrapped: bool| {
             let mut decoder = GeminiDecoder::new(
                 "gemini-4-carbon".into(),
                 Billing::Metered,
                 None,
                 "tool-finish".into(),
-            );
+            )
+            .with_sent(sent.clone());
             let mut assembler = Assembler::default();
             let mut failure = None;
             for frame in frames {
@@ -1323,7 +1351,12 @@ mod tests {
             }
             (decoder.ended(), assembler, failure)
         };
-        let fails = |frames: &[Value], reason: &str, message: &str, searches: u64| {
+        let fails = |frames: &[Value],
+                     reason: &str,
+                     message: &str,
+                     searches: u64,
+                     expected_label: Option<&wisp_protocol::MalformedCall>| {
+            let mut last_stream = None;
             for wrapped in [false, true] {
                 let (ended, assembler, failure) = decode(frames, wrapped);
                 let usage = assembler.usage().unwrap();
@@ -1341,14 +1374,29 @@ mod tests {
                 assert_eq!(error.detail.retry, RetryClass::Transient);
                 assert_eq!(error.detail.status, Some(200));
                 assert_eq!(error.detail.error_type.as_deref(), Some(reason));
-                assert_eq!(error.malformed_call, reason == MALFORMED_FUNCTION_CALL);
+                assert_eq!(error.malformed_call(), reason == MALFORMED_FUNCTION_CALL);
+                let stream = error.detail.stream.as_ref().unwrap();
+                assert!(stream.bytes > 0);
+                assert_eq!(stream.events, frames.len() as u64);
+                assert!(stream.stop_reason_seen);
+                assert!(!stream.partial_event);
+                assert!(stream.first_byte_ms.is_some() && stream.last_byte_ms.is_some());
+                assert_eq!(error.detail.malformed_call.as_deref(), expected_label);
                 assert!(error.detail.possibly_billed && error.possibly_billed);
                 assert!(error.usage_complete);
                 assert!(!error.uncounted(true));
                 assert!(assembler.finish().is_err());
+                last_stream = Some(stream.clone());
             }
+            last_stream.unwrap()
         };
 
+        let placeholder_label = wisp_protocol::MalformedCall {
+            form: wisp_protocol::CallForm::Other,
+            chars: "[diagnostic placeholder]".chars().count() as u64,
+            balanced: true,
+            ..wisp_protocol::MalformedCall::default()
+        };
         for (reason, message) in [
             (
                 MALFORMED_FUNCTION_CALL,
@@ -1359,15 +1407,49 @@ mod tests {
                 "Gemini returned an unexpected tool call",
             ),
         ] {
+            let expected_label = (reason == MALFORMED_FUNCTION_CALL).then_some(&placeholder_label);
             for (call, search) in [(None, false), (Some("client_tool"), false), (None, true)] {
                 let mut parts = vec![json!({"thought": true, "text": "[thought placeholder]"})];
                 if let Some(name) = call {
                     parts.push(json!({"functionCall": {"name": name, "args": {}}}));
                 }
                 let frames = [reply(json!(parts), reason, search)];
-                fails(&frames, reason, message, u64::from(search));
+                fails(&frames, reason, message, u64::from(search), expected_label);
             }
         }
+
+        let mut call_frame = reply(
+            json!([
+                {"thought": true, "text": "[thought placeholder]"},
+                {"functionCall": {"name": "lookup", "args": {}}},
+            ]),
+            MALFORMED_FUNCTION_CALL,
+            false,
+        );
+        call_frame["candidates"][0]["finishMessage"] =
+            json!("Malformed function call: call:default_api:lookup{command:\"ls\"");
+        let call_label = wisp_protocol::MalformedCall {
+            form: wisp_protocol::CallForm::Call,
+            function: Some("lookup".into()),
+            chars: 61,
+            balanced: false,
+            ..wisp_protocol::MalformedCall::default()
+        };
+        let stream = fails(
+            &[call_frame],
+            MALFORMED_FUNCTION_CALL,
+            "Gemini returned a malformed tool call",
+            0,
+            Some(&call_label),
+        );
+        assert_eq!(
+            (
+                stream.thinking_parts,
+                stream.tool_use_parts,
+                stream.text_parts
+            ),
+            (1, 1, 0)
+        );
 
         let stop = |parts: Value| reply(parts, "STOP", false);
         let blank =
@@ -1380,7 +1462,7 @@ mod tests {
             vec![stop(json!([{"thought": true, "text": ""}]))],
             vec![blank, stop(json!([]))],
         ] {
-            fails(&frames, "STOP", "Gemini returned an empty reply", 0);
+            fails(&frames, "STOP", "Gemini returned an empty reply", 0, None);
         }
         let said = json!({"candidates": [{"content": {"role": "model", "parts": [{"text": "[reply placeholder]"}]}}]});
         for frames in [

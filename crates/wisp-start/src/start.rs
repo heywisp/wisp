@@ -168,6 +168,7 @@ pub const SIGNAL_LIMIT: Duration = wisp_core::jobs::SHUTDOWN_LIMIT
     .saturating_add(SHUTDOWN_WAIT);
 
 pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
+    wisp_core::version::set_commit(env!("WISP_COMMIT"));
     let setup = inputs.setup;
     let at = inputs.at;
     let asks = inputs.asks;

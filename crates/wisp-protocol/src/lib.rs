@@ -2030,6 +2030,35 @@ pub struct StreamDiagnostics {
     pub last_byte_ms: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallForm {
+    #[default]
+    Absent,
+    Call,
+    Python,
+    EmptyCall,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MalformedCall {
+    pub form: CallForm,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function: Option<String>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub undeclared: bool,
+    pub chars: u64,
+    #[serde(skip_serializing_if = "is_false")]
+    pub balanced: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub stop_string: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pub mail_tag: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2038,6 +2067,8 @@ pub struct ErrorDetail {
     pub model_limit: Option<Box<plan_usage::UsageWindow>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream: Option<Box<StreamDiagnostics>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub malformed_call: Option<Box<MalformedCall>>,
     pub phase: FailurePhase,
     pub source: FailureSource,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2060,6 +2091,7 @@ impl ErrorDetail {
             limit_reached: None,
             model_limit: None,
             stream: None,
+            malformed_call: None,
             status: None,
             error_type: None,
             request_id: None,

@@ -33,6 +33,7 @@ pub mod subscription_login;
 #[cfg(test)]
 pub(crate) mod test_guard;
 pub mod tool;
+pub mod version;
 pub mod voice;
 pub mod warmth;
 pub mod workspace;

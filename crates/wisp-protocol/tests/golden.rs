@@ -246,6 +246,7 @@ fn turn_outcomes() -> Vec<(&'static str, TurnOutcome)> {
                     limit_reached: None,
                     model_limit: None,
                     stream: None,
+                    malformed_call: None,
                     phase: FailurePhase::Stream,
                     source: FailureSource::Endpoint,
                     status: Some(200),
@@ -272,6 +273,7 @@ fn turn_outcomes() -> Vec<(&'static str, TurnOutcome)> {
                     limit_reached: None,
                     model_limit: None,
                     stream: None,
+                    malformed_call: None,
                     phase: FailurePhase::Response,
                     source: FailureSource::Endpoint,
                     status: Some(429),
@@ -340,6 +342,7 @@ fn mid_stream() -> ErrorDetail {
         limit_reached: None,
         model_limit: None,
         stream: None,
+        malformed_call: None,
         phase: FailurePhase::Stream,
         source: FailureSource::Endpoint,
         status: Some(200),
@@ -2760,6 +2763,66 @@ fn records_and_outcomes_ignore_fields_they_do_not_know() {
             );
             let detail: ErrorDetail = serde_json::from_value(parsed["detail"].clone()).unwrap();
             assert_eq!(detail.stream, Some(Box::new(diagnostics)));
+        }
+        use wisp_protocol::{CallForm, MalformedCall};
+        assert_eq!(detail.malformed_call, None);
+        assert!(value["detail"].get("malformed_call").is_none());
+        let cases = [
+            (
+                MalformedCall::default(),
+                json!({}),
+                json!({"form": "absent", "chars": 0}),
+            ),
+            (
+                MalformedCall {
+                    form: CallForm::Call,
+                    function: Some("bash".into()),
+                    undeclared: false,
+                    chars: 59,
+                    balanced: true,
+                    stop_string: true,
+                    mail_tag: true,
+                },
+                json!({"form": "call", "function": "bash", "chars": 59, "balanced": true, "stop_string": true, "mail_tag": true}),
+                json!({"form": "call", "function": "bash", "chars": 59, "balanced": true, "stop_string": true, "mail_tag": true}),
+            ),
+            (
+                MalformedCall {
+                    form: CallForm::Python,
+                    undeclared: true,
+                    chars: 21,
+                    ..MalformedCall::default()
+                },
+                json!({"form": "python", "undeclared": true, "chars": 21}),
+                json!({"form": "python", "undeclared": true, "chars": 21}),
+            ),
+            (
+                MalformedCall {
+                    form: CallForm::EmptyCall,
+                    chars: 21,
+                    balanced: true,
+                    ..MalformedCall::default()
+                },
+                json!({"form": "empty_call", "chars": 21, "balanced": true}),
+                json!({"form": "empty_call", "chars": 21, "balanced": true}),
+            ),
+            (
+                MalformedCall {
+                    form: CallForm::Other,
+                    chars: 7,
+                    ..MalformedCall::default()
+                },
+                json!({"form": "future_form", "chars": 7}),
+                json!({"form": "other", "chars": 7}),
+            ),
+        ];
+        for (expected, input, wire) in cases {
+            assert_eq!(serde_json::to_value(&expected).unwrap(), wire, "{name}");
+            value["detail"]["malformed_call"] = input;
+            let parsed = roundtrip(value.clone()).unwrap();
+            assert_eq!(parsed["detail"]["malformed_call"], wire, "{name}");
+            let detail: ErrorDetail = serde_json::from_value(parsed["detail"].clone()).unwrap();
+            assert_eq!(detail.malformed_call, Some(Box::new(expected)));
         }
     }
     let mut ended = serde_json::to_value(TurnOutcome::Error {

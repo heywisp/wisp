@@ -237,6 +237,7 @@ fn snapshot_endings() {
                     limit_reached: None,
                     model_limit: None,
                     stream: None,
+                    malformed_call: None,
                     phase: FailurePhase::Stream,
                     source: FailureSource::Endpoint,
                     status: Some(200),

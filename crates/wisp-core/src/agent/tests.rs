@@ -2076,3 +2076,57 @@ pub(super) fn sends_thinking(body: &Value) -> bool {
 pub(super) fn turn_started(turn: u64) -> impl Fn(&LogEvent) -> bool {
     move |e| matches!(e, LogEvent::TurnStarted { turn: t, .. } if *t == turn)
 }
+
+#[tokio::test]
+async fn session_version_records_commit_on_start_and_resume() {
+    let base = env!("CARGO_PKG_VERSION");
+    async fn run_pair(id: &str) -> (String, String) {
+        use crate::session::SessionStore;
+        let store = MemoryStore::default();
+        let mut agent = Agent::new(Fake::new(vec![ends("first")]), default_session())
+            .with_log(SessionLog::new(Box::new(store.clone()), id), log_context());
+        turn(&mut agent, "one").await;
+        let first = store.read(id).unwrap();
+        let started_version = first
+            .iter()
+            .find_map(|r| match &r.event {
+                LogEvent::SessionStarted { wisp_version, .. } => Some(wisp_version.clone()),
+                _ => None,
+            })
+            .unwrap();
+        let mut resumed = Agent::new(Fake::new(vec![ends("second")]), default_session())
+            .with_log(
+                SessionLog::continuing(Box::new(store.clone()), id, first.len() as u64),
+                log_context(),
+            )
+            .resume(&first, 0)
+            .unwrap();
+        turn(&mut resumed, "two").await;
+        let resumed_version = store
+            .read(id)
+            .unwrap()
+            .into_iter()
+            .find_map(|r| match r.event {
+                LogEvent::SessionResumed { wisp_version, .. } => Some(wisp_version),
+                _ => None,
+            })
+            .unwrap();
+        (started_version, resumed_version)
+    }
+
+    crate::version::set_commit("");
+    assert_eq!(crate::version::wisp_version(), base);
+    assert_eq!(
+        run_pair("s-unset").await,
+        (base.to_owned(), base.to_owned())
+    );
+
+    crate::version::set_commit("14ecd6dcec19");
+    crate::version::set_commit("ffffffffffff");
+    let with_commit = format!("{base}+14ecd6dcec19");
+    assert_eq!(crate::version::wisp_version(), with_commit);
+    assert_eq!(
+        run_pair("s-commit").await,
+        (with_commit.clone(), with_commit)
+    );
+}

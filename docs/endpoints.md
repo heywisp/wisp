@@ -1336,8 +1336,12 @@ repeated malformed finishes; if a retry succeeds, that note stays in history and
 later requests (logged via `input_committed` under the internal
 `wisp-call-note-` ID prefix, never drawn as a user message on resume), and if
 the step gives up or cancels, the note is discarded. Raw
-finish diagnostics and attempted arguments stay out. Other unreadable-reply
-diagnostics keep a provider-named lead-in, never a bare parser fragment.
+finish diagnostics and attempted arguments stay out: `retrying` and final error
+details record only `detail.malformed_call` labels (form, declared tool name if
+matched, counts and booleans, never Google's message text) and `detail.stream`
+counts (on all three Gemini invalid finishes; `docs/session-log.md`). Other
+unreadable-reply diagnostics keep a provider-named lead-in, never a bare parser
+fragment.
 
 Native and background compaction keep finite counted bounds: 5 retries per
 step (3 for non-malformed-call retryable `invalid_response`, while the tighter

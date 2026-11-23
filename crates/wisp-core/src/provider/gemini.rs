@@ -1,4 +1,5 @@
 pub(crate) mod antigravity;
+mod malformed;
 mod plan_usage;
 mod request;
 pub(super) mod search;
@@ -960,6 +961,7 @@ impl GeminiProvider {
         body: Value,
         carries: Carries,
     ) -> BoxStream<'static, Result<ProviderEvent, ProviderError>> {
+        let sent = malformed::Sent::from_body(&body);
         let sending = self.clone();
         let req_model = model.clone();
         let call = async move {
@@ -1008,7 +1010,8 @@ impl GeminiProvider {
                 return (Vec::new(), Err(error));
             }
             let req_id = super::classify::header_request_id(response.headers());
-            let decoder = stream::GeminiDecoder::new(model, billing, req_id, this.identity.clone());
+            let decoder = stream::GeminiDecoder::new(model, billing, req_id, this.identity.clone())
+                .with_sent(sent);
             (Vec::new(), Ok((response, decoder)))
         };
         super::sse::drive(call, open, self.waits)
@@ -1561,7 +1564,23 @@ pub(crate) mod tests {
                 }]
             })
         );
-        let mut server = http::serve(vec![http::Reply::Send(http::sse(&sse_body))]).await;
+        let malformed_sse = format!(
+            "data: {}\n\n",
+            json!({
+                "candidates": [{
+                    "finishReason": "MALFORMED_FUNCTION_CALL",
+                    "finishMessage": format!(
+                        "Malformed function call: call:default_api:lookup{{command:\"a\nuser\n{}b\"}}",
+                        wisp_tool_text::SENT_PREFIX
+                    ),
+                }]
+            })
+        );
+        let mut server = http::serve(vec![
+            http::Reply::Send(http::sse(&sse_body)),
+            http::Reply::Send(http::sse(&malformed_sse)),
+        ])
+        .await;
         let ep = endpoint(
             Credential::AuthToken("gw_bearer_token_1".into()),
             &server.url,
@@ -1596,6 +1615,28 @@ pub(crate) mod tests {
                 .iter()
                 .any(|(k, v)| k == "authorization" && v == "Bearer gw_bearer_token_1")
         );
+
+        let tools = [crate::tool::ToolSpec {
+            name: "lookup".into(),
+            description: "run".into(),
+            input_schema: json!({"type": "object"}),
+        }];
+        let malformed_req = Request {
+            tools: &tools,
+            ..req
+        };
+        let error = provider
+            .stream(&malformed_req)
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .find_map(Result::err)
+            .unwrap();
+        let labels = error.detail.malformed_call.as_ref().unwrap();
+        assert_eq!(labels.form, wisp_protocol::CallForm::Call);
+        assert_eq!(labels.function.as_deref(), Some("lookup"));
+        assert!(labels.stop_string);
+        assert!(matches!(server.next().await, http::Heard::Request(_)));
     }
 
     #[tokio::test]
