@@ -783,6 +783,125 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
             true,
         )
     });
+    let mid_escape = [r"\u006C\u0041NARY-run-key", r"\\u006C\\u0041NARY-run-key"].map(|text| {
+        (
+            text.to_owned(),
+            text.to_owned(),
+            &[1, 4, 5, 6, 7, 13, 64][..],
+            false,
+            true,
+        )
+    });
+    let hex_keys = crate::session::Redactions::typed(["005C".to_owned(), "005C00".to_owned()]);
+    let tail = "CANARY-extra-tail-012345678901";
+    let long_prefixed = format!(r"\\\\\\\{tail}");
+    let prefixed_longest = long_prefixed.len().div_ceil(3) * 4 - 3;
+    let prefixed = crate::session::Redactions::typed([r"\\\".to_owned(), long_prefixed]);
+    let escaped_head: String = tail[..10]
+        .bytes()
+        .map(|byte| format!(r"\u{byte:04x}"))
+        .collect();
+    let deep = format!("{}{escaped_head}{}", r"\".repeat(48), &tail[10..]);
+    let floor_keys = crate::session::Redactions::new(
+        [
+            r"00005c}u{00005c}u{00005c}",
+            r"u{00005c}\u{00005c}u{0000",
+            "CANARY-leaked-secret-01234",
+        ]
+        .map(str::to_owned),
+    );
+    let straddle_keys = crate::session::Redactions::new(
+        [
+            r"CANARY-pre-\u005cu{0",
+            r"05c}u{00005c}\u005Cu005Cu005C",
+            "CANARY-leaked-by-straddle-01",
+        ]
+        .map(str::to_owned),
+    );
+    let guard_keys = crate::session::Redactions::typed([
+        r"CANARY-held-abcd\u0".to_owned(),
+        "41CANARY".to_owned(),
+    ]);
+    let hold_split_keys = crate::session::Redactions::typed(["5Cu".to_owned()]);
+    let hold_whole_keys = crate::session::Redactions::typed([r"cCANARY-\u0".to_owned()]);
+    let extra = [
+        (
+            &hex_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 6,
+            r"\u005C0\u0030z".to_owned(),
+            format!(r"\u{marker}0\u0030z"),
+            &[1, 4, 5, 6, 7, 13, 64][..],
+            false,
+            true,
+        ),
+        (
+            &hex_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 6,
+            r"\\u0030\u{00005c}u{00005c}u{00005C}u{000030}\u{00005c}u{00005c}u{00005c}u{000035}\u{00005c}u{00005c}u{00005c}uD83D\u{00005c}u{00005c}u{00005c}uDE42".to_owned(),
+            format!(
+                r"\\u0030\u{{00005c}}u{{00005c}}u{{00{marker}}}u{{000030}}\u{{00005c}}u{{00005c}}u{{00005c}}u{{000035}}\u{{00005c}}u{{00005c}}u{{00005c}}uD83D\u{{00005c}}u{{00005c}}u{{00005c}}uDE42"
+            ),
+            &[1, 4, 5, 6, 7, 13, 64][..],
+            false,
+            true,
+        ),
+        (
+            &prefixed,
+            (crate::session::ESCAPED_HOLD + 1) * prefixed_longest,
+            deep,
+            marker.to_owned(),
+            &[1, 4, 5, 7, 13, 64, 255][..],
+            false,
+            false,
+        ),
+        (
+            &guard_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 20,
+            r"CANARY-held-abcd\u005Cu0041CANARY".to_owned(),
+            format!("{marker}0{marker}"),
+            &[1, 4, 5, 6, 7, 13, 64][..],
+            false,
+            false,
+        ),
+        (
+            &floor_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 34,
+            r"\u{00005c}u{00005c}u{00005c}\u{00005c}u{00005c}u{00005c}\\\\\\\\u0043ANARY-leaked-secret-01234".to_owned(),
+            format!(r"\u{{{marker}"),
+            &[1, 4, 5, 7, 13, 64][..],
+            false,
+            false,
+        ),
+        (
+            &straddle_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 38,
+            r"CANARY-pre-\u005cu{00005c}u{00005c}\u005Cu005Cu005C\\\\\\\\u0043ANARY-leaked-by-straddle-01".to_owned(),
+            format!("{marker}00{marker}"),
+            &[1, 4, 5, 7, 13, 64][..],
+            false,
+            false,
+        ),
+        (
+            &hold_split_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 3,
+            r"\\u005c\u005c\u{5c}u005C\u005c\u005cu\u{7B}\u{37}5}".to_owned(),
+            format!(r"\\u005c\u005c\u{{5c}}u00{marker}"),
+            &[1, 5, 7, 49, 64][..],
+            false,
+            false,
+        ),
+        (
+            &hold_whole_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 12,
+            r"\u{5c}\\\u00750\u0030\u{000063}\u{043}\u{000041}\u{004e}\u{41}\u{000052}\u{05C}\u{075}\u{030}\u{00030}\u{0035}\u{00039}\u{0002D}\u{05C}\u{075}\u{030}\u{035}\u{000063}\u{5c}\u{075}\u{30}\u{30}\u".to_owned(),
+            format!(
+                r"\u{{5c}}\\\u00750\u0030{marker}\u{{035}}\u{{000063}}\u{{5c}}\u{{075}}\u{{30}}\u{{30}}\u"
+            ),
+            &[1, 4, 5, 7, 13, 64, 255][..],
+            false,
+            false,
+        ),
+    ];
     let rows = [
         (
             nested.repeat(64),
@@ -801,18 +920,23 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
     ]
     .into_iter()
     .chain(unchanged)
-    .chain(prompts);
-    for (text, expected, sizes, capping, settles) in rows {
-        assert_eq!(redactions.mask(&text), expected);
+    .chain(prompts)
+    .chain(mid_escape)
+    .map(|(text, expected, sizes, capping, settles)| {
+        (&redactions, bound, text, expected, sizes, capping, settles)
+    })
+    .chain(extra);
+    for (list, bound, text, expected, sizes, capping, settles) in rows {
+        assert_eq!(list.mask(&text), expected);
         for &size in sizes {
             let mut pending = crate::session::MaskTail::default();
             let mut joined = Vec::new();
             let mut capped = false;
             for chunk in text.as_bytes().chunks(size) {
-                joined.extend(feed(&redactions, chunk, &mut pending, &mut capped, bound));
+                joined.extend(feed(list, chunk, &mut pending, &mut capped, bound));
             }
             assert!(pending.bytes.is_empty() || !settles, "{text:?}");
-            joined.extend(redactions.release(&mut pending).0);
+            joined.extend(list.release(&mut pending).0);
             assert!(pending.bytes.is_empty());
             assert!(capped || !capping);
             assert_eq!(collapsed(&joined), expected.as_bytes(), "chunks of {size}");

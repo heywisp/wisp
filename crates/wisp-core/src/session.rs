@@ -1528,6 +1528,7 @@ fn matched(
     bytes: &[u8],
     covered: usize,
     pending: bool,
+    floor: usize,
 ) -> (Vec<std::ops::Range<usize>>, usize, Option<Vec<usize>>) {
     let runs = (covered > 0).then_some(0..covered).into_iter().collect();
     let (mut view, cut) = unescaped(bytes, pending);
@@ -1548,6 +1549,9 @@ fn matched(
                 .map(|run| origin[run.start]..origin[run.end]),
         );
         boundary = boundary.min(origin[prefix]);
+        if pending {
+            boundary = snap_escape(&origin, boundary, floor);
+        }
         view = next.map(|(next, from)| (next, from.into_iter().map(|at| origin[at]).collect()));
         starts = Some(origin);
     }
@@ -1557,6 +1561,14 @@ fn matched(
         merged
     });
     (runs, boundary, starts)
+}
+
+fn snap_escape(starts: &[usize], at: usize, floor: usize) -> usize {
+    let snapped = starts[..starts.partition_point(|&start| start <= at)]
+        .last()
+        .copied()
+        .unwrap_or(0);
+    if snapped >= floor { snapped } else { at }
 }
 
 type Decoded = (Vec<u8>, Vec<usize>);
@@ -1737,39 +1749,48 @@ impl Redactions {
                 0,
             );
         };
-        let (runs, mut boundary, starts) = matched(&entries, bytes, covered, pending);
         let hold = longest.len().saturating_mul(ESCAPED_HOLD);
+        let floor = bytes.len().saturating_sub(hold);
+        let (runs, mut boundary, starts) = matched(&entries, bytes, covered, pending, floor);
         if pending {
-            boundary = boundary.max(bytes.len().saturating_sub(hold));
+            boundary = boundary.max(floor);
         }
         let prefix = boundary;
-        if pending
-            && let Some(run) = runs
-                .iter()
-                .find(|run| run.start <= boundary && boundary <= run.end)
-        {
-            boundary = run.start;
+        let active = pending
+            .then(|| {
+                runs.iter()
+                    .find(|run| run.start <= boundary && boundary <= run.end)
+            })
+            .flatten();
+        if let Some(run) = active {
+            boundary = starts
+                .as_deref()
+                .map_or(run.start, |starts| snap_escape(starts, run.start, floor));
         }
-        let mut next_covered = covered.saturating_sub(boundary);
         if pending
             && bytes.len() - boundary > longest.len().saturating_mul(2)
-            && let Some(run) = runs.iter().find(|run| run.start == boundary)
+            && let Some(run) = active
         {
             let keep = (longest.len() - 1).min(run.end - run.start);
             let from = prefix.min(run.end - keep);
-            let floor = run.start.max(bytes.len().saturating_sub(hold));
             let shown = |at: usize| at > run.start || covered > run.start;
             let restart = starts
                 .as_deref()
-                .and_then(|starts| starts[..starts.partition_point(|&at| at <= from)].last())
-                .copied()
-                .filter(|&at| at >= floor && shown(at))
-                .unwrap_or(from);
+                .map_or(from, |starts| snap_escape(starts, from, floor));
             if shown(restart) {
                 boundary = restart;
-                next_covered = run.end - boundary;
             }
         }
+        let next_covered = if pending {
+            runs.iter()
+                .find(|run| (run.start < boundary || covered > run.start) && boundary < run.end)
+                .map_or_else(
+                    || covered.saturating_sub(boundary),
+                    |run| run.end - boundary,
+                )
+        } else {
+            0
+        };
         (
             spliced(bytes, &runs, boundary, covered),
             boundary,
