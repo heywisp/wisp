@@ -195,6 +195,22 @@ fn the_stopped_line_counts_the_agents_below_and_says_what_ending_means() {
 }
 
 #[test]
+fn end_refused_names_the_reason_and_how_to_proceed() {
+    assert_eq!(
+        end_refused("/w", None, EndRefusal::Running),
+        "/w was still running and hasn't reported yet; its report arrives as a message. To end it anyway, stop it first (stop_agent with end: false) and end it in a later reply."
+    );
+    assert_eq!(
+        end_refused("/lead", Some("/lead/w"), EndRefusal::Queued),
+        "/lead/w below /lead was queued to run and hasn't reported yet. To end /lead anyway, stop it first (stop_agent with end: false) and end it in a later reply."
+    );
+    assert_eq!(
+        end_refused("/w", None, EndRefusal::UnreadReport),
+        "/w's report is waiting for you and arrives as a message. Read it before ending /w in a later reply."
+    );
+}
+
+#[test]
 fn the_running_time_reads_in_seconds_minutes_or_hours() {
     assert_eq!(ran(999), "0s");
     assert_eq!(ran(59_000), "59s");

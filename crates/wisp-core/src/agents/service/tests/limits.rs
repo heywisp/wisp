@@ -1545,3 +1545,212 @@ async fn voice_calls_are_booked_in_main_spend_and_a_subscription_call_as_subscri
         );
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn ending_a_queued_agent_is_refused_until_stopped_in_an_earlier_reply() {
+    use wisp_protocol::NotRunReason;
+    use wisp_tool_text::agents::{EndRefusal, LIST_AGENTS, end_refused};
+    let gate = Arc::new(Semaphore::new(0));
+    let mut run = start(
+        "limits-end-refused-queued",
+        Setup {
+            limits: Limits {
+                max_running: Some(1),
+                ..Limits::default()
+            },
+            ..Setup::default()
+        },
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[
+                        spawn_call("s1", "a", "Work A."),
+                        spawn_call("s2", "b", "Work B."),
+                    ]),
+                    gated(
+                        uses(&[
+                            stop_call("k1", "b", true),
+                            call("l1", LIST_AGENTS, json!({})),
+                        ]),
+                        &gate,
+                    ),
+                    uses(&[stop_call("k2", "b", false), stop_call("k_same", "b", true)]),
+                    uses(&[stop_call("k3", "b", true)]),
+                    done("ended b"),
+                ],
+            ),
+            ("/a", vec![hanging("busy")]),
+            ("/b", vec![hanging("queued")]),
+        ],
+    )
+    .await;
+    run.say("go").await;
+    run.until("b queued", |e| {
+        matches!(
+            e,
+            AgentEvent::AgentSpawned { agent, .. }
+                if agent.path.as_str() == "/b" && agent.state == queued(QueueReason::Concurrency)
+        )
+    })
+    .await;
+    gate.add_permits(1);
+    run.root_ended().await;
+    let root = run.requests("/");
+    assert_eq!(
+        result_of(&root[2], "k1"),
+        (true, end_refused("/b", None, EndRefusal::Queued))
+    );
+    assert_eq!(
+        result_of(&root[2], "l1"),
+        (
+            true,
+            crate::agent::not_run_text(&NotRunReason::AfterRefusal)
+        )
+    );
+    assert!(!result_of(&root[3], "k2").0);
+    assert_eq!(
+        result_of(&root[3], "k_same"),
+        (true, end_refused("/b", None, EndRefusal::Queued))
+    );
+    assert_eq!(
+        result_of(&root[4], "k3"),
+        (
+            false,
+            "Ended /b. Ended agents take no more messages and no longer count toward the agent limit."
+                .to_owned()
+        )
+    );
+    assert!(run.requests("/b").is_empty());
+    let run = run.quit().await;
+    assert_eq!(super::messages::ended_in(&run, "/"), ["/b"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_then_end_of_a_queued_agent_succeeds_even_when_cancel_settles_mid_second_reply() {
+    let stop_gate = Arc::new(Semaphore::new(0));
+    let end_gate = Arc::new(Semaphore::new(0));
+    let at_select = pause_at("/b", "restart-idle-select");
+    let mut run = start(
+        "limits-queued-settle-mid-reply",
+        Setup {
+            limits: Limits {
+                max_running: Some(1),
+                ..Limits::default()
+            },
+            ..Setup::default()
+        },
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[
+                        spawn_call("s1", "a", "Work A."),
+                        spawn_call("s2", "b", "Work B."),
+                    ]),
+                    gated(uses(&[stop_call("k1", "b", false)]), &stop_gate),
+                    gated(uses(&[stop_call("k2", "b", true)]), &end_gate),
+                    done("ended b"),
+                ],
+            ),
+            ("/a", vec![hanging("busy")]),
+            ("/b", vec![hanging("queued")]),
+        ],
+    )
+    .await;
+    run.say("go").await;
+    within("/b idle select", at_select.wait()).await;
+    stop_gate.add_permits(1);
+    while run.requests("/").len() < 3 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    within("release /b", at_select.wait()).await;
+    run.until("/b stopped", |e| {
+        matches!(
+            e,
+            AgentEvent::AgentStateChanged { agent, state, .. }
+                if agent.as_str() == "/b" && *state == stopped()
+        )
+    })
+    .await;
+    end_gate.add_permits(1);
+    run.root_ended().await;
+    let root = run.requests("/");
+    assert!(!result_of(&root[2], "k1").0);
+    assert_eq!(
+        result_of(&root[3], "k2"),
+        (
+            false,
+            "Ended /b. Ended agents take no more messages and no longer count toward the agent limit."
+                .to_owned()
+        )
+    );
+    let run = run.quit().await;
+    assert_eq!(super::messages::ended_in(&run, "/"), ["/b"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stopped_idle_child_retasked_and_queued_refuses_end() {
+    use wisp_tool_text::agents::{EndRefusal, LIST_AGENTS, end_refused};
+    let gate = Arc::new(Semaphore::new(0));
+    let mut run = start(
+        "limits-stopped-idle-retasked-queued",
+        Setup {
+            limits: Limits {
+                max_running: Some(1),
+                ..Limits::default()
+            },
+            ..Setup::default()
+        },
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[spawn_call("s1", "b", "First.")]),
+                    done("waiting for b"),
+                    done("got b"),
+                    uses(&[spawn_call("s2", "a", "Busy.")]),
+                    uses(&[stop_call("k_idle", "b", false)]),
+                    uses(&[send_call("m1", "b", "Second.")]),
+                    gated(uses(&[call("l1", LIST_AGENTS, json!({}))]), &gate),
+                    uses(&[stop_call("k_end", "b", true)]),
+                    done("done"),
+                ],
+            ),
+            ("/a", vec![hanging("busy")]),
+            (
+                "/b",
+                vec![
+                    uses(&[report_call("r1", "first")]),
+                    uses(&[report_call("r2", "second")]),
+                ],
+            ),
+        ],
+    )
+    .await;
+    run.say("first").await;
+    run.root_ended().await;
+    run.child_ended("/b").await;
+    run.root_ended().await;
+    run.say("next").await;
+    run.until("/b queued for second task", |e| {
+        matches!(
+            e,
+            AgentEvent::AgentStateChanged { agent, state, .. }
+                if agent.as_str() == "/b" && *state == queued(QueueReason::Concurrency)
+        )
+    })
+    .await;
+    gate.add_permits(1);
+    run.root_ended().await;
+    let root = run.requests("/");
+    assert!(!result_of(&root[5], "k_idle").0);
+    assert!(!result_of(&root[6], "m1").0);
+    assert!(!result_of(&root[7], "l1").0);
+    assert_eq!(
+        result_of(&root[8], "k_end"),
+        (true, end_refused("/b", None, EndRefusal::Queued))
+    );
+    let run = run.quit().await;
+    assert!(super::messages::ended_in(&run, "/").is_empty());
+}

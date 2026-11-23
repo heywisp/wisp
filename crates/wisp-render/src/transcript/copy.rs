@@ -1715,6 +1715,7 @@ pub fn process_ended(id: impl fmt::Display, end: &ProcessEnd) -> String {
 pub const TURN_STOPPED: &str = "the turn was stopped";
 pub const BEFORE_RESTART: &str = "before the restart";
 pub const AFTER_QUESTION: &str = "came after a question";
+pub const AFTER_REFUSAL: &str = "came after a refused call";
 pub const PROMPT: &str = "$ ";
 pub const TAIL_ONLY: &str = "Only the last part of the output is shown here.";
 pub const LOADING_FILE: &str = "Loading the output file";
@@ -2039,6 +2040,7 @@ pub fn not_run(reason: &NotRunReason) -> String {
         }
         NotRunReason::TurnStopped => TURN_STOPPED.to_owned(),
         NotRunReason::AfterQuestion => AFTER_QUESTION.to_owned(),
+        NotRunReason::AfterRefusal => AFTER_REFUSAL.to_owned(),
     }
 }
 

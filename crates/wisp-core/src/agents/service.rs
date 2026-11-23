@@ -18,6 +18,7 @@ use wisp_protocol::{
     MessageTime, ParentLink, PresetChange, QueueReason, RejectKind, RequestId, SpawnChoices,
     SpawnRequest, TodoItem, TodoProgress, TodoStatus, shorten_path,
 };
+use wisp_tool_text::agents::EndRefusal;
 
 use super::brief;
 use super::endpoints::{self, EndpointView, Fixed, Gone, Ready};
@@ -147,6 +148,10 @@ struct Entry {
     place: Place,
     kind: Option<&'static str>,
     preset_change: Option<PresetChange>,
+    waking: bool,
+    request_seq: u64,
+    left_active: Option<(u64, EndRefusal)>,
+    halted_reply: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,6 +241,10 @@ impl Entry {
             place,
             kind: None,
             preset_change: None,
+            waking: false,
+            request_seq: 0,
+            left_active: None,
+            halted_reply: false,
         }
     }
 
@@ -385,9 +394,33 @@ struct Tree {
     gone: Gone,
     renames: Vec<(AgentPath, AgentPath)>,
     renaming: Option<AgentPath>,
+    seq: u64,
 }
 
 impl Tree {
+    fn next_seq(&mut self) -> u64 {
+        self.seq += 1;
+        self.seq
+    }
+
+    pub(super) fn track_active<T>(
+        &mut self,
+        path: &AgentPath,
+        f: impl FnOnce(&mut Entry) -> T,
+    ) -> Option<T> {
+        let entry = self.get_mut(path)?;
+        let before = active_work(entry);
+        let out = f(entry);
+        let after = active_work(entry);
+        if let (Some(reason), None) = (before, after) {
+            let seq = self.next_seq();
+            if let Some(entry) = self.get_mut(path) {
+                entry.left_active = Some((seq, reason));
+            }
+        }
+        Some(out)
+    }
+
     fn resolve(&self, path: &AgentPath) -> AgentPath {
         path.followed(&self.renames)
     }
@@ -502,6 +535,83 @@ impl std::fmt::Debug for AgentsHandle {
 
 fn refused(reason: impl Into<String>) -> (RejectKind, String) {
     (RejectKind::Other(NO_SUCH_AGENT.to_owned()), reason.into())
+}
+
+fn delivery_for(target: &AgentPath, state: AgentState, wake: bool, above: bool) -> Delivery {
+    match state {
+        _ if target.is_root() => Delivery::Running,
+        AgentState::Running | AgentState::Stopping => Delivery::Running,
+        AgentState::Queued {
+            reason: QueueReason::Concurrency,
+        } => Delivery::Queued,
+        AgentState::Queued { .. } => Delivery::Running,
+        AgentState::Held { reason } if wake && above && reason != HoldReason::Concurrency => {
+            Delivery::Woken
+        }
+        AgentState::Held { .. } => Delivery::Held,
+        AgentState::Idle {
+            outcome: Some(IdleOutcome::Stopped | IdleOutcome::Failed),
+        } if wake && !above => Delivery::Held,
+        _ if wake => Delivery::Woken,
+        _ => Delivery::Idle,
+    }
+}
+
+fn active_work(entry: &Entry) -> Option<EndRefusal> {
+    if entry.waking {
+        return Some(EndRefusal::Running);
+    }
+    if entry.stop.is_some()
+        || !limits::stoppable(entry.state)
+        || entry.state == AgentState::Stopping
+    {
+        return None;
+    }
+    if entry.state.is_running() {
+        Some(EndRefusal::Running)
+    } else {
+        Some(EndRefusal::Queued)
+    }
+}
+
+fn end_refusal(
+    tree: &Tree,
+    caller: &AgentPath,
+    target: &AgentPath,
+) -> Option<(AgentPath, EndRefusal)> {
+    let scope = |path: &AgentPath| path == target || target.is_ancestor_of(path);
+    let live: Vec<&Entry> = tree
+        .get(target)
+        .into_iter()
+        .chain(
+            tree.entries
+                .values()
+                .filter(|e| target.is_ancestor_of(&e.path()) && e.state.is_live()),
+        )
+        .collect();
+    if let Some((path, reason)) = live
+        .iter()
+        .find_map(|e| active_work(e).map(|reason| (e.path(), reason)))
+    {
+        return Some((path, reason));
+    }
+    let caller_entry = tree.get(caller)?;
+    if let Some(sender) = caller_entry
+        .mail
+        .unread_report(|sender| scope(&tree.resolve(sender)))
+    {
+        return Some((tree.resolve(&sender), EndRefusal::UnreadReport));
+    }
+    if caller_entry.request_seq > 0
+        && let Some((path, reason)) = live.iter().find_map(|e| {
+            e.left_active
+                .filter(|(seq, _)| *seq > caller_entry.request_seq)
+                .map(|(_, reason)| (e.path(), reason))
+        })
+    {
+        return Some((path, reason));
+    }
+    None
 }
 
 fn still_working(state: AgentState) -> bool {
@@ -1332,34 +1442,45 @@ impl AgentsService {
     ) -> Option<AgentEvent> {
         let mut tree = self.tree();
         let path = &tree.resolve(path);
-        let entry = tree.get_mut(path).filter(|e| !e.path().is_root())?;
-        let before = (
-            entry.state,
-            entry.activity.clone(),
-            entry.spent_usd,
-            entry.lower_bound,
-        );
-        entry.state = state::next(entry.state, change);
-        entry.track_running();
-        if let Some(activity) = activity.or_else(|| state::activity_of(entry.state)) {
-            entry.activity = activity;
-        } else if change == Change::Started {
-            entry.activity = Activity::Streaming;
+        if tree.get(path).is_none_or(|e| e.path().is_root()) {
+            return None;
         }
-        if let Some((usd, lower)) = spent {
-            entry.spent_usd = usd;
-            entry.lower_bound = lower;
-        }
-        let after = (
-            entry.state,
-            entry.activity.clone(),
-            entry.spent_usd,
-            entry.lower_bound,
-        );
-        let event = (before != after || entry.unannounced())
-            .then(|| entry.announce(self.now_ms(), &self.shared.news));
-        let state = entry.state;
-        tree.remember_before_queue(path, before.0, state);
+        let now = self.now_ms();
+        let news = &self.shared.news;
+        let (before_state, after_state, event) = tree.track_active(path, |entry| {
+            let before = (
+                entry.state,
+                entry.activity.clone(),
+                entry.spent_usd,
+                entry.lower_bound,
+            );
+            entry.state = state::next(entry.state, change);
+            if change != Change::Stopping {
+                entry.waking = false;
+            }
+            if matches!(change, Change::Settled(_)) {
+                entry.stop = None;
+            }
+            entry.track_running();
+            if let Some(activity) = activity.or_else(|| state::activity_of(entry.state)) {
+                entry.activity = activity;
+            } else if change == Change::Started {
+                entry.activity = Activity::Streaming;
+            }
+            if let Some((usd, lower)) = spent {
+                entry.spent_usd = usd;
+                entry.lower_bound = lower;
+            }
+            let after = (
+                entry.state,
+                entry.activity.clone(),
+                entry.spent_usd,
+                entry.lower_bound,
+            );
+            let event = (before != after || entry.unannounced()).then(|| entry.announce(now, news));
+            (before.0, entry.state, event)
+        })?;
+        tree.remember_before_queue(path, before_state, after_state);
         event
     }
 
@@ -1382,15 +1503,12 @@ impl AgentsService {
                 .map(|_| ())
                 .map_err(refused);
         }
-        if matches!(command, ClientCommand::Send { .. })
-            && let Some(entry) = tree.get_mut(target)
-        {
-            entry.peers.clear();
-        }
-        let Some(entry) = tree.get(target) else {
-            return Err(refused(format!("there is no agent {target}")));
-        };
-        let Some(commands) = &entry.commands else {
+        let wakes = matches!(
+            command,
+            ClientCommand::Send { .. } | ClientCommand::Release | ClientCommand::Retry { .. }
+        );
+        let sent = matches!(command, ClientCommand::Send { .. });
+        let Some(commands) = entry.commands.clone() else {
             return Err(refused(format!("{target} has ended")));
         };
         commands.try_send(command).map_err(|e| match e {
@@ -1399,7 +1517,16 @@ impl AgentsService {
                 format!("{target} has too many commands waiting; try again"),
             ),
             mpsc::error::TrySendError::Closed(_) => refused(format!("{target} has ended")),
-        })
+        })?;
+        if let Some(entry) = tree.get_mut(target) {
+            if sent {
+                entry.peers.clear();
+            }
+            if wakes && !limits::stoppable(entry.state) {
+                entry.stop = None;
+            }
+        }
+        Ok(())
     }
 
     fn stop_tree(
@@ -1433,6 +1560,20 @@ impl AgentsService {
                 Some(_) => {}
                 None => return Err(format!("there is no agent {target}")),
             }
+            if end
+                && let Some(caller) = by
+                && let Some((who, reason)) = end_refusal(&tree, caller, target)
+            {
+                if let Some(entry) = tree.get_mut(caller) {
+                    entry.halted_reply = true;
+                }
+                let below = (&who != target).then_some(who.as_str());
+                return Err(wisp_tool_text::agents::end_refused(
+                    target.as_str(),
+                    below,
+                    reason,
+                ));
+            }
             let below: Vec<(AgentPath, bool)> = tree
                 .entries
                 .values()
@@ -1456,31 +1597,40 @@ impl AgentsService {
                     .into_iter()
                     .map(|(p, stoppable)| (p, StopCause::WithParent, stoppable)),
             ) {
-                let Some(entry) = tree.get_mut(&path) else {
-                    continue;
-                };
-                entry.stop = Some(cause);
-                if !end && let Some(warm) = entry.warm.as_mut().filter(|w| !w.paused) {
-                    warm.paused = true;
-                    stopping.extend(entry.warm_changed());
-                }
-                if !end && entry.state == AgentState::Running {
-                    entry.state = state::next(entry.state, Change::Stopping);
-                    stopping.push(entry.announce(now, news));
-                }
-                if !end && stoppable {
-                    news.push(TreeNews::Stopped(told(&path)));
-                }
-                if let Some(commands) = &entry.commands {
-                    let _ = commands.try_send(ClientCommand::Cancel);
-                }
                 if end {
+                    let Some(entry) = tree.get_mut(&path) else {
+                        continue;
+                    };
+                    entry.stop = Some(cause);
+                    entry.waking = false;
+                    if let Some(commands) = &entry.commands {
+                        let _ = commands.try_send(ClientCommand::Cancel);
+                    }
                     entry.commands = None;
                     entry.state = state::next(entry.state, Change::Ended);
                     entry.track_running();
                     entry.activity = Activity::Idle;
                     ended.push(entry.announce(now, news));
                     news.push(TreeNews::Ended(told(&path)));
+                } else {
+                    tree.track_active(&path, |entry| {
+                        entry.stop = Some(cause);
+                        entry.waking = false;
+                        if let Some(warm) = entry.warm.as_mut().filter(|w| !w.paused) {
+                            warm.paused = true;
+                            stopping.extend(entry.warm_changed());
+                        }
+                        if entry.state == AgentState::Running {
+                            entry.state = state::next(entry.state, Change::Stopping);
+                            stopping.push(entry.announce(now, news));
+                        }
+                        if stoppable {
+                            news.push(TreeNews::Stopped(told(&path)));
+                        }
+                        if let Some(commands) = &entry.commands {
+                            let _ = commands.try_send(ClientCommand::Cancel);
+                        }
+                    });
                 }
             }
             if end {
@@ -1614,7 +1764,7 @@ impl AgentsService {
         } else {
             text
         };
-        self.post(from.clone(), target, kind, wake, text)?;
+        let delivery = self.post(from.clone(), target, kind, wake, text)?;
         let mut tree = self.tree();
         let from = &tree.resolve(from);
         let target = &tree.resolve(target);
@@ -1626,33 +1776,15 @@ impl AgentsService {
                 sender.asking.insert(target.clone());
             }
         }
-        let Some(entry) = tree.get_mut(target) else {
-            return Ok((reach, Delivery::Running));
-        };
-        entry.asking.remove(from);
-        let above = matches!(reach, Reach::Child | Reach::Below);
-        if above {
-            entry.peers.clear();
-        } else if reach == Reach::Sibling {
-            *entry.peers.entry(from.clone()).or_default() += 1;
-        }
-        let delivery = match entry.state {
-            _ if target.is_root() => Delivery::Running,
-            AgentState::Running | AgentState::Stopping => Delivery::Running,
-            AgentState::Queued {
-                reason: QueueReason::Concurrency,
-            } => Delivery::Queued,
-            AgentState::Queued { .. } => Delivery::Running,
-            AgentState::Held { reason } if wake && above && reason != HoldReason::Concurrency => {
-                Delivery::Woken
+        if let Some(entry) = tree.get_mut(target) {
+            entry.asking.remove(from);
+            let above = matches!(reach, Reach::Child | Reach::Below);
+            if above {
+                entry.peers.clear();
+            } else if reach == Reach::Sibling {
+                *entry.peers.entry(from.clone()).or_default() += 1;
             }
-            AgentState::Held { .. } => Delivery::Held,
-            AgentState::Idle {
-                outcome: Some(IdleOutcome::Stopped | IdleOutcome::Failed),
-            } if wake && !above => Delivery::Held,
-            _ if wake => Delivery::Woken,
-            _ => Delivery::Idle,
-        };
+        }
         Ok((reach, delivery))
     }
 
@@ -1663,7 +1795,7 @@ impl AgentsService {
         kind: MailKind,
         wake: bool,
         text: String,
-    ) -> Result<(), String> {
+    ) -> Result<Delivery, String> {
         let mail = Mail {
             id: self.next_mail_id(),
             from,
@@ -1675,21 +1807,28 @@ impl AgentsService {
         self.deliver(to, mail)
     }
 
-    fn deliver(&self, to: &AgentPath, mail: Mail) -> Result<(), String> {
-        let sender = {
-            let tree = self.tree();
-            let Some(entry) = tree.get(to).filter(|e| e.state.is_live()) else {
-                return Err(format!("{to} has ended"));
-            };
-            entry.mail.clone()
+    fn deliver(&self, to: &AgentPath, mail: Mail) -> Result<Delivery, String> {
+        let mut tree = self.tree();
+        let to = tree.resolve(to);
+        let from = tree.resolve(&mail.from);
+        let above = from == to || from.is_ancestor_of(&to);
+        let wake = mail.wake;
+        let Some(entry) = tree.get_mut(&to).filter(|e| e.state.is_live()) else {
+            return Err(format!("{to} has ended"));
         };
-        sender.send(mail).map_err(|e| match e {
+        let delivery = delivery_for(&to, entry.state, wake, above);
+        entry.mail.send(mail).map_err(|e| match e {
             agent::MailRefused::TooMany => format!(
                 "{to} already has {} of your messages waiting; wait for it to read them",
                 agent::MAX_MAIL_PER_SENDER
             ),
             agent::MailRefused::Closed => format!("{to} has ended"),
-        })
+        })?;
+        if delivery == Delivery::Woken {
+            entry.waking = true;
+            entry.stop = None;
+        }
+        Ok(delivery)
     }
 
     fn rename(
@@ -2249,6 +2388,25 @@ impl AgentsHandle {
         }
     }
 
+    pub(crate) fn note_request(&self) {
+        if let Some(service) = &self.service {
+            let mut tree = service.tree();
+            let path = tree.resolve(&self.path());
+            let seq = tree.next_seq();
+            if let Some(entry) = tree.get_mut(&path) {
+                entry.request_seq = seq;
+                entry.halted_reply = false;
+            }
+        }
+    }
+
+    pub(crate) fn take_reply_halted(&self) -> bool {
+        self.service
+            .as_ref()
+            .and_then(|s| s.with_entry(&self.path(), |e| std::mem::take(&mut e.halted_reply)))
+            .unwrap_or(false)
+    }
+
     pub fn signals(&self) -> TurnSignals {
         self.service
             .as_ref()
@@ -2305,10 +2463,10 @@ impl AgentsHandle {
         })?
     }
 
-    pub(crate) fn take_stop(&self) -> Option<StopCause> {
+    pub(crate) fn stop_cause(&self) -> Option<StopCause> {
         self.service
             .as_ref()
-            .and_then(|s| s.with_entry(&self.path(), |e| e.stop.take()))
+            .and_then(|s| s.with_entry(&self.path(), |e| e.stop))
             .flatten()
     }
 

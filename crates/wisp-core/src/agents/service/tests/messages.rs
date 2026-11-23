@@ -935,7 +935,7 @@ async fn a_child_that_reported_takes_follow_up_work_in_the_same_context_until_it
     );
 }
 
-fn ended_in(run: &Run, agent: &str) -> Vec<String> {
+pub(super) fn ended_in(run: &Run, agent: &str) -> Vec<String> {
     pick!(run.records(agent), LogEvent::AgentEnded { agent, .. } => agent.as_str().to_owned())
 }
 
@@ -1141,7 +1141,6 @@ async fn ending_an_asked_sibling_wakes_the_agent_waiting_on_it() {
 
 #[tokio::test(start_paused = true)]
 async fn an_ended_childs_parent_is_told_who_ended_it_without_being_woken() {
-    let gate = Arc::new(Semaphore::new(0));
     let mut run = start(
         "messages-ended-notice",
         Setup::default(),
@@ -1149,9 +1148,9 @@ async fn an_ended_childs_parent_is_told_who_ended_it_without_being_woken() {
             (
                 "/",
                 vec![
-                    gated(uses(&[stop_call("k1", "/lead/v", true)]), &gate),
+                    done("noted lead"),
+                    uses(&[stop_call("k1", "/lead/v", true)]),
                     done("ended it"),
-                    done("ok"),
                     done("ok"),
                 ],
             ),
@@ -1163,21 +1162,19 @@ async fn an_ended_childs_parent_is_told_who_ended_it_without_being_woken() {
                         spawn_call("s2", "v", "Check B."),
                     ]),
                     done("waiting"),
-                    done("read w's report"),
+                    uses(&[report_call("r0", "both done")]),
                     done("x"),
                 ],
             ),
             ("/lead/w", vec![uses(&[report_call("r1", "A is fine")])]),
-            ("/lead/v", vec![hanging("checking")]),
+            ("/lead/v", vec![uses(&[report_call("r1", "B is fine")])]),
         ],
     )
     .await;
     run.spawn(spawn_request("lead", "Lead.")).await;
-    run.until("v to stream", |e| {
-        matches!(inner(e, "/lead/v"), Some(AgentEvent::TextDelta { .. }))
-    })
-    .await;
     run.child_ended("/lead/w").await;
+    run.child_ended("/lead/v").await;
+    run.root_ended().await;
     tokio::time::sleep(Duration::from_secs(10)).await;
     run.send(ClientCommand::EndAgent {
         agent: path("/lead/w"),
@@ -1188,12 +1185,9 @@ async fn an_ended_childs_parent_is_told_who_ended_it_without_being_woken() {
     })
     .await;
     run.say("go").await;
-    gate.add_permits(1);
-    let v = run.child_ended("/lead/v").await;
-    assert!(matches!(v, TurnOutcome::Cancelled { .. }), "{v:?}");
     run.root_ended().await;
     assert_eq!(
-        result_of(&run.requests("/")[1], "k1").1,
+        result_of(&run.requests("/")[2], "k1").1,
         "Ended /lead/v. Ended agents take no more messages and no longer count toward the agent limit."
     );
     tokio::time::sleep(Duration::from_secs(10)).await;
@@ -1261,18 +1255,13 @@ async fn the_peer_cap_is_reset_by_the_parents_send_message() {
 
 #[tokio::test(start_paused = true)]
 async fn ending_a_running_agent_ends_everything_below_it() {
-    let gate = Arc::new(Semaphore::new(0));
     let mut run = start(
         "messages-end-running",
         Setup::default(),
         vec![
             (
                 "/",
-                vec![
-                    uses(&[spawn_call("s1", "lead", "Lead.")]),
-                    gated(uses(&[stop_call("k1", "lead", true)]), &gate),
-                    done("ended it"),
-                ],
+                vec![uses(&[spawn_call("s1", "lead", "Lead.")]), done("spawned")],
             ),
             (
                 "/lead",
@@ -1288,6 +1277,7 @@ async fn ending_a_running_agent_ends_everything_below_it() {
     )
     .await;
     run.say("go").await;
+    run.root_ended().await;
     for agent in ["/lead/w", "/lead/v"] {
         run.until(agent, |e| {
             matches!(inner(e, agent), Some(AgentEvent::TextDelta { .. }))
@@ -1298,12 +1288,23 @@ async fn ending_a_running_agent_ends_everything_below_it() {
         matches!(inner(e, "/lead"), Some(AgentEvent::TextDelta { text, .. }) if text == "thinking")
     })
     .await;
-    gate.add_permits(1);
-    run.root_ended().await;
-    assert_eq!(
-        result_of(&run.requests("/")[2], "k1").1,
-        "Ended /lead and 2 agents below it. Ended agents take no more messages and no longer count toward the agent limit."
-    );
+    run.send(ClientCommand::EndAgent {
+        agent: path("/lead"),
+    })
+    .await;
+    for agent in ["/lead", "/lead/w", "/lead/v"] {
+        run.until("ended", move |e| {
+            matches!(
+                e,
+                AgentEvent::AgentStateChanged {
+                    agent: a,
+                    state: AgentState::Ended,
+                    ..
+                } if a.as_str() == agent
+            )
+        })
+        .await;
+    }
     tokio::time::sleep(Duration::from_secs(10)).await;
     let run = run.quit().await;
     let mut ended = ended_in(&run, "/");
@@ -1327,7 +1328,10 @@ async fn ending_a_running_agent_ends_everything_below_it() {
             records.last()
         );
     }
-    assert!(notices(&run, "/").is_empty(), "the caller isn't told");
+    let root_notices = notices(&run, "/");
+    assert_eq!(root_notices.len(), 1, "{root_notices:?}");
+    assert!(!root_notices[0].0);
+    assert!(root_notices[0].1.contains("/lead was ended by the user."));
     assert!(
         notices(&run, "/lead").is_empty(),
         "an ended agent is told nothing: {:?}",
@@ -1549,4 +1553,390 @@ fn a_spawn_whose_parent_is_stopped_while_it_builds_is_refused() {
         let run = run.quit().await;
         assert!(run.records("/lead/extra").is_empty());
     });
+}
+
+#[tokio::test(start_paused = true)]
+async fn ending_a_running_agent_or_same_reply_stop_then_end_is_refused_and_halts_later_calls() {
+    use wisp_protocol::{NotRunReason, ToolOutcome};
+    use wisp_tool_text::agents::{EndRefusal, LIST_AGENTS, end_refused};
+    let gate = Arc::new(Semaphore::new(0));
+    let mut run = start(
+        "messages-end-refused-running",
+        Setup::default(),
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[spawn_call("s1", "w", "Work.")]),
+                    gated(
+                        uses(&[
+                            call("l0", LIST_AGENTS, json!({})),
+                            stop_call("k1", "w", true),
+                            send_call("m1", "w", "should not send"),
+                            call("l1", LIST_AGENTS, json!({})),
+                        ]),
+                        &gate,
+                    ),
+                    uses(&[
+                        stop_call("k_miss", "ghost", true),
+                        call("l2", LIST_AGENTS, json!({})),
+                    ]),
+                    uses(&[
+                        stop_call("k_stop", "w", false),
+                        stop_call("k_same", "w", true),
+                        call("l3", LIST_AGENTS, json!({})),
+                    ]),
+                    uses(&[stop_call("k_end", "w", true)]),
+                    done("ended"),
+                ],
+            ),
+            ("/w", vec![hanging("working")]),
+        ],
+    )
+    .await;
+    run.say("go").await;
+    run.until("w to stream", |e| {
+        matches!(inner(e, "/w"), Some(AgentEvent::TextDelta { .. }))
+    })
+    .await;
+    gate.add_permits(1);
+    run.root_ended().await;
+    let root = run.requests("/");
+    let after = crate::agent::not_run_text(&NotRunReason::AfterRefusal);
+    let want_running = end_refused("/w", None, EndRefusal::Running);
+    assert!(!result_of(&root[2], "l0").0);
+    assert_eq!(result_of(&root[2], "k1"), (true, want_running.clone()));
+    assert_eq!(result_of(&root[2], "m1"), (true, after.clone()));
+    assert_eq!(result_of(&root[2], "l1"), (true, after.clone()));
+    assert_eq!(
+        root[2]
+            .messages
+            .last()
+            .unwrap()
+            .content
+            .iter()
+            .filter(|b| matches!(b, ContentBlock::ToolResult { .. }))
+            .count(),
+        4
+    );
+    assert!(result_of(&root[3], "k_miss").0);
+    assert!(!result_of(&root[3], "l2").0);
+    assert!(!result_of(&root[4], "k_stop").0);
+    assert_eq!(result_of(&root[4], "k_same"), (true, want_running));
+    assert_eq!(result_of(&root[4], "l3"), (true, after));
+    assert_eq!(
+        result_of(&root[5], "k_end"),
+        (
+            false,
+            "Ended /w. Ended agents take no more messages and no longer count toward the agent limit."
+                .to_owned()
+        )
+    );
+    for skipped in ["m1", "l1", "l3"] {
+        assert!(
+            !run.seen.iter().any(|e| matches!(
+                e,
+                AgentEvent::ToolCallStarted { call_id, .. } if call_id == skipped
+            )),
+            "{skipped} should not have started"
+        );
+        assert!(
+            run.seen.iter().any(|e| matches!(
+                e,
+                AgentEvent::ToolCallFinished {
+                    call_id,
+                    outcome: ToolOutcome::NotRun {
+                        reason: NotRunReason::AfterRefusal
+                    },
+                    ..
+                } if call_id == skipped
+            )),
+            "{skipped} should finish AfterRefusal"
+        );
+    }
+    let stop_refusals = run
+        .seen
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                AgentEvent::AgentRefused {
+                    action: AgentAction::Stop,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(stop_refusals, 3);
+    let run = run.quit().await;
+    assert!(
+        run.mail_to("/w")
+            .iter()
+            .all(|(_, _, text)| !text.contains("should not send"))
+    );
+    assert_eq!(ended_in(&run, "/"), ["/w"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn ending_a_target_with_an_unread_report_or_mid_reply_exit_without_report_is_refused() {
+    use wisp_protocol::NotRunReason;
+    use wisp_tool_text::agents::{EndRefusal, LIST_AGENTS, end_refused};
+    let report_gate = Arc::new(Semaphore::new(0));
+    let root_gate1 = Arc::new(Semaphore::new(0));
+    let fail_gate = Arc::new(Semaphore::new(0));
+    let root_gate2 = Arc::new(Semaphore::new(0));
+    let mut run = start(
+        "messages-end-unread-and-mid-exit",
+        Setup::default(),
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[spawn_call("s1", "w", "Report.")]),
+                    gated(
+                        uses(&[
+                            stop_call("k1", "w", true),
+                            call("l1", LIST_AGENTS, json!({})),
+                        ]),
+                        &root_gate1,
+                    ),
+                    uses(&[stop_call("k2", "w", true)]),
+                    uses(&[spawn_call("s2", "f", "Fail.")]),
+                    gated(
+                        uses(&[
+                            stop_call("k3", "f", true),
+                            call("l2", LIST_AGENTS, json!({})),
+                        ]),
+                        &root_gate2,
+                    ),
+                    uses(&[stop_call("k4", "f", true)]),
+                    done("all ended"),
+                ],
+            ),
+            (
+                "/w",
+                vec![gated(uses(&[report_call("r1", "done")]), &report_gate)],
+            ),
+            ("/f", vec![gated(refused_request(), &fail_gate)]),
+        ],
+    )
+    .await;
+    run.say("go").await;
+    while run.requests("/").len() < 2 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    report_gate.add_permits(1);
+    run.child_ended("/w").await;
+    run.until("w settled idle", |e| {
+        idle_as(e, "/w") == Some(Some(IdleOutcome::Reported))
+    })
+    .await;
+    root_gate1.add_permits(1);
+    while run.requests("/").len() < 5 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    fail_gate.add_permits(1);
+    run.child_ended("/f").await;
+    run.until("f settled failed", |e| {
+        idle_as(e, "/f") == Some(Some(IdleOutcome::Failed))
+    })
+    .await;
+    root_gate2.add_permits(1);
+    run.root_ended().await;
+    let root = run.requests("/");
+    let after = crate::agent::not_run_text(&NotRunReason::AfterRefusal);
+    assert_eq!(
+        result_of(&root[2], "k1"),
+        (true, end_refused("/w", None, EndRefusal::UnreadReport))
+    );
+    assert_eq!(result_of(&root[2], "l1"), (true, after.clone()));
+    assert!(!result_of(&root[3], "k2").0);
+    assert_eq!(
+        result_of(&root[5], "k3"),
+        (true, end_refused("/f", None, EndRefusal::Running))
+    );
+    assert_eq!(result_of(&root[5], "l2"), (true, after));
+    assert!(!result_of(&root[6], "k4").0);
+    let run = run.quit().await;
+    let mut ended = ended_in(&run, "/");
+    ended.sort();
+    assert_eq!(ended, ["/f", "/w"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn ending_an_idle_target_with_a_running_descendant_is_refused() {
+    use wisp_tool_text::agents::{EndRefusal, end_refused};
+    let gate = Arc::new(Semaphore::new(0));
+    let mut run = start(
+        "messages-end-running-descendant",
+        Setup::default(),
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[spawn_call("s1", "lead", "Lead.")]),
+                    gated(uses(&[stop_call("k1", "lead", true)]), &gate),
+                    uses(&[stop_call("k2", "lead", false)]),
+                    uses(&[stop_call("k3", "lead", true)]),
+                    done("ended"),
+                ],
+            ),
+            (
+                "/lead",
+                vec![uses(&[spawn_call("s2", "w", "Work.")]), done("waiting")],
+            ),
+            ("/lead/w", vec![hanging("working")]),
+        ],
+    )
+    .await;
+    run.say("go").await;
+    run.child_ended("/lead").await;
+    run.until("w streaming", |e| {
+        matches!(inner(e, "/lead/w"), Some(AgentEvent::TextDelta { .. }))
+    })
+    .await;
+    gate.add_permits(1);
+    run.root_ended().await;
+    let root = run.requests("/");
+    assert_eq!(
+        result_of(&root[2], "k1"),
+        (
+            true,
+            end_refused("/lead", Some("/lead/w"), EndRefusal::Running)
+        )
+    );
+    assert!(!result_of(&root[3], "k2").0);
+    assert_eq!(
+        result_of(&root[4], "k3"),
+        (
+            false,
+            "Ended /lead and 1 agent below it. Ended agents take no more messages and no longer count toward the agent limit."
+                .to_owned()
+        )
+    );
+    let run = run.quit().await;
+    assert!(notices(&run, "/").is_empty(), "the caller isn't told");
+    let mut ended = ended_in(&run, "/");
+    ended.sort();
+    assert_eq!(ended, ["/lead", "/lead/w"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn ending_a_coordinator_waking_on_a_grandchild_report_is_refused() {
+    use wisp_tool_text::agents::{EndRefusal, end_refused};
+    let w_gate = Arc::new(Semaphore::new(0));
+    let at_select = pause_at("/lead", "restart-idle-select");
+    let mut run = start(
+        "messages-end-waking-grandchild-report",
+        Setup::default(),
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[stop_call("k1", "lead", true)]),
+                    done("refused"),
+                    done("got lead report"),
+                ],
+            ),
+            (
+                "/lead",
+                vec![
+                    uses(&[spawn_call("s1", "w", "Work.")]),
+                    done("waiting"),
+                    uses(&[report_call("r0", "relayed")]),
+                ],
+            ),
+            (
+                "/lead/w",
+                vec![gated(
+                    uses(&[report_call("r1", "grandchild findings")]),
+                    &w_gate,
+                )],
+            ),
+        ],
+    )
+    .await;
+    run.spawn(spawn_request("lead", "Lead.")).await;
+    within("/lead idle select", at_select.wait()).await;
+    w_gate.add_permits(1);
+    run.child_ended("/lead/w").await;
+    run.until("/lead/w settled", |e| {
+        idle_as(e, "/lead/w") == Some(Some(IdleOutcome::Reported))
+    })
+    .await;
+    run.say("go").await;
+    run.root_ended().await;
+    assert_eq!(
+        result_of(&run.requests("/")[1], "k1"),
+        (true, end_refused("/lead", None, EndRefusal::Running))
+    );
+    within("release /lead", at_select.wait()).await;
+    run.child_ended("/lead").await;
+    run.root_ended().await;
+    assert!(
+        run.requests("/lead")[2]
+            .all_text()
+            .contains("grandchild findings")
+    );
+    let run = run.quit().await;
+    assert!(ended_in(&run, "/").is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn waking_an_idle_child_and_ending_it_in_the_same_reply_is_refused() {
+    use wisp_protocol::NotRunReason;
+    use wisp_tool_text::agents::{EndRefusal, LIST_AGENTS, end_refused};
+    let at_select = pause_at("/w", "restart-idle-select");
+    let mut run = start(
+        "messages-end-same-reply-wake",
+        Setup::default(),
+        vec![
+            (
+                "/",
+                vec![
+                    done("got first"),
+                    uses(&[
+                        send_call("m1", "w", "Second task."),
+                        stop_call("k1", "w", true),
+                        call("l1", LIST_AGENTS, json!({})),
+                    ]),
+                    done("refused"),
+                    done("got second"),
+                ],
+            ),
+            (
+                "/w",
+                vec![
+                    uses(&[report_call("r1", "first")]),
+                    uses(&[report_call("r2", "second")]),
+                ],
+            ),
+        ],
+    )
+    .await;
+    run.spawn(spawn_request("w", "First task.")).await;
+    run.child_ended("/w").await;
+    run.root_ended().await;
+    within("/w idle select", at_select.wait()).await;
+    run.say("go").await;
+    run.root_ended().await;
+    let root = run.requests("/");
+    assert!(!result_of(&root[2], "m1").0);
+    assert_eq!(
+        result_of(&root[2], "k1"),
+        (true, end_refused("/w", None, EndRefusal::Running))
+    );
+    assert_eq!(
+        result_of(&root[2], "l1"),
+        (
+            true,
+            crate::agent::not_run_text(&NotRunReason::AfterRefusal)
+        )
+    );
+    within("release /w", at_select.wait()).await;
+    run.child_ended("/w").await;
+    run.root_ended().await;
+    assert_eq!(run.requests("/w").len(), 2);
+    let run = run.quit().await;
+    assert!(ended_in(&run, "/").is_empty());
 }

@@ -140,6 +140,12 @@ fn outcomes() -> Vec<(&'static str, ToolOutcome)> {
             },
         ),
         (
+            "not_run_after_refusal",
+            ToolOutcome::NotRun {
+                reason: NotRunReason::AfterRefusal,
+            },
+        ),
+        (
             "invalid_input",
             ToolOutcome::InvalidInput {
                 message: "`command` is required".into(),

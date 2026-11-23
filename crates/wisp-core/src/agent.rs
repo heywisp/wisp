@@ -770,6 +770,9 @@ pub fn not_run_text(reason: &NotRunReason) -> String {
         NotRunReason::AfterQuestion => "Not run: it came after a question call in the same \
 reply, so it wasn't run. Call it again if it still applies."
             .to_owned(),
+        NotRunReason::AfterRefusal => "Not run: it came after a refused call in the same \
+reply, so it wasn't run. Call it again if it still applies."
+            .to_owned(),
     }
 }
 
@@ -3390,6 +3393,7 @@ impl Agent {
                 let message = format!("Wisp can't send this conversation: {problem}.");
                 return self.failed(ErrorKind::InvalidRequest, message);
             }
+            self.agents.note_request();
             let mut messages = self.request_messages(&pending);
             let flags = self.paused_flags(messages.len());
             let closed_tails = self.closed_tail_flags(messages.len());
@@ -3939,17 +3943,32 @@ impl Agent {
             }
 
             let mut results = Vec::with_capacity(calls.len());
-            let mut asked = false;
+            let mut halt: Option<NotRunReason> = None;
             self.begin_calls();
+            let _ = self.agents.take_reply_halted();
             for call in calls {
                 let ends_reply = self
                     .runnable_tool(&call.name)
                     .is_some_and(|t| t.meta().ends_reply);
                 let result = self
-                    .run_call(call, &stop_reason, asked, &results, commands, events)
+                    .run_call(
+                        call,
+                        &stop_reason,
+                        halt.as_ref(),
+                        &results,
+                        commands,
+                        events,
+                    )
                     .await;
                 results.push(result);
-                asked |= ends_reply;
+                let refused = self.agents.take_reply_halted();
+                if halt.is_none() {
+                    if ends_reply {
+                        halt = Some(NotRunReason::AfterQuestion);
+                    } else if refused {
+                        halt = Some(NotRunReason::AfterRefusal);
+                    }
+                }
                 self.drain_deferred(commands, events).await;
             }
             let carriers: Vec<Carrier> = results
@@ -4846,26 +4865,19 @@ impl Agent {
         &mut self,
         call: Call,
         stop_reason: &StopReason,
-        after_question: bool,
+        halt: Option<&NotRunReason>,
         earlier: &[ContentBlock],
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Pin<Box<impl Future<Output = ContentBlock>>> {
-        Box::pin(self.run_call_unboxed(
-            call,
-            stop_reason,
-            after_question,
-            earlier,
-            commands,
-            events,
-        ))
+        Box::pin(self.run_call_unboxed(call, stop_reason, halt, earlier, commands, events))
     }
 
     async fn run_call_unboxed(
         &mut self,
         call: Call,
         stop_reason: &StopReason,
-        after_question: bool,
+        halt: Option<&NotRunReason>,
         earlier: &[ContentBlock],
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
@@ -4880,10 +4892,8 @@ impl Agent {
             })
         } else if self.track().stopped {
             Some(NotRunReason::TurnStopped)
-        } else if after_question {
-            Some(NotRunReason::AfterQuestion)
         } else {
-            None
+            halt.cloned()
         };
         let mut input = call.input.clone();
         let mut finished = match (not_run, call.prepared) {

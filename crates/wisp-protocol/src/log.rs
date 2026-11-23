@@ -17,7 +17,7 @@ use crate::{
 };
 use crate::{Dropped, MissCause, RewindPoint, RewindReason, SourceChange};
 
-pub const LOG_SCHEMA_VERSION: u16 = 40;
+pub const LOG_SCHEMA_VERSION: u16 = 41;
 
 pub const PROVISIONAL_SINCE: u16 = 15;
 

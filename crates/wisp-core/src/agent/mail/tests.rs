@@ -29,10 +29,14 @@ fn one_sender_may_leave_at_most_64_messages_waiting_and_kernel_mail_is_never_ref
     sender.send(mail(101, "/docs", MailKind::Report)).unwrap();
     sender.send(mail(102, "/docs", MailKind::Notice)).unwrap();
     sender.send(mail(103, "/plans", MailKind::Message)).unwrap();
-    assert_eq!(sender.waiting_from(&AgentPath::new("/docs")), 66);
-    mailbox.committed(&AgentPath::new("/docs"));
-    mailbox.committed(&AgentPath::new("/docs"));
-    mailbox.committed(&AgentPath::new("/docs"));
+    let docs = AgentPath::new("/docs");
+    assert_eq!(sender.waiting_from(&docs), 66);
+    assert_eq!(sender.unread_report(|p| p == &docs), Some(docs.clone()));
+    mailbox.committed(&docs, MailKind::Notice);
+    assert_eq!(sender.unread_report(|p| p == &docs), Some(docs.clone()));
+    mailbox.committed(&docs, MailKind::Report);
+    assert_eq!(sender.unread_report(|p| p == &docs), None);
+    mailbox.committed(&docs, MailKind::Message);
     sender.send(mail(104, "/docs", MailKind::Message)).unwrap();
     assert_eq!(mailbox.take().len(), MAX_MAIL_PER_SENDER + 4);
 }

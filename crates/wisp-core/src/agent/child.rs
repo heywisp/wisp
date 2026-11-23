@@ -559,7 +559,7 @@ impl Agent {
             owes: self.owed.is_some(),
             reported: false,
             waiting: None,
-            stop: self.agents.take_stop(),
+            stop: self.agents.stop_cause(),
             closing: self.closed,
         };
         let decision = decide(&facts);
@@ -670,7 +670,7 @@ impl Agent {
             owes: owed.is_some(),
             reported: signals.reported.is_some(),
             waiting,
-            stop: self.agents.take_stop(),
+            stop: self.agents.stop_cause(),
             closing: self.closed,
         };
         let decision = decide(&facts);
