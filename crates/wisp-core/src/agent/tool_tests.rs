@@ -948,6 +948,117 @@ async fn a_reply_that_cannot_be_committed_ends_the_turn_and_keeps_earlier_steps(
 }
 
 #[tokio::test]
+async fn a_second_cut_on_a_capped_model_fails_the_turn_and_commits_no_reply() {
+    let model = "gemini-4-neon-low";
+    let cap = crate::models::ModelTable::shared()
+        .reply_cap(model)
+        .unwrap();
+    let full = DEFAULT_MAX_TOKENS;
+    let config = crate::models::ConfigModels::parse(&format!(
+        "[models.\"{model}\"]\nprice_input = 1\nprice_output = 4\nprice_cache_read = 0.1\n"
+    ))
+    .unwrap();
+    let models =
+        crate::context::ModelSettings::new(crate::models::ModelTable::shipped().unwrap(), config);
+    let cut = |input| {
+        Step::from(reply_on(
+            model,
+            input,
+            &[B::Text("cut draft")],
+            StopReason::MaxTokens,
+        ))
+    };
+    let tool_step = Step::from(reply_on(
+        model,
+        600,
+        &[call("c1", "sleep", json!({"ms": 0}))],
+        StopReason::ToolUse,
+    ));
+    let cases = [
+        (
+            vec![cut(200), cut(300)],
+            full,
+            2,
+            0,
+            vec![cap, full],
+            0,
+            usage(500, 0, 20),
+        ),
+        (
+            vec![tool_step, cut(200), cut(300)],
+            full,
+            2,
+            1,
+            vec![cap, cap, full],
+            3,
+            usage(1100, 0, 30),
+        ),
+        (vec![cut(200)], cap, 1, 0, vec![cap], 0, usage(200, 0, 10)),
+    ];
+    for (steps, max_tokens, want_attempts, want_steps, want_limits, want_history, want_usage) in
+        cases
+    {
+        let env = Env::new("reply-cap");
+        let provider = scripted(steps);
+        let mut agent = agent(provider.clone(), &env)
+            .with_model_settings(models.clone())
+            .with_retry_policy(super::retry::quick());
+        agent.session.model = model.to_owned();
+        agent.session.max_tokens = max_tokens;
+        *agent.settings = settings::SettingsState::new(&agent.session);
+        let (outcome, events) = turn(&mut agent, "go").await;
+        check_events(&events);
+        let retries: Vec<(Option<f64>, bool)> = pick!(
+            &events,
+            AgentEvent::Retrying {
+                cost_usd,
+                lower_bound,
+                ..
+            } => (*cost_usd, *lower_bound)
+        );
+        assert_eq!(retries.len(), (want_attempts - 1) as usize);
+        for (cost_usd, lower_bound) in retries.into_iter().chain(costs(&events)) {
+            assert!(cost_usd.is_some());
+            assert!(!lower_bound);
+        }
+        let TurnOutcome::Error {
+            kind,
+            usage: got_usage,
+            cost: Some(cost),
+            committed_steps,
+            attempts,
+            gave_up,
+            ..
+        } = outcome
+        else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(kind, ErrorKind::InvalidResponse);
+        assert_eq!(gave_up, Some(GaveUp::NotRetryable));
+        assert_eq!(attempts, want_attempts);
+        assert_eq!(committed_steps, want_steps);
+        assert_eq!(got_usage, Some(want_usage));
+        let exact =
+            want_usage.input_tokens as f64 / 1e6 + want_usage.output_tokens as f64 * 4.0 / 1e6;
+        assert!(!cost.turn_lower_bound && !cost.session_lower_bound);
+        assert!((cost.turn_usd - exact).abs() < 1e-12, "{cost:?}");
+        assert_eq!(cost.session_usd, cost.turn_usd);
+        let limits: Vec<u32> = provider
+            .sent()
+            .iter()
+            .map(|s| s.session.max_tokens)
+            .collect();
+        assert_eq!(limits, want_limits);
+        assert_eq!(agent.history().len(), want_history);
+        assert!(
+            !serde_json::to_string(&agent.history())
+                .unwrap()
+                .contains("cut draft")
+        );
+    }
+}
+
+#[tokio::test]
 async fn cut_off_tool_input_and_unfinished_blocks_are_invalid_responses() {
     let env = Env::new("truncated");
     let mut cut = vec![Ok(ProviderEvent::Sending), Ok(start_on(DEFAULT_MODEL, 600))];

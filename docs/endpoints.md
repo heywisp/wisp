@@ -1316,7 +1316,10 @@ always fail and discard the unfinished reply, even after a decoded tool call or
 search, and so does a `STOP` reply with nothing in it (`docs/gemini.md`); Wisp
 shows the plain cause and keeps known billed usage. `SAFETY`,
 `MAX_TOKENS`, and other non-`STOP` Gemini finishes after a decoded call stop
-the reply with their mapped stop reason instead of running the calls. Retryable
+the reply with their mapped stop reason instead of running the calls, except on
+a model whose shipped row sets `reply_cap`, where a `MAX_TOKENS` stop is never
+committed and becomes an `invalid_response` (`max_tokens`, usage complete) that
+resends once at the full limit and otherwise ends the turn (`docs/gemini.md`). Retryable
 `invalid_response` failures retry at most 16 times per step for
 `MALFORMED_FUNCTION_CALL` and 3 times per step for other causes—even under
 looser explicit policies, while tighter bounds still win, sharing the step's
@@ -1353,7 +1356,8 @@ Keep-warm keeps its separate 58-minute deadline.
 In the main agent, Esc during a model retry wait stops automatic retries and leaves Retry available at once, with the same bytes; compaction waits still cancel compaction.
 Closing the session stops any wait without a Retry offer. Ordinary retries
 re-send the same bytes (except after Gemini's `MALFORMED_FUNCTION_CALL`, which
-appends the fixed retry note once, above). On a session whose conversation tail is cached for
+appends the fixed retry note once, above, and the resend after a `reply_cap`
+cut, which lifts `maxOutputTokens` to the full limit). On a session whose conversation tail is cached for
 5 minutes, a stretch over 5 minutes without an accepted request lets that
 entry expire, so the next success pays one tail rebuild (its cache miss
 reads `ttl_expired`); a 1-hour cache lasts longer, but can also expire during

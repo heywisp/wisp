@@ -240,7 +240,7 @@ pub fn retry_cause(kind: ErrorKind, phase: Option<FailurePhase>) -> &'static str
         (ErrorKind::Server, _) => "server error",
         (ErrorKind::Overloaded, _) => "overloaded",
         (ErrorKind::RateLimit, _) => "rate limited",
-        (ErrorKind::InvalidResponse, _) => "an unreadable reply",
+        (ErrorKind::InvalidResponse, _) => "an unusable reply",
         (other, _) => other.as_str(),
     }
 }
@@ -265,8 +265,9 @@ pub fn retry_notice(n: &RetryNotice<'_>) -> Vec<String> {
     let cause = retry_cause(n.kind, phase);
     let reason = n.reason.trim().trim_end_matches('.');
     let first = if n.kind == ErrorKind::InvalidResponse {
+        let headline = n.kind.sentence(n.provider);
         if reason.is_empty() {
-            format!("{} sent a reply Wisp could not read.", n.provider)
+            headline
         } else if reason
             .strip_prefix(n.provider)
             .and_then(|rest| rest.strip_prefix(" returned "))
@@ -274,7 +275,7 @@ pub fn retry_notice(n: &RetryNotice<'_>) -> Vec<String> {
         {
             format!("{reason}.")
         } else {
-            format!("{} sent a reply Wisp could not read: {reason}.", n.provider)
+            format!("{}: {reason}.", headline.trim_end_matches('.'))
         }
     } else if phase == Some(FailurePhase::Stream) {
         let why = if reason.is_empty() || reason.eq_ignore_ascii_case(cause) {

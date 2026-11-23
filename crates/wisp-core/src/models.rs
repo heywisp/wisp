@@ -87,7 +87,7 @@ enum Quote {
     Provenance,
 }
 
-const SHIPPED_FIELDS: [(&str, Quote); 25] = [
+const SHIPPED_FIELDS: [(&str, Quote); 26] = [
     ("context_window", Quote::Provenance),
     ("native_compaction", Quote::Own("native_compaction")),
     ("web_search", Quote::Own("web_search")),
@@ -101,6 +101,7 @@ const SHIPPED_FIELDS: [(&str, Quote); 25] = [
     ("bill_tool_use_prompt", Quote::Shared("price")),
     ("min_cacheable", Quote::Shared("min_cacheable")),
     ("max_output", Quote::Own("efforts")),
+    ("reply_cap", Quote::Own("reply_cap")),
     ("efforts", Quote::Own("efforts")),
     ("effort_variant", Quote::Shared("antigravity")),
     ("default_effort", Quote::Own("efforts")),
@@ -219,6 +220,7 @@ pub struct ModelRow {
     pub bill_tool_use_prompt: bool,
     pub min_cacheable: Option<u64>,
     pub max_output: Option<u32>,
+    pub reply_cap: Option<u32>,
     pub capabilities: Option<ModelCapabilities>,
     pub effort_variant: Option<EffortVariant>,
     pub source: Option<String>,
@@ -278,6 +280,7 @@ impl ModelRow {
             bill_tool_use_prompt: false,
             min_cacheable: None,
             max_output: None,
+            reply_cap: None,
             capabilities: None,
             effort_variant: None,
             source: None,
@@ -516,6 +519,15 @@ fn positive_tokens(
         )),
         counted => counted,
     }
+}
+
+fn positive_u32(
+    field: &'static str,
+    at: &Range<usize>,
+    value: &DeValue<'_>,
+) -> Result<u32, RowError> {
+    let tokens = u32::try_from(positive_tokens(field, at, value)?);
+    tokens.map_err(|_| bad_value(field, POSITIVE_TOKENS, at))
 }
 
 fn compact_at(at: &Range<usize>, value: &DeValue<'_>) -> Result<CompactAt, RowError> {
@@ -860,11 +872,8 @@ pub fn walk_row(
             "min_cacheable" => {
                 row.min_cacheable = Some(positive_tokens("min_cacheable", &at, value)?);
             }
-            "max_output" => {
-                let tokens = u32::try_from(positive_tokens("max_output", &at, value)?);
-                let bad = || bad_value("max_output", POSITIVE_TOKENS, &at);
-                row.max_output = Some(tokens.map_err(|_| bad())?);
-            }
+            "max_output" => row.max_output = Some(positive_u32("max_output", &at, value)?),
+            "reply_cap" => row.reply_cap = Some(positive_u32("reply_cap", &at, value)?),
             "efforts" => described = Some(efforts(&at, value)?),
             "effort_variant" => row.effort_variant = Some(effort_variant(&at, value)?),
             "default_effort" => {
@@ -1295,6 +1304,14 @@ impl ModelTable {
         self.find(model)
             .and_then(|row| row.effort_variant.as_ref())
             .map_or(given, |variant| variant.effort)
+    }
+
+    pub fn reply_cap(&self, model: &str) -> Option<u32> {
+        let row = self.find(model)?;
+        row.reply_cap.or_else(|| {
+            let family = &row.effort_variant.as_ref()?.family;
+            self.find(family)?.reply_cap
+        })
     }
 
     pub fn capabilities(&self, kind: ProviderKind, model: &str) -> Option<&ModelCapabilities> {

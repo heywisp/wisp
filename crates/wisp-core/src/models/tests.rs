@@ -120,7 +120,15 @@ fn the_shipped_file_parses() {
         assert_eq!(caps.default_effort, None);
         assert_eq!(table.own_effort(&row.id, Effort::Max), own.effort);
         assert_eq!(table.sibling(&row.id, own.effort), Some(row.id.as_str()));
+        assert_eq!(
+            table.reply_cap(&row.id),
+            table.reply_cap(&own.family),
+            "{}",
+            row.id
+        );
     }
+    assert_eq!(table.reply_cap("gemini-4-neon"), Some(32_768));
+    assert_eq!(table.reply_cap("gemini-4-carbon"), None);
     assert_eq!(pairs.len(), 17);
     assert!(families.iter().all(|(family, count)| {
         let four = matches!(family.as_str(), "gemini-4-neon" | "gemini-4-hydrogen");
@@ -323,7 +331,7 @@ fn the_shipped_file_refuses_unknown_keys() {
     assert_eq!(error.line, Some(4));
     assert_eq!(
         error.to_string(),
-        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, source, sources"
+        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, reply_cap, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, source, sources"
     );
     let error = ModelTable::parse_shipped("store_id = \"x\"\n").unwrap_err();
     assert_eq!(error.problem, RowProblem::UnknownTop);
@@ -388,6 +396,7 @@ fn a_shipped_row_needs_its_sources() {
     );
     for (body, field, key) in [
         ("default_effort = \"high\"", "default_effort", "efforts"),
+        ("reply_cap = 32768", "reply_cap", "reply_cap"),
         (
             "images = { tier = \"high\", per_request = 20 }",
             "images",
@@ -727,6 +736,7 @@ fn config_tables_refuse_what_belongs_elsewhere() {
             "min_cacheable",
             "long_prompt",
             "bill_tool_use_prompt",
+            "reply_cap",
             "efforts",
         ] {
             let problem = refused(site, &format!("{field} = 1"));

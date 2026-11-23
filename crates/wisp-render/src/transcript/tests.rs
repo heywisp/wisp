@@ -2483,7 +2483,7 @@ fn a_retry_notice_names_its_cause_once() {
     );
     assert_eq!(
         copy::retry_cause(ErrorKind::InvalidResponse, None),
-        "an unreadable reply"
+        "an unusable reply"
     );
     let endpoint = wisp_protocol::ErrorDetail::new(
         FailurePhase::Stream,
@@ -2567,7 +2567,7 @@ fn a_retry_notice_names_its_cause_once() {
 }
 
 #[test]
-fn unreadable_reply_diagnostics_keep_their_lead_in_unless_the_reason_names_its_sender() {
+fn unusable_reply_diagnostics_keep_their_lead_in_unless_the_reason_names_its_sender() {
     let endpoint = wisp_protocol::ErrorDetail::new(
         FailurePhase::Stream,
         FailureSource::Endpoint,
@@ -2614,7 +2614,7 @@ fn unreadable_reply_diagnostics_keep_their_lead_in_unless_the_reason_names_its_s
             let expected = if plain {
                 format!("{reason}.")
             } else {
-                format!("{provider} sent a reply Wisp could not read: {reason}.")
+                format!("{provider} sent a reply Wisp couldn't use: {reason}.")
             };
             assert_eq!(notice[0], expected);
         }
