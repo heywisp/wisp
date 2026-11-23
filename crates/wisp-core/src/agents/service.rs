@@ -614,7 +614,7 @@ fn end_refusal(
     None
 }
 
-fn still_working(state: AgentState) -> bool {
+pub(crate) fn still_working(state: AgentState) -> bool {
     matches!(
         state,
         AgentState::Running

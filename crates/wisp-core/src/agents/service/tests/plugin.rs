@@ -651,6 +651,59 @@ async fn list_agents_shows_how_long_each_agent_has_run() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn list_agents_leaves_out_the_earlier_report_of_an_agent_still_working() {
+    let gate = Arc::new(Semaphore::new(0));
+    let mut run = start(
+        "plugin-list-still-working",
+        Setup::default(),
+        vec![
+            (
+                "/",
+                vec![
+                    gated(uses(&[list_call("l1")]), &gate),
+                    uses(&[send_call("m1", "w", "Second.")]),
+                    done("sent"),
+                    uses(&[list_call("l2")]),
+                    done("ok"),
+                ],
+            ),
+            (
+                "/w",
+                vec![
+                    uses(&[report_call("r1", "First.")]),
+                    uses(&[spawn_call("s1", "x", "Work.")]),
+                    done("waiting"),
+                ],
+            ),
+            ("/w/x", vec![hanging("working")]),
+        ],
+    )
+    .await;
+    run.spawn(spawn_request("w", "First.")).await;
+    super::resume::reported(&mut run, "/w").await;
+    run.child_ended("/w").await;
+    super::resume::idle(&mut run, "/w").await;
+    gate.add_permits(1);
+    run.root_ended().await;
+    run.child_ended("/w").await;
+    super::resume::idle(&mut run, "/w").await;
+    run.say("list").await;
+    run.root_ended().await;
+    let requests = run.requests("/");
+    let (is_error, before) = result_of(&requests[1], "l1");
+    assert!(!is_error, "{before}");
+    let w_before = before.lines().find(|l| l.starts_with("- /w ")).unwrap();
+    assert!(w_before.contains(" · idle: reported"), "{before}");
+    assert!(before.ends_with("\n  Last report: First."), "{before}");
+    let (is_error, after) = result_of(&requests[4], "l2");
+    assert!(!is_error, "{after}");
+    let w_after = after.lines().find(|l| l.starts_with("- /w ")).unwrap();
+    assert!(w_after.contains(" · idle: waiting"), "{after}");
+    assert!(!after.contains("Last report:"), "{after}");
+    let _ = run.quit().await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn spawn_agent_with_keep_warm_words_the_limit_and_list_agents_shows_the_mark() {
     for (limit, started, fact) in [
         (
