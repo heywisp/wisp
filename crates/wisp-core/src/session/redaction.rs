@@ -321,12 +321,18 @@ content!(wisp_protocol::ToolOutputView, redactions, {
 
 content!(wisp_protocol::ErrorDetail, redactions, {
     Self {
-        limit_reached, model_limit, stream, phase: _, source: _, status: _, error_type, request_id, model,
+        limit_reached, model_limit, stream, malformed_call, phase: _, source: _, status: _, error_type, request_id, model,
         retry: _, possibly_billed: _,
-    } => [stream, error_type, request_id, model] {
+    } => [stream, malformed_call, error_type, request_id, model] {
         omit_redacted_window(limit_reached, redactions);
         omit_redacted_window(model_limit, redactions);
     },
+});
+
+content!(wisp_protocol::MalformedCall, redactions, {
+    Self {
+        form: _, function, undeclared: _, chars: _, balanced: _, stop_string: _, mail_tag: _,
+    } => [function],
 });
 
 content!(wisp_protocol::StreamDiagnostics, redactions, {

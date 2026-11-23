@@ -252,8 +252,10 @@ A record that copies its event comes from the table in core's `session/mirror.rs
 
 `ErrorDetail.stream` is optional, additive stream-end metadata in the existing
 `retrying.detail` and final error detail, with no schema bump or screen change.
-Only Gemini fills it today, when the body ends without `finishReason` or with
-an unfinished SSE event; it is absent on every success. `bytes` counts body
+Only Gemini fills it today, when the body ends without `finishReason`, with an
+unfinished SSE event, or with an invalid finish (`MALFORMED_FUNCTION_CALL`,
+`UNEXPECTED_TOOL_CALL`, or an empty `STOP`, where `stop_reason_seen` is `true`
+and `partial_event` is `false`); it is absent on every success. `bytes` counts body
 bytes and `events` counts complete SSE data events, not network reads.
 `text_parts`, `thinking_parts` and `tool_use_parts` count received candidate
 parts across events, including wrapped responses; a function call takes
@@ -268,6 +270,26 @@ finish was decoded. Optional `first_byte_ms` and `last_byte_ms` measure from
 decoder creation just after accepting HTTP 200, not from request start; both
 are absent when no body bytes arrived. No text, thought, arguments, signatures,
 headers or URLs are added. Old records omit `stream`; older readers ignore it.
+
+`ErrorDetail.malformed_call` is optional, additive label metadata in
+`retrying.detail` and final error detail, with no schema bump or screen change.
+Gemini fills it on `MALFORMED_FUNCTION_CALL` only, reading the candidate's
+`finishMessage` against the sent request's declared tool names and stop
+sequences: `form` (`absent`, `call`, `python`, `empty_call`, or `other`; unknown
+values read as `other`), optional `function` (present only when the parsed name
+is a declared tool, scrubbed by redactions), `undeclared` (true when a parsed
+name was not declared), `chars` (`finishMessage` length in Unicode scalar
+values), `balanced` (whether `{`, `[`, `(` and quoted `"`/`'` strings with
+backslash escapes close in order; true for `absent`), `stop_string` (whether a
+request stop sequence occurs in `finishMessage`), and `mail_tag` (whether
+`<wisp:message` occurs in it). Absent `function` and false booleans are omitted
+on the wire; no text from `finishMessage` or user content is recorded.
+
+`session_started.wisp_version` and `session_resumed.wisp_version` carry
+`0.1.0+<commit>` (the 12-character short `HEAD` hash captured by `wisp-start` at
+build time) when built from a git checkout, or plain `0.1.0` when unset; the id
+names `HEAD` even when the build's tree had uncommitted changes. User-Agent and
+MCP headers keep the plain version.
 
 `Cost.turn_plan_usd`, `Cost.session_plan_usd` and `Cost.agents_plan_usd` are optional subscription parts of the existing totals. Metered-only sessions omit `session_plan_usd`; `agents_plan_usd` is absent before the first child. Mixed totals display API spend and subscription estimates separately. Compaction records carry optional `plan_usd` to preserve their split across resume; `ContextReport.compaction_plan_usd` exposes the accumulated compaction split. A hook-requested compaction carries the same `usage.billing`, `cost_usd` and `plan_usd` as a core-requested one; `requested_by` identifies its requesting hook and does not change its billing. Plugin-owned instructions, validation and head layout use these same accounting paths. These additive schema-36 fields default to absent for old records.
 

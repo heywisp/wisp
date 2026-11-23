@@ -754,7 +754,9 @@ fn invalid_response_caps_step_retries_even_under_default_policy() {
     let typed = |kind: ErrorKind, retry: RetryClass, malformed_call: bool| {
         let mut error =
             ProviderError::classified(kind, "err", detail(retry, retry != RetryClass::Never));
-        error.malformed_call = malformed_call;
+        if malformed_call {
+            error.detail.malformed_call = Some(Box::default());
+        }
         error
     };
     let malformed = typed(ErrorKind::InvalidResponse, RetryClass::Transient, true);

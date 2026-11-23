@@ -1700,7 +1700,7 @@ impl Agent {
         let event = LogEvent::SessionStarted {
             sections: self.start_sections(),
             session_id: self.session_id.clone(),
-            wisp_version: env!("CARGO_PKG_VERSION").to_owned(),
+            wisp_version: crate::version::wisp_version(),
             model: self.session.model.clone(),
             effort: self.session.effort,
             cache_ttl: self.session.cache_ttl,
@@ -3670,7 +3670,7 @@ impl Agent {
                     .await
                 {
                     AfterFailure::Retry => {
-                        if failure.error.malformed_call && !pending.retry_note {
+                        if failure.error.malformed_call() && !pending.retry_note {
                             pending.retry_note = true;
                             messages = self.request_messages(&pending);
                         }

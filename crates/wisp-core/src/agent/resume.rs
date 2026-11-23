@@ -1698,7 +1698,7 @@ impl Agent {
         let env = self.tools.as_ref();
         Some(LogEvent::SessionResumed {
             sections,
-            wisp_version: env!("CARGO_PKG_VERSION").to_owned(),
+            wisp_version: crate::version::wisp_version(),
             endpoint: context.endpoint.clone(),
             endpoint_name: self.endpoint_name().to_owned(),
             credential_source: Some(context.credential_source.clone()),

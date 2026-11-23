@@ -605,6 +605,7 @@ fn redactions_scrub_every_string_but_the_conversation() {
         "stream": {"bytes": 1, "events": 1, "text_parts": 1, "thinking_parts": 0,
             "tool_use_parts": 0, "last_event_keys": [secret], "partial_event": false,
             "stop_reason_seen": true},
+        "malformed_call": {"form": "call", "function": secret, "chars": 12, "balanced": true},
         "limit_reached": {"key": "window", "label": secret, "duration_seconds": 1,
             "scope": "all", "used_percent": 1, "resets_at": null, "observed_at": 0,
             "source": "error_body"}

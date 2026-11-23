@@ -973,7 +973,9 @@ async fn invalid_response_retries_cap_on_default_policy() {
     let note = crate::agent::retry::MALFORMED_CALL_NOTE;
     let bad_with = |malformed_call: bool| {
         let mut error = failure(ErrorKind::InvalidResponse, RetryClass::Transient, true);
-        error.malformed_call = malformed_call;
+        if malformed_call {
+            error.detail.malformed_call = Some(Box::default());
+        }
         failing(half_reply(crate::provider::NO_TEXT, 600), error)
     };
     let bad = || bad_with(false);

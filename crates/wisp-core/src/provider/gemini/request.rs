@@ -2592,4 +2592,54 @@ mod tests {
             .is_none()
         );
     }
+
+    #[test]
+    fn sent_reads_declared_tools_and_stop_sequences_from_built_body() {
+        let session = gemini_session("gemini-4-carbon", Effort::High);
+        let tools = [
+            ToolSpec {
+                name: "lookup".into(),
+                description: "run".into(),
+                input_schema: json!({"type": "object"}),
+            },
+            ToolSpec {
+                name: "fetch_page".into(),
+                description: "read page".into(),
+                input_schema: json!({"type": "object"}),
+            },
+        ];
+        let server_tools = [ServerToolSpec {
+            name: crate::search::WEB_SEARCH.into(),
+            kind: GEMINI_WEB_SEARCH.into(),
+        }];
+        let messages = [Message::user_text("hi")];
+        let rendering = Rendering::default();
+        let caps = super::super::model_capabilities(&session.model).copied();
+        let req = make_req(&session, &messages, &tools, &server_tools, &rendering);
+        let built = build_body(&req, caps, TEST_ID, true).unwrap();
+        let sent = super::super::malformed::Sent::from_body(&built.body);
+        assert_eq!(
+            sent.tools,
+            ["lookup", "fetch_page", crate::search::WEB_SEARCH]
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        );
+        assert_eq!(sent.stop_sequences, stop_sequences());
+
+        let search_only = Rendering {
+            search_only: true,
+            ..Rendering::default()
+        };
+        let search_built = build_body(
+            &make_req(&session, &messages, &tools, &server_tools, &search_only),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        let search_sent = super::super::malformed::Sent::from_body(&search_built.body);
+        assert!(search_sent.tools.is_empty());
+        assert_eq!(search_sent.stop_sequences, stop_sequences());
+    }
 }

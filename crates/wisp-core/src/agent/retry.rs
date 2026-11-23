@@ -77,7 +77,7 @@ impl RetryPolicy {
 
     pub(crate) fn for_kind(self, error: &ProviderError) -> Self {
         if error.kind == ErrorKind::InvalidResponse {
-            let (cap, fixed) = if error.malformed_call {
+            let (cap, fixed) = if error.malformed_call() {
                 (MALFORMED_CALL_RETRIES, Some(MALFORMED_CALL_FIXED))
             } else {
                 (INVALID_RESPONSE_RETRIES, None)
