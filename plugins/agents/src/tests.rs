@@ -1,6 +1,6 @@
 use futures::executor::block_on;
 use wisp_plugin_api::host::{AgentRow, Instant, Relation, WarmRow};
-use wisp_plugin_api::manifest::{Manifest, Origin, Switch};
+use wisp_plugin_api::manifest::{Manifest, Origin, Switch, is_static_sentence};
 use wisp_plugin_testkit::host::{FakeCall, FakeHost, agent_node as node, identity};
 
 use super::*;
@@ -386,14 +386,14 @@ fn the_definitions_are_static_and_spawn_agent_leads_the_rest() {
         assert_eq!(schema["type"], "object", "{}", def.name);
         assert_eq!(schema["additionalProperties"], false, "{}", def.name);
     }
-    assert_eq!(one[2].system_line.as_deref(), Some(REPORT_SENTENCE));
-    for def in one.iter().filter(|d| d.name != REPORT) {
-        assert_eq!(
-            def.system_line.as_deref(),
-            Some(MESSAGES_SENTENCE),
-            "{}",
-            def.name
-        );
+    for def in &one {
+        let want = match def.name.as_str() {
+            REPORT => REPORT_SENTENCE,
+            SPAWN_AGENT => SPAWN_LINE,
+            _ => MESSAGES_SENTENCE,
+        };
+        assert_eq!(def.system_line.as_deref(), Some(want), "{}", def.name);
+        assert!(is_static_sentence(want), "{}", def.name);
     }
     let manifest = Manifest::parse(MANIFEST, Origin::Bundled).unwrap();
     assert_eq!(manifest.id, ID);

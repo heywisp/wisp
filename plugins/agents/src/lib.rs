@@ -13,8 +13,8 @@ use wisp_plugin_api::types::{Action, Completed, Display, Outcome, OutputKind, To
 use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
 use wisp_tool_text::agents::{
     LIST_AGENTS, MESSAGES_SENTENCE, QUEUED_SENTENCE, RENAME_AGENT, REPORT, REPORT_ARRIVES_SENTENCE,
-    REPORT_SENTENCE, REPORTED, SEND_MESSAGE, SPAWN_AGENT, STOP_AGENT, WAKE, kept_warm_line, listed,
-    renamed, report_line, sent, started, stopped,
+    REPORT_SENTENCE, REPORTED, SEND_MESSAGE, SPAWN_AGENT, SPAWN_LINE, STOP_AGENT, WAKE,
+    kept_warm_line, listed, renamed, report_line, sent, started, stopped,
 };
 
 pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
@@ -297,12 +297,7 @@ pub fn defs() -> Vec<ToolDef> {
             &send_schema(),
             MESSAGES_SENTENCE,
         ),
-        def(
-            SPAWN_AGENT,
-            SPAWN_DESCRIPTION,
-            &spawn_schema(),
-            MESSAGES_SENTENCE,
-        ),
+        def(SPAWN_AGENT, SPAWN_DESCRIPTION, &spawn_schema(), SPAWN_LINE),
         def(
             STOP_AGENT,
             &format!("Stop an agent below you: {REACH}. {STOP_EFFECT}"),

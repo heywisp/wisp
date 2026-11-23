@@ -555,3 +555,11 @@ fn limit_reasons_keep_the_evidence_and_its_time_together() {
         );
     }
 }
+
+#[test]
+fn the_agents_doc_quotes_the_system_lines() {
+    let docs = include_str!("../../../../docs/agents.md");
+    for line in [MESSAGES_SENTENCE, REPORT_SENTENCE, SPAWN_LINE] {
+        assert!(docs.contains(line), "{line}");
+    }
+}
