@@ -5,7 +5,8 @@ use tokio::time::Instant;
 use wisp_protocol::agents::IDLE_WAKE;
 use wisp_protocol::{AgentEvent, MailKind, TodoItem, todos};
 
-use super::Agent;
+use super::repair::ids_of;
+use super::{Agent, choice};
 
 const WALL_RECHECK: i64 = 60;
 
@@ -53,15 +54,29 @@ impl Agent {
         }
     }
 
+    fn retry_mail_arrival(&self, offered: &choice::Offered) -> Option<u64> {
+        if !offered.on_mail {
+            return None;
+        }
+        let skip = ids_of(&offered.opening, &offered.steers);
+        self.inbox
+            .retry_mail_arrival(&self.path(), &skip)
+            .filter(|arrival| *arrival > self.mail_retried)
+    }
+
     pub(super) fn reset_retry_at(&self) -> Option<Instant> {
         let offered = self.offered.as_ref().filter(|_| self.offer_stands())?;
-        let at = offered.offer.retries_at?;
         if !self.queue.is_empty()
             || self.queue.retry.is_some()
             || self.next_endpoint() != offered.endpoint
+            || self.agents.restarting()
         {
             return None;
         }
+        if self.retry_mail_arrival(offered).is_some() {
+            return Some(Instant::now());
+        }
+        let at = offered.offer.retries_at?;
         let wait = at.saturating_sub(self.clock.now().as_second());
         let wait = u64::try_from(wait.min(WALL_RECHECK)).unwrap_or(0);
         Some(Instant::now() + Duration::from_secs(wait))
@@ -71,10 +86,18 @@ impl Agent {
         if self.reset_retry_at().is_none_or(|at| at > Instant::now()) {
             return false;
         }
+        let mail = self
+            .offered
+            .as_ref()
+            .and_then(|offered| self.retry_mail_arrival(offered));
         let Some(offered) = &mut self.offered else {
             return false;
         };
-        offered.offer.retries_at = None;
+        if let Some(arrival) = mail {
+            self.mail_retried = arrival;
+        } else {
+            offered.offer.retries_at = None;
+        }
         let turn = offered.turn;
         self.retry_command(None, turn, None, None, false, events)
             .await
