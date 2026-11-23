@@ -1307,11 +1307,15 @@ search, and so does a `STOP` reply with nothing in it (`docs/gemini.md`); Wisp
 shows the plain cause and keeps known billed usage. `SAFETY`,
 `MAX_TOKENS`, and other non-`STOP` Gemini finishes after a decoded call stop
 the reply with their mapped stop reason instead of running the calls. Retryable
-`invalid_response` failures retry at most 8 times per step for
+`invalid_response` failures retry at most 16 times per step for
 `MALFORMED_FUNCTION_CALL` and 3 times per step for other causes—even under
 looser explicit policies, while tighter bounds still win, sharing the step's
 non-busy retry count—before stopping with `step_limit` and the Retry / Switch
-offer. After a `MALFORMED_FUNCTION_CALL`, the retry appends one fixed text note
+offer. A `MALFORMED_FUNCTION_CALL` uses a fixed, unjittered schedule driven by
+the step's non-busy retry count (so earlier busy waits do not stretch it), with
+`retry-after` still a floor: 8 retries 1 s apart, then 8 more after 1, 2, 4, 5,
+5, 5, 5 and 5 minutes (about 40 minutes including the requests). After a
+`MALFORMED_FUNCTION_CALL`, the retry appends one fixed text note
 to the current user message (`Your previous response contained an improperly
 formatted function call. Send the function call again, properly formatted.`),
 leaving earlier committed blocks byte-identical and never stacking notes across
@@ -1332,7 +1336,7 @@ overloaded falls back to Wisp's own engine after its quick tries, whether or
 not a gateway kept the `compaction_unavailable` code. Background compaction
 yields to foreground compaction when its retries run out. Ordinary foreground
 Wisp compaction uses the same defaults as a turn. Explicit finite policies
-keep their bounds (still capped at 8 for `MALFORMED_FUNCTION_CALL` and 3 for
+keep their bounds (still capped at 16 for `MALFORMED_FUNCTION_CALL` and 3 for
 other retryable `invalid_response`).
 Keep-warm keeps its separate 58-minute deadline.
 
