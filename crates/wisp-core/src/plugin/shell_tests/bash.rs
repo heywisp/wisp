@@ -2026,3 +2026,73 @@ async fn job_env_child() {
         server.abort();
     }
 }
+
+#[tokio::test]
+async fn long_commands_run_in_foreground_with_cwd_exit_dollar0_and_cleanup() {
+    let mut rig = Rig::new("long-fg");
+    let base = rig.run(bash("printf '%s' \"$0\"")).await;
+    let dollar0 = base.output().to_owned();
+    assert!(!dollar0.is_empty());
+
+    for (i, size) in super::LONG_SIZES.into_iter().enumerate() {
+        let sub = format!("sub-{i}");
+        fs::create_dir(rig.path(&sub)).unwrap();
+        let body = format!(
+            "cd '{}' && cat && printf 'ok:%s:%s' \"$0\" \"$LINENO\"; exit 7",
+            rig.path(&sub).display()
+        );
+        let ran = rig.run(bash(&super::long_command(size, &body))).await;
+        assert_eq!(
+            ran.exit(),
+            Some(ExitStatus::Code { code: 7 }),
+            "{}",
+            ran.text
+        );
+        assert_eq!(ran.output(), format!("ok:{dollar0}:5"));
+        assert!(!ran.text.contains(".sh"), "{}", ran.text);
+        assert_eq!(rig.cwd, rig.path(&sub));
+        let n = rig.shell.calls();
+        assert!(!rig.out.path().join(format!("{n:04}-bash.sh")).exists());
+        assert!(!rig.out.path().join(format!("{n:04}-bash.cwd")).exists());
+    }
+
+    let small_nul = rig.run(bash("echo a\0b")).await;
+    assert!(matches!(
+        small_nul.run.outcome,
+        ToolOutcome::Failed {
+            before_start: true,
+            ..
+        }
+    ));
+    let big_nul = rig
+        .run(bash(&super::long_command(
+            super::LONG_SIZES[0],
+            "echo a\0b",
+        )))
+        .await;
+    assert_eq!(big_nul.run.outcome, small_nul.run.outcome);
+    assert!(
+        !rig.out
+            .path()
+            .join(format!("{:04}-bash.sh", rig.shell.calls()))
+            .exists()
+    );
+
+    let ready = rig.path("cancel-ready");
+    let body = format!("echo ready > '{}'; sleep 30", ready.display());
+    let (cancel, _, fire) = cancel_once_written(ready);
+    let ran = rig
+        .run_while(
+            bash(&super::long_command(super::LONG_SIZES[0], &body)),
+            cancel,
+            fire,
+        )
+        .await;
+    assert_eq!(ran.run.outcome, ToolOutcome::Cancelled, "{}", ran.text);
+    assert!(
+        !rig.out
+            .path()
+            .join(format!("{:04}-bash.sh", rig.shell.calls()))
+            .exists()
+    );
+}

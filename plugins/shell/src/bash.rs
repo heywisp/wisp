@@ -2,7 +2,8 @@ mod start;
 
 use serde_json::{Map, Value, json};
 use wisp_plugin_api::host::{
-    CallContext, HoldSpec, Host, JobEnd, JobError, JobOutput, Mode, SpawnSpec, StoppedBy, Waited,
+    CallContext, HoldSpec, Host, Job, JobEnd, JobError, JobOutput, Mode, SpawnSpec, StoppedBy,
+    Waited,
 };
 use wisp_plugin_api::tools::{
     ClientTool, Effect, Purpose, Tags, Timeouts, ToolDef, ToolKind, ToolMeta,
@@ -19,6 +20,9 @@ use crate::{BASH, Timing};
 pub const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 pub const MAX_TIMEOUT_MS: u64 = 600_000;
 pub const MAX_COMMAND_BYTES: usize = 256 * 1024;
+pub(crate) const INLINE_SCRIPT_BYTES: usize = 64 * 1024;
+const SCRIPT_POLL_MS: u64 = 10;
+const SCRIPT_WAIT_MS: u64 = 5_000;
 pub const SYSTEM_LINE: &str =
     "You can run shell commands on the user's computer with the bash tool.";
 
@@ -273,6 +277,62 @@ pub fn script(command: &str, cwd_file: Option<&str>) -> String {
     }
 }
 
+pub(crate) struct PrivateFile(String);
+
+impl PrivateFile {
+    pub(crate) fn path(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for PrivateFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+pub(crate) fn file_bootstrap(path: &str) -> String {
+    let file = quote(path);
+    format!(
+        r#"{{ {{ command rm -f -- {file} </dev/null; IFS= builtin read -r -d '' __wisp_s; :; }} < {file}; }} 2>/dev/null || {{ builtin printf '%s\n' 'could not read command script' >&2; builtin exit 1; }}; builtin eval -- "builtin unset __wisp_s; $__wisp_s""#
+    )
+}
+
+fn write_private(path: &str, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(path)?;
+    file.write_all(bytes)?;
+    file.flush()
+}
+
+pub(crate) fn prepare_script(
+    command: &str,
+    cwd_file: Option<&str>,
+    ctx: &dyn CallContext,
+) -> (String, Option<PrivateFile>) {
+    if command.contains('\0') {
+        return (script(command, cwd_file), None);
+    }
+    if command.len() <= INLINE_SCRIPT_BYTES {
+        let inline = script(command, cwd_file);
+        if inline.len() <= INLINE_SCRIPT_BYTES {
+            return (inline, None);
+        }
+    }
+    let Ok(path) = ctx.private_file("sh") else {
+        return (script(command, cwd_file), None);
+    };
+    let file = PrivateFile(path);
+    if write_private(file.path(), command.as_bytes()).is_err() {
+        return (script(command, cwd_file), None);
+    }
+    let built = script(&file_bootstrap(file.path()), cwd_file);
+    (built, Some(file))
+}
+
 fn environment(tty: bool) -> Vec<(String, String)> {
     let pairs: &[(&str, &str)] = if tty { &TERMINAL_ENV } else { &NON_INTERACTIVE };
     pairs
@@ -397,6 +457,35 @@ impl Bash<'_> {
         }
     }
 
+    async fn spawn_script(
+        &self,
+        path: &str,
+        input: &BashInput,
+        cwd_file: Option<&str>,
+        ctx: &dyn CallContext,
+    ) -> Result<Box<dyn Job>, String> {
+        let (built, script_file) = prepare_script(&input.command, cwd_file, ctx);
+        let spec = self.spec(path, input, built, ctx);
+        let job = self
+            .host
+            .spawn(spec, ctx)
+            .await
+            .map_err(|error| spawn_message(error, input))?;
+        if let Some(file) = script_file.as_ref() {
+            let started = self.host.elapsed_ms();
+            while std::fs::symlink_metadata(file.path()).is_ok() {
+                if job.info().await.end.is_some()
+                    || self.host.elapsed_ms().saturating_sub(started) >= SCRIPT_WAIT_MS
+                {
+                    break;
+                }
+                self.host.sleep(SCRIPT_POLL_MS).await;
+            }
+        }
+        drop(script_file);
+        Ok(job)
+    }
+
     pub(crate) async fn run(&self, input: BashInput, ctx: &dyn CallContext) -> ToolRun {
         let mut notes = Vec::new();
         let Some(path) = self.path.clone() else {
@@ -406,36 +495,26 @@ impl Bash<'_> {
             );
         };
         if input.background {
-            let spec = self.spec(&path, &input, script(&input.command, None), ctx);
-            return with_notes(self.background(spec, &input, ctx).await, notes);
+            let job = match self.spawn_script(&path, &input, None, ctx).await {
+                Ok(job) => job,
+                Err(message) => return with_notes(ToolRun::failed_to_start(message), notes),
+            };
+            let target = first_line(&input.command);
+            return with_notes(self.background(job, target, ctx).await, notes);
         }
         let cwd_file = match ctx.private_file("cwd") {
-            Ok(path) => Some(path),
+            Ok(path) => Some(PrivateFile(path)),
             Err(reason) => {
                 notes.push(format!("Working directory not tracked: {reason}"));
                 None
             }
         };
-        let remove = |file: &Option<String>| {
-            if let Some(file) = file {
-                let _ = std::fs::remove_file(file);
-            }
-        };
-        let spec = self.spec(
-            &path,
-            &input,
-            script(&input.command, cwd_file.as_deref()),
-            ctx,
-        );
-        let job = match self.host.spawn(spec, ctx).await {
+        let job = match self
+            .spawn_script(&path, &input, cwd_file.as_ref().map(PrivateFile::path), ctx)
+            .await
+        {
             Ok(job) => job,
-            Err(error) => {
-                remove(&cwd_file);
-                return with_notes(
-                    ToolRun::failed_to_start(spawn_message(error, &input)),
-                    notes,
-                );
-            }
+            Err(message) => return with_notes(ToolRun::failed_to_start(message), notes),
         };
         let spec = HoldSpec {
             quiet_ms: input.tty.then_some(self.timing.hand_back_ms),
@@ -447,16 +526,16 @@ impl Bash<'_> {
         let end = match job.hold(spec).await {
             Waited::Ended(end) => end,
             Waited::Moved(id) => {
-                remove(&cwd_file);
+                drop(cwd_file);
                 return with_notes(start::moved(self.host, job.as_ref(), id).await, notes);
             }
             Waited::NeedsInput(back) => {
-                remove(&cwd_file);
+                drop(cwd_file);
                 let run = start::handed_back(self.host, job.as_ref(), back, ctx).await;
                 return with_notes(run, notes);
             }
             Waited::StillRunning(id) => {
-                remove(&cwd_file);
+                drop(cwd_file);
                 let run =
                     start::still_running(self.host, job.as_ref(), id, self.timing.yield_ms, ctx)
                         .await;
@@ -484,7 +563,7 @@ impl Bash<'_> {
             None
         };
         let cwd = ctx.cwd();
-        let tracked = match cwd_file.as_deref().map(|file| tracked_dir(file, &cwd)) {
+        let tracked = match cwd_file.as_ref().map(|file| tracked_dir(file.path(), &cwd)) {
             Some(Ok(dir)) => dir,
             Some(Err(reason)) => {
                 notes.push(format!("Working directory not tracked: {reason}"));

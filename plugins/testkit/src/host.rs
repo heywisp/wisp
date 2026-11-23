@@ -802,6 +802,7 @@ pub struct FakeCall {
     pub live_tail: bool,
     pub output: Arc<Mutex<Vec<u8>>>,
     pub ask: Option<Arc<AskFn>>,
+    pub private_dir: Option<std::path::PathBuf>,
 }
 
 impl FakeCall {
@@ -863,8 +864,17 @@ impl CallContext for FakeCall {
         }
     }
 
-    fn private_file(&self, _suffix: &str) -> Result<String, String> {
-        Err("the fake call has no output file".to_owned())
+    fn private_file(&self, suffix: &str) -> Result<String, String> {
+        let Some(dir) = &self.private_dir else {
+            return Err("the fake call has no output file".to_owned());
+        };
+        let path = dir.join(format!("call.{suffix}"));
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| e.to_string())?;
+        Ok(path.display().to_string())
     }
 
     fn ask(&self, items: Vec<Question>) -> BoxFuture<'_, AskReply> {

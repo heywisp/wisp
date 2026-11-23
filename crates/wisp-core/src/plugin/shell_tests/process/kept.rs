@@ -388,3 +388,43 @@ async fn a_render_lists_a_dead_kept_process_without_probing_it_and_the_next_list
     assert_eq!(ended_notes(&rig), [(5, gone_end)]);
     rig.finish().await;
 }
+
+#[tokio::test]
+async fn long_commands_run_with_keep_running_and_clean_up() {
+    if !have_bash() {
+        return;
+    }
+    let mut rig = Rig::new("long-kept");
+    for (i, size) in crate::plugin::shell_tests::LONG_SIZES
+        .into_iter()
+        .enumerate()
+    {
+        let gate = rig.path(&format!("go-{i}"));
+        let body = format!(
+            "printf 'kept:%s\n' \"$0\"; while [ ! -f '{}' ]; do sleep 0.05; done; exit 5",
+            gate.display()
+        );
+        let done = rig
+            .bash(kept(&crate::plugin::shell_tests::long_command(size, &body)))
+            .await;
+        let id = done.number.expect("kept process number");
+        let sh = rig.file(rig.shell.calls()).with_extension("sh");
+        assert!(!sh.exists(), "{}", sh.display());
+        assert!(!done.text.contains(".sh"), "{}", done.text);
+        let (pid, log) = started(&rig, id);
+        let _guard = KillGroup(pid);
+        until_file(&log, "kept:").await;
+        let logged = fs::read_to_string(&log).unwrap();
+        assert!(logged.contains("bash"), "{logged}");
+        assert!(!logged.contains(".sh"), "{logged}");
+        fs::write(&gate, "go").unwrap();
+        let waited = rig.process(json!({"id": id, "wait_ms": 10_000})).await;
+        assert!(
+            waited.text.contains("exited with code 5"),
+            "{}",
+            waited.text
+        );
+        assert!(gone(pid).await);
+    }
+    rig.finish().await;
+}
