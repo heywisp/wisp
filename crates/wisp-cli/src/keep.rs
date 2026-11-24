@@ -540,12 +540,15 @@ pub(super) async fn dial(
     }
 }
 
+pub(super) fn store(data: &Path) -> io::Result<wisp_core::session::JsonlStore> {
+    wisp_core::session::JsonlStore::open(data.join("sessions"))
+}
+
 pub(super) fn by_id(
     data: &Path,
     prefix: &str,
 ) -> Result<(wisp_core::session::JsonlStore, String), String> {
-    let store = wisp_core::session::JsonlStore::open(data.join("sessions"))
-        .map_err(|error| error.to_string())?;
+    let store = store(data).map_err(|error| error.to_string())?;
     let id = wisp_core::resume::find(&store, wisp_core::resume::Wanted::Id(prefix))?.id;
     Ok((store, id))
 }
@@ -578,10 +581,18 @@ pub(super) fn unreached(
         return error.to_string();
     }
     let short = wisp_protocol::short_id(id);
-    match store.probe(id) {
-        Err(error) if error.kind() == io::ErrorKind::WouldBlock => format!("{short} {window}"),
+    match held(store, id) {
+        Ok(true) => format!("{short} {window}"),
+        Ok(false) => format!("{short} {ended}"),
         Err(error) => error.to_string(),
-        Ok(_) => format!("{short} {ended}"),
+    }
+}
+
+pub(super) fn held(store: &wisp_core::session::JsonlStore, id: &str) -> io::Result<bool> {
+    match store.probe(id) {
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(true),
+        Err(error) => Err(error),
+        Ok(_) => Ok(false),
     }
 }
 

@@ -9,7 +9,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tokio::time::Instant;
-use wisp_client::link::{self as client, Connection};
+use wisp_client::link::{self as client, Connection, LinkError};
 use wisp_protocol::link::{self, Start, ToClient};
 use wisp_protocol::{AgentEvent, RestartState, Unready};
 use wisp_render::chrome::restart::{self as render, Chat, End, Kept, State};
@@ -26,6 +26,7 @@ const WAIT: Duration = Duration::from_secs(5 * 60);
 pub(super) struct Found {
     pub(super) chat: Chat,
     connection: Option<Connection<UnixStream>>,
+    inside: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -40,7 +41,7 @@ pub(super) async fn find(data: &Path, ids: Vec<String>) -> Vec<Found> {
         let data = data.to_owned();
         let ids = ids.clone();
         tokio::task::spawn_blocking(move || {
-            wisp_core::session::JsonlStore::open(data.join("sessions"))
+            keep::store(&data)
                 .map(|store| wisp_core::resume::rows_of(&store, &ids))
                 .unwrap_or_default()
         })
@@ -52,15 +53,21 @@ pub(super) async fn find(data: &Path, ids: Vec<String>) -> Vec<Found> {
     futures::future::join_all(ids.into_iter().map(|id| {
         let titles = &titles;
         async move {
-            let (connection, state) = match tokio::time::timeout(
-                ANSWERS_WITHIN,
-                client::connect(&link::socket(data, &id), crate::host::build()),
-            )
+            let mut inside = false;
+            let (connection, state, inside) = match tokio::time::timeout(ANSWERS_WITHIN, async {
+                let stream = client::dial(&link::socket(data, &id)).await?;
+                inside = wispd::runs_inside(&stream);
+                client::handshake(stream, crate::host::build()).await
+            })
             .await
             {
-                Ok(Ok(connection)) => (Some(connection), State::Restarting),
-                Ok(Err(error)) => (None, State::Failed(error.to_string())),
-                Err(_) => (None, State::NoAnswer),
+                Ok(Ok(connection)) => (Some(connection), State::Restarting, false),
+                Ok(Err(error)) => (
+                    None,
+                    State::Failed(error.to_string()),
+                    inside && matches!(error, LinkError::Io(_) | LinkError::Closed),
+                ),
+                Err(_) => (None, State::NoAnswer, false),
             };
             let welcome = connection.as_ref().map(|connection| &connection.welcome);
             let title = titles
@@ -83,6 +90,7 @@ pub(super) async fn find(data: &Path, ids: Vec<String>) -> Vec<Found> {
             Found {
                 chat: Chat { kept, state },
                 connection,
+                inside,
             }
         }
     }))
@@ -116,6 +124,17 @@ async fn named(data: &Path, prefixes: &[String]) -> (Vec<String>, ExitCode) {
         }
     }
     (ids, code)
+}
+
+fn lost(data: &Path, id: &str, reason: String) -> State {
+    let held = keep::store(data)
+        .and_then(|store| keep::held(&store, id))
+        .unwrap_or(false);
+    if held {
+        State::StillRunning(reason)
+    } else {
+        State::Failed(reason)
+    }
 }
 
 fn ask_older(older: &[Kept], terminal: bool, prompter: &Prompter, layout: Layout) -> bool {
@@ -179,7 +198,7 @@ async fn restart(prefixes: &[String]) -> io::Result<ExitCode> {
     let terminal =
         io::stdout().is_terminal() && io::stdin().is_terminal() && io::stderr().is_terminal();
     let mut layout = Layout::new(prompt::terminal_columns(), prompter.glyphs().set);
-    let (ids, names) = if prefixes.is_empty() {
+    let (ids, mut names) = if prefixes.is_empty() {
         (wispd::daemon::running(&data).await?, ExitCode::SUCCESS)
     } else {
         named(&data, prefixes).await
@@ -187,7 +206,22 @@ async fn restart(prefixes: &[String]) -> io::Result<ExitCode> {
     if ids.is_empty() && !prefixes.is_empty() {
         return Ok(names);
     }
-    let found = find(&data, ids).await;
+    let mut found = find(&data, ids).await;
+    let inside = found.iter().any(|found| found.inside);
+    for found in &mut found {
+        if found.inside {
+            names = crate::manage::fail(format!(
+                "this chat ({}) can't restart itself; restart it from outside",
+                wisp_protocol::short_id(&found.chat.kept.id)
+            ));
+        } else if let State::Failed(reason) = &found.chat.state {
+            found.chat.state = lost(&data, &found.chat.kept.id, reason.clone());
+        }
+    }
+    found.retain(|found| !found.inside);
+    if inside && (prefixes.is_empty() || found.is_empty()) {
+        return Ok(names);
+    }
     let older = found
         .iter()
         .filter(|found| {
@@ -309,7 +343,7 @@ async fn restart(prefixes: &[String]) -> io::Result<ExitCode> {
     let failed = chats.iter().any(|chat| {
         matches!(
             chat.state,
-            State::Failed(_) | State::NoAnswer | State::InAnotherRestart
+            State::Failed(_) | State::StillRunning(_) | State::NoAnswer | State::InAnotherRestart
         ) || chat.kept.older
     });
     if !end.cancelled && prefixes.is_empty() {
@@ -344,7 +378,7 @@ async fn chat(
         return;
     }
     if let Err(error) = connection.restart(true).await {
-        found.chat.state = State::Failed(error.to_string());
+        found.chat.state = lost(data, &found.chat.kept.id, error.to_string());
         let _ = updates.send((index, found.chat)).await;
         return;
     }
@@ -375,11 +409,11 @@ async fn chat(
                 Ok(ToClient::Ended { .. }) => {
                     break match keep::dial(&path).await {
                         Ok(next) => { found.chat.kept.older = next.welcome.build < crate::host::build(); State::Restarted(stopped) }
-                        Err(reason) => State::Failed(reason),
+                        Err(reason) => lost(data, &found.chat.kept.id, reason),
                     };
                 }
                 Ok(_) => {}
-                Err(error) => break State::Failed(error.to_string()),
+                Err(error) => break lost(data, &found.chat.kept.id, error.to_string()),
             },
             _ = &mut answer, if !heard && stop_by.is_none() => {
                 heard = true;
@@ -397,7 +431,7 @@ async fn chat(
                         going = true;
                         stopped = open.clone();
                         wisp_protocol::age_unready(&mut stopped, at.elapsed());
-                        if let Err(error) = connection.restart(false).await { break State::Failed(error.to_string()); }
+                        if let Err(error) = connection.restart(false).await { break lost(data, &found.chat.kept.id, error.to_string()); }
                         found.chat.state = State::Restarting;
                         let _ = updates.send((index, found.chat.clone())).await;
                         stop_by = Some(Instant::now() + wisp_start::start::SIGNAL_LIMIT + ANSWERS_WITHIN);
@@ -450,11 +484,11 @@ fn older<'a>(
                     chat.kept.older = next.welcome.build < crate::host::build();
                     State::Restarted(waiting)
                 }
-                Err(reason) => State::Failed(reason),
+                Err(reason) => lost(data, &chat.kept.id, reason),
             }
         } else {
             match ended {
-                Ok(Err(error)) => State::Failed(error.to_string()),
+                Ok(Err(error)) => lost(data, &chat.kept.id, error.to_string()),
                 _ => State::NoAnswer,
             }
         };
@@ -465,7 +499,7 @@ fn older<'a>(
 fn older_waiting(data: &Path, id: &str) -> Vec<Unready> {
     use wisp_core::session::SessionStore;
     use wisp_protocol::log::LogEvent;
-    let waiting = wisp_core::session::JsonlStore::open(data.join("sessions")).ok().and_then(|store| store.read(id).ok()).and_then(|records| {
+    let waiting = keep::store(data).ok().and_then(|store| store.read(id).ok()).and_then(|records| {
         let interrupted = records.iter().rev().find_map(|record| if let LogEvent::SessionEnded { interrupted, .. } = record.event { Some(interrupted) } else { None }).flatten();
         let logged = wisp_core::resume::LoggedSession::read(&records).ok()?;
         logged.last_turn.filter(|turn| Some(turn.turn) == interrupted && !turn.replied && records.iter().any(|record| matches!(&record.event, LogEvent::TurnStarted { turn: started, origin: None, .. } if *started == turn.turn)))

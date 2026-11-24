@@ -51,6 +51,7 @@ pub enum State {
     Cancelled,
     InAnotherRestart,
     Failed(String),
+    StillRunning(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -191,6 +192,7 @@ fn detail(chat: &Chat, room: usize, layout: Layout) -> Phrase {
         State::NoAnswer => words("no answer, not restarted", Token::Text),
         State::InAnotherRestart => words("in another restart", Token::Text),
         State::Failed(_) => words("didn't start again", Token::Error),
+        State::StillRunning(_) => words("still running", Token::Text),
         State::Restarted(_) | State::Cancelled => Phrase::default(),
     }
 }
@@ -218,6 +220,14 @@ fn toned(mut lines: Vec<StyledLine>, token: Token) -> Vec<StyledLine> {
         }
     }
     lines
+}
+
+fn name(chat: &Kept) -> &str {
+    if chat.title.is_empty() {
+        short_id(&chat.id)
+    } else {
+        &chat.title
+    }
 }
 
 fn name_token(title: &str) -> Token {
@@ -260,7 +270,7 @@ pub fn rows(chats: &[Chat], layout: Layout) -> Vec<StyledLine> {
     let right = if time == 0 { 0 } else { 2 + time };
     let longest = busy
         .iter()
-        .map(|chat| width(&glyphs.fold(&one_line(&chat.kept.title)), mode))
+        .map(|chat| width(&glyphs.fold(&one_line(name(&chat.kept))), mode))
         .max()
         .unwrap_or(0);
     let phrase_w = busy
@@ -287,12 +297,12 @@ pub fn rows(chats: &[Chat], layout: Layout) -> Vec<StyledLine> {
         } else {
             title_w
         };
-        let title = cut(&chat.kept.title, title_room, layout);
+        let title = cut(name(&chat.kept), title_room, layout);
         let look = if matches!(
             chat.state,
             State::Finishing(_) | State::Restarting | State::NotAnswering
         ) {
-            Look::fg(name_token(&chat.kept.title)).bold()
+            Look::fg(name_token(name(&chat.kept))).bold()
         } else {
             Look::fg(Token::TextMuted)
         };
@@ -341,7 +351,7 @@ pub fn rows(chats: &[Chat], layout: Layout) -> Vec<StyledLine> {
         }
         out.push(StyledLine::new(spans));
         match &chat.state {
-            State::Failed(reason) => {
+            State::Failed(reason) | State::StillRunning(reason) => {
                 for text in reason.lines().filter(|line| !line.is_empty()) {
                     out.extend(wrapped(
                         text,
@@ -350,25 +360,27 @@ pub fn rows(chats: &[Chat], layout: Layout) -> Vec<StyledLine> {
                         layout,
                     ));
                 }
-                if below {
-                    out.extend(toned(
-                        wrapped(AGENTS_WAIT, "    ", "    ", layout),
-                        AGENTS_WAITING,
-                    ));
-                    out.extend(wrapped(OPEN_AGAIN, "    ", "    ", layout));
-                    out.push(line(format!(
-                        "      {RESUME_COMMAND} {}",
-                        short_id(&chat.kept.id)
-                    )));
-                } else {
-                    out.push(StyledLine::new(vec![
-                        StyledSpan::plain("      "),
-                        StyledSpan::new(AGENTS_WAIT, AGENTS_WAITING),
-                        StyledSpan::plain(format!(
-                            " {OPEN_AGAIN} {RESUME_COMMAND} {}",
+                if matches!(chat.state, State::Failed(_)) {
+                    if below {
+                        out.extend(toned(
+                            wrapped(AGENTS_WAIT, "    ", "    ", layout),
+                            AGENTS_WAITING,
+                        ));
+                        out.extend(wrapped(OPEN_AGAIN, "    ", "    ", layout));
+                        out.push(line(format!(
+                            "      {RESUME_COMMAND} {}",
                             short_id(&chat.kept.id)
-                        )),
-                    ]));
+                        )));
+                    } else {
+                        out.push(StyledLine::new(vec![
+                            StyledSpan::plain("      "),
+                            StyledSpan::new(AGENTS_WAIT, AGENTS_WAITING),
+                            StyledSpan::plain(format!(
+                                " {OPEN_AGAIN} {RESUME_COMMAND} {}",
+                                short_id(&chat.kept.id)
+                            )),
+                        ]));
+                    }
                 }
             }
             State::NoAnswer => out.extend(wrapped(
@@ -697,7 +709,7 @@ pub fn older_question(chats: &[Kept], layout: Layout) -> Vec<StyledLine> {
     let title_w = chats
         .iter()
         .filter(|chat| chat.window)
-        .map(|chat| width(&one_line(&chat.title), layout.width_mode))
+        .map(|chat| width(&one_line(name(chat)), layout.width_mode))
         .max()
         .unwrap_or(0)
         .min(layout.width.saturating_sub(15));
@@ -708,12 +720,12 @@ pub fn older_question(chats: &[Kept], layout: Layout) -> Vec<StyledLine> {
                     format!(
                         "  {}",
                         padded(
-                            &cut(&chat.title, title_w, layout),
+                            &cut(name(chat), title_w, layout),
                             title_w,
                             layout.width_mode
                         )
                     ),
-                    name_token(&chat.title),
+                    name_token(name(chat)),
                 ),
                 StyledSpan::new(format!("  {IN_WINDOW}"), Token::TextMuted),
             ]));
@@ -721,9 +733,9 @@ pub fn older_question(chats: &[Kept], layout: Layout) -> Vec<StyledLine> {
             out.push(StyledLine::new(vec![StyledSpan::new(
                 format!(
                     "  {}",
-                    cut(&chat.title, layout.width.saturating_sub(2), layout)
+                    cut(name(chat), layout.width.saturating_sub(2), layout)
                 ),
-                name_token(&chat.title),
+                name_token(name(chat)),
             )]));
             if chat.window {
                 out.push(StyledLine::new(vec![StyledSpan::new(

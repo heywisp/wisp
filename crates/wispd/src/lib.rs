@@ -19,7 +19,7 @@ use wisp_protocol::{
     AgentEvent, ClientCommand, Opening, RequestId, RestartState, SessionView, jsonl,
 };
 
-pub use socket::{Admission, Socket, admit, bind, same_user};
+pub use socket::{Admission, Socket, admit, bind, runs_inside, same_user};
 use store::Store;
 
 pub const WAITING: usize = 64 << 20;
