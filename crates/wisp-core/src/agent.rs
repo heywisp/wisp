@@ -854,6 +854,7 @@ pub struct Agent {
     evicted: evict::Evicted,
     last: Option<LastRequest>,
     sending: Option<misses::Sent>,
+    sent_sound: bool,
     threads: threads::Threads,
     repeats: misses::Repeats,
     session_usd: f64,
@@ -999,6 +1000,7 @@ impl Agent {
             evicted: evict::Evicted::new(),
             last: None,
             sending: None,
+            sent_sound: false,
             threads: threads::Threads::default(),
             repeats: misses::Repeats::default(),
             session_usd: 0.0,
@@ -4328,13 +4330,19 @@ impl Agent {
         model: &str,
         iterations: &[Iteration],
         uncounted: bool,
+        sound: bool,
     ) -> Spend {
+        let audio_above = sound
+            && usage.is_some()
+            && self
+                .rates(self.endpoint, model)
+                .is_some_and(|info| info.audio_above);
         let usd = usage.and_then(|u| self.estimate(model, &u, iterations));
         Spend {
             usage,
             usd,
             list_usd: self.unshown_estimate(model, usage, iterations),
-            lower_bound: uncounted || pricing::unpriced(usage.is_some(), usd),
+            lower_bound: uncounted || pricing::unpriced(usage.is_some(), usd) || audio_above,
         }
     }
 
@@ -4345,7 +4353,7 @@ impl Agent {
         iterations: &[Iteration],
         uncounted: bool,
     ) -> Spend {
-        let spend = self.spend(usage, model, iterations, uncounted);
+        let spend = self.spend(usage, model, iterations, uncounted, self.sent_sound);
         self.add_session(spend, model);
         let track = self.track();
         track.add(spend);
@@ -4506,6 +4514,11 @@ impl Agent {
             .sending(self.provider().cache_prefix(&request), betas, key);
         let watch = self.watch();
         let sent_model = session.model.as_str();
+        self.sent_sound = images::sent_sound(
+            request.messages,
+            request.rendering,
+            self.provider().media_types(),
+        );
         let mut stream = self.provider().stream(&request);
         self.sending = Some(sent);
         let (mut warming, mut stagger) = self.hold_for_warmth(print, events).await;

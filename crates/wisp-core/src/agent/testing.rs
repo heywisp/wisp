@@ -196,6 +196,7 @@ pub(crate) struct Knobs {
     pub(crate) cache_life: Option<SignedDuration>,
     pub(crate) opt_in: Option<bool>,
     pub(crate) media: bool,
+    pub(crate) media_types: Option<&'static [&'static str]>,
     pub(crate) search: bool,
     pub(crate) pause_limit: Option<u32>,
     pub(crate) wire_print: bool,
@@ -628,7 +629,9 @@ impl Provider for Fake {
     }
 
     fn media_types(&self) -> &'static [&'static str] {
-        if self.knobs(|k| k.media) {
+        if let Some(types) = self.knobs(|k| k.media_types) {
+            types
+        } else if self.knobs(|k| k.media) {
             &media::MEDIA_TYPES
         } else {
             Bare.media_types()

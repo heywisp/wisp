@@ -235,6 +235,56 @@ async fn native_model_asks_use_the_side_model_and_collect_blocks_and_stream_sour
 }
 
 #[tokio::test]
+async fn a_text_only_model_ask_stays_exact_in_a_chat_with_audio() {
+    const NEON: &str = "gemini-4-neon";
+    const FLASH: &str = "gemini-3.1-flash-lite";
+    let env = Env::new("plugin-model-audio");
+    let store = MemoryStore::default();
+    let provider = scripted(vec![
+        reply_on(
+            NEON,
+            600,
+            &[call("q", "question", json!({}))],
+            StopReason::ToolUse,
+        )
+        .into(),
+        reply_on(FLASH, 20, &[B::Text("short reply")], StopReason::EndTurn).into(),
+        reply_on(NEON, 600, &[B::Text("done")], StopReason::EndTurn).into(),
+    ]);
+    provider.knobs(|knobs| knobs.media_types = Some(&crate::provider::gemini::MEDIA_TYPES));
+    let question = Question::new(None);
+    let mut agent = question_agent(provider.clone(), &env, &question).with_log(
+        SessionLog::new(Box::new(store.clone()), "s1"),
+        log_context(),
+    );
+    agent.session.model = NEON.into();
+    let mut message = Message::user_text("a recording");
+    message
+        .content
+        .push(ContentBlock::media("audio/wav".parse().unwrap(), "YQ=="));
+    agent.history.push(message);
+    let (outcome, _) = turn(&mut agent, "go").await;
+    assert!(
+        matches!(outcome, TurnOutcome::Completed { cost: Some(cost), .. } if !cost.session_lower_bound)
+    );
+    let sent = provider.sent();
+    assert!(crate::agent::images::sent_sound(
+        &sent[0].messages,
+        &sent[0].rendering,
+        provider.media_types(),
+    ));
+    assert_eq!(
+        sent[1].messages,
+        [Message::user_text("A self-contained question")]
+    );
+    let asks = pick!(records(&store), wisp_protocol::log::LogRecord { event: LogEvent::ModelAsked { cost_usd: Some(usd), model, lower_bound, .. }, .. } => (usd, model, lower_bound));
+    assert!(
+        matches!(asks.as_slice(), [(usd, Some(model), false)] if *usd > 0.0 && model == FLASH),
+        "{asks:?}"
+    );
+}
+
+#[tokio::test]
 async fn model_asks_price_the_total_search_count_with_iterations_and_resume_it() {
     let env = Env::new("plugin-model-price");
     let store = MemoryStore::default();

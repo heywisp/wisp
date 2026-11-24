@@ -497,7 +497,27 @@ pub fn process_refusal(kind: &RejectKind, id: impl std::fmt::Display) -> String 
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct InlineMedia<'a> {
+    pub media_type: &'a str,
+    pub data: &'a str,
+}
+
 impl ContentBlock {
+    pub fn inline_media(&self) -> Option<InlineMedia<'_>> {
+        let (media_type, data) = match self {
+            Self::Image {
+                source: ImageSource::Base64 { media_type, data },
+            } => (media_type.as_str(), data),
+            Self::Media {
+                source: MediaSource::Base64 { media_type, data },
+            } => (media_type.as_str(), data),
+            _ => return None,
+        };
+        Some(InlineMedia { media_type, data })
+    }
+
     pub fn image(media_type: ImageType, data: impl Into<Arc<str>>) -> Self {
         Self::Image {
             source: ImageSource::Base64 {
@@ -2409,6 +2429,26 @@ pub struct Cost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_media_reads_images_and_files_alike() {
+        let data = "YWJj";
+        let image = ContentBlock::image(ImageType::Png, data);
+        let file = ContentBlock::media("image/png".parse().unwrap(), data);
+        let inline = InlineMedia {
+            media_type: "image/png",
+            data,
+        };
+        assert_eq!(image.inline_media(), Some(inline));
+        assert_eq!(file.inline_media(), Some(inline));
+        assert_eq!(
+            ContentBlock::Text {
+                text: data.to_owned()
+            }
+            .inline_media(),
+            None
+        );
+    }
 
     #[test]
     fn effort_levels_order_from_low_to_max() {

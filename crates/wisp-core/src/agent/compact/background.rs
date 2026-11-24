@@ -21,6 +21,7 @@ use super::gate::{Gated, Hooked, Instruction, gated};
 use super::strategy::{HeadAsk, Run};
 use super::{Head, block_raw, block_text, closing_flags, is_native_block};
 use crate::agent::epoch::PrefixKey;
+use crate::agent::images;
 use crate::agent::retry::{Decision, RetryPolicy, RetryState, decide};
 use crate::agent::side::{Landed, Replies, Watch};
 use crate::agent::{Agent, Pending, check_layout, emit};
@@ -153,6 +154,7 @@ async fn attempts(order: Order, sent: Arc<AtomicBool>, spent: Attempts) -> Lande
 
 struct Precompute {
     covered: Arc<[Message]>,
+    sound: bool,
     spent: Attempts,
     key: PrefixKey,
     covers: Option<Covers>,
@@ -409,9 +411,11 @@ impl Agent {
             tail: self.tail_marker(),
         };
         let (tools, server_tools) = self.wire(&self.sent, self.step_server_tools());
+        let provider = self.provider().clone();
+        let sound = images::sent_sound(&covered, &rendering, provider.media_types());
         let order = Order {
             watch: self.watch(),
-            provider: self.provider().clone(),
+            provider,
             session,
             tools,
             deferred: crate::agent::tool_changes::deferred_for(&self.deferred, features).to_vec(),
@@ -446,6 +450,7 @@ impl Agent {
         let turns = self.next_turns();
         let precompute = Precompute {
             covered,
+            sound,
             spent,
             key: self.prefix_key(),
             covers: self.covers(turns),
@@ -475,14 +480,19 @@ impl Agent {
         self.running_turn()
     }
 
-    fn charge_attempts(&mut self, spent: &Attempts) -> Charged {
+    fn charge_attempts(&mut self, spent: &Attempts, sound: bool) -> Charged {
         let mut total = Charged::default();
         for attempt in take_attempts(spent) {
             let usage = attempt
                 .usage
                 .map(|u| super::summed(&u, &attempt.iterations));
-            let charged =
-                self.charge_background(usage, &attempt.model, &attempt.iterations, attempt.billed);
+            let charged = self.charge_background(
+                usage,
+                &attempt.model,
+                &attempt.iterations,
+                attempt.billed,
+                sound,
+            );
             total = total.plus(charged);
         }
         total
@@ -494,8 +504,9 @@ impl Agent {
         model: &str,
         iterations: &[Iteration],
         uncounted: bool,
+        sound: bool,
     ) -> Charged {
-        let spend = self.spend(usage, model, iterations, uncounted);
+        let spend = self.spend(usage, model, iterations, uncounted, sound);
         self.add_session(spend, model);
         if !self.compacting()
             && let Some(track) = self.track.as_mut()
@@ -538,7 +549,7 @@ impl Agent {
         let model = landed.asm.model().to_owned();
         let iterations = landed.asm.iterations().to_vec();
         let usage = landed.asm.usage().map(|u| super::summed(&u, &iterations));
-        let earlier = self.charge_attempts(&precompute.spent);
+        let earlier = self.charge_attempts(&precompute.spent, precompute.sound);
         let message = match landed.finish() {
             Ok(message) => message,
             Err(error) if error.refused == Some(Refused::NativeSearch) => {
@@ -567,7 +578,8 @@ impl Agent {
                     self.fall_back_on(pair, &rejected, &mut None, events).await;
                 }
                 let uncounted = error.uncounted(usage.is_some());
-                let charged = self.charge_background(usage, &model, &iterations, uncounted);
+                let charged =
+                    self.charge_background(usage, &model, &iterations, uncounted, precompute.sound);
                 self.end_background(
                     (turn, precompute.strategy),
                     (
@@ -581,8 +593,13 @@ impl Agent {
                 return;
             }
         };
-        let charged =
-            earlier.plus(self.charge_background(usage, &message.model, &message.iterations, false));
+        let charged = earlier.plus(self.charge_background(
+            usage,
+            &message.model,
+            &message.iterations,
+            false,
+            precompute.sound,
+        ));
         let (usage, cost) = (charged.usage, charged.cost);
         let blocks: Vec<&ContentBlock> = message
             .content
@@ -707,7 +724,7 @@ impl Agent {
             Phase::Running { precompute, handle } => {
                 handle.abort();
                 let _ = handle.await;
-                let earlier = self.charge_attempts(&precompute.spent);
+                let earlier = self.charge_attempts(&precompute.spent, precompute.sound);
                 let charged = if precompute.sent.load(Ordering::Relaxed) {
                     let read = precompute
                         .covered
@@ -719,7 +736,13 @@ impl Agent {
                         cache_read_input_tokens: read,
                         ..Usage::default()
                     };
-                    earlier.plus(self.charge_background(Some(usage), &precompute.model, &[], true))
+                    earlier.plus(self.charge_background(
+                        Some(usage),
+                        &precompute.model,
+                        &[],
+                        true,
+                        precompute.sound,
+                    ))
                 } else {
                     earlier
                 };
@@ -1419,6 +1442,7 @@ impl Agent {
     ) {
         let precompute = Precompute {
             covered: covered.into(),
+            sound: false,
             spent: Attempts::default(),
             key: self.prefix_key(),
             covers: None,

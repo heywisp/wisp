@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Map, Value, json};
 use wisp_protocol::agents::MAIL_OPEN;
 use wisp_protocol::settings::GEMINI_WEB_SEARCH;
-use wisp_protocol::{ContentBlock, Effort, ErrorKind, ImageSource, MediaSource, Message, Role};
+use wisp_protocol::{ContentBlock, Effort, ErrorKind, Message, Role};
 use wisp_tool_text::{CONTEXT_PREFIX, SENT_PREFIX};
 
 use super::super::{
@@ -386,7 +386,7 @@ fn extract_call_signatures<'a>(
 }
 
 fn media_part(carried: &[&str], why: NotSent, media_type: &str, data: &str) -> Value {
-    if carried.contains(&media_type) {
+    if wisp_tool_text::files::carries(carried, media_type) {
         json!({
             "inlineData": {
                 "mimeType": media_type,
@@ -405,7 +405,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
     let (carried, why) = if request.rendering.attachments_as_notes {
         (&[][..], NotSent::Model)
     } else {
-        (super::MEDIA_TYPES, NotSent::Server)
+        (super::MEDIA_TYPES.as_slice(), NotSent::Server)
     };
 
     let mut contents: Vec<Value> = Vec::new();
@@ -582,15 +582,10 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                             first_call_seen = true;
                             parts.push(Value::Object(part));
                         }
-                        ContentBlock::Image {
-                            source: ImageSource::Base64 { media_type, data },
-                        } => {
-                            parts.push(media_part(carried, why, media_type.as_str(), data));
-                        }
-                        ContentBlock::Media {
-                            source: MediaSource::Base64 { media_type, data },
-                        } => {
-                            parts.push(media_part(carried, why, media_type.as_str(), data));
+                        ContentBlock::Image { .. } | ContentBlock::Media { .. } => {
+                            if let Some(media) = block.inline_media() {
+                                parts.push(media_part(carried, why, media.media_type, media.data));
+                            }
                         }
                         ContentBlock::Opaque { provider, .. } => {
                             if provider != super::PROVIDER
@@ -635,15 +630,10 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                                 parts.push(json!({ "text": text }));
                             }
                         }
-                        ContentBlock::Image {
-                            source: ImageSource::Base64 { media_type, data },
-                        } => {
-                            parts.push(media_part(carried, why, media_type.as_str(), data));
-                        }
-                        ContentBlock::Media {
-                            source: MediaSource::Base64 { media_type, data },
-                        } => {
-                            parts.push(media_part(carried, why, media_type.as_str(), data));
+                        ContentBlock::Image { .. } | ContentBlock::Media { .. } => {
+                            if let Some(media) = block.inline_media() {
+                                parts.push(media_part(carried, why, media.media_type, media.data));
+                            }
                         }
                         ContentBlock::ToolResult {
                             tool_use_id,
@@ -658,25 +648,15 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                             for inner in content {
                                 match inner {
                                     ContentBlock::Text { text } => lines.push(text.clone()),
-                                    ContentBlock::Image {
-                                        source: ImageSource::Base64 { media_type, data },
-                                    } => {
-                                        inline_media.push(media_part(
-                                            carried,
-                                            why,
-                                            media_type.as_str(),
-                                            data,
-                                        ));
-                                    }
-                                    ContentBlock::Media {
-                                        source: MediaSource::Base64 { media_type, data },
-                                    } => {
-                                        inline_media.push(media_part(
-                                            carried,
-                                            why,
-                                            media_type.as_str(),
-                                            data,
-                                        ));
+                                    ContentBlock::Image { .. } | ContentBlock::Media { .. } => {
+                                        if let Some(media) = inner.inline_media() {
+                                            inline_media.push(media_part(
+                                                carried,
+                                                why,
+                                                media.media_type,
+                                                media.data,
+                                            ));
+                                        }
                                     }
                                     ContentBlock::Opaque { .. } => {
                                         if let Some(text) =
@@ -750,7 +730,7 @@ mod tests {
     use crate::provider::{Features, Rendering, RequestOptions, ServerToolSpec};
     use crate::tool::ToolSpec;
     use wisp_protocol::log::{BlockPosition, Cut, LoggedMessage};
-    use wisp_protocol::{CacheTtl, ImageType, MessageTime, SessionConfig};
+    use wisp_protocol::{CacheTtl, ImageSource, ImageType, MessageTime, SessionConfig};
 
     fn gemini_session(model: &str, effort: Effort) -> SessionConfig {
         SessionConfig {
@@ -1048,6 +1028,52 @@ mod tests {
                     {"text": "", "thoughtSignature": "sig_quiet_turn"},
                 ]
             })
+        );
+
+        let mut audio = turn3;
+        audio.extend([
+            Message {
+                role: Role::Assistant,
+                content: vec![ContentBlock::ToolUse {
+                    id: "listen".into(),
+                    name: "read".into(),
+                    input: json!({}),
+                }],
+            },
+            Message {
+                role: Role::User,
+                content: vec![ContentBlock::ToolResult {
+                    tool_use_id: "listen".into(),
+                    content: vec![ContentBlock::media("audio/wav".parse().unwrap(), "YQ==")],
+                    is_error: false,
+                }],
+            },
+        ]);
+        let with_audio = tag(&make_req(&s1, &audio, &[], &[], &rendering));
+        audio.extend([
+            Message {
+                role: Role::Assistant,
+                content: vec![ContentBlock::Text {
+                    text: "heard".into(),
+                }],
+            },
+            Message::user_text("and now?"),
+        ]);
+        let next = make_req(&s1, &audio, &[], &[], &rendering);
+        assert_eq!(prefix_bytes(&next, caps, true).unwrap(), pb1);
+        assert_eq!(
+            cache_prefix(&next, caps, true),
+            cache_prefix(&r1, caps, true)
+        );
+        let tagged_next = tag(&next);
+        let with_audio = with_audio["contents"].as_array().unwrap();
+        assert_eq!(
+            with_audio.last().unwrap()["parts"][1]["inlineData"]["mimeType"],
+            "audio/wav"
+        );
+        assert_eq!(
+            &tagged_next["contents"].as_array().unwrap()[..with_audio.len()],
+            with_audio
         );
 
         let other = [Message::user_text("another conversation")];
@@ -1959,7 +1985,14 @@ mod tests {
                 "action": {"type": "search", "query": "rust borrow checker"}
             }
         });
-        let messages = [
+        let attached = [
+            "audio/wav",
+            "video/mp4",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/zip",
+            "image/gif",
+        ];
+        let mut messages = [
             Message::user_text("inspect"),
             Message {
                 role: Role::Assistant,
@@ -1992,6 +2025,10 @@ mod tests {
                 }],
             },
         ];
+        let ContentBlock::ToolResult { content, .. } = &mut messages[2].content[0] else {
+            panic!("expected a tool result");
+        };
+        content.extend(attached.map(|kind| ContentBlock::media(kind.parse().unwrap(), "YQ==")));
         let caps = super::super::model_capabilities(&session.model).copied();
         let built = build_body(
             &make_req(&session, &messages, &[], &[], &rendering),
@@ -2006,7 +2043,15 @@ mod tests {
             "[web search: \"rust borrow checker\"]"
         );
         let result_parts = built.body["contents"][2]["parts"].as_array().unwrap();
-        assert_eq!(result_parts.len(), 2);
+        assert_eq!(result_parts.len(), 2 + attached.len());
+        for (index, media_type) in attached.into_iter().enumerate() {
+            let expected = if index < 3 {
+                json!({"inlineData": {"mimeType": media_type, "data": "YQ=="}})
+            } else {
+                json!({"text": format!("[{media_type} file not sent: this server can't carry it]")})
+            };
+            assert_eq!(result_parts[2 + index], expected, "{media_type}");
+        }
         assert_eq!(result_parts[0]["functionResponse"]["name"], "screenshot");
         assert_eq!(
             result_parts[0]["functionResponse"]["response"]["output"],

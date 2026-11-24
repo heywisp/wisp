@@ -15,7 +15,7 @@ use wisp_protocol::{
 
 use super::retry::{backoff, is_busy};
 use super::side::{Landed, Replies, kind_name};
-use super::{Agent, Spend, emit};
+use super::{Agent, Spend, emit, images};
 use crate::lanes::{Lanes, Pass};
 use crate::provider::{ProviderError, Request, RequestOptions};
 
@@ -51,6 +51,7 @@ struct Anchor {
 
 struct Flight {
     anchor: Anchor,
+    sound: bool,
     count: u32,
     tries: u32,
     late: Instant,
@@ -322,7 +323,7 @@ impl Agent {
             self.skipped(spell, CHANGED, now, events).await;
             return;
         }
-        let Some((replies, model)) = self.refresh_stream(&spell.anchor) else {
+        let Some((replies, model, sound)) = self.refresh_stream(&spell.anchor) else {
             self.skipped(spell, CHANGED, now, events).await;
             return;
         };
@@ -334,6 +335,7 @@ impl Agent {
         });
         self.keep_warm.flight = Some(Flight {
             anchor: spell.anchor,
+            sound,
             count: spell.count,
             tries: spell.tries,
             late: spell.late,
@@ -344,7 +346,7 @@ impl Agent {
         });
     }
 
-    fn refresh_stream(&self, anchor: &Anchor) -> Option<(Replies, String)> {
+    fn refresh_stream(&self, anchor: &Anchor) -> Option<(Replies, String, bool)> {
         let (mut session, features) = self.request_parts();
         session.max_tokens = 1;
         let view = self.view_messages();
@@ -375,7 +377,11 @@ impl Agent {
         let entry = self.epoch.anchor(self.endpoint, &self.session.model)?;
         let replies = (entry.prefix.as_deref() == Some(digest.as_str()))
             .then(|| self.provider().stream(&request))?;
-        Some((replies, session.model))
+        Some((
+            replies,
+            session.model,
+            images::sent_sound(messages, &rendering, self.provider().media_types()),
+        ))
     }
 
     async fn skipped(
@@ -420,7 +426,7 @@ impl Agent {
                 return;
             }
         }
-        let judged = self.judge(&landed);
+        let judged = self.judge(&landed, flight.sound);
         let count = flight.count.saturating_add(1);
         if judged.outcome == RefreshOutcome::Read {
             self.epoch.refreshed(
@@ -461,8 +467,8 @@ impl Agent {
         })
     }
 
-    fn judge(&self, landed: &Landed) -> Judged {
-        let (spend, model) = self.side_spend(landed, &self.session.model);
+    fn judge(&self, landed: &Landed, sound: bool) -> Judged {
+        let (spend, model) = self.side_spend(landed, &self.session.model, sound);
         let other_stop = landed
             .stop
             .as_ref()

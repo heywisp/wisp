@@ -23,6 +23,7 @@ pub struct LongPromptTier {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelInfo {
     pub rates: Rates,
+    pub audio_above: bool,
     pub long_prompt: Option<LongPromptTier>,
     pub write_5m: f64,
     pub write_1h: f64,
@@ -86,6 +87,10 @@ fn info_of(table: &ModelTable, row: &ModelRow) -> Option<ModelInfo> {
     let provider = table.provider(row.provider?)?;
     Some(ModelInfo {
         rates: rate_card(row)?,
+        audio_above: row
+            .price_input_audio
+            .zip(row.price_input)
+            .is_some_and(|(audio, text)| audio > text),
         long_prompt: row.long_prompt.map(|tier| LongPromptTier {
             prompt_tokens_over: tier.over,
             rates: rates(
@@ -401,6 +406,8 @@ mod tests {
         assert_eq!(info.rates, rates(5.0, 25.0, 0.50));
         assert!(model_info("claude-fable-5-1").is_some());
         assert!(model_info("some-gateway-model").is_none());
+        assert!(model_info("gemini-3.1-flash-lite").unwrap().audio_above);
+        assert!(!model_info("gemini-4-neon").unwrap().audio_above);
         let table = ModelTable::shared();
         for (ids, expected) in [
             (

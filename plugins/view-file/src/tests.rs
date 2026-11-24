@@ -38,6 +38,7 @@ struct Rig {
     count: Option<Arc<CountFn>>,
     cancel: Flag,
     bash: bool,
+    media_types: &'static [&'static str],
 }
 
 struct Captured {
@@ -120,6 +121,7 @@ impl Rig {
             count: None,
             cancel: Flag::default(),
             bash: true,
+            media_types: &MEDIA_TYPES,
         }
     }
 
@@ -132,7 +134,11 @@ impl Rig {
             } else {
                 Vec::new()
             },
-            media_types: MEDIA_TYPES.map(str::to_owned).to_vec(),
+            media_types: self
+                .media_types
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
             image_edge: self.edge,
             count: self.count.clone(),
             sleep: Some(Arc::new(tokio_sleep)),

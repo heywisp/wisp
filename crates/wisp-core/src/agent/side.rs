@@ -98,7 +98,12 @@ impl Agent {
 }
 
 impl Agent {
-    pub(super) fn side_spend(&self, landed: &Landed, requested: &str) -> (Spend, String) {
+    pub(super) fn side_spend(
+        &self,
+        landed: &Landed,
+        requested: &str,
+        sound: bool,
+    ) -> (Spend, String) {
         let served = landed.asm.model();
         let model = if served.is_empty() { requested } else { served };
         let iterations = landed.asm.iterations();
@@ -107,7 +112,7 @@ impl Agent {
             .usage()
             .map(|u| super::compact::summed(&u, iterations));
         let uncounted = landed.uncounted(usage.is_some());
-        let spend = self.spend(usage, model, iterations, uncounted);
+        let spend = self.spend(usage, model, iterations, uncounted, sound);
         (spend, model.to_owned())
     }
 }

@@ -109,6 +109,18 @@ min_cacheable = "https://developers.openai.com/api/docs/guides/prompt-caching"
 default_model = "gemini-4-carbon"
 web_search_model = "gemini-3.1-flash-lite"
 web_search_price = 0.014
+media = [
+    "application/pdf",
+    "application/vnd.oasis.opendocument.*",
+    "application/vnd.openxmlformats-officedocument.*",
+    "audio/*",
+    "image/heic",
+    "image/heif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "video/*",
+]
 
 [providers.gemini.client]
 version = "1.5.5"
@@ -123,6 +135,7 @@ envelope_user_agent = "antigravity"
 cache_idle_s = 600
 
 [providers.gemini.sources]
+media = "https://ai.google.dev/gemini-api/docs/function-calling; https://ai.google.dev/gemini-api/docs/audio; https://ai.google.dev/gemini-api/docs/video-understanding; https://ai.google.dev/gemini-api/docs/document-processing; https://ai.google.dev/gemini-api/docs/image-understanding"
 client = "https://github.com/google-antigravity/antigravity-cli/releases"
 web_search_model = "https://ai.google.dev/gemini-api/docs/models"
 web_search_price = "https://ai.google.dev/gemini-api/docs/google-search"
@@ -879,6 +892,7 @@ default_effort = "high"
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
 price_input = 0.25
+price_input_audio = 0.50
 price_output = 1.50
 price_cache_read = 0.025
 min_cacheable = 1024
@@ -913,6 +927,7 @@ default_effort = "high"
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
 price_input = 0.50
+price_input_audio = 1.00
 price_output = 3.0
 price_cache_read = 0.05
 min_cacheable = 1024
@@ -950,6 +965,7 @@ adaptive_thinking = false
 thinking_budgets = { low = 1024, medium = 8192, high = 24576, max = 24576 }
 images = { tier = "standard", per_request = 100 }
 price_input = 0.30
+price_input_audio = 1.00
 price_output = 2.50
 price_cache_read = 0.03
 min_cacheable = 1024
@@ -967,6 +983,7 @@ adaptive_thinking = false
 thinking_budgets = { low = 1024, medium = 8192, high = 24576, max = 24576 }
 images = { tier = "standard", per_request = 100 }
 price_input = 0.10
+price_input_audio = 0.30
 price_output = 0.40
 price_cache_read = 0.01
 min_cacheable = 1024

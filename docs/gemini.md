@@ -83,6 +83,10 @@ On an invalid finish (`MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, or an e
 
 System instructions (`system` plus `instructions`) stay fixed in top-level `systemInstruction`, mid-session `Role::System` deltas append in `contents`, `PrefixBytes` and `cache_prefix` hash `(model, thinkingConfig, tools, systemInstruction)` without serializing `contents`, and `wire_print` hashes each wire `contents` entry so in-life misses distinguish `remote_loss` from `message_changed` (indexed by `contents` entry). Implicit prefix caching reports hits via `usageMetadata.cachedContentTokenCount` (`cache_read_input_tokens`) with no explicit cache-TTL storage resource required.
 
+### File attachments
+
+Gemini can try audio, video, PDF, OOXML and OpenDocument files, plus JPEG, PNG, WebP, HEIC and HEIF images. The type list lives in `models.toml`. Files from tools go as sibling `inlineData` parts after the tool response. Google decides which formats it can read; if it refuses a new file, Wisp withdraws it and retries with a note instead. The usual size limits still apply ([media](media.md#files-that-tools-attach)).
+
 ### Implicit cache
 
 Google caches a request's prefix by itself and documents no lifetime for the Cloud Code PA route. What Wisp measured there is data, in `[providers.gemini.antigravity]` of the model file: `cache_idle_s` is the time since an entry's last use, counted from that request's start, after which it is expected gone, and a miss after that long is `ttl_expired` (`docs/context.md`, "Cache misses"). A Gemini API key has no such row and is judged against the tail TTL. Every hit re-processes about 2,050 tokens of the prompt. Measured on 2026-11-22 with unpinged probes of about 8k and 16k tokens, Neon missed 1 of 33 up to 12.5 minutes (2 of 3 hit at 15) and Carbon hit 3 of 3 at 5 minutes and 1 of 3 at 10; Neon was unchanged at 5 and 10 minutes with `thinkingLevel` sent. So `cache_idle_s` is 600, the longest pause with broad support.

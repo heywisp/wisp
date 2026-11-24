@@ -2139,21 +2139,15 @@ fn withdraw_from_tail<'a>(
             }
             continue;
         };
-        let data = match &*slot.block {
-            ContentBlock::Image {
-                source: crate::ImageSource::Base64 { data, .. },
-            } => data,
-            ContentBlock::Media { source } => source.data(),
-            _ => {
-                return Err(mismatch(
-                    turn,
-                    item,
-                    format!("attachment {} is not an attachment", item.ordinal),
-                ));
-            }
+        let Some(media) = slot.block.inline_media() else {
+            return Err(mismatch(
+                turn,
+                item,
+                format!("attachment {} is not an attachment", item.ordinal),
+            ));
         };
         let sha256 = blobs
-            .sha256(data)
+            .sha256(media.data)
             .map_err(|reason| mismatch(turn, item, reason))?;
         if sha256 != item.sha256 {
             return Err(mismatch(
