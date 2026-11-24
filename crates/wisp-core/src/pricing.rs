@@ -402,23 +402,37 @@ mod tests {
         assert!(model_info("claude-fable-5-1").is_some());
         assert!(model_info("some-gateway-model").is_none());
         let table = ModelTable::shared();
-        for id in ["gemini-4-hydrogen", "gemini-4-hydrogen-xhigh"] {
-            let row = table.find(id).unwrap();
-            assert_eq!(row.min_cacheable, Some(4096), "{id}");
-            let resolved = resolve([], Some(row), table, ProviderKind::Gemini).unwrap();
-            assert_eq!(resolved.rates, rates(1.5, 7.5, 0.075), "{id}");
-            assert_eq!(resolved.long_prompt, None, "{id}");
-            assert_eq!(model_info(id), Some(&resolved), "{id}");
+        for (ids, expected) in [
+            (
+                &["gemini-4-hydrogen", "gemini-4-hydrogen-xhigh"][..],
+                rates(1.5, 7.5, 0.075),
+            ),
+            (
+                &[
+                    "gemini-4-neon",
+                    "gemini-4-neon-low",
+                    "gemini-4-neon-medium",
+                    "gemini-4-neon-high",
+                    "gemini-4-neon-xhigh",
+                ][..],
+                rates(3.0, 15.0, 0.15),
+            ),
+        ] {
+            for &id in ids {
+                let row = table.find(id).unwrap();
+                assert_eq!(row.min_cacheable, Some(4096), "{id}");
+                let resolved = resolve([], Some(row), table, ProviderKind::Gemini).unwrap();
+                assert_eq!(resolved.rates, expected, "{id}");
+                assert_eq!(resolved.long_prompt, None, "{id}");
+                assert_eq!(model_info(id), Some(&resolved), "{id}");
+            }
         }
-        for id in ["gemini-4-neon", "gemini-4-neon-xhigh"] {
-            let row = table.find(id).unwrap();
-            assert_eq!(
-                resolve([], Some(row), table, ProviderKind::Gemini),
-                None,
-                "{id}"
-            );
-            assert_eq!(model_info(id), None, "{id}");
-        }
+        let flash_image = table.find("gemini-3.1-flash-image").unwrap();
+        assert_eq!(
+            resolve([], Some(flash_image), table, ProviderKind::Gemini),
+            None
+        );
+        assert_eq!(model_info("gemini-3.1-flash-image"), None);
     }
 
     #[test]

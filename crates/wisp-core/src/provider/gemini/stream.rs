@@ -1130,7 +1130,9 @@ mod tests {
     fn cached_and_model_billed_tool_prompt_tokens_preserve_billing() {
         for billing in [Billing::Metered, Billing::AntigravityPlan] {
             for (model, tool_tokens, prompt, cached, input) in [
-                ("gemini-4-carbon", json!(700), 5000_u64, 4200_u64, 1500),
+                ("gemini-4-neon", json!(700), 5000_u64, 4200_u64, 1500),
+                ("gemini-4-neon-xhigh", json!(700), 5000, 4200, 1500),
+                ("gemini-4-carbon", json!(700), 5000, 4200, 1500),
                 ("gemini-4-argon-low", json!(700), 5000, 4200, 1500),
                 ("gemini-3.8-flash", json!(700), 5000, 4200, 800),
                 ("gemini-2.5-flash-thinking", json!(700), 5000, 4200, 800),
