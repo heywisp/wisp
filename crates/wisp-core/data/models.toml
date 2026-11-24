@@ -126,7 +126,7 @@ cache_idle_s = 600
 client = "https://github.com/google-antigravity/antigravity-cli/releases"
 web_search_model = "https://ai.google.dev/gemini-api/docs/models"
 web_search_price = "https://ai.google.dev/gemini-api/docs/google-search"
-price = "https://ai.google.dev/gemini-api/docs/pricing"
+price = "https://ai.google.dev/gemini-api/docs/pricing (checked 2026-11-23)"
 min_cacheable = "https://ai.google.dev/gemini-api/docs/caching"
 default_model = "https://ai.google.dev/gemini-api/docs/models"
 antigravity = "https://antigravity.google/docs; session_id (FNV-1a 64 signed decimal of labels.cascade_id) and envelope_user_agent are the form and envelope value Antigravity CLI 1.5.14 sends, checked on captures and a live A/B, 2026-11-22; cache_idle_s is Wisp's own measurement on this route, 2026-11-22, unpinged probes of about 8k and 16k tokens: Neon missed 1 of 33 up to 12.5 min (2/3 at 15 min), Carbon 3/3 at 5 min and 1/3 at 10 min, Neon unchanged at 5 and 10 min with thinkingLevel sent; 600 is the longest pause with broad support; see docs/gemini.md"
@@ -749,6 +749,7 @@ sources = { web_search = "https://developers.openai.com/api/docs/models/gpt-5.5"
 
 [models."gemini-4-neon"]
 provider = "gemini"
+bill_tool_use_prompt = true
 web_search = ["google_search"]
 listed = true
 context_window = 1048576
@@ -757,6 +758,10 @@ efforts = ["low", "medium", "high", "xhigh"]
 default_effort = "high"
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
+price_input = 3.0
+price_output = 15.0
+price_cache_read = 0.15
+min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding", reply_cap = "Wisp's own measurement, 2026-11-23: a reply that ran to 64,000 tokens took 9 minutes; of 28,696 Neon replies, 8 passed 32,768 tokens of thinking plus output and 105 passed 16,384; see docs/gemini.md" }
 
@@ -1009,161 +1014,111 @@ sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", 
 
 [models."gemini-4-carbon-low"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 262144
 effort_variant = { family = "gemini-4-carbon", effort = "low" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 2.0
-price_output = 10.0
-price_cache_read = 0.10
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-carbon-medium"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 262144
 effort_variant = { family = "gemini-4-carbon", effort = "medium" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 2.0
-price_output = 10.0
-price_cache_read = 0.10
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-carbon-high"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 262144
 effort_variant = { family = "gemini-4-carbon", effort = "high" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 2.0
-price_output = 10.0
-price_cache_read = 0.10
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-argon-low"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 65536
 effort_variant = { family = "gemini-4-argon", effort = "low" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 2.0
-price_output = 10.0
-price_cache_read = 0.10
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-argon-medium"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 65536
 effort_variant = { family = "gemini-4-argon", effort = "medium" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 2.0
-price_output = 10.0
-price_cache_read = 0.10
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-argon-high"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 65536
 effort_variant = { family = "gemini-4-argon", effort = "high" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 2.0
-price_output = 10.0
-price_cache_read = 0.10
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-hydrogen-low"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 262144
 effort_variant = { family = "gemini-4-hydrogen", effort = "low" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 1.5
-price_output = 7.5
-price_cache_read = 0.075
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-hydrogen-medium"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 262144
 effort_variant = { family = "gemini-4-hydrogen", effort = "medium" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 1.5
-price_output = 7.5
-price_cache_read = 0.075
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-hydrogen-high"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 262144
 effort_variant = { family = "gemini-4-hydrogen", effort = "high" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 1.5
-price_output = 7.5
-price_cache_read = 0.075
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
 [models."gemini-4-hydrogen-xhigh"]
 provider = "gemini"
-bill_tool_use_prompt = true
 web_search = ["google_search"]
 context_window = 1048576
 max_output = 262144
 effort_variant = { family = "gemini-4-hydrogen", effort = "xhigh" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 1.5
-price_output = 7.5
-price_cache_read = 0.075
-min_cacheable = 4096
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
@@ -1175,10 +1130,6 @@ max_output = 65536
 effort_variant = { family = "gemini-3.8-flash", effort = "low" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 0.75
-price_output = 3.75
-price_cache_read = 0.075
-min_cacheable = 1024
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
@@ -1190,10 +1141,6 @@ max_output = 65536
 effort_variant = { family = "gemini-3.8-flash", effort = "medium" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 0.75
-price_output = 3.75
-price_cache_read = 0.075
-min_cacheable = 1024
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
@@ -1205,10 +1152,6 @@ max_output = 65536
 effort_variant = { family = "gemini-3.8-flash", effort = "high" }
 adaptive_thinking = true
 images = { tier = "standard", per_request = 100 }
-price_input = 0.75
-price_output = 3.75
-price_cache_read = 0.075
-min_cacheable = 1024
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }
 
@@ -1234,9 +1177,5 @@ max_output = 65536
 efforts = []
 adaptive_thinking = false
 images = { tier = "standard", per_request = 100 }
-price_input = 0.25
-price_output = 1.50
-price_cache_read = 0.025
-min_cacheable = 1024
 source = "https://ai.google.dev/gemini-api/docs/models"
 sources = { efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding" }

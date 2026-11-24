@@ -1259,8 +1259,15 @@ impl ModelTable {
             .as_table()
             .map(in_order)
             .unwrap_or_default();
+        let mut explicit_tool_prompt = BTreeSet::new();
         for ((id, entry), row) in ids.iter().zip(&table.rows) {
             let keys = entry.get_ref().as_table().map(in_order).unwrap_or_default();
+            if keys
+                .iter()
+                .any(|(key, _)| &**key.get_ref() == "bill_tool_use_prompt")
+            {
+                explicit_tool_prompt.insert(&**id.get_ref());
+            }
             let provider = row.provider.and_then(|kind| table.providers.get(&kind));
             check_sources(
                 ("models", id),
@@ -1273,7 +1280,52 @@ impl ModelTable {
                 },
             )?;
         }
+        table.inherit_from_family(&explicit_tool_prompt);
         Ok(table)
+    }
+
+    fn inherit_from_family(&mut self, explicit_tool_prompt: &BTreeSet<&str>) {
+        let families: Vec<_> = self
+            .rows
+            .iter()
+            .map(|row| {
+                let name = &row.effort_variant.as_ref()?.family;
+                let family = self
+                    .rows
+                    .iter()
+                    .find(|r| r.answers_to(name) && r.id != row.id)?;
+                Some((
+                    family.price_input,
+                    family.price_output,
+                    family.price_cache_read,
+                    family.long_prompt,
+                    family.bill_tool_use_prompt,
+                    family.min_cacheable,
+                    family.reply_cap,
+                ))
+            })
+            .collect();
+        for (row, family) in self.rows.iter_mut().zip(families) {
+            let Some((input, output, read, long, tool_prompt, min_cache, reply_cap)) = family
+            else {
+                continue;
+            };
+            if row.price_input.is_none()
+                && row.price_output.is_none()
+                && row.price_cache_read.is_none()
+                && row.long_prompt.is_none()
+            {
+                row.price_input = input;
+                row.price_output = output;
+                row.price_cache_read = read;
+                row.long_prompt = long;
+            }
+            if !explicit_tool_prompt.contains(row.id.as_str()) {
+                row.bill_tool_use_prompt = tool_prompt;
+            }
+            row.min_cacheable = row.min_cacheable.or(min_cache);
+            row.reply_cap = row.reply_cap.or(reply_cap);
+        }
     }
 
     pub fn rows(&self) -> &[ModelRow] {
@@ -1307,11 +1359,7 @@ impl ModelTable {
     }
 
     pub fn reply_cap(&self, model: &str) -> Option<u32> {
-        let row = self.find(model)?;
-        row.reply_cap.or_else(|| {
-            let family = &row.effort_variant.as_ref()?.family;
-            self.find(family)?.reply_cap
-        })
+        self.find(model)?.reply_cap
     }
 
     pub fn capabilities(&self, kind: ProviderKind, model: &str) -> Option<&ModelCapabilities> {

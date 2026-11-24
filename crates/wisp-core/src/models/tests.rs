@@ -59,6 +59,7 @@ fn config_rows(site: Site, text: &str) -> Result<Vec<ModelRow>, RowError> {
 fn the_shipped_file_parses() {
     let table = ModelTable::shipped().unwrap();
     assert_eq!(table.rows().len(), 62);
+    assert!(table.find("gemini-4-neon").unwrap().bill_tool_use_prompt);
     assert!(table.find("gemini-4-carbon").unwrap().bill_tool_use_prompt);
     assert!(
         table
@@ -120,12 +121,15 @@ fn the_shipped_file_parses() {
         assert_eq!(caps.default_effort, None);
         assert_eq!(table.own_effort(&row.id, Effort::Max), own.effort);
         assert_eq!(table.sibling(&row.id, own.effort), Some(row.id.as_str()));
-        assert_eq!(
-            table.reply_cap(&row.id),
-            table.reply_cap(&own.family),
-            "{}",
-            row.id
-        );
+        let raw = models[row.id.as_str()].get_ref().as_table().unwrap();
+        if !INHERITED_FIELDS.iter().any(|key| raw.contains_key(*key)) {
+            assert_eq!(
+                inherited_fields(&table, &row.id),
+                inherited_fields(&table, &own.family),
+                "{}",
+                row.id
+            );
+        }
     }
     assert_eq!(table.reply_cap("gemini-4-neon"), Some(32_768));
     assert_eq!(table.reply_cap("gemini-4-carbon"), None);
@@ -150,6 +154,68 @@ fn the_shipped_file_parses() {
             Some(ProviderKind::Anthropic)
         );
     }
+}
+
+const INHERITED_FIELDS: [&str; 7] = [
+    "price_input",
+    "price_output",
+    "price_cache_read",
+    "long_prompt",
+    "bill_tool_use_prompt",
+    "min_cacheable",
+    "reply_cap",
+];
+
+type Inherited = (
+    Option<u64>,
+    Option<u64>,
+    Option<u64>,
+    Option<LongPromptRow>,
+    bool,
+    Option<u64>,
+    Option<u32>,
+);
+
+fn inherited_fields(table: &ModelTable, id: &str) -> Inherited {
+    let row = table.find(id).unwrap();
+    (
+        row.price_input,
+        row.price_output,
+        row.price_cache_read,
+        row.long_prompt,
+        row.bill_tool_use_prompt,
+        row.min_cacheable,
+        table.reply_cap(id),
+    )
+}
+
+#[test]
+fn an_effort_variants_own_fields_win_over_its_family() {
+    let table = ModelTable::parse_shipped(concat!(
+        "[providers.gemini.sources]\nprice = \"p\"\nmin_cacheable = \"c\"\nantigravity = \"a\"\n",
+        "[models]\n",
+        "\"m-high\" = { provider = \"gemini\", effort_variant = { family = \"m\", effort = \"high\" }, ",
+        "price_input = 9.0, price_output = 19.0, price_cache_read = 0.9, ",
+        "bill_tool_use_prompt = false, min_cacheable = 2048, reply_cap = 8192, ",
+        "source = \"s\", sources = { reply_cap = \"r\" } }\n",
+        "\"m\" = { provider = \"gemini\", price_input = 3.0, price_output = 15.0, price_cache_read = 0.15, ",
+        "long_prompt = { over = 200000, price_input = 6.0, price_output = 30.0, price_cache_read = 0.30 }, ",
+        "bill_tool_use_prompt = true, min_cacheable = 4096, reply_cap = 32768, ",
+        "source = \"s\", sources = { reply_cap = \"r\" } }\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        inherited_fields(&table, "m-high"),
+        (
+            Some(9_000_000),
+            Some(19_000_000),
+            Some(900_000),
+            None,
+            false,
+            Some(2048),
+            Some(8192)
+        )
+    );
 }
 
 #[test]
@@ -926,13 +992,7 @@ fn token_fields_in_a_model_row_take_a_number_or_a_short_form() {
 }
 
 const CATALOG_EXCEPTIONS: [&str; 1] = ["claude-mythos-preview"];
-const UNPRICED_EXCEPTIONS: [&str; 5] = [
-    "gemini-4-neon",
-    "gemini-4-neon-low",
-    "gemini-4-neon-medium",
-    "gemini-4-neon-high",
-    "gemini-4-neon-xhigh",
-];
+const UNPRICED_EXCEPTIONS: [&str; 1] = ["gemini-3.1-flash-image"];
 const OPENAI_DOCS: &str = include_str!("../../../../docs/openai.md");
 const GEMINI_DOCS: &str = include_str!("../../../../docs/gemini.md");
 
