@@ -457,7 +457,10 @@ fn tool_result_images_are_preserved_and_foreign_nested_blocks_become_text() {
     );
     assert!(MEDIA_TYPES.is_sorted());
     assert_eq!(
-        FILES.map(|(_, filename, _)| filename),
+        FILES.map(|(media_type, filename)| {
+            assert!(MEDIA_TYPES.contains(&media_type), "{media_type}");
+            filename
+        }),
         [
             "file.pdf",
             "file.odt",
@@ -466,16 +469,7 @@ fn tool_result_images_are_preserved_and_foreign_nested_blocks_become_text() {
             "file.docx"
         ]
     );
-    assert!(SUBSCRIPTION_MEDIA_TYPES.is_sorted());
-    assert_eq!(
-        SUBSCRIPTION_MEDIA_TYPES.as_slice(),
-        [
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "image/jpeg",
-            "image/png"
-        ]
-    );
+    assert!(MEDIA_TYPES.contains(&"image/webp"));
     for subscription in [false, true] {
         let mut provider = provider.clone();
         provider.subscription = subscription;
@@ -491,14 +485,13 @@ fn tool_result_images_are_preserved_and_foreign_nested_blocks_become_text() {
             let block = ContentBlock::media(media_type.parse().unwrap(), "synthetic-data");
             let url = format!("data:{media_type};base64,synthetic-data");
             let file = FILES.iter().find(|(listed, ..)| listed == media_type);
-            let api_key_only = file.is_some_and(|(.., takes)| *takes == Takes::ApiKeyOnly);
-            let expected = MEDIA_TYPES.contains(media_type) && !(subscription && api_key_only);
+            let expected = MEDIA_TYPES.contains(media_type);
             assert_eq!(carried.contains(media_type), expected, "{media_type}");
             let part = match file {
                 _ if !expected => {
                     json!({"type":"input_text","text":format!("[{media_type} file not sent: this server can't carry it]")})
                 }
-                Some((_, filename, _)) => {
+                Some((_, filename)) => {
                     json!({"type":"input_file","filename":filename,"file_data":url})
                 }
                 None => json!({"type":"input_image","image_url":url}),
