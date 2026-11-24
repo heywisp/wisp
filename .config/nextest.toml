@@ -39,7 +39,6 @@ filter = """
 | (package(wisp-cli) & binary(it) & (
     test(=tools::a_question_set_takes_an_own_answer_and_a_skip_from_the_review_page)
   | test(=tools::a_tool_turned_off_in_the_config_while_closed_goes_to_the_resumed_session_as_a_removal)
-  | test(=wasm::two_children_move_their_own_cards_at_once_and_are_refused_the_rest)
 ))
 | (package(learn) & binary(it) & test(=web::a_lesson_continues_from_any_folder_and_its_picks_start_the_next))
 """
