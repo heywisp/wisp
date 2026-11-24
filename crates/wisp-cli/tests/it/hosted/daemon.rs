@@ -195,7 +195,7 @@ fn status_lists_titles_and_windowed_chats_but_only_ids_in_a_job() {
         assert!(text.ends_with("\nOpen one: wisp --resume <id>\nQuit one: wisp quit <id>\n"));
     }
     quit(second);
-    assert!(quit_from_terminal(&home, &[&first_id]).0.success());
+    assert!(from_terminal(&home, "quit", &[&first_id]).0.success());
 }
 
 #[test]
@@ -479,7 +479,7 @@ fn a_terminal_chat_can_be_opened_through_the_daemon_and_quit_from_outside() {
         drop(link);
         wait_unwindowed(&path).await;
     });
-    assert!(quit_from_terminal(&home, &[&id]).0.success());
+    assert!(from_terminal(&home, "quit", &[&id]).0.success());
 }
 
 #[test]
@@ -581,4 +581,49 @@ fn restart_replaces_a_running_daemon_without_a_stop_mark_and_leaves_a_stopped_on
         assert!(home.exists(STOPPED));
         assert!(!connects(&home));
     }
+}
+
+#[test]
+fn naming_a_chat_restarts_only_it_and_leaves_the_daemon_alone() {
+    if !outside_job("hosted::daemon::naming_a_chat_restarts_only_it_and_leaves_the_daemon_alone") {
+        return;
+    }
+    let home = Home::new("daemon-restart-named");
+    let server = serve();
+    start_daemon(&home, &server);
+    let daemon = daemon_pid(&home);
+    let (mut first, named) = headless(&home, &server, WISP, &[], &Start::default());
+    let (mut second, other) = headless(&home, &server, WISP, &[], &Start::default());
+    let pid = |path: &std::path::Path| crate::scratch::peer_pid(UnixStream::connect(path).unwrap());
+    let (named_pid, other_pid) = (pid(&named), pid(&other));
+    let id = link::session_of(&named).unwrap().to_owned();
+    let upper = id.to_ascii_uppercase();
+    let output = run(
+        command(&home, &server, WISP).args([
+            "restart",
+            wisp_protocol::short_id(&id),
+            &upper,
+            "9999",
+        ]),
+        "",
+    );
+    assert_eq!(output.status.code(), Some(1), "{}", both(&output));
+    assert_eq!(err(&output), "wisp: no session's ID starts with 9999\n");
+    assert!(
+        out(&output).ends_with("Restarted 1 chat on the newest version.\n"),
+        "{}",
+        both(&output)
+    );
+    assert!(wait_for_exit(&mut first).success());
+    assert_ne!(pid(&named), named_pid);
+    assert_eq!(pid(&other), other_pid);
+    assert_eq!(daemon_pid(&home), daemon);
+    runtime().block_on(async {
+        for path in [&named, &other] {
+            let mut connection = wisp_client::link::connect(path, 0).await.unwrap();
+            assert!(connection.end(false).await.unwrap());
+        }
+    });
+    assert!(wait_for_exit(&mut second).success());
+    assert!(daemon_command(&home, &server, &["stop"]).status.success());
 }

@@ -229,13 +229,16 @@ fn leaving_returns_to_the_shell_without_ending_or_changing_the_chat() {
     quit(second);
 }
 
-fn quit_from_terminal(home: &Home, ids: &[&str]) -> (std::process::ExitStatus, String, String) {
-    let mut command = Pty::command(&home.0);
-    command
-        .current_dir(home.dir("another-folder"))
-        .arg("quit")
+fn from_terminal(
+    home: &Home,
+    command: &str,
+    ids: &[&str],
+) -> (std::process::ExitStatus, String, String) {
+    let mut wisp = Pty::command(&home.0);
+    wisp.current_dir(home.dir("another-folder"))
+        .arg(command)
         .args(ids);
-    let pty = Pty::start(&mut command, 30, 100, Stdout::Piped);
+    let pty = Pty::start(&mut wisp, 30, 100, Stdout::Piped);
     let errors = Arc::clone(&pty.screen);
     let (status, stdout) = pty.finish();
     let stderr = String::from_utf8_lossy(&errors.lock().unwrap()).replace("\r\n", "\n");
@@ -257,7 +260,7 @@ fn quitting_a_left_chat_waits_for_its_host_and_log_and_names_a_second_quit() {
     let short = wisp_protocol::short_id(id);
     first.send(b"/leave\r");
     assert!(first.finish().0.success());
-    let (status, stdout, stderr) = quit_from_terminal(&home, &[&id[..8].to_ascii_uppercase()]);
+    let (status, stdout, stderr) = from_terminal(&home, "quit", &[&id[..8].to_ascii_uppercase()]);
     assert!(status.success());
     assert_eq!(stdout, format!("Quit {short}: it has ended.\n"));
     assert!(stderr.is_empty(), "{stderr}");
@@ -265,13 +268,22 @@ fn quitting_a_left_chat_waits_for_its_host_and_log_and_names_a_second_quit() {
     let store = wisp_core::session::JsonlStore::open(home.file(SESSIONS)).unwrap();
     assert!(store.probe(id).is_ok());
     assert!(!path.exists());
-    let (status, stdout, stderr) = quit_from_terminal(&home, &[&id[..8], "5e6f"]);
+    let (status, stdout, stderr) = from_terminal(&home, "quit", &[&id[..8], "5e6f"]);
     assert!(!status.success());
     assert!(stdout.is_empty());
     assert_eq!(
         stderr,
         format!(
             "wisp: {short} already ended; nothing to quit\nwisp: no session's ID starts with 5e6f\n"
+        )
+    );
+    let (status, stdout, stderr) = from_terminal(&home, "restart", &[&id[..8], "5e6f"]);
+    assert_eq!(status.code(), Some(1));
+    assert!(stdout.is_empty(), "{stdout}");
+    assert_eq!(
+        stderr,
+        format!(
+            "wisp: {short} already ended; nothing to restart\nwisp: no session's ID starts with 5e6f\n"
         )
     );
 }
@@ -293,7 +305,7 @@ fn quitting_from_outside_leaves_both_kinds_of_window_alone() {
         turn(&mut first, &home);
         let store = wisp_core::session::JsonlStore::open(home.file(SESSIONS)).unwrap();
         let id = store.list().unwrap().remove(0);
-        let (status, stdout, stderr) = quit_from_terminal(&home, &[&id]);
+        let (status, stdout, stderr) = from_terminal(&home, "quit", &[&id]);
         assert!(!status.success());
         assert!(stdout.is_empty());
         assert_eq!(
@@ -303,6 +315,18 @@ fn quitting_from_outside_leaves_both_kinds_of_window_alone() {
                 wisp_protocol::short_id(&id)
             )
         );
+        if !hosted {
+            let (status, stdout, stderr) = from_terminal(&home, "restart", &[&id]);
+            assert_eq!(status.code(), Some(1));
+            assert!(stdout.is_empty(), "{stdout}");
+            assert_eq!(
+                stderr,
+                format!(
+                    "wisp: {} lives in its window; quit it there and open it again\n",
+                    wisp_protocol::short_id(&id)
+                )
+            );
+        }
         assert!(first.child.try_wait().unwrap().is_none());
         assert!(!first.saw("Opened in another window."));
         quit(first);
@@ -2216,9 +2240,11 @@ fn an_older_chat_is_untouched_before_yes_and_starts_even_after_the_terminal_clos
         home.write(&format!("{SESSIONS}/{ID}.jsonl"), &records);
         home.write("fake-host-wait", "");
         let host = fake_chat(&home, 0, Some(true), true, None, false);
+        let named: &[&str] = if answer == b'\r' { &[ID, "9999"] } else { &[] };
         let mut restart = Pty::start(
             command(&home, &server, "setsid")
                 .args(["--ctty", "--wait", WISP, "restart"])
+                .args(named)
                 .env("TERM", "xterm-256color"),
             30,
             100,
@@ -2258,7 +2284,14 @@ fn an_older_chat_is_untouched_before_yes_and_starts_even_after_the_terminal_clos
             } else {
                 restart.send(&[answer]);
                 restart.wait_for("No chat was restarted.");
-                assert!(restart.finish().0.success());
+                assert_eq!(
+                    restart.saw("wisp: no session's ID starts with 9999"),
+                    !named.is_empty()
+                );
+                assert_eq!(
+                    restart.finish().0.code(),
+                    Some(i32::from(!named.is_empty()))
+                );
             }
             assert!(!home.exists("fake-host-commands"));
             home.write("fake-host-release", "");

@@ -35,8 +35,7 @@ enum Control {
     Cancel,
 }
 
-pub(super) async fn find(data: &Path) -> io::Result<Vec<Found>> {
-    let ids = wispd::daemon::running(data).await?;
+pub(super) async fn find(data: &Path, ids: Vec<String>) -> Vec<Found> {
     let titles = if !wisp_start::paths::in_job() {
         let data = data.to_owned();
         let ids = ids.clone();
@@ -50,7 +49,7 @@ pub(super) async fn find(data: &Path) -> io::Result<Vec<Found>> {
     } else {
         Vec::new()
     };
-    Ok(futures::future::join_all(ids.into_iter().map(|id| {
+    futures::future::join_all(ids.into_iter().map(|id| {
         let titles = &titles;
         async move {
             let (connection, state) = match tokio::time::timeout(
@@ -87,7 +86,36 @@ pub(super) async fn find(data: &Path) -> io::Result<Vec<Found>> {
             }
         }
     }))
-    .await)
+    .await
+}
+
+async fn kept(data: &Path, prefix: &str) -> Result<String, String> {
+    let (store, id) = keep::by_id(data, prefix)?;
+    client::dial(&link::socket(data, &id))
+        .await
+        .map_err(|error| {
+            keep::unreached(
+                &store,
+                &id,
+                error,
+                "lives in its window; quit it there and open it again",
+                "already ended; nothing to restart",
+            )
+        })?;
+    Ok(id)
+}
+
+async fn named(data: &Path, prefixes: &[String]) -> (Vec<String>, ExitCode) {
+    let mut ids = Vec::new();
+    let mut code = ExitCode::SUCCESS;
+    for prefix in prefixes {
+        match kept(data, prefix).await {
+            Ok(id) if !ids.contains(&id) => ids.push(id),
+            Ok(_) => {}
+            Err(error) => code = crate::manage::fail(wisp_render::chrome::one_line(&error)),
+        }
+    }
+    (ids, code)
 }
 
 fn ask_older(older: &[Kept], terminal: bool, prompter: &Prompter, layout: Layout) -> bool {
@@ -119,7 +147,7 @@ fn ask_older(older: &[Kept], terminal: bool, prompter: &Prompter, layout: Layout
     )
 }
 
-pub(super) async fn run() -> ExitCode {
+pub(super) async fn run(ids: &[String]) -> ExitCode {
     if wisp_start::paths::in_job() {
         let caps = crate::prompt_caps(&caps::SavedDisplay::default());
         let layout = Layout::new(prompt::terminal_columns(), prompt::glyphs().set);
@@ -131,7 +159,7 @@ pub(super) async fn run() -> ExitCode {
         ));
         return ExitCode::FAILURE;
     }
-    match restart().await {
+    match restart(ids).await {
         Ok(code) => code,
         Err(error) => {
             let text = wisp_render::chrome::one_line(&format!("wisp: {error}"));
@@ -141,7 +169,7 @@ pub(super) async fn run() -> ExitCode {
     }
 }
 
-async fn restart() -> io::Result<ExitCode> {
+async fn restart(prefixes: &[String]) -> io::Result<ExitCode> {
     let data = keep::data().ok_or_else(|| io::Error::other(keep::DATA_UNKNOWN))?;
     let program = std::env::current_exe()?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -151,7 +179,15 @@ async fn restart() -> io::Result<ExitCode> {
     let terminal =
         io::stdout().is_terminal() && io::stdin().is_terminal() && io::stderr().is_terminal();
     let mut layout = Layout::new(prompt::terminal_columns(), prompter.glyphs().set);
-    let found = find(&data).await?;
+    let (ids, names) = if prefixes.is_empty() {
+        (wispd::daemon::running(&data).await?, ExitCode::SUCCESS)
+    } else {
+        named(&data, prefixes).await
+    };
+    if ids.is_empty() && !prefixes.is_empty() {
+        return Ok(names);
+    }
+    let found = find(&data, ids).await;
     let older = found
         .iter()
         .filter(|found| {
@@ -164,7 +200,7 @@ async fn restart() -> io::Result<ExitCode> {
         .collect::<Vec<_>>();
     if !ask_older(&older, terminal, &prompter, layout) {
         let _ = writeln!(io::stdout(), "{}", render::DECLINED);
-        return Ok(ExitCode::SUCCESS);
+        return Ok(names);
     }
     prompt::delegate_interrupts_and_hangups();
     let mut end = End {
@@ -276,7 +312,7 @@ async fn restart() -> io::Result<ExitCode> {
             State::Failed(_) | State::NoAnswer | State::InAnotherRestart
         ) || chat.kept.older
     });
-    if !end.cancelled {
+    if !end.cancelled && prefixes.is_empty() {
         end.daemon = crate::daemon::restart(&data).await?;
     }
     let last = render::end(&chats, &end, layout);
@@ -286,7 +322,7 @@ async fn restart() -> io::Result<ExitCode> {
     } else if failed {
         ExitCode::FAILURE
     } else {
-        ExitCode::SUCCESS
+        names
     })
 }
 

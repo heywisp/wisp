@@ -293,8 +293,8 @@ async fn status(data: &Path) -> io::Result<()> {
     if state != State::Running {
         println!("{START_WITH}");
     }
-    let rows = crate::restart::find(data)
-        .await?
+    let rows = crate::restart::find(data, wispd::daemon::running(data).await?)
+        .await
         .into_iter()
         .map(|found| found.chat.kept)
         .collect::<Vec<_>>();
@@ -315,9 +315,9 @@ async fn status(data: &Path) -> io::Result<()> {
         )?;
         println!("\nOpen one: wisp --resume <id>\nQuit one: wisp quit <id>");
         if rows.iter().any(|chat| chat.older) {
-            let text = "Restart the chats kept open on the newest version: wisp\u{a0}restart";
+            let text = wisp_render::transcript::copy::restart_hint();
             for line in wisp_render::text::wrap_plain(
-                text,
+                &text,
                 layout.width,
                 "",
                 "",

@@ -8,7 +8,8 @@ its agents and their programs keep working. There is no idle timeout or setting.
 one. Pick it, or use `wisp --resume <id>` from any folder. Opening takes the chat
 from its previous window; that window returns to the shell with the command
 that brings it back. A newer install can open an older chat without restarting
-it. Use `wisp restart` to restart the chats kept open on the newest version.
+it. Use `wisp restart` to restart the chats kept open on the newest version,
+or `wisp restart <id>...` for only those chats.
 A contract this client cannot read offers a restart before opening: No is under Enter, and No or cancel
 leaves it untouched. Yes ends the old process, waits for its log to be released,
 then opens it from that log in a new process. Restarting stops any current turn
@@ -68,6 +69,12 @@ again as soon as nothing is left running. A chat with nothing running restarts
 at once. Processes that keep running after Wisp exits are left alone; a chat
 that lives in its window is not listed or restarted.
 
+`wisp restart <id>...` restarts only those chats, each named as `wisp quit`
+names it: an id or its start, from any folder. The other chats are left as they
+are. A bad id (one that matches no chat, matches several or isn't an id), or the
+id of a chat that ended or lives in its window, prints why; the other named
+chats still restart, and the command ends with an error.
+
 The command waits up to five minutes. Enter stops what is still running and
 restarts those chats now. Ctrl-C before that leaves the chats still finishing
 as they were; chats already restarted stay restarted. After Enter or the limit,
@@ -80,7 +87,8 @@ Each chat starts its own next host, keeping its folder, environment, flags and
 account. The newest version is the program now at the path that chat started
 from. A chat started from a different, still-older program stays marked
 `older version` and does not count as restarted on the newest version.
-The daemon, if running, restarts last; a stopped daemon stays stopped.
+The daemon, if running, restarts last, unless chats were named; a stopped
+daemon stays stopped.
 
 Chats started before restart support cannot finish first. One question lists
 those chats before anything changes; No, Esc, Ctrl-C or no terminal restarts
@@ -178,8 +186,8 @@ started it, not the connecting client's shell. Stop it and start it from the
 right shell to replace that environment. The executable path is read once at
 its own start; after reinstalling Wisp it starts chats with the installed
 program. Existing chats keep their original process until `wisp restart`, which
-restarts each chat itself and then the daemon. Stopping and starting only the
-daemon moves it to the new version without restarting any chat. It reaps
+with no id restarts each chat itself and then the daemon. Stopping and starting
+only the daemon moves it to the new version without restarting any chat. It reaps
 every child it starts, and stores no child registry. No login service or remote
 listener is installed; after a crash or reboot the next hosted chat starts it.
 
