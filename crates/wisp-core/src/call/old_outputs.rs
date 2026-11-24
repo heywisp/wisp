@@ -4,7 +4,7 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use crate::session::claim_log;
+use crate::session::{claim_log, session_uuid};
 
 use super::check_dir;
 
@@ -32,7 +32,7 @@ pub(crate) fn remove_old_outputs(
 
 fn session_of(name: &OsStr) -> Option<&str> {
     let id = name.to_str()?.strip_prefix("wisp-")?;
-    let canonical = uuid::Uuid::try_parse(id).ok()?.hyphenated().to_string();
+    let canonical = session_uuid(id)?;
     (canonical == id).then_some(id)
 }
 

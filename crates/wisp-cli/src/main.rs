@@ -16,6 +16,7 @@ mod setup_server;
 mod tui;
 mod usage;
 
+use std::ffi::{OsStr, OsString};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -26,14 +27,12 @@ use wisp_client::Channels;
 use wisp_core::agent;
 use wisp_core::endpoints::{EndpointBook, EndpointName, ProviderKind};
 use wisp_core::instructions::Paths;
-#[cfg(test)]
-use wisp_core::kit::open_log;
 use wisp_core::plugin::{InstructionsDoctor, Registry};
 use wisp_core::secrets::detect::KeychainSetting;
 use wisp_core::secrets::keyring::{Budget, TERMINAL_DEADLINE};
-use wisp_core::session::JsonlStore;
 #[cfg(test)]
 use wisp_core::session::new_session_id;
+use wisp_core::session::{JsonlStore, session_uuid};
 use wisp_core::settings::Given;
 use wisp_protocol::endpoint::StoreChoice;
 use wisp_protocol::settings::{SettingValue, Target, names};
@@ -206,6 +205,13 @@ struct Args {
     resume: Option<Option<String>>,
     #[arg(long, requires = "resume", help = resume::UNLOCKED_HELP)]
     resume_unlocked: bool,
+    #[arg(
+        long,
+        value_name = "ID",
+        conflicts_with_all = ["resume", "resume_unlocked", "no_log"],
+        help = "Continue the session with this ID, or start one when there is none. ID is a random UUID you choose, such as uuidgen prints; give it again to continue the same session"
+    )]
+    session_id: Option<OsString>,
     #[arg(
         long,
         value_enum,
@@ -528,14 +534,35 @@ fn parse_args() -> Result<Args, ExitCode> {
         })
 }
 
+fn pin(args: &mut Args, sessions: Option<&Path>) -> Result<(), &'static str> {
+    let Some(value) = &args.session_id else {
+        return Ok(());
+    };
+    let id = value.to_str().and_then(session_uuid).ok_or(
+        "wisp: --session-id takes a UUID, such as uuidgen prints (what was given isn't shown)",
+    )?;
+    if sessions.is_some_and(|dir| JsonlStore::has_log(dir, &id)) {
+        args.resume = Some(Some(id.clone()));
+    }
+    args.session_id = Some(id.into());
+    Ok(())
+}
+
 fn main() -> ExitCode {
     host::build();
     wisp_start::paths::use_process_env();
     tools::leave_out(plugins::LEARN_ONLY);
-    let args = match parse_args() {
+    let mut args = match parse_args() {
         Ok(args) => args,
         Err(code) => return code,
     };
+    if let Err(error) = pin(
+        &mut args,
+        JsonlStore::default_dir(xdg_data_home(), home_dir()).as_deref(),
+    ) {
+        eprintln!("{error}");
+        return ExitCode::from(2);
+    }
     if let Some(Command::Daemon { command }) = &args.command {
         return on_runtime(false, || daemon::run(command.as_ref()));
     }
@@ -1525,6 +1552,7 @@ async fn build_session(
             id: id.as_deref(),
             unlocked: args.resume_unlocked,
         }),
+        session_id: args.session_id.as_deref().and_then(OsStr::to_str),
         at,
         asks: host.map_or_else(|| asks(chosen, at), |start| start.asks && at.is_none()),
         tool_rule: tool_rule(chosen.presenter),
@@ -2879,16 +2907,58 @@ mod tests {
     }
 
     #[test]
+    fn pin_normalizes_new_and_existing_ids() {
+        let scratch = scratch_dir("pin");
+        let dir = scratch.dir("sessions");
+        let id = "550e8400-e29b-41d4-a716-446655440000";
+        let raw = "550E8400E29B41D4A716446655440000";
+        let args = || Args::try_parse_from(["wisp", "--session-id", raw]).unwrap();
+
+        let mut fresh = args();
+        pin(&mut fresh, Some(&dir)).unwrap();
+        assert_eq!(fresh.session_id.as_deref(), Some(OsStr::new(id)));
+        assert_eq!(fresh.resume, None);
+
+        JsonlStore::open(&dir).unwrap().create_session(id).unwrap();
+        let mut existing = args();
+        pin(&mut existing, Some(&dir)).unwrap();
+        assert_eq!(existing.session_id.as_deref(), Some(OsStr::new(id)));
+        assert_eq!(existing.resume, Some(Some(id.to_owned())));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pin_refuses_non_utf8_without_repeating_it() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let raw = OsStr::from_bytes(b"CANARY_non_utf8_\xff");
+        let mut args =
+            Args::try_parse_from([OsStr::new("wisp"), OsStr::new("--session-id"), raw]).unwrap();
+        let error = pin(&mut args, None).unwrap_err();
+        assert!(!error.contains("CANARY"));
+    }
+
+    #[test]
     fn no_log_flag_writes_nothing() {
+        use wisp_core::kit::{JsonlLogs, OpenLog, ROOT};
+
+        let open_log = |on, dir| {
+            JsonlLogs {
+                on,
+                dir,
+                root_id: None,
+            }
+            .open(ROOT)
+        };
         let args = Args::try_parse_from(["wisp", "--no-log"]).unwrap();
         assert!(args.no_log);
         assert!(!Args::try_parse_from(["wisp"]).unwrap().no_log);
 
         let dir = std::env::temp_dir().join(format!("wisp-nolog-{}", new_session_id()));
-        assert!(open_log(true, Some(dir.clone())).unwrap().is_none());
+        assert!(open_log(false, Some(dir.clone())).unwrap().is_none());
         assert!(!dir.exists(), "--no-log must not create the log directory");
 
-        let opened = open_log(false, Some(dir.clone())).unwrap().unwrap();
+        let opened = open_log(true, Some(dir.clone())).unwrap().unwrap();
         assert_eq!(opened.path.parent(), Some(dir.as_path()));
         assert!(opened.path.to_string_lossy().ends_with(".jsonl"));
         assert_eq!(opened.unlocked, None);
@@ -2912,10 +2982,10 @@ mod tests {
             "wisp: the session log's filesystem doesn't support file locks (No locks available (os error 37)), so this session runs unlocked"
         );
 
-        assert!(open_log(false, None).is_err());
+        assert!(open_log(true, None).is_err());
         let file = std::env::temp_dir().join(format!("wisp-nolog-file-{}", new_session_id()));
         std::fs::write(&file, "").unwrap();
-        assert!(open_log(false, Some(file.join("sessions"))).is_err());
+        assert!(open_log(true, Some(file.join("sessions"))).is_err());
         std::fs::remove_file(&file).unwrap();
     }
 

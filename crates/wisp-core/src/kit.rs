@@ -29,7 +29,7 @@ use crate::pricing::ModelInfo;
 use crate::provider::{Provider, RequestOptions};
 use crate::resume::{LoggedSession, Recovered, ended_records};
 use crate::session::{
-    JsonlStore, Line, LogLock, Reopened, ResumeLock, SessionLog, Stamp, create_private_dir,
+    FreshLog, JsonlStore, Line, Reopened, ResumeLock, SessionLog, Stamp, create_private_dir,
     new_session_id, read_lines, short_id,
 };
 use crate::settings::host::{SettingsHost, StartLayers};
@@ -94,6 +94,7 @@ pub struct OpenedLog {
     pub log: SessionLog,
     pub path: PathBuf,
     pub unlocked: Option<String>,
+    pub fresh: Option<FreshLog>,
 }
 
 pub struct ReopenedLog {
@@ -138,6 +139,7 @@ pub trait OpenLog: Send + Sync {
 pub struct JsonlLogs {
     pub on: bool,
     pub dir: Option<PathBuf>,
+    pub root_id: Option<String>,
 }
 
 pub(crate) fn ended_lines(bytes: &[u8]) -> Result<Vec<LogRecord>, String> {
@@ -157,15 +159,11 @@ impl JsonlLogs {
             truncated_bytes,
             lock,
         } = reopened;
-        let unlocked = match lock {
-            LogLock::Held => None,
-            LogLock::Unsupported(reason) => Some(reason),
-        };
         ReopenedLog {
             log: SessionLog::continuing(Box::new(store), session_id, next_seq),
             lines,
             truncated_bytes,
-            unlocked,
+            unlocked: lock.into_unlocked(),
         }
     }
 
@@ -182,15 +180,30 @@ impl JsonlLogs {
     pub(crate) fn store(&self) -> Result<JsonlStore, String> {
         let dir = self
             .dir
-            .clone()
+            .as_deref()
             .ok_or("no data directory (set HOME or XDG_DATA_HOME)")?;
-        JsonlStore::open(&dir).map_err(|e| format!("could not open {}: {e}", home_shown(&dir)))
+        JsonlStore::open(dir).map_err(|e| format!("could not open {}: {e}", home_shown(dir)))
     }
 }
 
 impl OpenLog for JsonlLogs {
-    fn open(&self, _path: &str) -> Result<Option<OpenedLog>, String> {
-        open_log(!self.on, self.dir.clone())
+    fn open(&self, path: &str) -> Result<Option<OpenedLog>, String> {
+        if !self.on {
+            return Ok(None);
+        }
+        let id = (path == ROOT).then_some(self.root_id.as_deref()).flatten();
+        let id = id.map_or_else(new_session_id, str::to_owned);
+        let mut store = self.store()?;
+        let path = store.path(&id);
+        let (lock, fresh) = store
+            .create_session(&id)
+            .map_err(|e| format!("could not open {}: {e}", home_shown(&path)))?;
+        Ok(Some(OpenedLog {
+            log: SessionLog::new(Box::new(store), id),
+            path,
+            unlocked: lock.into_unlocked(),
+            fresh,
+        }))
     }
 
     fn reopen(&self, session_id: &str, lock: ResumeLock) -> Result<ReopenedLog, String> {
@@ -251,29 +264,6 @@ pub(crate) fn output_max_age(layers: &StartLayers) -> Option<Duration> {
             .and_then(|days| DAY.checked_mul(days)),
         _ => None,
     }
-}
-
-pub fn open_log(no_log: bool, dir: Option<PathBuf>) -> Result<Option<OpenedLog>, String> {
-    if no_log {
-        return Ok(None);
-    }
-    let dir = dir.ok_or("no data directory (set HOME or XDG_DATA_HOME)")?;
-    let mut store =
-        JsonlStore::open(&dir).map_err(|e| format!("could not open {}: {e}", home_shown(&dir)))?;
-    let id = new_session_id();
-    let path = store.path(&id);
-    let lock = store
-        .open_session(&id)
-        .map_err(|e| format!("could not open {}: {e}", home_shown(&path)))?;
-    let unlocked = match lock {
-        LogLock::Held => None,
-        LogLock::Unsupported(reason) => Some(reason),
-    };
-    Ok(Some(OpenedLog {
-        log: SessionLog::new(Box::new(store), id),
-        path,
-        unlocked,
-    }))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -439,6 +429,7 @@ pub enum LogOutcome {
     Opened {
         path: PathBuf,
         unlocked: Option<String>,
+        fresh: Option<FreshLog>,
     },
     Failed(String),
     Resumed,
@@ -655,9 +646,14 @@ impl Kit {
                         log,
                         path,
                         unlocked,
+                        fresh,
                     })) => (
                         agent.with_log(log, self.log_context.clone()),
-                        LogOutcome::Opened { path, unlocked },
+                        LogOutcome::Opened {
+                            path,
+                            unlocked,
+                            fresh,
+                        },
                     ),
                     Ok(None) => (agent, LogOutcome::Off),
                     Err(e) => (agent, LogOutcome::Failed(e)),

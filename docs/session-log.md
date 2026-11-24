@@ -13,7 +13,8 @@ Files are created new and never through a symlink. Reopening an existing file
 refuses a symlink or anything that isn't a regular file owned by the current
 user, and tightens its mode to 600.
 
-The session id is a UUIDv7, so file names sort by start time.
+Unless chosen with `--session-id`, the session id is a UUIDv7, so those file
+names sort by start time.
 
 A running session holds an exclusive lock on its file (`flock` on Linux),
 taken when the file is opened and released when the process ends, killed or
@@ -1011,6 +1012,12 @@ that none of them appear in the file.
   `session_started` has a `parent`), and `--resume` with a child's ID
   refuses, naming its root's ID: a child resumes with its tree
   (`docs/agents.md`, "Resume").
+- `--session-id <ID>` starts a chat with that ID, or continues it if its log
+  already exists. Use `--resume ID` to refuse when the chat is missing. Choose
+  a random UUID, such as `uuidgen` prints, never one derived from a person's
+  data: tool results can include the ID in output paths and agent lists.
+  If `log = false` is set, pass `--set log=true`. If the session
+  `is open in another Wisp`, wait for the other run to end and try again.
 - In scripts (`--output jsonl`), `--resume` without an ID opens the newest
   session in this directory that has a turn, skipping child agents' logs, logs open in another Wisp and
   logs that can't be opened, whatever tools it ran with. It never refuses

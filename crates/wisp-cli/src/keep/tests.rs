@@ -6,6 +6,21 @@ use super::*;
 const WINDOWS_PATH: &str = "/mnt/c/Users/user/AppData/Local/Microsoft/WindowsApps";
 
 #[test]
+fn resume_args_replace_both_spellings_of_a_pinned_id() {
+    for words in [
+        &["--session-id", "pinned", "--verbose"][..],
+        &["--session-id=pinned", "--verbose"][..],
+    ] {
+        let extra = words.iter().map(OsString::from).collect::<Vec<_>>();
+        assert_eq!(resume_args(&extra, None, false), extra);
+        assert_eq!(
+            resume_args(&extra, Some("saved"), true),
+            ["--verbose", "--resume=saved", "--restarted"]
+        );
+    }
+}
+
+#[test]
 fn the_windows_check_uses_only_its_root_and_path() {
     let scratch = crate::scratch_dir("wsl-check");
     let root = &scratch.root;

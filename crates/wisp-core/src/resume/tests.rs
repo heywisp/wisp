@@ -1741,6 +1741,7 @@ fn jsonl_logs_read_a_trees_records_past_damage_and_reopen_through_the_lock() {
         }
     });
     let logs = JsonlLogs {
+        root_id: None,
         on: true,
         dir: Some(dir.clone()),
     };

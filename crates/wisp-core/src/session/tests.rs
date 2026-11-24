@@ -119,6 +119,44 @@ fn sample_records() -> Vec<LogRecord> {
 }
 
 #[test]
+fn session_uuid_normalizes_only_uuids() {
+    let canonical = "550e8400-e29b-41d4-a716-446655440000";
+    for id in [
+        canonical,
+        "550e8400e29b41d4a716446655440000",
+        "550E8400-E29B-41D4-A716-446655440000",
+    ] {
+        assert_eq!(session_uuid(id).as_deref(), Some(canonical));
+    }
+    for id in [
+        "",
+        "550e8400",
+        "550e8400-e29b-41d4-a716-44665544zzzz",
+        "{550e8400-e29b-41d4-a716-446655440000}",
+        "urn:uuid:550e8400-e29b-41d4-a716-446655440000",
+    ] {
+        assert_eq!(session_uuid(id), None);
+    }
+}
+
+#[test]
+fn create_session_does_not_open_an_existing_log() {
+    let dir = temp_dir("exclusive-session");
+    let mut store = JsonlStore::open(&dir).unwrap();
+    let id = new_session_id();
+    let path = store.path(&id);
+    store.create_session(&id).unwrap();
+    fs::write(&path, "existing log").unwrap();
+    assert_eq!(
+        store.create_session(&id).unwrap_err().kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    assert_eq!(fs::read_to_string(path).unwrap(), "existing log");
+    drop(store);
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn jsonl_store_round_trips() {
     let dir = temp_dir("rt");
     let mut store = JsonlStore::open(&dir).unwrap();

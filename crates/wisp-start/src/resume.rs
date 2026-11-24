@@ -39,7 +39,11 @@ pub fn open(
     here: Option<&str>,
     providers: Providers<'_>,
 ) -> Result<Resumed, String> {
-    let logs = JsonlLogs { on: true, dir };
+    let logs = JsonlLogs {
+        on: true,
+        dir,
+        root_id: None,
+    };
     let mut resumed = wisp_core::resume::open(&logs, request, here, providers)?;
     for warning in &mut resumed.warnings {
         *warning = format!("wisp: {warning}");

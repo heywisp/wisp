@@ -177,6 +177,41 @@ fn quit(mut pty: Pty) {
 }
 
 #[test]
+fn a_pinned_chat_starts_in_the_window_when_socket_publication_fails() {
+    if !usable() {
+        return;
+    }
+    use std::ffi::OsStr;
+    use std::os::unix::{ffi::OsStrExt, fs::symlink};
+
+    let home = Home::bare("pin-window");
+    let data = home.0.join(OsStr::from_bytes(b"d\xff"));
+    let blocked = link::socket(&data.join("wisp"), ID);
+    fs::create_dir_all(&blocked).unwrap();
+    symlink(&data, home.dir(".local").join("share")).unwrap();
+    home.write(support::home::DAEMON_STOPPED, "");
+    let decoy = home.write(&format!("d\u{fffd}/wisp/sessions/{ID}.jsonl"), "");
+    let server = serve();
+    for _ in 0..2 {
+        let mut command = window_command(&home, &server, &["--session-id", ID]);
+        command.env("XDG_DATA_HOME", &data);
+        let mut window = Pty::start(&mut command, 30, 120, Stdout::Tty);
+        window.wait_for("Is a directory (os error 21)");
+        window.wait_for(READY);
+        turn(&mut window, &home);
+        quit(window);
+    }
+    assert!(blocked.is_dir());
+    assert_eq!(fs::metadata(decoy).unwrap().len(), 0);
+    assert_eq!(completed(&home), 2);
+    assert!(
+        home.records()
+            .iter()
+            .any(|record| record["type"] == "session_resumed")
+    );
+}
+
+#[test]
 fn a_chat_survives_its_window_and_quit_releases_the_log_before_returning() {
     if !usable() {
         return;

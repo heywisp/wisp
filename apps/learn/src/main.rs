@@ -106,6 +106,7 @@ async fn lesson(args: Args) -> Result<ExitCode, String> {
             id: Some(&last.id),
             unlocked: false,
         }),
+        session_id: None,
         at: None,
         asks: false,
         tool_rule: ToolRule::Exactly,

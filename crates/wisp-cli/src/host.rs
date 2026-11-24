@@ -53,6 +53,14 @@ pub(super) async fn run(args: Args, setup: Setup) -> ExitCode {
     }
 }
 
+fn in_window(args: &Args, mut built: start::Built, reason: String) -> Result<(), String> {
+    if args.session_id.is_some() && args.resume.is_none() {
+        built.discard_unstarted_log();
+    }
+    drop(built);
+    ready(Ready::Window { reason }).map_err(|e| e.to_string())
+}
+
 async fn serve(args: Args, setup: Setup) -> Result<(), String> {
     let program = std::env::current_exe().map_err(|e| e.to_string())?;
     let folder = std::env::current_dir().map_err(|e| e.to_string())?;
@@ -120,8 +128,7 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
                 .then(|| crate::keep::LOG_OFF.to_owned())
         });
     if let Some(reason) = reason {
-        drop(built);
-        return ready(Ready::Window { reason }).map_err(|e| e.to_string());
+        return in_window(&args, built, reason);
     }
     let id = built
         .opening
@@ -133,11 +140,8 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
         .ok_or("the chat has no session id")?
         .to_owned();
     if let Err(error) = socket.publish(&id) {
-        drop(built);
-        return ready(Ready::Window {
-            reason: crate::keep::unavailable(&link::run_dir(&data), &error),
-        })
-        .map_err(|e| e.to_string());
+        let reason = crate::keep::unavailable(&link::run_dir(&data), &error);
+        return in_window(&args, built, reason);
     }
     let path = socket.path().to_owned();
     if let Some(Some(error)) = &args.host {

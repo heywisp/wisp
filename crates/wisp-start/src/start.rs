@@ -54,6 +54,7 @@ pub struct Inputs<'a> {
     pub keychain: &'a Arc<Keychain>,
     pub setup: &'a Setup,
     pub resume: Option<resume::Request<'a>>,
+    pub session_id: Option<&'a str>,
     pub at: Option<&'a StartAt>,
     pub asks: bool,
     pub tool_rule: ToolRule,
@@ -145,6 +146,15 @@ pub struct Built {
     pub view: Option<SessionView>,
     pub voice: bool,
     pub unlocked: Option<String>,
+    fresh_log: Option<wisp_core::session::FreshLog>,
+}
+
+impl Built {
+    pub fn discard_unstarted_log(&mut self) {
+        if let Some(fresh) = self.fresh_log.take() {
+            fresh.discard_empty();
+        }
+    }
 }
 
 pub struct Started {
@@ -167,9 +177,21 @@ pub const SIGNAL_LIMIT: Duration = wisp_core::jobs::SHUTDOWN_LIMIT
     .saturating_add(agent::QUIT_MARGIN)
     .saturating_add(SHUTDOWN_WAIT);
 
+fn require_pin_log(inputs: &Inputs<'_>, log: bool) -> Result<(), Stop> {
+    if !log && inputs.session_id.is_some() {
+        let message = wisp_render::transcript::copy::SESSION_ID_NEEDS_LOG;
+        return Err(format!("wisp: {message}").into());
+    }
+    Ok(())
+}
+
 pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
     wisp_core::version::set_commit(env!("WISP_COMMIT"));
     let setup = inputs.setup;
+    require_pin_log(
+        &inputs,
+        !matches!(setup.value(names::LOG), Some(SettingValue::Bool(false))),
+    )?;
     let at = inputs.at;
     let asks = inputs.asks;
     let on_tui = inputs.full_screen;
@@ -390,6 +412,7 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
         start.as_deref().and_then(|name| start_view.ready(name)),
         None,
     );
+    require_pin_log(&inputs, resolved.log)?;
     let refused = !relaunch_logs(setup, &sources, start.as_deref());
     let flagged = setup.value(names::TOOLS).and_then(|v| match v {
         SettingValue::List(names) => Some(names.clone()),
@@ -912,6 +935,7 @@ pub async fn build(
         logs: Arc::new(kit::JsonlLogs {
             on: resolved.log,
             dir: inputs.sessions.clone(),
+            root_id: inputs.session_id.map(str::to_owned),
         }),
         log_context,
         models: models.settings,
@@ -969,6 +993,11 @@ pub async fn build(
             .chain(moved_warning.iter().map(|(line, _)| line.clone()));
         with_warnings(format!("wisp: {e}"), unshown)
     })?;
+    if inputs.session_id.is_some()
+        && let kit::LogOutcome::Failed(e) = &built.log
+    {
+        return Err(format!("wisp: {e}"));
+    }
     if let Some(catalog) = rounds {
         endpoints::keep_lists_fresh(catalog, list_names);
     }
@@ -1068,7 +1097,7 @@ pub async fn build(
         facts.next = agent.next_turn();
     } else {
         match &built.log {
-            kit::LogOutcome::Opened { path, unlocked } => {
+            kit::LogOutcome::Opened { path, unlocked, .. } => {
                 log_path = Some(path.display().to_string());
                 warnings.extend(unlocked.as_deref().map(unlocked_warning));
             }
@@ -1078,16 +1107,16 @@ pub async fn build(
             kit::LogOutcome::Off | kit::LogOutcome::Resumed => {}
         }
     }
-    let unlocked = reopened
-        .as_ref()
-        .and_then(|r| r.unlocked.clone())
-        .or(match built.log {
-            kit::LogOutcome::Opened { unlocked, .. } => unlocked,
-            _ => None,
-        });
+    let (unlocked, fresh_log) = match built.log {
+        kit::LogOutcome::Opened {
+            unlocked, fresh, ..
+        } => (unlocked, fresh),
+        _ => (reopened.as_ref().and_then(|r| r.unlocked.clone()), None),
+    };
     facts.log = log_path;
     Ok(Built {
         unlocked,
+        fresh_log,
         kit,
         tree,
         agent,

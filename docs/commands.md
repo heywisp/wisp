@@ -640,6 +640,10 @@ need the TUI. A tool can't ask someone to attach to a process, approve an action
 fill in a server form or sign in through this output. Stdout includes tool call
 inputs and results, so treat the stream as you would the conversation itself.
 
+Pass `--session-id <ID>` with a random UUID to start a chat with that ID or
+continue the same chat in later runs. See [the session log](session-log.md)
+for how to choose an ID and what to do if the chat can't be opened.
+
 Each turn ends with `turn_ended`. For a failed turn, read `outcome.kind` and
 `outcome.message`; `outcome.detail` is optional. See [the session log's outcome
 kinds](session-log.md) for the allowed names, such as `auth` and `rate_limit`.

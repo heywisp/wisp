@@ -21,7 +21,7 @@ const KEPT_FLAGS: [&str; 7] = [
     "config", "env_file", "keychain", "verbose", "output", "set", "resume",
 ];
 
-const DROPPED_FLAGS: [&str; 21] = [
+const DROPPED_FLAGS: [&str; 22] = [
     "host",
     "restarted",
     "endpoint",
@@ -41,6 +41,7 @@ const DROPPED_FLAGS: [&str; 21] = [
     "instructions_warn_tokens",
     "tools",
     "resume_unlocked",
+    "session_id",
     "replay",
     "no_log",
 ];

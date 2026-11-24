@@ -166,6 +166,7 @@ impl Rig {
             }),
             tools: Arc::new(Prestarted::new(started, tools)),
             logs: Arc::new(kit::JsonlLogs {
+                root_id: None,
                 on: true,
                 dir: Some(self.scratch.root.join("sessions")),
             }),
@@ -246,6 +247,7 @@ impl Rig {
         let provider = self.provider();
         let providers = move |_: Option<&str>| Some(Arc::clone(&provider));
         let logs = kit::JsonlLogs {
+            root_id: None,
             on: true,
             dir: Some(self.scratch.root.join("sessions")),
         };
