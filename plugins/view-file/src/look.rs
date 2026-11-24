@@ -17,6 +17,14 @@ pub(crate) const COUNT_BYTES: u64 = 64 * 1024 * 1024;
 pub(crate) const CHUNK_BYTES: usize = 64 * 1024;
 const LINE_KEEP_BYTES: usize = MAX_LINE_CHARS * 4 + 4;
 const BOM: &[u8] = b"\xEF\xBB\xBF";
+const PDF_HEADER: &[u8] = b"%PDF-";
+const NAMES: [(&str, &str); 5] = [
+    ("audio/x-aiff", "audio/aiff"),
+    ("audio/x-flac", "audio/flac"),
+    ("audio/x-wav", "audio/wav"),
+    ("video/x-ms-wmv", "video/wmv"),
+    ("video/x-msvideo", "video/avi"),
+];
 const OCTET_STREAM: &str = "application/octet-stream";
 const OLE_MATCH: &str = "application/msword";
 pub(crate) const OLE_FILE: &str =
@@ -183,19 +191,29 @@ fn read_head(file: &mut File) -> io::Result<Vec<u8>> {
 
 fn sniff(head: &[u8], carried: &[&str]) -> Sniffed {
     let found = infer::get(head).map(|t| t.mime_type());
-    if let Some(name) = found
-        && carried.contains(&name)
-    {
-        return Sniffed::Media(name.to_owned());
+    if found == Some(OLE_MATCH) {
+        return Sniffed::Uncarried(OLE_FILE.to_owned());
     }
-    if is_text(head) {
+    if is_text(head)
+        && !head
+            .strip_prefix(BOM)
+            .unwrap_or(head)
+            .starts_with(PDF_HEADER)
+    {
         return Sniffed::Text;
     }
-    let named = match found {
-        Some(OLE_MATCH) => OLE_FILE,
-        other => other.unwrap_or(OCTET_STREAM),
-    };
-    Sniffed::Uncarried(named.to_owned())
+    let name = named(found.unwrap_or(OCTET_STREAM));
+    if found.is_some() && sentences::carries(carried, name) {
+        return Sniffed::Media(name.to_owned());
+    }
+    Sniffed::Uncarried(name.to_owned())
+}
+
+fn named(media_type: &str) -> &str {
+    NAMES
+        .iter()
+        .find_map(|(old, new)| (*old == media_type).then_some(*new))
+        .unwrap_or(media_type)
 }
 
 pub(crate) fn is_text(head: &[u8]) -> bool {

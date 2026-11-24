@@ -2680,6 +2680,11 @@ impl Agent {
         let print = self.prefix_print(&request);
         let sent = self.sent(&request, print.clone());
         let watch = self.watch();
+        self.sent_sound = super::images::sent_sound(
+            request.messages,
+            request.rendering,
+            self.provider().media_types(),
+        );
         let mut stream = self.provider().stream(&request);
         self.sending = Some(sent);
         let (mut warming, mut stagger) = self.hold_for_warmth(print, events).await;

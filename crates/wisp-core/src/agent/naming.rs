@@ -260,7 +260,7 @@ impl Agent {
             ),
             None => None,
         };
-        let (spend, model) = self.side_spend(&landed, &flight.model);
+        let (spend, model) = self.side_spend(&landed, &flight.model, false);
         let cost = self.add_side(spend, &model);
         let record = LogEvent::SessionNamed {
             name: name.clone(),

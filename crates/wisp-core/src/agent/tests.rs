@@ -8,11 +8,13 @@ use wisp_protocol::AgentPath;
 
 use super::*;
 use crate::agent::testing::{
-    Fake, Script, Step, classified, ended, failure, fallback_marker, opaque, restamp, started,
-    text, thinking, tool_use,
+    Fake, Knobs, Script, Step, classified, ended, failure, fallback_marker, opaque, restamp,
+    started, text, thinking, tool_use,
 };
 use crate::clock::TickingClock;
+use crate::endpoints::ProviderKind;
 use crate::plugin::{KernelHost, Make, PluginConfig, Registry};
+use crate::provider::{gemini, openai};
 use crate::test_guard::{
     self, log_context, log_events, pick, records, until_event, until_turn_end, within,
 };
@@ -639,6 +641,128 @@ async fn unknown_model_has_no_cost_estimate() {
     assert!(agent.session_lower_bound);
 }
 
+const AUDIO_PRICED: &str = "gemini-3.1-flash-lite";
+
+fn audio_history() -> Message {
+    let mut message = Message::user_text("a recording");
+    message
+        .content
+        .push(ContentBlock::media("audio/wav".parse().unwrap(), "YQ=="));
+    message
+}
+
+#[tokio::test]
+async fn only_audio_sent_to_a_differently_priced_model_marks_the_cost() {
+    let carried = gemini::MEDIA_TYPES.as_slice();
+    for (model, has_audio, expected_usd, lower_bound) in [
+        (AUDIO_PRICED, true, 0.275, true),
+        (AUDIO_PRICED, false, 0.275, false),
+        ("gemini-4-neon", true, 3.15, false),
+    ] {
+        let usage = usage(1_000_000, 1_000_000, 0);
+        let mut script = vec![Ok(started(None, model, usage))];
+        script.extend(text(0, "done"));
+        script.extend(ended(StopReason::EndTurn, usage, Vec::new()));
+        let provider = Fake::with(
+            Knobs {
+                kind: Some(ProviderKind::Gemini),
+                media_types: Some(carried),
+                ..Knobs::default()
+            },
+            [Step::from(script)],
+        );
+        let mut agent = Agent::new(
+            provider.clone(),
+            SessionConfig {
+                model: model.into(),
+                ..default_session()
+            },
+        );
+        if has_audio {
+            agent.history.push(audio_history());
+        }
+        let (outcome, _) = turn(&mut agent, "go").await;
+        let cost = cost_of(&outcome).unwrap();
+        assert_eq!(
+            (cost.turn_lower_bound, cost.session_lower_bound),
+            (lower_bound, lower_bound),
+            "{model}, has_audio={has_audio}"
+        );
+        assert!(
+            (cost.turn_usd - expected_usd).abs() < 1e-9,
+            "{model}: {cost:?}"
+        );
+        let sent = provider.sent();
+        assert_eq!(
+            images::sent_sound(&sent[0].messages, &sent[0].rendering, carried),
+            has_audio
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_gateway_notes_uncarried_audio_without_marking_the_cost() {
+    use crate::provider::credential::Credential;
+    use crate::provider::openai::tests::{completed, created, data, endpoint, message};
+    use crate::test_guard::http;
+
+    let mut events = [created(), completed(&[message()])];
+    for event in &mut events {
+        event["response"]["model"] = json!(AUDIO_PRICED);
+    }
+    let server = http::serve(vec![http::Reply::Send(http::sse(&data(&events)))]).await;
+    let provider = openai::OpenAiProvider::from_endpoint(&endpoint(
+        Credential::ApiKey("CANARY_TEST_KEY".into()),
+        &server.url,
+    ))
+    .unwrap();
+    let mut agent = Agent::new(
+        Arc::new(provider),
+        SessionConfig {
+            model: AUDIO_PRICED.into(),
+            ..default_session()
+        },
+    );
+    agent.history.push(audio_history());
+    let (outcome, _) = turn(&mut agent, "go").await;
+    assert!(
+        matches!(&outcome, TurnOutcome::Completed { model, .. } if model == AUDIO_PRICED),
+        "{outcome:?}"
+    );
+    let cost = cost_of(&outcome).unwrap();
+    assert!(
+        !agent.sent_sound && !cost.turn_lower_bound && !cost.session_lower_bound,
+        "{cost:?}"
+    );
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+    let body: serde_json::Value = serde_json::from_str(body).unwrap();
+    let note = json!({"type": "input_text", "text": "[audio/wav file not sent: this server can't carry it]"});
+    assert!(
+        body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["content"][0] == note),
+        "{body}"
+    );
+    assert!(!body.to_string().contains("YQ=="), "{body}");
+}
+
+#[test]
+fn rendering_attachments_as_notes_does_not_send_sound() {
+    let rendering = Rendering {
+        attachments_as_notes: true,
+        ..Rendering::default()
+    };
+    assert!(!images::sent_sound(
+        &[audio_history()],
+        &rendering,
+        &gemini::MEDIA_TYPES
+    ));
+}
+
 #[tokio::test]
 async fn interrupted_turn_cost_is_a_lower_bound_from_the_latest_usage() {
     let mut script = vec![Ok(start(600, 0))];
@@ -749,12 +873,41 @@ async fn possibly_billed_failure_flags_the_session_total() {
 #[tokio::test]
 async fn unbilled_failure_keeps_the_session_total_exact() {
     let failing = vec![Err(ProviderError::new(ErrorKind::Auth, "HTTP 401"))];
-    let provider = Fake::new(vec![
-        Step::from(failing),
-        Step::from(reply("ok", 600, 0, StopReason::EndTurn)),
-    ]);
-    let mut agent = Agent::new(provider, default_session());
-    turn(&mut agent, "a").await;
+    let provider = Fake::with(
+        Knobs {
+            media_types: Some(&gemini::MEDIA_TYPES),
+            ..Knobs::default()
+        },
+        [
+            Step::from(failing),
+            Step::from(reply("ok", 600, 0, StopReason::EndTurn)),
+        ],
+    );
+    let mut agent = Agent::new(
+        provider.clone(),
+        SessionConfig {
+            model: AUDIO_PRICED.into(),
+            ..default_session()
+        },
+    );
+    agent.history.push(audio_history());
+    let (o1, _) = turn(&mut agent, "a").await;
+    assert!(
+        matches!(o1, TurnOutcome::Error { usage: None, .. }),
+        "{o1:?}"
+    );
+    let sent = provider.sent();
+    assert_eq!(sent[0].session.model, AUDIO_PRICED);
+    assert!(images::sent_sound(
+        &sent[0].messages,
+        &sent[0].rendering,
+        provider.media_types()
+    ));
+    assert!(
+        !agent
+            .spend(None, AUDIO_PRICED, &[], false, true)
+            .lower_bound
+    );
     let (o2, _) = turn(&mut agent, "b").await;
     assert!(!cost_of(&o2).unwrap().session_lower_bound);
 }

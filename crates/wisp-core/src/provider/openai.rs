@@ -742,7 +742,7 @@ fn message_item(role: &str, part: Value) -> Value {
 }
 
 fn media_part(role: &str, carried: &[&str], why: NotSent, media_type: &str, data: &str) -> Value {
-    if carried.contains(&media_type) {
+    if wisp_tool_text::files::carries(carried, media_type) {
         let url = format!("data:{media_type};base64,{data}");
         return match FILES.iter().find(|(listed, ..)| *listed == media_type) {
             Some((_, filename, _)) => {

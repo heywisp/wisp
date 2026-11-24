@@ -7,6 +7,13 @@ pub const NOT_IN_THIS_SESSION: &str = "it can't be read in this session";
 
 pub const NO_DATA_FOLDER: &str = "this session has no data folder";
 
+pub fn carries(carried: &[&str], media_type: &str) -> bool {
+    carried.iter().any(|entry| match entry.strip_suffix('*') {
+        Some(prefix) => media_type.starts_with(prefix),
+        None => *entry == media_type,
+    })
+}
+
 pub fn uncarried(target: &str, media_type: &str, carried: &[&str], shell: Option<&str>) -> String {
     let (takes, to) = if carried.is_empty() {
         ("it takes no files".to_owned(), "to")

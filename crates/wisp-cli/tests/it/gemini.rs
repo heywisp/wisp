@@ -47,12 +47,15 @@ pub(super) fn sse_chunk(model: &str, parts: Vec<Value>, finish: Option<&str>) ->
 }
 
 fn serve(replies: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>, std::thread::JoinHandle<()>) {
-    serve_model("gemini-4-carbon", replies)
+    serve_model(
+        "gemini-4-carbon",
+        replies.into_iter().map(|body| ("200 OK", body)).collect(),
+    )
 }
 
 fn serve_model(
     model: &'static str,
-    replies: Vec<String>,
+    replies: Vec<(&'static str, String)>,
 ) -> (String, Arc<Mutex<Vec<String>>>, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -61,7 +64,7 @@ fn serve_model(
     let captured = Arc::clone(&seen);
     let thread = std::thread::spawn(move || {
         let deadline = Instant::now() + Duration::from_secs(45);
-        for body in replies {
+        for (status, body) in replies {
             let (mut socket, request) = loop {
                 let socket = match listener.accept() {
                     Ok((socket, _)) => socket,
@@ -104,8 +107,13 @@ fn serve_model(
                 request.head
             );
             captured.lock().unwrap().push(request.body);
+            let content_type = if status == "200 OK" {
+                "text/event-stream"
+            } else {
+                "application/json"
+            };
             let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );
             for chunk in response.as_bytes().chunks(11) {
@@ -463,8 +471,13 @@ fn cli_neon_turns_end_in_the_data_part_and_send_five_stop_strings_across_a_resum
     let home = Home::new("gemini-neon-form");
     let model = "gemini-4-neon";
     let reply = |text: &str| sse_chunk(model, vec![json!({"text": text})], Some("STOP"));
-    let (url, seen, server) =
-        serve_model(model, vec![reply("NEON-FORM-ONE"), reply("NEON-FORM-TWO")]);
+    let (url, seen, server) = serve_model(
+        model,
+        vec![
+            ("200 OK", reply("NEON-FORM-ONE")),
+            ("200 OK", reply("NEON-FORM-TWO")),
+        ],
+    );
     let cfg = write_config(&home.0, &url);
     let lines = ["--time", "local", "--context-note", "on"];
     let first = pty::run(
@@ -556,7 +569,14 @@ fn cli_neon_reply_cut_at_the_cap_is_resent_with_the_full_limit_and_a_stable_pref
         vec![json!({"text": "NEON-CAP-RECOVERED"})],
         Some("STOP"),
     );
-    let (url, seen, server) = serve_model(model, vec![cut, step1_call, step2_done]);
+    let (url, seen, server) = serve_model(
+        model,
+        vec![
+            ("200 OK", cut),
+            ("200 OK", step1_call),
+            ("200 OK", step2_done),
+        ],
+    );
     let cfg = write_config(&home.0, &url);
     let out = pty::run(
         command(&home.0, &cfg).args(["--model", model]),
@@ -672,6 +692,86 @@ fn cli_malformed_gemini_tool_call_retries_with_folded_note_and_stable_prefix() {
         requests[2].clone(),
         requests[4].clone(),
     ]);
+}
+
+#[test]
+fn cli_gemini_views_audio_and_a_refused_file_is_withdrawn_with_a_stable_prefix() {
+    const MODEL: &str = "gemini-4-carbon";
+    const WAV: &[u8] = b"RIFF\x00\x00\x00\x00WAVEfmt ";
+    let home = Home::new("gemini-attachment-withdrawal");
+    std::fs::write(home.0.join("beep.wav"), WAV).unwrap();
+    let call = sse_chunk(
+        MODEL,
+        vec![json!({
+            "functionCall": {"name": "view_file", "args": {"path": "beep.wav"}},
+            "thoughtSignature": "sig_view"
+        })],
+        Some("STOP"),
+    );
+    let refusal = json!({"error": {
+        "code": 400, "status": "INVALID_ARGUMENT", "message": "Unsupported mime type: audio/wav"
+    }});
+    let reply = |text| sse_chunk(MODEL, vec![json!({"text": text})], Some("STOP"));
+    let (url, seen, server) = serve_model(
+        MODEL,
+        vec![
+            ("200 OK", call),
+            ("400 Bad Request", refusal.to_string()),
+            ("200 OK", reply("GEMINI-FILE-RECOVERED")),
+            ("200 OK", reply("GEMINI-FILE-RESUMED")),
+        ],
+    );
+    let cfg = write_config(&home.0, &url);
+    let first = pty::run(
+        &mut command(&home.0, &cfg),
+        "Read beep.wav\n",
+        "GEMINI-FILE-RECOVERED",
+        TEST_KEY,
+    );
+    assert!(first.contains("GEMINI-FILE-RECOVERED"), "{first}");
+    let second = pty::run(
+        command(&home.0, &cfg).arg("--resume"),
+        "Continue\n",
+        "GEMINI-FILE-RESUMED",
+        TEST_KEY,
+    );
+    assert!(second.contains("GEMINI-FILE-RESUMED"), "{second}");
+    server.join().unwrap();
+
+    let requests: Vec<Value> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|body| serde_json::from_str(body).unwrap())
+        .collect();
+    let [initial, refused, retry, resumed] = requests.as_slice() else {
+        panic!("expected four requests, got {}", requests.len());
+    };
+    assert_gemini_prefix_stable(&[initial.clone(), retry.clone(), resumed.clone()]);
+    for key in ["tools", "systemInstruction", "generationConfig"] {
+        assert_eq!(refused[key], retry[key], "{key}");
+    }
+    let refused = refused["contents"].as_array().unwrap();
+    let retry = retry["contents"].as_array().unwrap();
+    assert_eq!(&refused[..2], &retry[..2]);
+    let before = refused[2]["parts"].as_array().unwrap();
+    assert_eq!(before.len(), 2);
+    assert_eq!(before[0]["functionResponse"]["name"], "view_file");
+    assert_eq!(
+        before[1],
+        json!({"inlineData": {
+            "mimeType": "audio/wav", "data": "UklGRgAAAABXQVZFZm10IA=="
+        }})
+    );
+    let after = retry[2]["parts"].as_array().unwrap();
+    assert_eq!(after.len(), 1);
+    let output = after[0]["functionResponse"]["response"]["output"]
+        .as_str()
+        .unwrap();
+    assert!(
+        output.contains("beep.wav (audio/wav) couldn't be processed"),
+        "{output}"
+    );
 }
 
 type CapturedHttp = Arc<Mutex<Vec<(String, String)>>>;

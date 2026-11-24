@@ -317,7 +317,13 @@ impl Agent {
             };
             let usage = record.landed.asm.usage();
             let uncounted = record.landed.uncounted(usage.is_some());
-            let spend = self.spend(usage, model, record.landed.asm.iterations(), uncounted);
+            let spend = self.spend(
+                usage,
+                model,
+                record.landed.asm.iterations(),
+                uncounted,
+                false,
+            );
             let cost = self.add_side(spend, model);
             if let Some(track) = self.track.as_mut() {
                 track.add(spend);

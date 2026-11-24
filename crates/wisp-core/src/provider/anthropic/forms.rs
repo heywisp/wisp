@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use wisp_protocol::{ContentBlock, ImageSource, Message, RenderingForm, Role};
+use wisp_protocol::{ContentBlock, Message, RenderingForm, Role};
 
 use super::{
     KnownBlock, RenderedText, WireBlock, WireMessage, opaque_str, opaque_type, search, wire_block,
@@ -97,13 +97,13 @@ impl<'a> Flattener<'a> {
         if !self.rendering.attachments_as_notes {
             return wire_block(block);
         }
-        let note =
-            |media_type: &str| RenderedText::block(not_sent_note(media_type, NotSent::Model));
+        if let Some(media) = block.inline_media() {
+            return Some(RenderedText::block(not_sent_note(
+                media.media_type,
+                NotSent::Model,
+            )));
+        }
         match block {
-            ContentBlock::Image {
-                source: ImageSource::Base64 { media_type, .. },
-            } => Some(note(media_type.as_str())),
-            ContentBlock::Media { source } => Some(note(source.media_type().as_str())),
             ContentBlock::ToolResult {
                 tool_use_id,
                 content,

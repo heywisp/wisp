@@ -8,7 +8,7 @@ mod stream;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
@@ -101,7 +101,13 @@ pub static API_KEY: VariableName = VariableName::from_static(API_KEY_VAR);
 pub static BASE_URL: VariableName = VariableName::from_static(BASE_URL_VAR);
 pub static CREDENTIAL_VARS: [VariableName; 1] = [VariableName::from_static(API_KEY_VAR)];
 
-pub const MEDIA_TYPES: &[&str] = &["application/pdf", "image/jpeg", "image/png", "image/webp"];
+pub static MEDIA_TYPES: LazyLock<Vec<&str>> = LazyLock::new(|| {
+    ModelTable::shared()
+        .provider(ProviderKind::Gemini)
+        .into_iter()
+        .flat_map(|row| row.media.iter().map(String::as_str))
+        .collect()
+});
 
 pub(crate) const PROVIDER: &str = "gemini";
 pub(crate) const TEXT_SIGNATURE_ITEM: &str = "text_signature";
@@ -855,7 +861,7 @@ impl Provider for GeminiProvider {
     }
 
     fn media_types(&self) -> &'static [&'static str] {
-        MEDIA_TYPES
+        &MEDIA_TYPES
     }
 
     fn list_key(&self) -> Option<&str> {
@@ -2875,6 +2881,44 @@ pub(crate) mod tests {
         let events = search_only_events(&provider).await;
         assert!(events.iter().any(|event| matches!(event, Ok(ProviderEvent::MessageDelta { usage, stop_reason: None, .. }) if usage.web_search_requests == 2)));
         assert!(assembled(events).is_err());
+    }
+
+    #[tokio::test]
+    async fn google_400_refuses_an_attachment_only_when_it_is_provisional() {
+        let response = r#"{"error":{"code":400,"status":"INVALID_ARGUMENT","message":"Unsupported mime type: video/x-matroska"}}"#;
+        let server = http::serve(
+            [(); 2]
+                .map(|()| http::Reply::Send(http::json("400 Bad Request", response)))
+                .into(),
+        )
+        .await;
+        let provider = GeminiProvider::from_endpoint(&endpoint(
+            Credential::ApiKey("CANARY_API_key".into()),
+            &server.url,
+        ))
+        .unwrap();
+        for provisional in [true, false] {
+            let mut message = Message::user_text("read the clip");
+            message.content.push(ContentBlock::media(
+                "video/x-matroska".parse().unwrap(),
+                "YQ==",
+            ));
+            let rendering = Rendering {
+                provisional,
+                sends_media: true,
+                ..Rendering::default()
+            };
+            let error = assembled(
+                search_events(&provider, &test_session(), &[message], false, &rendering).await,
+            )
+            .unwrap_err();
+            assert_eq!(error.detail.status, Some(400));
+            assert_eq!(error.detail.error_type.as_deref(), Some("INVALID_ARGUMENT"));
+            assert_eq!(
+                error.refused,
+                provisional.then_some(super::super::Refused::Attachment)
+            );
+        }
     }
 
     #[tokio::test]

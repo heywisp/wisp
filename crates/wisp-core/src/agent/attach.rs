@@ -73,7 +73,7 @@ fn refusal(
 ) -> Option<String> {
     if let Some(file) = attachments
         .iter()
-        .find(|a| !carried.contains(&a.media_type.as_str()))
+        .find(|a| !sentences::carries(carried, a.media_type.as_str()))
     {
         return Some(sentences::uncarried(
             target,

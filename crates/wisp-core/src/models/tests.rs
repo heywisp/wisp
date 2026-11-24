@@ -56,6 +56,42 @@ fn config_rows(site: Site, text: &str) -> Result<Vec<ModelRow>, RowError> {
 }
 
 #[test]
+fn provider_media_loads_sorted_and_deduplicated() {
+    let table = ModelTable::parse_shipped(concat!(
+        "[providers.gemini]\n",
+        "media = [\"image/png\", \"audio/*\", \"audio/*\"]\n",
+        "sources = { media = \"m\" }\n[models]\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        table.provider(ProviderKind::Gemini).unwrap().media,
+        ["audio/*", "image/png"]
+    );
+    for media_type in ["application/pdf", "image/jpeg", "image/png", "image/webp"] {
+        assert!(
+            wisp_tool_text::files::carries(&crate::provider::gemini::MEDIA_TYPES, media_type),
+            "{media_type}"
+        );
+    }
+}
+
+#[test]
+fn provider_media_rejects_ill_formed_patterns() {
+    for media in ["*", "a*", "audio/*x", "Audio/*", "audio"] {
+        let text = format!(
+            "[providers.gemini]\nmedia = [{media:?}]\nsources = {{ media = \"m\" }}\n[models]\n"
+        );
+        assert!(
+            matches!(
+                shipped_error(&text),
+                RowProblem::BadValue { field: "media", .. }
+            ),
+            "{media}"
+        );
+    }
+}
+
+#[test]
 fn the_shipped_file_parses() {
     let table = ModelTable::shipped().unwrap();
     assert_eq!(table.rows().len(), 62);
@@ -223,6 +259,22 @@ fn an_effort_variants_own_fields_win_over_its_family() {
             None
         )
     );
+}
+
+#[test]
+fn an_effort_variant_inherits_its_family_audio_price() {
+    let table = ModelTable::parse_shipped(concat!(
+        "[providers.gemini.sources]\nprice = \"p\"\nantigravity = \"a\"\n[models]\n",
+        "m = { provider = \"gemini\", price_input = 0.25, price_input_audio = 0.50, source = \"s\" }\n",
+        "m-low = { provider = \"gemini\", effort_variant = { family = \"m\", effort = \"low\" }, source = \"s\" }\n",
+    )).unwrap();
+    for name in ["m", "m-low"] {
+        assert_eq!(
+            table.find(name).unwrap().price_input_audio,
+            Some(500_000),
+            "{name}"
+        );
+    }
 }
 
 #[test]
@@ -404,7 +456,7 @@ fn the_shipped_file_refuses_unknown_keys() {
     assert_eq!(error.line, Some(4));
     assert_eq!(
         error.to_string(),
-        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, reply_cap, turn_form, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, source, sources"
+        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_input_audio, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, reply_cap, turn_form, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, source, sources"
     );
     let error = ModelTable::parse_shipped("store_id = \"x\"\n").unwrap_err();
     assert_eq!(error.problem, RowProblem::UnknownTop);
@@ -429,7 +481,7 @@ fn the_shipped_file_refuses_unknown_keys() {
     assert_eq!(error.line, Some(2));
     assert_eq!(
         error.problem.to_string(),
-        "unknown field in a provider table; allowed: client, claude_code, codex, write_5m, write_1h, write_30m, write_12h, web_search_price, message_threads, weekly_limits, account_bound_thinking, default_model, web_search_model, web_search_by_call, antigravity, subscription_additional_tools, api_additional_tools, subscription_tools_after_outputs, api_tools_after_outputs, sources"
+        "unknown field in a provider table; allowed: client, claude_code, codex, write_5m, write_1h, write_30m, write_12h, web_search_price, message_threads, weekly_limits, account_bound_thinking, default_model, media, web_search_model, web_search_by_call, antigravity, subscription_additional_tools, api_additional_tools, subscription_tools_after_outputs, api_tools_after_outputs, sources"
     );
     assert_eq!(
         shipped_error("[providers.mistral]\nwrite_1h = 1.0\n").to_string(),

@@ -1,6 +1,29 @@
 use super::*;
 
 #[test]
+fn carries_matches_exact_types_and_subtype_prefixes() {
+    let carried = [
+        "image/png",
+        "audio/*",
+        "application/vnd.oasis.opendocument.*",
+    ];
+    for media in [
+        "image/png",
+        "audio/wav",
+        "application/vnd.oasis.opendocument.text",
+    ] {
+        assert!(carries(&carried, media), "{media}");
+    }
+    for media in [
+        "image/pngx",
+        "audioish/wav",
+        "application/vnd.oasis.opendocumentx.text",
+    ] {
+        assert!(!carries(&carried, media), "{media}");
+    }
+}
+
+#[test]
 fn megabytes_round_up_to_a_tenth() {
     assert_eq!(megabytes_up(1), "0.1 MB");
     assert_eq!(megabytes_up(100_000), "0.1 MB");

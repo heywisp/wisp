@@ -7,7 +7,7 @@ use toml::Spanned;
 use toml::de::{DeString, DeTable, DeValue};
 
 use crate::agent::DEFAULT_MAX_TOKENS;
-use crate::config::{from_toml, usd_micros};
+use crate::config::{from_toml, strings, usd_micros};
 use crate::context::{CompactAt, LimitTooSmall, check_limit};
 use crate::endpoints::ProviderKind;
 use crate::provider::anthropic::subscription::{IDENTITY_ALLOWED, Identity};
@@ -22,7 +22,7 @@ use wisp_protocol::settings::{
     A_STRING, EffortVariant, SettingValue, TOKEN_COUNT, TOKENS_OR_SHARE, TRUE_OR_FALSE, USD_WORDS,
     find, parse_tokens, quoted_or, siblings,
 };
-use wisp_protocol::{CONFIG_FILE, Effort, MODEL_IDS_RULE, model_or_placeholder, model_words};
+use wisp_protocol::{CONFIG_FILE, Effort, MODEL_IDS_RULE, Mime, model_or_placeholder, model_words};
 
 pub mod list;
 
@@ -99,7 +99,7 @@ enum Quote {
     Provenance,
 }
 
-const SHIPPED_FIELDS: [(&str, Quote); 27] = [
+const SHIPPED_FIELDS: [(&str, Quote); 28] = [
     ("context_window", Quote::Provenance),
     ("native_compaction", Quote::Own("native_compaction")),
     ("web_search", Quote::Own("web_search")),
@@ -107,6 +107,7 @@ const SHIPPED_FIELDS: [(&str, Quote); 27] = [
     ("listed", Quote::Provenance),
     ("provider", Quote::Provenance),
     ("price_input", Quote::Shared("price")),
+    ("price_input_audio", Quote::Shared("price")),
     ("price_output", Quote::Shared("price")),
     ("price_cache_read", Quote::Shared("price")),
     ("long_prompt", Quote::Shared("price")),
@@ -129,7 +130,7 @@ const SHIPPED_FIELDS: [(&str, Quote); 27] = [
     ("sources", Quote::Provenance),
 ];
 
-const PROVIDER_FIELDS: [(&str, Quote); 20] = [
+const PROVIDER_FIELDS: [(&str, Quote); 21] = [
     ("client", Quote::Own("client")),
     ("claude_code", Quote::Own("claude_code")),
     ("codex", Quote::Own("codex")),
@@ -145,6 +146,7 @@ const PROVIDER_FIELDS: [(&str, Quote); 20] = [
         Quote::Own("account_bound_thinking"),
     ),
     ("default_model", Quote::Own("default_model")),
+    ("media", Quote::Own("media")),
     ("web_search_model", Quote::Own("web_search_model")),
     ("web_search_by_call", Quote::Own("web_search_by_call")),
     ("antigravity", Quote::Own("antigravity")),
@@ -227,6 +229,7 @@ pub struct ModelRow {
     pub listed: bool,
     pub provider: Option<ProviderKind>,
     pub price_input: Option<u64>,
+    pub price_input_audio: Option<u64>,
     pub price_output: Option<u64>,
     pub price_cache_read: Option<u64>,
     pub long_prompt: Option<LongPromptRow>,
@@ -271,6 +274,7 @@ pub struct ProviderRow {
     pub weekly_limits: BTreeMap<String, Vec<String>>,
     pub account_bound_thinking: Vec<String>,
     pub default_model: Option<String>,
+    pub media: Vec<String>,
     pub web_search_model: Option<String>,
     pub web_search_by_call: bool,
     pub(crate) antigravity: Option<AntigravityIdentity>,
@@ -296,6 +300,7 @@ impl ModelRow {
             listed: false,
             provider: None,
             price_input: None,
+            price_input_audio: None,
             price_output: None,
             price_cache_read: None,
             long_prompt: None,
@@ -905,6 +910,9 @@ pub fn walk_row(
             "listed" => row.listed = boolean("listed", &at, value)?,
             "provider" => row.provider = Some(provider(&at, value.as_str())?),
             "price_input" => row.price_input = Some(decimal("price_input", USD_WORDS, &at, value)?),
+            "price_input_audio" => {
+                row.price_input_audio = Some(decimal("price_input_audio", USD_WORDS, &at, value)?);
+            }
             "price_output" => {
                 row.price_output = Some(decimal("price_output", USD_WORDS, &at, value)?);
             }
@@ -1100,6 +1108,16 @@ impl ConfigModels {
     }
 }
 
+const MEDIA_RULE: &str = "an array of lowercase media types or subtype prefixes ending in *";
+
+fn media_pattern(pattern: &str) -> bool {
+    if let Some(prefix) = pattern.strip_suffix('*') {
+        format!("{prefix}x").parse::<Mime>().is_ok()
+    } else {
+        pattern.parse::<Mime>().is_ok()
+    }
+}
+
 fn walk_providers(
     at: Range<usize>,
     value: &DeValue<'_>,
@@ -1169,6 +1187,16 @@ fn walk_providers(
                         return Err(bad_value(key, MODEL_IDS_RULE, &at));
                     }
                     *slot = Some(id);
+                }
+                "media" => {
+                    let bad = || bad_value("media", MEDIA_RULE, &at);
+                    let mut media = strings(value).ok_or_else(bad)?;
+                    if !media.iter().all(|entry| media_pattern(entry)) {
+                        return Err(bad());
+                    }
+                    media.sort_unstable();
+                    media.dedup();
+                    row.media = media;
                 }
                 "antigravity" => {
                     antigravity = Some((AntigravityIdentity::from_table(&at, value)?, at))
@@ -1343,6 +1371,7 @@ impl ModelTable {
                     .find(|r| r.answers_to(name) && r.id != row.id)?;
                 Some((
                     family.price_input,
+                    family.price_input_audio,
                     family.price_output,
                     family.price_cache_read,
                     family.long_prompt,
@@ -1354,17 +1383,28 @@ impl ModelTable {
             })
             .collect();
         for (row, family) in self.rows.iter_mut().zip(families) {
-            let Some((input, output, read, long, tool_prompt, min_cache, reply_cap, turn_form)) =
-                family
+            let Some((
+                input,
+                audio,
+                output,
+                read,
+                long,
+                tool_prompt,
+                min_cache,
+                reply_cap,
+                turn_form,
+            )) = family
             else {
                 continue;
             };
             if row.price_input.is_none()
+                && row.price_input_audio.is_none()
                 && row.price_output.is_none()
                 && row.price_cache_read.is_none()
                 && row.long_prompt.is_none()
             {
                 row.price_input = input;
+                row.price_input_audio = audio;
                 row.price_output = output;
                 row.price_cache_read = read;
                 row.long_prompt = long;

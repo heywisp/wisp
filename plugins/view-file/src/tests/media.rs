@@ -87,6 +87,76 @@ async fn an_ascii_pdf_is_a_pdf_not_text() {
     rig.file("plain.pdf", &bytes);
     let viewed = rig.view("plain.pdf").await;
     assert_eq!(attached(&viewed).0, "application/pdf");
+    let bom = [b"\xEF\xBB\xBF".as_slice(), &bytes].concat();
+    rig.file("with-bom.pdf", &bom);
+    assert_eq!(
+        attached(&rig.view("with-bom.pdf").await),
+        ("application/pdf", bom)
+    );
+}
+
+const MP4: &[u8] = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00";
+
+#[tokio::test]
+async fn carried_audio_and_video_families_attach_under_normalized_names() {
+    let mut rig = Rig::new();
+    rig.media_types = &["audio/*", "video/*"];
+    for (name, bytes, media_type) in [
+        (
+            "beep.wav",
+            b"RIFF\x00\x00\x00\x00WAVEfmt " as &[u8],
+            "audio/wav",
+        ),
+        ("clip.mp4", MP4, "video/mp4"),
+    ] {
+        rig.file(name, bytes);
+        let viewed = rig.view(name).await;
+        assert_eq!(attached(&viewed), (media_type, bytes.to_vec()), "{name}");
+        assert_eq!(
+            viewed.run.facts,
+            [
+                Fact::Media(media_type.to_owned()),
+                Fact::Bytes(bytes.len() as u64)
+            ]
+        );
+    }
+}
+
+#[tokio::test]
+async fn text_wins_over_sniffed_types_but_ole_is_never_attached() {
+    let mut rig = Rig::new();
+    rig.media_types = &["application/msword", "application/pdf", "audio/*"];
+    for (name, text) in [
+        ("addresses.txt", "MAC addresses can change"),
+        ("tags.txt", "ID3 tags describe audio"),
+        ("source.rs", "fn main() {}\nconst HEADER: &str = \"%PDF-\";"),
+    ] {
+        rig.file(name, text.as_bytes());
+        let viewed = rig.view(name).await;
+        viewed.completed();
+        assert!(viewed.run.attachments.is_empty(), "{name}");
+        assert!(viewed.captured.bytes > 0, "{name}");
+    }
+    rig.file("legacy.xls", b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1");
+    let viewed = rig.view("legacy.xls").await;
+    assert!(
+        viewed
+            .refused()
+            .starts_with(&format!("legacy.xls is {}", look::OLE_FILE))
+    );
+}
+
+#[tokio::test]
+async fn a_carried_video_over_the_size_limit_is_refused_by_size() {
+    let mut rig = Rig::new();
+    rig.media_types = &["video/*"];
+    rig.sized("clip.mp4", MP4, 20_000_000);
+    assert!(
+        rig.view("clip.mp4")
+            .await
+            .refused()
+            .starts_with("clip.mp4 is 20.0 MB; files over 7.5 MB can't be attached.")
+    );
 }
 
 #[tokio::test]
@@ -123,11 +193,7 @@ async fn types_the_endpoint_can_t_carry_are_refused_by_name() {
 #[tokio::test]
 async fn a_large_video_gets_the_type_refusal_not_the_size_one() {
     let rig = Rig::new();
-    rig.sized(
-        "clip.mp4",
-        b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00",
-        20_000_000,
-    );
+    rig.sized("clip.mp4", MP4, 20_000_000);
     let viewed = rig.view("clip.mp4").await;
     assert!(
         viewed
