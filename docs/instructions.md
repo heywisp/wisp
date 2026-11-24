@@ -90,7 +90,7 @@ With your default, the opening line reads "The user's default instructions follo
 
 ## Changes mid-session
 
-When an instruction file changes during a session, the next user message carries an update, after `<environment>` and before the `Sent:` stamp:
+When an instruction file changes during a session, the next user message carries an update, after `<environment>` and before the `Sent:` stamp (which, on a model with `turn_form`, moves into the data part after the typed text, `docs/gemini.md`):
 
 ```
 <instructions-update>

@@ -5,6 +5,8 @@ use wisp_plugin_testkit::hooks::{self as kit, Calls, Script as HookScript};
 use wisp_protocol::{HookChange, RewindPoint};
 
 use super::*;
+use crate::endpoints::ProviderKind;
+use crate::models::ModelTable;
 
 fn counting() -> HookScript {
     let n = Arc::new(AtomicUsize::new(0));
@@ -290,19 +292,18 @@ async fn esc_during_the_second_before_request_keeps_the_committed_tool_results()
     );
 }
 
-#[tokio::test]
-async fn a_rewind_of_a_hooked_turn_returns_its_pasted_image() {
-    let calls = Calls::default();
-    let mut rig = hooked(vec![done("one")], &calls).rig();
-    let pasted = ClientCommand::Send {
+fn pasted() -> ClientCommand {
+    ClientCommand::Send {
         id: InputId("tui-1".into()),
         text: "look".into(),
         images: vec![ImageData { data: RED.into() }],
         mode: DeliveryMode::Steer,
         turn: None,
         replaces: None,
-    };
-    rig.run(vec![pasted], 1).await;
+    }
+}
+
+async fn returns_the_pasted_image(rig: &mut Rig) {
     let back = rig
         .idle(vec![ClientCommand::Rewind {
             to: RewindPoint::Turn { turn: 1 },
@@ -320,8 +321,61 @@ async fn a_rewind_of_a_hooked_turn_returns_its_pasted_image() {
     assert_eq!(returned[0].text, "look");
     assert_eq!(returned[0].images.len(), 1, "{returned:?}");
     assert!(returned[0].missing.is_empty(), "{returned:?}");
-    assert_eq!(calls.count("x"), 1);
     assert!(rig.agent.history().is_empty());
+}
+
+#[tokio::test]
+async fn a_rewind_of_a_hooked_turn_returns_its_pasted_image() {
+    let calls = Calls::default();
+    let mut rig = hooked(vec![done("one")], &calls).rig();
+    rig.run(vec![pasted()], 1).await;
+    returns_the_pasted_image(&mut rig).await;
+    assert_eq!(calls.count("x"), 1);
+}
+
+#[tokio::test]
+async fn a_rewind_of_a_hooked_neon_turn_returns_its_pasted_image_live_and_after_a_resume() {
+    let calls = Calls::default();
+    let neon = |plan| {
+        let mut setup = hooked(plan, &calls);
+        setup.session.model = NEON.into();
+        setup
+    };
+    let neon_caps = |fake: &Fake| {
+        fake.knobs(|k| {
+            k.caps = Some(Caps::Fn(|id| {
+                ModelTable::shared().capabilities(ProviderKind::Gemini, id)
+            }));
+        });
+    };
+    let mut rig = neon(vec![done("one")]).rig();
+    neon_caps(&rig.a);
+    rig.run(vec![pasted()], 1).await;
+    let opening = texts(&rig.agent.history()[0]).join("");
+    assert!(opening.contains("call 1\n"), "{opening}");
+    assert!(opening.ends_with(&neon_form().data_close), "{opening}");
+    let logged = records(&rig.store);
+    let blobs = rig
+        .store
+        .blob_names()
+        .unwrap()
+        .into_iter()
+        .map(|name| {
+            let (sha, _) = name.split_once('.').unwrap();
+            let blob = rig
+                .store
+                .get_blob(sha, &crate::tool::snap::mime("image/png"))
+                .unwrap();
+            (sha.to_owned(), blob.media_type, blob.bytes)
+        })
+        .collect();
+    returns_the_pasted_image(&mut rig).await;
+    let mut again = neon(Vec::new());
+    again.from = Some(logged);
+    again.blobs = blobs;
+    let mut again = again.rig();
+    neon_caps(&again.a);
+    returns_the_pasted_image(&mut again).await;
 }
 
 fn sent_suffix() -> HookScript {

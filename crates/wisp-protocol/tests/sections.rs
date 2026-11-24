@@ -127,7 +127,7 @@ fn every_version_32_and_34_turn_fixture_reads_as_the_lead_the_current_one_writes
 }
 
 #[test]
-fn a_lead_entry_without_a_snapshot_or_replay_writes_neither() {
+fn a_lead_entry_without_a_snapshot_replay_or_tail_writes_none() {
     let line = serde_json::to_value(LeadEntry::new("acme/rules", "R")).unwrap();
     assert_eq!(line, json!({"by": "acme/rules", "text": "R"}));
 }

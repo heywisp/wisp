@@ -12,17 +12,27 @@ use super::super::{
 };
 use super::{CALL_SIGNATURES_ITEM, FOLD_TEXT, PART_ITEM, TEXT_SIGNATURE_ITEM};
 use crate::endpoints::ProviderKind;
+use crate::models::{ModelTable, TurnForm};
 use crate::tool::Entry;
 
 const SKIP_SIGNATURE_VALIDATOR: &str = "skip_thought_signature_validator";
 
-fn stop_sequences() -> [String; 4] {
+fn stop_sequences(form: Option<&TurnForm>) -> Vec<String> {
+    let data = form.map(|form| {
+        format!(
+            "\n{}",
+            form.data_open.strip_suffix('\n').unwrap_or(&form.data_open)
+        )
+    });
     [
         format!("\nuser\n{SENT_PREFIX}"),
         format!("\nuser\n{CONTEXT_PREFIX}"),
         format!("\nuser\n{MAIL_OPEN}"),
         format!("\n{MAIL_OPEN} from=\""),
     ]
+    .into_iter()
+    .chain(data)
+    .collect()
 }
 
 #[derive(Debug)]
@@ -112,7 +122,8 @@ pub(super) fn build_body(
         "maxOutputTokens".to_owned(),
         Value::from(request.session.max_tokens),
     );
-    generation_config.insert("stopSequences".to_owned(), json!(stop_sequences()));
+    let form = ModelTable::shared().turn_form(&request.session.model);
+    generation_config.insert("stopSequences".to_owned(), json!(stop_sequences(form)));
     if !prefix.thinking_config.is_null() {
         generation_config.insert("thinkingConfig".to_owned(), prefix.thinking_config);
     }
@@ -1173,7 +1184,7 @@ mod tests {
 
     #[test]
     fn thinking_config_follows_adaptive_thinking_budgets_pretiered_and_unlisted_capabilities() {
-        let stop_list = stop_sequences();
+        let stop_list = stop_sequences(None);
         let rendered_mail = wisp_protocol::agents::render_mail(
             &wisp_protocol::AgentPath::root(),
             wisp_protocol::agents::MailKind::Report,
@@ -1199,6 +1210,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(b4.body["generationConfig"]["stopSequences"], stops);
+        let neon = gemini_session("gemini-4-neon-high", Effort::High);
+        let caps = super::super::model_capabilities(&neon.model).copied();
+        let req = make_req(&neon, &messages, &[], &[], &rendering);
+        let built = build_body(&req, caps, TEST_ID, true).unwrap();
+        let form = ModelTable::shared().turn_form("gemini-4-neon").unwrap();
+        let mut five = stops.as_array().unwrap().clone();
+        five.push(json!(format!(
+            "\n{}",
+            form.data_open.strip_suffix('\n').unwrap()
+        )));
+        assert_eq!(five[4], "\n<ADDITIONAL_METADATA>");
+        assert_eq!(built.body["generationConfig"]["stopSequences"], json!(five));
         assert_eq!(
             b4.body["generationConfig"]["thinkingConfig"],
             json!({"includeThoughts": true, "thinkingLevel": "MEDIUM"})
@@ -2118,6 +2141,25 @@ mod tests {
             ])
         );
         assert_eq!(old[4], folded[4]);
+
+        let form = ModelTable::shared().turn_form("gemini-4-neon").unwrap();
+        let mail = wisp_protocol::agents::render_mail(
+            &wisp_protocol::AgentPath::root(),
+            wisp_protocol::agents::MailKind::Report,
+            "done",
+        );
+        let framed = format!("{}{mail}{}", form.mail_before, form.mail_after);
+        let mut marked = history(true);
+        marked[2].content[2] = ContentBlock::Text {
+            text: framed.clone(),
+        };
+        let req = make_req(&session, &marked, &[], &[], &rendering);
+        let body = build_body(&req, caps, TEST_ID, true).unwrap().body;
+        let output = format!("{framed}\n\nlate steer\n\n[web search: \"q\"]");
+        assert_eq!(
+            body["contents"][2]["parts"][1],
+            response("c2", &output, true)
+        );
     }
 
     #[test]
@@ -2625,7 +2667,7 @@ mod tests {
                 .map(str::to_owned)
                 .collect()
         );
-        assert_eq!(sent.stop_sequences, stop_sequences());
+        assert_eq!(sent.stop_sequences, stop_sequences(None));
 
         let search_only = Rendering {
             search_only: true,
@@ -2640,6 +2682,6 @@ mod tests {
         .unwrap();
         let search_sent = super::super::malformed::Sent::from_body(&search_built.body);
         assert!(search_sent.tools.is_empty());
-        assert_eq!(search_sent.stop_sequences, stop_sequences());
+        assert_eq!(search_sent.stop_sequences, stop_sequences(None));
     }
 }

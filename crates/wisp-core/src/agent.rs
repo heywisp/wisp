@@ -13,8 +13,8 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use wisp_plugin_api::prompt::News;
 use wisp_protocol::log::{
-    BlockPosition, CredentialSource, ImageRef, LEAD_TOOLS, LeadEntry, LogEvent, LoggedInput,
-    LoggedMessage, ToolContext, TurnLead,
+    BlockPosition, CredentialSource, ImageRef, LEAD_DATA, LEAD_FILL, LEAD_SENT, LEAD_TOOLS,
+    LeadEntry, LogEvent, LoggedInput, LoggedMessage, ToolContext, TurnLead,
 };
 use wisp_protocol::settings::{AccountModel, Landing};
 use wisp_protocol::{
@@ -352,6 +352,7 @@ struct TurnTrack {
     failed_tokens: u64,
     resend_first: bool,
     continued: u32,
+    settings_applied: bool,
 }
 
 struct Ending {
@@ -380,9 +381,9 @@ struct Opening {
     worded: bool,
 }
 
-fn lead_block(entry: &LeadEntry) -> ContentBlock {
+fn lead_block(text: &str) -> ContentBlock {
     ContentBlock::Text {
-        text: entry.text.clone(),
+        text: text.to_owned(),
     }
 }
 
@@ -532,6 +533,7 @@ impl TurnTrack {
             sent_search: &[],
             resend_first: false,
             continued: 0,
+            settings_applied: false,
         }
     }
 
@@ -2076,9 +2078,24 @@ impl Agent {
         if let Some(host) = &self.hooks.host {
             host.withdraw_news();
         }
-        let mut user: Vec<ContentBlock> = progress.lead.iter().map(lead_block).collect();
+        let mut entries = progress.lead;
+        if let Some(form) = self.models.turn_form(&self.session.model) {
+            let data: Vec<LeadEntry> = entries
+                .extract_if(.., |e| e.by == LEAD_SENT || e.by == LEAD_FILL)
+                .collect();
+            if !data.is_empty() {
+                let texts: String = data.iter().map(|e| e.text.as_str()).collect();
+                let text = format!("{}{texts}{}", form.data_open, form.data_close);
+                entries.push(LeadEntry {
+                    tail: true,
+                    ..LeadEntry::new(LEAD_DATA, text)
+                });
+            }
+        }
+        let lead = TurnLead::new(entries);
+        let mut user: Vec<ContentBlock> = lead.texts().map(lead_block).collect();
         user.extend(typed);
-        let lead = TurnLead::new(progress.lead);
+        user.extend(lead.tail().map(lead_block));
         self.note_lead(&lead, &progress.sections);
         Opening {
             user,
@@ -2228,7 +2245,10 @@ impl Agent {
             None => self.begin_turn_settings(),
         };
         let marker = match selected {
-            Ok(marker) => marker,
+            Ok(marker) => {
+                self.track().settings_applied = !cancelled;
+                marker
+            }
             Err(message) => {
                 early = Some(compact::auto::Early::Failed(ErrorKind::Auth, message));
                 None
@@ -2328,7 +2348,7 @@ impl Agent {
         self.mark_point(rewind::PointStart {
             turn,
             inputs: &inputs,
-            lead: lead.len(),
+            lead: lead.leading(),
             origin,
             retry_of: retry.as_ref().map(|r| r.of),
             seq,

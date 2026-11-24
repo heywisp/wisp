@@ -17,8 +17,13 @@ fn instant(at: &str) -> Instant {
 }
 
 fn sent_with(mode: &str, at: &str, offset: Arc<OffsetFn>) -> Reply {
+    sent_on(Vec::new(), mode, at, offset)
+}
+
+fn sent_on(capabilities: Vec<String>, mode: &str, at: &str, offset: Arc<OffsetFn>) -> Reply {
     let at = instant(at);
     let host = FakeHost {
+        capabilities,
         settings: vec![(SETTING.to_owned(), mode.to_owned())],
         now: Some(Arc::new(move || at)),
         offset: Some(offset),
@@ -122,6 +127,37 @@ fn utc_ignores_the_local_offset_and_off_sends_nothing() {
     assert_eq!(
         sent_with("off", "2026-10-22T03:58:00Z", new_york()),
         Reply::None
+    );
+}
+
+#[test]
+fn with_the_data_block_the_time_is_one_iso_line() {
+    let data = || vec![DATA_BLOCK.to_owned()];
+    let line = |text: &str| Reply::Append(vec![text.to_owned()]);
+    assert_eq!(
+        sent_on(data(), "local", "2026-11-23T23:53:41.9Z", fixed(8 * HOUR)),
+        line("The current local time is: 2026-11-24T07:53:41+08:00.\n")
+    );
+    assert_eq!(
+        sent_on(
+            data(),
+            "local",
+            "2026-10-22T03:58:00Z",
+            fixed(-(3 * HOUR + 30 * 60))
+        ),
+        line("The current local time is: 2026-10-22T00:28:00-03:30.\n")
+    );
+    assert_eq!(
+        sent_on(data(), "utc", "2026-11-23T23:53:41Z", fixed(8 * HOUR)),
+        line("The current local time is: 2026-11-23T23:53:41+00:00.\n")
+    );
+    assert_eq!(
+        sent_on(data(), "off", "2026-11-23T23:53:41Z", fixed(8 * HOUR)),
+        Reply::None
+    );
+    assert_eq!(
+        sent_on(Vec::new(), "local", "2026-11-23T23:53:41Z", fixed(8 * HOUR)),
+        line("Sent: Tuesday 2026-11-24 07:53:41 UTC+08:00\n")
     );
 }
 

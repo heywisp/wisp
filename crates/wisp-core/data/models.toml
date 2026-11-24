@@ -762,8 +762,9 @@ price_input = 3.0
 price_output = 15.0
 price_cache_read = 0.15
 min_cacheable = 4096
+turn_form = { mail_before = "The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system as important information to pay attention to.\n\n<SYSTEM_MESSAGE>\n", mail_after = "\n</SYSTEM_MESSAGE>", data_open = "<ADDITIONAL_METADATA>\n", data_close = "</ADDITIONAL_METADATA>" }
 source = "https://ai.google.dev/gemini-api/docs/models"
-sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding", reply_cap = "Wisp's own measurement, 2026-11-23: a reply that ran to 64,000 tokens took 9 minutes; of 28,696 Neon replies, 8 passed 32,768 tokens of thinking plus output and 105 passed 16,384; see docs/gemini.md" }
+sources = { web_search = "https://ai.google.dev/gemini-api/docs/google-search", efforts = "https://ai.google.dev/gemini-api/docs/thinking", images = "https://ai.google.dev/gemini-api/docs/image-understanding", reply_cap = "Wisp's own measurement, 2026-11-23: a reply that ran to 64,000 tokens took 9 minutes; of 28,696 Neon replies, 8 passed 32,768 tokens of thinking plus output and 105 passed 16,384; see docs/gemini.md", turn_form = "Wisp's own measurement, 2026-11-24: on one 213k-token replay, 0 of 60 replies acted on a report that had not come in this form, against 30 of 124 with the frame alone; see docs/gemini.md" }
 
 [models."gemini-4-carbon"]
 provider = "gemini"

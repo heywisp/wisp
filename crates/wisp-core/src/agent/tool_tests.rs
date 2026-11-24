@@ -3042,6 +3042,36 @@ fn texts(message: &Message) -> Vec<&str> {
     pick!(&message.content, ContentBlock::Text { text } => text.as_str())
 }
 
+const NEON: &str = "gemini-4-neon-high";
+
+fn neon_form() -> &'static crate::models::TurnForm {
+    crate::models::ModelTable::shared().turn_form(NEON).unwrap()
+}
+
+fn is_data(text: &str) -> bool {
+    let form = neon_form();
+    let Some(inner) = text
+        .strip_prefix(form.data_open.as_str())
+        .and_then(|t| t.strip_suffix(form.data_close.as_str()))
+    else {
+        return false;
+    };
+    let lines: Vec<&str> = inner.split_inclusive('\n').collect();
+    let [time, fill] = lines[..] else {
+        return false;
+    };
+    let stamp = time
+        .strip_prefix("The current local time is: ")
+        .and_then(|t| t.strip_suffix(".\n"));
+    stamp.is_some_and(|s| s.parse::<jiff::Timestamp>().is_ok())
+        && fill.starts_with("Context window: ")
+        && fill.ends_with(".\n")
+}
+
+fn bare_lines(text: &str) -> bool {
+    text.starts_with("Sent: ") || text.starts_with("Context: ")
+}
+
 pub(super) fn rejected(events: &[AgentEvent]) -> Vec<String> {
     pick!(events, AgentEvent::Rejected { reason, .. } => reason.clone())
 }

@@ -21,7 +21,12 @@ fn fill(estimate: u64, window: Option<u64>, point: Option<u64>, auto_compact: bo
 }
 
 fn hooked(fill: Fill) -> Reply {
+    hooked_on(Vec::new(), fill)
+}
+
+fn hooked_on(capabilities: Vec<String>, fill: Fill) -> Reply {
     let host = FakeHost {
+        capabilities,
         fill: Some(fill),
         ..FakeHost::default()
     };
@@ -108,6 +113,31 @@ fn the_hook_states_the_point_only_while_automatic_compaction_is_on() {
         Reply::Append(vec![
             "Context: 62k of 1M tokens (6%). Automatic compaction is off.\n".to_owned()
         ])
+    );
+}
+
+#[test]
+fn with_the_data_block_the_hook_says_context_window() {
+    let data = || vec![DATA_BLOCK.to_owned()];
+    let line = |text: &str| Reply::Append(vec![text.to_owned()]);
+    assert_eq!(
+        hooked_on(data(), fill(211_000, Some(1_048_576), Some(256_000), true)),
+        line("Context window: 211k of 1M tokens (20%); Wisp compacts at 256k.\n")
+    );
+    assert_eq!(
+        hooked_on(data(), fill(211_000, Some(1_048_576), Some(256_000), false)),
+        line("Context window: 211k of 1M tokens (20%); automatic compaction is off.\n")
+    );
+    assert_eq!(
+        hooked_on(data(), fill(211_000, None, Some(256_000), true)),
+        line("Context window: 211k tokens; window unknown.\n")
+    );
+    assert_eq!(
+        hooked_on(
+            Vec::new(),
+            fill(211_000, Some(1_048_576), Some(256_000), true)
+        ),
+        line("Context: 211k of 1M tokens (20%). Wisp compacts at 256k.\n")
     );
 }
 

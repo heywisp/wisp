@@ -179,17 +179,24 @@ pub fn render_mail(from: &AgentPath, kind: MailKind, text: &str) -> String {
 }
 
 pub fn mail_body(text: &str) -> &str {
-    let Some((head, body)) = text.split_once('\n') else {
-        return text;
+    let (mut start, mut end, mut at) = (None, None, 0);
+    for line in text.split_inclusive('\n') {
+        let next = at + line.len();
+        match start {
+            None if line.starts_with(MAIL_OPEN) && line.ends_with('\n') => start = Some(next),
+            Some(_) if line.trim() == MAIL_CLOSE => end = Some(at),
+            _ => {}
+        }
+        at = next;
+    }
+    let body = match (start, end) {
+        (Some(start), Some(end)) => text
+            .get(start..end)
+            .map(|body| body.strip_suffix('\n').unwrap_or(body)),
+        (Some(start), None) => text.get(start..),
+        (None, _) => None,
     };
-    if !head.starts_with(MAIL_OPEN) {
-        return text;
-    }
-    match body.trim_end().rsplit_once('\n') {
-        Some((body, last)) if last.trim() == MAIL_CLOSE => body,
-        None if body.trim() == MAIL_CLOSE => "",
-        _ => body,
-    }
+    body.unwrap_or(text)
 }
 
 pub fn report_text(head: &str, text: &str) -> String {

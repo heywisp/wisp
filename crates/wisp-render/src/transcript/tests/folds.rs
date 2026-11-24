@@ -160,6 +160,27 @@ fn mail_from_a(t: &mut Transcript, kind: MailKind, wake: bool, text: &str) {
 }
 
 #[test]
+fn framed_mail_draws_the_cell_of_its_bare_block() {
+    let from = MailFrom {
+        agent: AgentPath::new("/a"),
+        kind: MailKind::Report,
+        mail: wisp_protocol::MailId("m1".to_owned()),
+        wake: true,
+        plugin: None,
+    };
+    let bare = render_mail(&from.agent, from.kind, "/a reported · 4s\nfinished");
+    let framed = format!("Read this.\n\n<SYSTEM_MESSAGE>\n{bare}\n</SYSTEM_MESSAGE>");
+    let renderer = Renderer::new(Layout::new(80, GlyphSet::Unicode));
+    let drawn = |text: &str| {
+        let mut t = Transcript::new(config());
+        t.mail(&from, text);
+        let rows = t.rows(&renderer, Detail::Full);
+        rows.iter().map(line_text).collect::<Vec<_>>()
+    };
+    assert_eq!(drawn(&framed), drawn(&bare));
+}
+
+#[test]
 fn only_wisps_own_notices_are_one_row_in_both_transcript_views() {
     for (text, line) in [
         (wisp_protocol::agents::RESTARTED, "Wisp restarted"),

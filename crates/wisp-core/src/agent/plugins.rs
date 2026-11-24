@@ -1,6 +1,7 @@
 use wisp_plugin_api::host::{Facts, Fill};
 use wisp_plugin_api::pricing::SpendTotals;
 use wisp_protocol::AgentEvent;
+use wisp_tool_text::DATA_BLOCK;
 
 use super::Agent;
 use crate::plugin::{KernelHost, PLATFORM, Prices, Snapshot, convert};
@@ -34,7 +35,7 @@ impl Agent {
                 endpoint_kind: self.provider().kind().as_str().to_owned(),
                 effort: self.session.effort.as_str().to_owned(),
                 platform: PLATFORM.to_owned(),
-                capabilities: self.toolbox.capabilities().to_vec(),
+                capabilities: self.plugin_capabilities(),
             },
             media_types: self
                 .carried_media()
@@ -62,6 +63,14 @@ impl Agent {
             usage_cache: self.plan_usage.clone(),
             no_rename: self.no_rename(),
         }
+    }
+
+    fn plugin_capabilities(&self) -> Vec<String> {
+        let mut capabilities = self.toolbox.capabilities().to_vec();
+        if self.models.turn_form(&self.session.model).is_some() {
+            capabilities.push(DATA_BLOCK.to_owned());
+        }
+        capabilities
     }
 
     pub(super) fn terminal_shown(&mut self, size: wisp_protocol::TermSize) {
