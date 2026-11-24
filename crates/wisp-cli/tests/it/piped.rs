@@ -20,7 +20,7 @@ use support::pty::{wait_for_exit, wait_until};
 use support::server::{Server, json, text_reply};
 use support::{
     WISP,
-    home::{CONFIG_DIR, Home, both, command_in, fed, run},
+    home::{CONFIG_DIR, Home, SESSIONS, both, command_in, err, fed, run},
 };
 
 const LINE: &str = "why does my terminal print [?62;22c and [24;80R after vim exits? also [?u";
@@ -409,37 +409,39 @@ fn a_blocked_line_is_rejected_and_the_next_line_runs_a_turn() {
     assert!(!bodies[0].contains("block this"), "{}", bodies[0]);
 }
 
+fn delivered(home: &Home, port: u16, extra: &[&str], line: &str) -> Vec<String> {
+    let output = run(
+        home.logged(&[WISP], port)
+            .args(["--output", "jsonl"])
+            .args(extra),
+        &format!("{line}\n"),
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", both(&output));
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .filter(|e| e["type"] == "input_delivered")
+        .map(|e| e["ids"][0].as_str().unwrap().to_owned())
+        .collect()
+}
+
+fn session_logs(home: &Home) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(home.file(SESSIONS))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|e| e == "jsonl"))
+        .collect()
+}
+
 #[test]
 fn a_resumed_jsonl_session_numbers_its_inputs_past_the_log() {
     let server = replying_server();
     let port = server.port;
     let home = Home::new("resume-ids");
-    let delivered = |extra: &[&str], line: &str| {
-        let output = run(
-            home.logged(&[WISP], port)
-                .args(["--output", "jsonl"])
-                .args(extra),
-            &format!("{line}\n"),
-        );
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        assert_eq!(output.status.code(), Some(0), "{}", both(&output));
-        stdout
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-            .filter(|e| e["type"] == "input_delivered")
-            .map(|e| e["ids"][0].as_str().unwrap().to_owned())
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(delivered(&[], "hello"), ["jsonl-1"]);
-    assert_eq!(delivered(&["--resume"], "again"), ["jsonl-2"]);
+    assert_eq!(delivered(&home, port, &[], "hello"), ["jsonl-1"]);
+    assert_eq!(delivered(&home, port, &["--resume"], "again"), ["jsonl-2"]);
     assert_eq!(turns(&server).len(), 2);
-    let sessions = home.0.join(".local/share/wisp/sessions");
-    let logs: Vec<_> = std::fs::read_dir(&sessions)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension().is_some_and(|e| e == "jsonl"))
-        .collect();
-    assert_eq!(logs.len(), 1, "{logs:?}");
+    assert_eq!(session_logs(&home).len(), 1);
     let started: Vec<String> = home
         .records()
         .into_iter()
@@ -447,6 +449,93 @@ fn a_resumed_jsonl_session_numbers_its_inputs_past_the_log() {
         .map(|r| r["input_id"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(started, ["jsonl-1", "jsonl-2"], "{}", home.logs());
+}
+
+const PINNED_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
+
+#[test]
+fn a_pinned_id_starts_a_chat_and_the_next_run_continues_it() {
+    let server = replying_server();
+    let home = Home::new("pinned-id");
+    let file = home.file(&format!("{SESSIONS}/{PINNED_ID}.jsonl"));
+    assert_eq!(
+        delivered(
+            &home,
+            server.port,
+            &["--session-id", "550E8400E29B41D4A716446655440000"],
+            "hello"
+        ),
+        ["jsonl-1"]
+    );
+    assert_eq!(session_logs(&home).as_slice(), std::slice::from_ref(&file));
+    assert_eq!(
+        delivered(&home, server.port, &["--session-id", PINNED_ID], "again"),
+        ["jsonl-2"]
+    );
+    assert_eq!(session_logs(&home), [file]);
+    let requests: Vec<_> = turns(&server)
+        .iter()
+        .map(|request| serde_json::from_str(request).unwrap())
+        .collect();
+    assert_eq!(requests.len(), 2);
+    support::prefix::assert_prefix_stable(&requests, None);
+}
+
+#[test]
+fn session_id_refusals_send_nothing() {
+    let home = Home::new("pinned-refusals");
+    let server = replying_server();
+    let invalid = "CANARY_not_a_uuid";
+    let refuse = |home: &Home, args: &[&str], code| {
+        let output = run(
+            home.logged(&[WISP], server.port)
+                .args(["--output", "jsonl"])
+                .args(args),
+            "not sent\n",
+        );
+        assert_eq!(output.status.code(), Some(code), "{}", both(&output));
+        assert!(output.stdout.is_empty(), "{}", both(&output));
+        err(&output)
+    };
+    let check = |args: &[&str], code, message| assert_eq!(refuse(&home, args, code), message);
+    check(
+        &["--session-id", invalid],
+        2,
+        "wisp: --session-id takes a UUID, such as uuidgen prints (what was given isn't shown)\n",
+    );
+    for (flag, message) in [
+        (
+            "--resume",
+            "wisp: --session-id can't be used with --resume\n",
+        ),
+        (
+            "--resume-unlocked",
+            "wisp: --session-id can't be used with --resume-unlocked\n",
+        ),
+        (
+            "--no-log",
+            "wisp: --session-id can't be used with --no-log\n",
+        ),
+    ] {
+        check(&["--session-id", PINNED_ID, flag], 2, message);
+    }
+    let logging_off = || {
+        check(
+            &["--session-id", PINNED_ID, "--set", "log=false"],
+            1,
+            "wisp: --session-id needs the session log, and logging is off\n",
+        );
+    };
+    logging_off();
+    assert!(!home.exists(SESSIONS));
+    home.write(&format!("{SESSIONS}/{PINNED_ID}.jsonl"), "");
+    logging_off();
+
+    let blocked = Home::new("pinned-log-fails");
+    blocked.write(SESSIONS, "not a directory");
+    let error = refuse(&blocked, &["--session-id", PINNED_ID], 1);
+    assert!(error.starts_with("wisp: could not open "), "{error}");
+    assert!(server.seen.lock().unwrap().is_empty());
 }
 
 #[test]

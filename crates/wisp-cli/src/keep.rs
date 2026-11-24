@@ -356,7 +356,10 @@ pub(super) async fn open(
         &data,
         &args.host_args,
         &folder,
-        args.resume.as_ref().and_then(Option::as_deref),
+        args.resume
+            .as_ref()
+            .filter(|_| args.session_id.is_none())
+            .and_then(Option::as_deref),
         false,
         &start,
         |text| eprintln!("{text}"),
@@ -440,15 +443,21 @@ fn resume_args(extra: &[OsString], resume: Option<&str>, restarted: bool) -> Vec
     let mut arguments = Vec::new();
     let mut raw = extra.iter().peekable();
     while let Some(arg) = raw.next() {
-        if arg == "--resume" {
+        if arg == "--resume" || (resume.is_some() && arg == "--session-id") {
             if raw
                 .peek()
                 .is_some_and(|next| !next.to_string_lossy().starts_with('-'))
             {
                 raw.next();
             }
-        } else if arg != "--restarted" && !arg.to_string_lossy().starts_with("--resume=") {
-            arguments.push(arg.clone());
+        } else {
+            let text = arg.to_string_lossy();
+            if text != "--restarted"
+                && !text.starts_with("--resume=")
+                && !(resume.is_some() && text.starts_with("--session-id="))
+            {
+                arguments.push(arg.clone());
+            }
         }
     }
     if let Some(id) = resume {

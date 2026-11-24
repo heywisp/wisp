@@ -20,6 +20,7 @@ impl kit::OpenLog for MemoryLogs {
             log: SessionLog::new(Box::new(self.0.clone()), "s1"),
             path: PathBuf::from("s1.jsonl"),
             unlocked: None,
+            fresh: None,
         }))
     }
 }
@@ -250,7 +251,8 @@ async fn a_kit_built_agent_equals_the_old_assembly() {
         built.log,
         kit::LogOutcome::Opened {
             path: PathBuf::from("s1.jsonl"),
-            unlocked: None
+            unlocked: None,
+            fresh: None,
         }
     );
     assert_eq!(built.workspace, None);

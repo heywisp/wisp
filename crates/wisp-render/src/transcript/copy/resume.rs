@@ -1,7 +1,13 @@
 pub const RESUME_TITLE: &str = "Resume";
 pub const RESUME_SUMMARY: &str = "Pick a chat here to continue";
 pub const RESUME_BETWEEN_TURNS: &str = "/resume runs between turns.";
-pub const RESUME_NEEDS_LOG: &str = "--resume needs the session log, and logging is off";
+macro_rules! needs_log {
+    ($flag:literal) => {
+        concat!($flag, " needs the session log, and logging is off")
+    };
+}
+pub const RESUME_NEEDS_LOG: &str = needs_log!("--resume");
+pub const SESSION_ID_NEEDS_LOG: &str = needs_log!("--session-id");
 pub const NOT_SAVED: &str = "This chat isn't saved.";
 pub const KEPT_OPEN: &str = "kept open";
 pub const OPEN_ELSEWHERE: &str = "open elsewhere";

@@ -390,6 +390,7 @@ impl OpenLog for Logs {
             log: SessionLog::new(Box::new(self.store.clone()), &id),
             path: PathBuf::from(format!("{id}.jsonl")),
             unlocked: None,
+            fresh: None,
         }))
     }
 

@@ -262,6 +262,13 @@ pub(crate) fn read_blob(store: &dyn SessionStore, wanted: &BlobRef) -> io::Resul
     Ok(wisp_media::encode_base64(&blob.bytes))
 }
 
+pub fn session_uuid(text: &str) -> Option<String> {
+    if !matches!(text.len(), 32 | 36) {
+        return None;
+    }
+    Some(uuid::Uuid::try_parse(text).ok()?.hyphenated().to_string())
+}
+
 pub fn new_session_id() -> String {
     uuid::Uuid::now_v7().to_string()
 }
@@ -563,6 +570,52 @@ pub enum LogLock {
     Unsupported(String),
 }
 
+impl LogLock {
+    pub(crate) fn into_unlocked(self) -> Option<String> {
+        match self {
+            Self::Held => None,
+            Self::Unsupported(reason) => Some(reason),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FreshLog {
+    #[cfg(unix)]
+    path: PathBuf,
+    #[cfg(unix)]
+    identity: (u64, u64),
+}
+
+impl FreshLog {
+    #[cfg(unix)]
+    fn from_created(path: PathBuf, file: &File) -> Option<Self> {
+        use std::os::unix::fs::MetadataExt;
+        let meta = file.metadata().ok()?;
+        Some(Self {
+            path,
+            identity: (meta.dev(), meta.ino()),
+        })
+    }
+
+    #[cfg(not(unix))]
+    fn from_created(_: PathBuf, _: &File) -> Option<Self> {
+        None
+    }
+
+    pub fn discard_empty(self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if fs::symlink_metadata(&self.path).is_ok_and(|meta| {
+                meta.is_file() && meta.len() == 0 && (meta.dev(), meta.ino()) == self.identity
+            }) {
+                let _ = fs::remove_file(&self.path);
+            }
+        }
+    }
+}
+
 pub fn lock_state(result: Result<(), fs::TryLockError>, session: &str) -> io::Result<LogLock> {
     match result {
         Ok(()) => Ok(LogLock::Held),
@@ -714,6 +767,10 @@ impl JsonlStore {
             .join(format!("{sha256}.{}", media_type.extension()))
     }
 
+    pub fn has_log(dir: &Path, session: &str) -> bool {
+        valid_id(session) && fs::symlink_metadata(log_path(dir, session)).is_ok()
+    }
+
     pub fn path(&self, session: &str) -> PathBuf {
         log_path(&self.dir, session)
     }
@@ -744,10 +801,18 @@ impl JsonlStore {
         if let Some(open) = self.open.as_ref().filter(|o| o.session == session) {
             return Ok(open.log.lock.clone());
         }
-        if !valid_id(session) {
-            return Err(invalid_id());
-        }
-        let log = LockedFile::take(open_private(&self.path(session))?, session)?;
+        self.hold_session(session, open_private(&self.read_path(session)?)?)
+    }
+
+    pub fn create_session(&mut self, session: &str) -> io::Result<(LogLock, Option<FreshLog>)> {
+        let path = self.read_path(session)?;
+        let file = append_options(true).open(&path)?;
+        let fresh = FreshLog::from_created(path, &file);
+        Ok((self.hold_session(session, file)?, fresh))
+    }
+
+    fn hold_session(&mut self, session: &str, file: File) -> io::Result<LogLock> {
+        let log = LockedFile::take(file, session)?;
         let lock = log.lock.clone();
         self.open = Some(OpenLog {
             session: session.to_owned(),

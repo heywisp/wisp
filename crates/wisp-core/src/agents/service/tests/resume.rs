@@ -4192,6 +4192,7 @@ fn jsonl_ended_facts_survive_a_reopen_and_fall_back_per_stale_or_bad_line() {
     use std::io::Write;
     let env = ScratchDir::new("core", "kept-jsonl");
     let logs = JsonlLogs {
+        root_id: None,
         on: true,
         dir: Some(env.dir("sessions")),
     };
@@ -4215,6 +4216,7 @@ fn jsonl_ended_facts_survive_a_reopen_and_fall_back_per_stale_or_bad_line() {
     }
     keep(&logs, &root, &facts);
     let reopened = JsonlLogs {
+        root_id: None,
         on: true,
         dir: logs.dir.clone(),
     };
@@ -4268,6 +4270,7 @@ fn jsonl_ended_facts_survive_a_reopen_and_fall_back_per_stale_or_bad_line() {
     fs::remove_file(env.root.join("ended").join(format!("{root}.jsonl"))).unwrap();
     assert!(read_kept(&reopened, &root).is_empty());
     let off = JsonlLogs {
+        root_id: None,
         on: false,
         dir: logs.dir.clone(),
     };

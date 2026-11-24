@@ -26,6 +26,7 @@ impl OpenLog for CountedLogs {
             log: SessionLog::new(Box::new(self.store.clone()), path),
             path: PathBuf::from(path),
             unlocked: Some("no locks here".into()),
+            fresh: None,
         }))
     }
 }
@@ -211,7 +212,8 @@ fn each_path_gets_its_own_connections_and_log() {
         child.log,
         LogOutcome::Opened {
             path: PathBuf::from("/review"),
-            unlocked: Some("no locks here".into())
+            unlocked: Some("no locks here".into()),
+            fresh: None,
         }
     );
     assert_eq!(root.agent.session().model, "claude-sonnet-4-5");
@@ -1031,6 +1033,21 @@ fn old_output_folder(temp: &Path, session: &str) -> PathBuf {
     dir.path().to_owned()
 }
 
+#[test]
+fn only_the_root_uses_the_pinned_log_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let id = "550e8400-e29b-41d4-a716-446655440000";
+    let logs = JsonlLogs {
+        on: true,
+        dir: Some(dir.path().to_owned()),
+        root_id: Some(id.to_owned()),
+    };
+    let root = logs.open(ROOT).unwrap().unwrap();
+    let child = logs.open("/child").unwrap().unwrap();
+    assert_eq!(root.log.id(), id);
+    assert_ne!(child.log.id(), id);
+}
+
 fn logged_in(root: &Path, session: &str) {
     let logs = root.join("sessions");
     std::fs::create_dir_all(&logs).unwrap();
@@ -1042,6 +1059,7 @@ fn sweeping_kit(root: &Path, layers: StartLayers) -> Kit {
         Arc::new(connected(ROOT)),
         tools(&[]),
         Arc::new(JsonlLogs {
+            root_id: None,
             on: false,
             dir: Some(root.join("sessions")),
         }),
