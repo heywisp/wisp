@@ -1088,8 +1088,8 @@ async fn invalid_response_retries_cap_on_default_policy() {
 
     for (step_two, is_malformed, cap, wait_secs) in [
         (false, false, 3u32, 7u64),
-        (false, true, 16, 1_928),
-        (true, true, 16, 1_928),
+        (false, true, 3, 7),
+        (true, true, 3, 7),
     ] {
         let (total, first, expected_step, msg_idx) = (
             cap + 1,
@@ -1247,10 +1247,8 @@ async fn invalid_response_retries_cap_on_default_policy() {
     let provider = Fake::new(vec![
         bad(),
         malformed(),
-        bad(),
-        malformed(),
         failing(half_reply("half", 600), server_mid_stream()),
-        bad(),
+        malformed(),
     ]);
     let mut agent = Agent::new(provider.clone(), plain_session()).with_retry_policy(deterministic);
     let (outcome, events) = turn(&mut agent, "hi").await;
@@ -1258,7 +1256,7 @@ async fn invalid_response_retries_cap_on_default_policy() {
         outcome,
         TurnOutcome::Error {
             kind: ErrorKind::InvalidResponse,
-            attempts: 6,
+            attempts: 4,
             gave_up: Some(GaveUp::StepLimit),
             ..
         }
@@ -1270,7 +1268,7 @@ async fn invalid_response_retries_cap_on_default_policy() {
             _ => unreachable!(),
         })
         .collect();
-    assert_eq!(maxes, [3, 16, 3, 16, 0]);
+    assert_eq!(maxes, [3, 3, 0]);
     let sent = provider.texts();
     assert!(
         !sent[0].contains(note) && !sent[1].contains(note) && sent[2].matches(note).count() == 1

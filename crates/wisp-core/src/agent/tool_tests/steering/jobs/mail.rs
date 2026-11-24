@@ -1214,3 +1214,65 @@ async fn a_resumed_unreadable_offer_waits_for_a_message_that_arrives_after_the_r
     assert!(again.agent.inbox.mail_ids().is_empty());
     again.assert_rebuilds();
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_malformed_call_step_limit_never_restarts_automatically_on_mail() {
+    let malformed = || {
+        let mut error =
+            crate::agent::testing::failure(ErrorKind::InvalidResponse, RetryClass::Transient, true);
+        error.detail.malformed_call = Some(Box::default());
+        Step::from(vec![Ok(ProviderEvent::Sending), Err(error)])
+    };
+    let during = root_letter("m1", "/coder", true);
+    let after = root_letter("m2", "/docs", true);
+    let resumed_mail = root_letter("m3", "/review", true);
+
+    let mut plan = vec![two_calls()];
+    plan.push(malformed().mail(during.clone()));
+    plan.extend((0..crate::agent::retry::INVALID_RESPONSE_RETRIES).map(|_| malformed()));
+    plan.push(done("no"));
+    let (mut h, mail) = root_mailed("mail-restart-malformed", plan);
+
+    let failed = h.run(vec![steer("go")], 1).await;
+    assert_eq!(retry_starts(&failed), [(1, None, None)]);
+    assert!(matches!(
+        outcomes(&failed)[..],
+        [TurnOutcome::Error {
+            kind: ErrorKind::InvalidResponse,
+            gave_up: Some(GaveUp::StepLimit),
+            offer: Some(offer),
+            ..
+        }] if offer.retry && offer.retries_at.is_none()
+    ));
+    let resting = settle_quietly(&mut h).await;
+    assert!(started(&resting).is_empty(), "{resting:#?}");
+    assert!(h.agent.reset_retry_at().is_none());
+    assert_eq!(h.agent.mail_retried, 0);
+    assert_eq!(h.requests().len(), 5);
+
+    mail.send(after.clone()).unwrap();
+    let still_waiting = settle_quietly(&mut h).await;
+    assert!(started(&still_waiting).is_empty(), "{still_waiting:#?}");
+    assert!(h.agent.reset_retry_at().is_none());
+    assert_eq!(h.agent.inbox.mail_ids(), [mid("m1"), mid("m2")]);
+    assert_eq!(h.requests().len(), 5);
+
+    let saved = records(&h.store);
+    let (mut again, mail) = resumed_at(
+        "mail-restart-malformed-resumed",
+        wisp_protocol::agents::ROOT_PATH,
+        vec![done("no")],
+        &saved,
+    );
+    assert!(again.agent.retry_offer().is_some());
+    assert!(again.agent.reset_retry_at().is_none());
+    mail.send(resumed_mail).unwrap();
+    let after_resume = settle_quietly(&mut again).await;
+    assert!(started(&after_resume).is_empty(), "{after_resume:#?}");
+    assert!(again.agent.reset_retry_at().is_none());
+    assert_eq!(
+        again.agent.inbox.mail_ids(),
+        [mid("m1"), mid("m2"), mid("m3")]
+    );
+    assert!(again.requests().is_empty());
+}

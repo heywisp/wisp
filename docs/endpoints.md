@@ -1161,7 +1161,9 @@ the line shows only while the retry is still to come. Esc only closes the
 choice, and the line and the retry stay. An agent below the chat never
 retries by itself, and a resumed chat does so only while the reset or retry time is ahead.
 When the chat's own agent instead stops at the step retry limit on an
-unreadable reply (`invalid_response` with `step_limit`) and Retry where it
+unreadable reply (`invalid_response` with `step_limit`, excluding Gemini's
+`MALFORMED_FUNCTION_CALL`, whose streak tends to repeat on the same bytes, so
+Wisp waits for your Retry or Switch instead) and Retry where it
 failed is offered, no line is added, and a waking message from another agent
 takes that Retry on the failed account through the same path, under the same
 cancel and switch-hold rules. Each message starts at most one retry round,
@@ -1320,14 +1322,11 @@ the reply with their mapped stop reason instead of running the calls, except on
 a model whose shipped row sets `reply_cap`, where a `MAX_TOKENS` stop is never
 committed and becomes an `invalid_response` (`max_tokens`, usage complete) that
 resends once at the full limit and otherwise ends the turn (`docs/gemini.md`). Retryable
-`invalid_response` failures retry at most 16 times per step for
-`MALFORMED_FUNCTION_CALL` and 3 times per step for other causes—even under
-looser explicit policies, while tighter bounds still win, sharing the step's
-non-busy retry count—before stopping with `step_limit` and the Retry / Switch
-offer. A `MALFORMED_FUNCTION_CALL` uses a fixed, unjittered schedule driven by
-the step's non-busy retry count (so earlier busy waits do not stretch it), with
-`retry-after` still a floor: 8 retries 1 s apart, then 8 more after 1, 2, 4, 5,
-5, 5, 5 and 5 minutes (about 40 minutes including the requests). After a
+`invalid_response` failures retry at most 3 times per step—`MALFORMED_FUNCTION_CALL`
+included—even under looser explicit policies, while tighter bounds still win,
+sharing the step's non-busy retry count and normal exponential backoff, before
+stopping with `step_limit` and the Retry / Switch offer (focused on Switch when
+`MALFORMED_FUNCTION_CALL` hits `step_limit` and another account exists). After a
 `MALFORMED_FUNCTION_CALL`, the retry appends one fixed text note
 to the current user message (`Your previous response contained an improperly
 formatted function call. Send the function call again, properly formatted.`),
@@ -1344,8 +1343,7 @@ unreadable-reply diagnostics keep a provider-named lead-in, never a bare parser
 fragment.
 
 Native and background compaction keep finite counted bounds: 5 retries per
-step (3 for non-malformed-call retryable `invalid_response`, while the tighter
-5-retry bound still caps `MALFORMED_FUNCTION_CALL`), 10 total (shared with the
+step (3 for retryable `invalid_response`), 10 total (shared with the
 enclosing turn for in-turn compaction) and a 60 s `retry-after` ceiling.
 Only a native compaction's busy rate limits take the 10 min busy window;
 background compaction never busy-waits. A native compaction refused as
@@ -1353,8 +1351,7 @@ overloaded falls back to Wisp's own engine after its quick tries, whether or
 not a gateway kept the `compaction_unavailable` code. Background compaction
 yields to foreground compaction when its retries run out. Ordinary foreground
 Wisp compaction uses the same defaults as a turn. Explicit finite policies
-keep their bounds (still capped at 16 for `MALFORMED_FUNCTION_CALL` and 3 for
-other retryable `invalid_response`).
+keep their bounds (still capped at 3 for retryable `invalid_response`).
 Keep-warm keeps its separate 58-minute deadline.
 
 In the main agent, Esc during a model retry wait stops automatic retries and leaves Retry available at once, with the same bytes; compaction waits still cancel compaction.

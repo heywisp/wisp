@@ -290,7 +290,7 @@ impl Agent {
                 kind,
                 offer: offer.clone(),
                 switch: retry::rule(kind, detail.as_ref(), gave_up).is_some_and(|r| r.1),
-                on_mail: self.retry_on_mail(offer, kind, gave_up),
+                on_mail: self.retry_on_mail(offer, kind, detail.as_ref(), gave_up),
                 endpoint: self.endpoint,
                 tools: self.step_server_tools(),
                 opening,
@@ -328,9 +328,16 @@ impl Agent {
         }
     }
 
-    fn retry_on_mail(&self, offer: &RetryOffer, kind: ErrorKind, gave_up: Option<GaveUp>) -> bool {
+    fn retry_on_mail(
+        &self,
+        offer: &RetryOffer,
+        kind: ErrorKind,
+        detail: Option<&ErrorDetail>,
+        gave_up: Option<GaveUp>,
+    ) -> bool {
         offer.retry
             && kind == ErrorKind::InvalidResponse
+            && detail.is_none_or(|d| d.malformed_call.is_none())
             && gave_up == Some(GaveUp::StepLimit)
             && self.path().is_root()
     }
@@ -381,7 +388,7 @@ impl Agent {
             .map(|offer| self.at_reset(offer, detail.as_ref()));
         let tools = self.step_server_tools();
         self.offered = offer.map(|offer| {
-            let on_mail = self.retry_on_mail(&offer, kind, gave_up);
+            let on_mail = self.retry_on_mail(&offer, kind, detail.as_ref(), gave_up);
             Offered {
                 turn,
                 kind,

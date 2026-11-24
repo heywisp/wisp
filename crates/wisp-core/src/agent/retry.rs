@@ -19,8 +19,6 @@ pub const MAX_DELAY: Duration = Duration::from_secs(300);
 pub const LIMIT_WAIT: Duration = Duration::from_secs(5 * 60 * 60);
 pub const JITTER: f64 = 0.2;
 pub const INVALID_RESPONSE_RETRIES: u32 = 3;
-pub const MALFORMED_CALL_RETRIES: u32 = 16;
-pub const MALFORMED_CALL_FIXED: u32 = 8;
 pub const MALFORMED_CALL_NOTE: &str = "Your previous response contained an improperly formatted function call. Send the function call again, properly formatted.";
 pub(crate) const CALL_NOTE_ID_PREFIX: &str = "wisp-call-note-";
 
@@ -46,7 +44,6 @@ pub struct RetryPolicy {
     pub jitter: fn() -> f64,
     pub busy_window: Option<Duration>,
     pub max_retry_after: Option<Duration>,
-    pub fixed_retries: Option<u32>,
 }
 
 impl Default for RetryPolicy {
@@ -59,7 +56,6 @@ impl Default for RetryPolicy {
             jitter: clock_jitter,
             busy_window: None,
             max_retry_after: None,
-            fixed_retries: None,
         }
     }
 }
@@ -77,14 +73,10 @@ impl RetryPolicy {
 
     pub(crate) fn for_kind(self, error: &ProviderError) -> Self {
         if error.kind == ErrorKind::InvalidResponse {
-            let (cap, fixed) = if error.malformed_call() {
-                (MALFORMED_CALL_RETRIES, Some(MALFORMED_CALL_FIXED))
-            } else {
-                (INVALID_RESPONSE_RETRIES, None)
-            };
             Self {
-                step_retries: Some(self.step_retries.map_or(cap, |max| max.min(cap))),
-                fixed_retries: self.fixed_retries.or(fixed),
+                step_retries: Some(self.step_retries.map_or(INVALID_RESPONSE_RETRIES, |max| {
+                    max.min(INVALID_RESPONSE_RETRIES)
+                })),
                 ..self
             }
         } else {
@@ -171,20 +163,8 @@ pub fn decide(
         return Decision::GiveUp(GaveUp::Budget);
     }
     Decision::Retry {
-        delay: wait(policy, state, after),
+        delay: backoff(policy, state.tries.saturating_add(1), after),
     }
-}
-
-fn wait(policy: &RetryPolicy, state: &RetryState, after: Option<Duration>) -> Duration {
-    let Some(fixed) = policy.fixed_retries else {
-        return backoff(policy, state.tries.saturating_add(1), after);
-    };
-    let scale = state
-        .step
-        .checked_sub(fixed)
-        .map_or(1, |n| 60u32 << n.min(3));
-    let computed = policy.base_delay.saturating_mul(scale).min(MAX_DELAY);
-    after.map_or(computed, |floor| floor.max(computed))
 }
 
 fn wait_while_busy(policy: &RetryPolicy, state: &RetryState, after: Option<Duration>) -> Decision {
@@ -282,6 +262,12 @@ pub(super) fn rule(
     gave_up: Option<GaveUp>,
 ) -> Option<(bool, bool, RetryFocus)> {
     Some(match kind {
+        ErrorKind::InvalidResponse
+            if detail.is_some_and(|d| d.malformed_call.is_some())
+                && gave_up == Some(GaveUp::StepLimit) =>
+        {
+            (true, true, RetryFocus::Switch)
+        }
         ErrorKind::Server
         | ErrorKind::Overloaded
         | ErrorKind::Network
