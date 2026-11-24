@@ -783,10 +783,26 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
             true,
         )
     });
-    let mid_escape = [r"\u006C\u0041NARY-run-key", r"\\u006C\\u0041NARY-run-key"].map(|text| {
+    let mid_escape = [
+        (
+            r"\u006C\u0041NARY-run-key",
+            r"\u006C\u0041NARY-run-key".to_owned(),
+        ),
+        (
+            r"\\u006C\\u0041NARY-run-key",
+            r"\\u006C\\u0041NARY-run-key".to_owned(),
+        ),
+        (r"\u\u007B43}ANARY-run-key!", format!("{marker}!")),
+        (
+            r"x\u{43}\u{005C}u00\\u{34}1NARY-run-key!",
+            format!("x{marker}!"),
+        ),
+        (r"C\u{4\u0031}NARY-run-key!", format!("{marker}!")),
+    ]
+    .map(|(text, expected)| {
         (
             text.to_owned(),
-            text.to_owned(),
+            expected,
             &[1, 4, 5, 6, 7, 13, 64][..],
             false,
             true,
@@ -824,6 +840,15 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
     ]);
     let hold_split_keys = crate::session::Redactions::typed(["5Cu".to_owned()]);
     let hold_whole_keys = crate::session::Redactions::typed([r"cCANARY-\u0".to_owned()]);
+    let restart_keys = crate::session::Redactions::typed(["5cA".to_owned()]);
+    let short_tail_keys = crate::session::Redactions::typed(["ABC".to_owned()]);
+    let long_tail_keys = crate::session::Redactions::new([r"CANARY-secret-0123\u".to_owned()]);
+    let padded = |text: &str| -> String {
+        text.chars()
+            .map(|c| format!(r"\u{{{:06x}}}", u32::from(c)))
+            .collect()
+    };
+    let unsettled = padded(&padded(r"\u{0000"));
     let extra = [
         (
             &hex_keys,
@@ -900,6 +925,35 @@ async fn split_keys_are_masked_before_the_file_events_and_capture() {
             &[1, 4, 5, 7, 13, 64, 255][..],
             false,
             false,
+        ),
+        (
+            &restart_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 3,
+            r"\u0035c\u005c\u00750\u0030\u0034\u{031}\u005Cu\u{030}\\u007500\u".to_owned(),
+            format!(r"{marker}\u005Cu\u{{030}}\\u007500\u"),
+            &[1, 2, 4, 5, 7, 13, 64][..],
+            false,
+            false,
+        ),
+        (
+            &short_tail_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 3,
+            r"\uA\u\u{7b}0042}\u{000043}\u005c\u0075\u{30}0\u{34}\u0032!".to_owned(),
+            format!(r"\u{marker}\u005c\u0075\u{{30}}0\u{{34}}\u0032!"),
+            &[1, 3, 4, 6, 13, 64][..],
+            false,
+            true,
+        ),
+        (
+            &long_tail_keys,
+            (crate::session::ESCAPED_HOLD + 1) * 26,
+            format!(
+                r"\u005c\u0075005c\u005c\u007500750043ANARY-secret-0123\u005c\u0075005c\u005c\u00750075005cu{unsettled}0}}!"
+            ),
+            format!("{marker}{unsettled}0}}!"),
+            &[1, 4, 5, 7, 13, 64][..],
+            false,
+            true,
         ),
     ];
     let rows = [

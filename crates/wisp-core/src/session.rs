@@ -1460,10 +1460,11 @@ fn redacted_text(text: &str, bytes: Option<Vec<u8>>) -> String {
 fn found(
     entries: &[&[u8]],
     bytes: &[u8],
+    cut: usize,
     mut runs: Vec<std::ops::Range<usize>>,
     pending: bool,
 ) -> (Vec<std::ops::Range<usize>>, usize) {
-    let mut boundary = bytes.len();
+    let mut boundary = cut;
     let Some(longest) = entries.first() else {
         return (runs, boundary);
     };
@@ -1476,11 +1477,13 @@ fn found(
             continue;
         }
         let rest = &bytes[at..];
+        let head = &rest[..cut.saturating_sub(at)];
         if pending
-            && rest.len() < longest.len()
+            && !head.is_empty()
+            && head.len() < longest.len()
             && entries
                 .iter()
-                .any(|value| value.len() > rest.len() && value.starts_with(rest))
+                .any(|value| value.len() > head.len() && value.starts_with(head))
         {
             boundary = boundary.min(at);
         }
@@ -1532,7 +1535,7 @@ fn matched(
 ) -> (Vec<std::ops::Range<usize>>, usize, Option<Vec<usize>>) {
     let runs = (covered > 0).then_some(0..covered).into_iter().collect();
     let (mut view, cut) = unescaped(bytes, pending);
-    let (mut runs, mut boundary) = found(entries, &bytes[..cut], runs, pending);
+    let (mut runs, mut boundary) = found(entries, bytes, cut, runs, pending);
     let mut starts = None;
     for level in 1..=ESCAPE_LEVELS {
         let Some((decoded, origin)) = view.take() else {
@@ -1543,7 +1546,7 @@ fn matched(
         } else {
             (None, decoded.len())
         };
-        let (hits, prefix) = found(entries, &decoded[..cut], Vec::new(), pending);
+        let (hits, prefix) = found(entries, &decoded, cut, Vec::new(), pending);
         runs.extend(
             hits.into_iter()
                 .map(|run| origin[run.start]..origin[run.end]),
@@ -1596,7 +1599,7 @@ fn unescaped(text: &[u8], open: bool) -> (Option<Decoded>, usize) {
         }
     }
     origin.push(at);
-    ((out.len() < at).then_some((out, origin)), at)
+    ((out.len() < text.len()).then_some((out, origin)), at)
 }
 
 fn unfinished(tail: &[u8]) -> bool {
