@@ -122,6 +122,8 @@ fn mail_text_reads_back_its_body_and_a_reports_parts() {
     assert_eq!(mail_body(&mail), "one\n\ntwo");
     assert_eq!(mail_body(&render_mail(&from, MailKind::Message, "")), "");
     assert_eq!(mail_body("no envelope\nat all"), "no envelope\nat all");
+    let framed = format!("Read this.\n\n<SYSTEM_MESSAGE>\n{mail}\n</SYSTEM_MESSAGE>");
+    assert_eq!(mail_body(&framed), "one\n\ntwo");
     let report = report_text("/review reported\n· 4s", "Blocked: x\nmore");
     assert_eq!(report, "/review reported · 4s\nBlocked: x\nmore");
     let mail = render_mail(&from, MailKind::Report, &report);

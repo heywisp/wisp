@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::config::{SavedSettings, set_row_value};
 use crate::endpoints::{ProviderKind, goes};
 use crate::models::list::{ListedModel, ModelList};
-use crate::models::{ConfigModels, ModelRow, ModelTable};
+use crate::models::{ConfigModels, ModelRow, ModelTable, TurnForm};
 use crate::pricing::{self, ModelInfo};
 use crate::settings::{Current, Found, Given, Layer, Layers, resolve_one};
 use wisp_protocol::settings::{Place, SettingValue, Target, WindowRoom};
@@ -758,6 +758,10 @@ impl ModelSettings {
 
     pub fn reply_cap(&self, model: &str) -> Option<u32> {
         self.shipped.reply_cap(model)
+    }
+
+    pub fn turn_form(&self, model: &str) -> Option<&TurnForm> {
+        self.shipped.turn_form(model)
     }
 
     pub fn reply_limit(

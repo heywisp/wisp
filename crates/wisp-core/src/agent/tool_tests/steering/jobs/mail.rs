@@ -11,6 +11,7 @@ use wisp_tool_text::jobs::WAKE_LINE;
 
 mod paths;
 mod returned;
+mod turn_form;
 
 const HERE: &str = "/review";
 const SIBLING: &str = "/docs";
@@ -58,13 +59,24 @@ fn build(
     commands: Option<mpsc::Sender<ClientCommand>>,
     gate: Option<watch::Receiver<bool>>,
 ) -> Built {
+    build_on(default_session(), name, plan, tools, commands, gate)
+}
+
+fn build_on(
+    session: SessionConfig,
+    name: &str,
+    plan: Vec<Step>,
+    tools: Toolbox,
+    commands: Option<mpsc::Sender<ClientCommand>>,
+    gate: Option<watch::Receiver<bool>>,
+) -> Built {
     let env = Env::new(name);
     let (mailing, inner) = staged(plan);
     if let Some(commands) = commands {
         inner.send_to(commands);
     }
     let store = MemoryStore::default();
-    let mut agent = Agent::new(mailing, default_session())
+    let mut agent = Agent::new(mailing, session)
         .with_clock(TickingClock::new())
         .with_tools(tools, env.workspace())
         .with_platform("Linux")
@@ -94,9 +106,18 @@ fn mailed_with(
     plan: Vec<Step>,
     gate: Option<watch::Receiver<bool>>,
 ) -> (Harness, MailSender) {
+    mailed_with_on(default_session(), name, plan, gate)
+}
+
+fn mailed_with_on(
+    session: SessionConfig,
+    name: &str,
+    plan: Vec<Step>,
+    gate: Option<watch::Receiver<bool>>,
+) -> (Harness, MailSender) {
     let (tx, rx) = mpsc::channel(128);
     let tools = ScriptTool::toolbox(tx.clone(), Duration::from_secs(10), Ops::default());
-    let built = build(name, plan, tools, Some(tx.clone()), gate);
+    let built = build_on(session, name, plan, tools, Some(tx.clone()), gate);
     let harness = Harness {
         agent: built.agent,
         provider: built.provider,

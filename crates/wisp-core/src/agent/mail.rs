@@ -287,6 +287,13 @@ impl Agent {
         true
     }
 
+    fn mail_model(&self) -> String {
+        match self.open_track() {
+            Some(track) if track.settings_applied => self.session.model.clone(),
+            _ => self.next_endpoint_model().1,
+        }
+    }
+
     async fn accept_letters(
         &mut self,
         arrived: Vec<Mail>,
@@ -310,7 +317,12 @@ impl Agent {
                 wake: mail.wake,
                 plugin: plugin.map(str::to_owned),
             };
-            let text = render_mail(&from.agent, from.kind, &mail.text);
+            let mut text = render_mail(&from.agent, from.kind, &mail.text);
+            if from.kind != MailKind::Task
+                && let Some(form) = self.models.turn_form(&self.mail_model())
+            {
+                text = format!("{}{text}{}", form.mail_before, form.mail_after);
+            }
             let bytes = u64::try_from(mail.text.len()).unwrap_or(u64::MAX);
             if let Some(news) = self.agents.news() {
                 news.push(TreeNews::Mail(MailNews {

@@ -21,6 +21,7 @@ pub const SEP: &str = " \u{b7} ";
 pub const ENVIRONMENT_TAG: &str = "<environment>";
 pub const SENT_PREFIX: &str = "Sent: ";
 pub const CONTEXT_PREFIX: &str = "Context: ";
+pub const DATA_BLOCK: &str = "data-block";
 pub const STEER_NOTE: &str = "Sent while working: the user wrote the message just above before seeing anything you did after they sent it.";
 
 pub fn flat(text: &str) -> String {

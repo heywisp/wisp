@@ -12,8 +12,8 @@ use serde::Deserialize;
 use serde_json::json;
 use support::{golden, lead_of, read, record_late};
 use wisp_protocol::log::{
-    LEAD_ENVIRONMENT, LEAD_FILL, LEAD_PROCESSES, LEAD_SENT, LOG_SCHEMA_VERSION, LeadEntry,
-    LogEvent, ToolContext, TurnLead, no_images, rebuild_history,
+    LEAD_DATA, LEAD_ENVIRONMENT, LEAD_FILL, LEAD_PROCESSES, LEAD_SENT, LOG_SCHEMA_VERSION,
+    LeadEntry, LogEvent, LoggedInput, ToolContext, TurnLead, no_images, rebuild_history,
 };
 use wisp_protocol::{
     AgentEvent, ContentBlock, Effort, Fact, HookChange, HookOutcome, InputId, OutputKind,
@@ -23,6 +23,8 @@ use wisp_protocol::{
 const LEAD_VERSION: u16 = 29;
 
 const READER_28: u16 = 28;
+
+const TAIL_VERSION: u16 = 42;
 
 fn turn(lead: TurnLead, text: &str) -> LogEvent {
     let mut event: LogEvent =
@@ -45,6 +47,25 @@ fn reply(text: &str) -> LogEvent {
 #[test]
 fn the_lead_bumps_the_log_to_version_29() {
     const { assert!(LOG_SCHEMA_VERSION > LEAD_VERSION) };
+}
+
+#[test]
+fn a_tail_entry_bumps_the_log_to_version_42_and_is_written_only_when_set() {
+    const { assert!(LOG_SCHEMA_VERSION >= TAIL_VERSION) };
+    let tail = LeadEntry {
+        tail: true,
+        ..LeadEntry::new(LEAD_DATA, "D")
+    };
+    let written = serde_json::to_value(&tail).unwrap();
+    assert_eq!(
+        written,
+        json!({"by": "core/data", "text": "D", "tail": true})
+    );
+    assert_eq!(serde_json::from_value::<LeadEntry>(written).unwrap(), tail);
+    let lead = TurnLead::new(vec![LeadEntry::new(LEAD_ENVIRONMENT, "E"), tail]);
+    assert_eq!(lead.leading(), 1);
+    assert_eq!(lead.texts().collect::<Vec<_>>(), ["E"]);
+    assert_eq!(lead.tail().collect::<Vec<_>>(), ["D"]);
 }
 
 #[test]
@@ -99,9 +120,24 @@ fn the_old_fields_map_to_their_entries_in_the_fixed_order() {
 fn a_turn_rebuilds_its_lead_in_the_order_it_was_logged() {
     let lead = TurnLead::new(vec![
         LeadEntry::new("acme/second", "two\n"),
+        LeadEntry {
+            tail: true,
+            ..LeadEntry::new(LEAD_DATA, "data")
+        },
         LeadEntry::new(LEAD_SENT, "one\n"),
     ]);
-    let rebuilt = rebuild_history([&turn(lead, "hi"), &reply("ok")], no_images).unwrap();
+    let steer = LogEvent::InputCommitted {
+        turn: 1,
+        step: 1,
+        inputs: vec![LoggedInput {
+            id: InputId("s1".into()),
+            text: "steer".into(),
+            images: Vec::new(),
+            note: None,
+        }],
+    };
+    let events = [&turn(lead, "hi"), &steer, &reply("ok")];
+    let rebuilt = rebuild_history(events, no_images).unwrap();
     let texts: Vec<&str> = rebuilt.messages[0]
         .content
         .iter()
@@ -110,7 +146,7 @@ fn a_turn_rebuilds_its_lead_in_the_order_it_was_logged() {
             other => panic!("{other:?}"),
         })
         .collect();
-    assert_eq!(texts, ["two\n", "one\n", "hi"]);
+    assert_eq!(texts, ["two\n", "one\n", "hi", "data", "steer"]);
 }
 
 #[test]

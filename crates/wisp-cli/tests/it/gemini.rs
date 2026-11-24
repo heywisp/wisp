@@ -119,6 +119,17 @@ fn serve_model(
 }
 
 fn command(home: &Path, config: &Path) -> Command {
+    let quiet = [
+        "--time",
+        "off",
+        "--no-auto-compact",
+        "--context-note",
+        "off",
+    ];
+    command_with(home, config, &quiet)
+}
+
+fn command_with(home: &Path, config: &Path, lines: &[&str]) -> Command {
     let mut cmd = Pty::command(home);
     cmd.env_remove("LANG")
         .env("WORK_GEMINI_KEY", TEST_KEY)
@@ -131,16 +142,9 @@ fn command(home: &Path, config: &Path) -> Command {
             "gemini",
             "--instructions",
             "none",
-            "--time",
-            "off",
-            "--no-auto-compact",
-            "--context-note",
-            "off",
-            "--effort",
-            "high",
-            "--tools",
-            "bash,view_file,web_search",
-        ]);
+        ])
+        .args(lines)
+        .args(["--effort", "high", "--tools", "bash,view_file,web_search"]);
     cmd
 }
 
@@ -452,6 +456,78 @@ fn cli_runs_two_resumed_gemini_tool_turns_with_stable_prefix_and_distinct_idless
             "sig_t2_call"
         ]
     );
+}
+
+#[test]
+fn cli_neon_turns_end_in_the_data_part_and_send_five_stop_strings_across_a_resume() {
+    let home = Home::new("gemini-neon-form");
+    let model = "gemini-4-neon";
+    let reply = |text: &str| sse_chunk(model, vec![json!({"text": text})], Some("STOP"));
+    let (url, seen, server) =
+        serve_model(model, vec![reply("NEON-FORM-ONE"), reply("NEON-FORM-TWO")]);
+    let cfg = write_config(&home.0, &url);
+    let lines = ["--time", "local", "--context-note", "on"];
+    let first = pty::run(
+        command_with(&home.0, &cfg, &lines).args(["--model", model]),
+        "Start work\n",
+        "NEON-FORM-ONE",
+        TEST_KEY,
+    );
+    assert!(first.contains("NEON-FORM-ONE"), "{first}");
+    let second = pty::run(
+        command_with(&home.0, &cfg, &lines).arg("--resume"),
+        "Carry on\n",
+        "NEON-FORM-TWO",
+        TEST_KEY,
+    );
+    assert!(second.contains("NEON-FORM-TWO"), "{second}");
+    server.join().unwrap();
+
+    let requests: Vec<Value> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|body| serde_json::from_str(body).unwrap())
+        .collect();
+    assert_eq!(requests.len(), 2);
+    assert_gemini_prefix_stable(&requests);
+    let form = wisp_core::models::ModelTable::shared()
+        .turn_form(model)
+        .unwrap();
+    let stops = json!([
+        format!("\nuser\n{SENT_PREFIX}"),
+        format!("\nuser\n{CONTEXT_PREFIX}"),
+        format!("\nuser\n{MAIL_OPEN}"),
+        format!("\n{MAIL_OPEN} from=\""),
+        "\n<ADDITIONAL_METADATA>",
+    ]);
+    for request in &requests {
+        assert_eq!(request["generationConfig"]["stopSequences"], stops);
+        let turns = request["contents"].as_array().unwrap();
+        for turn in turns.iter().filter(|c| c["role"] == "user") {
+            let texts: Vec<&str> = turn["parts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|p| p["text"].as_str())
+                .collect();
+            let bare = |t: &&str| t.starts_with(SENT_PREFIX) || t.starts_with(CONTEXT_PREFIX);
+            assert!(!texts.iter().any(bare), "{texts:?}");
+            let data = texts.last().unwrap();
+            let inner = data
+                .strip_prefix(form.data_open.as_str())
+                .and_then(|t| t.strip_suffix(form.data_close.as_str()))
+                .unwrap();
+            let lines: Vec<&str> = inner.lines().collect();
+            assert!(
+                lines[0].starts_with("The current local time is: "),
+                "{data}"
+            );
+            assert!(lines[1].starts_with("Context window: "), "{data}");
+            assert!(lines[1].contains("; Wisp compacts at "), "{data}");
+            assert_eq!(lines.len(), 2, "{data}");
+        }
+    }
 }
 
 #[test]

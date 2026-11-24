@@ -560,3 +560,120 @@ async fn a_binding_failure_without_a_move_suggests_nothing() {
         Some(retry_offer(false, true, RetryFocus::Switch))
     );
 }
+
+fn on_gemini(fake: &Fake) {
+    fake.knobs(|k| {
+        k.kind = Some(crate::endpoints::ProviderKind::Gemini);
+        k.list = Some(Arc::new(
+            crate::models::list::ModelList::from_gemini_ids([(NEON.to_owned(), None, None)], None)
+                .unwrap(),
+        ));
+    });
+}
+
+fn report(id: &str) -> (crate::agent::Mail, String) {
+    let report = crate::agent::Mail {
+        id: wisp_protocol::MailId(id.into()),
+        from: AgentPath::new("/child"),
+        to: AgentPath::root(),
+        kind: wisp_protocol::MailKind::Report,
+        wake: true,
+        text: format!("child finished {id}"),
+    };
+    let shown = crate::agent::render_mail(&report.from, report.kind, &report.text);
+    (report, shown)
+}
+
+fn reported(rig: &Rig, id: &str) -> String {
+    let (report, shown) = report(id);
+    rig.agent.mail_sender().send(report).unwrap();
+    shown
+}
+
+#[tokio::test]
+async fn mail_folded_into_a_running_neon_turn_after_a_switch_to_claude_stays_framed() {
+    let to_claude = ClientCommand::shortcut(
+        RequestId(1),
+        Some(B.into()),
+        Some(DEFAULT_MODEL.into()),
+        None,
+    );
+    let sample = quick_samples().remove(0);
+    let (folded, shown) = report("m1");
+    let mut setup = Setup::new(vec![
+        uses(&[call("c1", &sample.name, sample.input.clone())]).then(to_claude),
+        uses(&[call("c2", &sample.name, sample.input)]).mail(folded),
+        done("neon"),
+    ])
+    .with_b(vec![done("claude")]);
+    setup.session.model = NEON.into();
+    let mut rig = setup.rig();
+    on_gemini(&rig.a);
+    rig.a.mail_to(rig.agent.mail_sender());
+    rig.run(vec![ClientCommand::send("tui-1", "go")], 1).await;
+    let later = reported(&rig, "m2");
+    rig.run(Vec::new(), 1).await;
+    let form = neon_form();
+    let framed = format!("{}{shown}{}", form.mail_before, form.mail_after);
+    let neon = rig.a.sent();
+    assert!(texts(neon[2].messages.last().unwrap()).contains(&framed.as_str()));
+    let claude = rig.b.sent();
+    let opening = texts(claude[0].messages.last().unwrap());
+    assert_eq!(opening.last(), Some(&later.as_str()), "{opening:#?}");
+}
+
+#[tokio::test]
+async fn a_switch_to_neon_and_back_forms_only_new_turns_and_their_mail_and_requests_extend() {
+    let mut rig = Setup::new(vec![done("one"), done("two")])
+        .with_b(vec![done("three")])
+        .rig();
+    on_gemini(&rig.b);
+    rig.run(vec![ClientCommand::send("tui-1", "a")], 1).await;
+    rig.run(vec![ClientCommand::send("tui-2", "b")], 1).await;
+    let to_neon = ClientCommand::shortcut(RequestId(1), Some(B.into()), Some(NEON.into()), None);
+    rig.idle(vec![to_neon]).await;
+    let first = reported(&rig, "m1");
+    rig.run(Vec::new(), 1).await;
+    let mut again = Setup::new(vec![done("four")]).with_b(vec![done("five")]);
+    again.from = Some(records(&rig.store));
+    let mut again = again.rig();
+    on_gemini(&again.a);
+    again.run(vec![ClientCommand::send("tui-4", "d")], 1).await;
+    let back = ClientCommand::shortcut(
+        RequestId(2),
+        Some(B.into()),
+        Some(DEFAULT_MODEL.into()),
+        None,
+    );
+    again.idle(vec![back]).await;
+    let second = reported(&again, "m2");
+    again.run(Vec::new(), 1).await;
+    let requests: Vec<Vec<Message>> = [&rig.a, &rig.b, &again.a, &again.b]
+        .into_iter()
+        .flat_map(|fake| fake.sent())
+        .map(|request| request.messages)
+        .collect();
+    assert_eq!(requests.len(), 5);
+    for pair in requests.windows(2) {
+        assert!(pair[1].starts_with(&pair[0]), "{pair:#?}");
+    }
+    let openings: Vec<Vec<&str>> = requests[4]
+        .iter()
+        .filter(|m| m.role == Role::User)
+        .map(texts)
+        .collect();
+    assert_eq!(openings.len(), 5, "{openings:#?}");
+    for claude in [&openings[0], &openings[1], &openings[4]] {
+        assert!(claude.iter().any(|t| bare_lines(t)), "{claude:#?}");
+        assert!(!claude.iter().any(|t| is_data(t)), "{claude:#?}");
+    }
+    for neon in &openings[2..4] {
+        assert!(!neon.iter().any(|t| bare_lines(t)), "{neon:#?}");
+        assert!(is_data(neon.last().unwrap()), "{neon:#?}");
+    }
+    let form = neon_form();
+    let framed = format!("{}{first}{}", form.mail_before, form.mail_after);
+    assert_eq!(openings[2][openings[2].len() - 2], framed);
+    assert_eq!(openings[4].last(), Some(&second.as_str()));
+    again.assert_rebuilds();
+}

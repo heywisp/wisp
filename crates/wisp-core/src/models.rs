@@ -17,6 +17,7 @@ use crate::provider::gemini::antigravity::{
 };
 use crate::provider::{ImageCaps, ModelCapabilities, ThinkingBudgets};
 use wisp_media::Tier;
+use wisp_protocol::agents::MAIL_OPEN;
 use wisp_protocol::settings::{
     A_STRING, EffortVariant, SettingValue, TOKEN_COUNT, TOKENS_OR_SHARE, TRUE_OR_FALSE, USD_WORDS,
     find, parse_tokens, quoted_or, siblings,
@@ -44,6 +45,17 @@ const LONG_PROMPT_FIELDS: [&str; 4] = ["over", "price_input", "price_output", "p
 
 static LONG_PROMPT_ALLOWED: LazyLock<String> =
     LazyLock::new(|| format!("a table of {}", LONG_PROMPT_FIELDS.join(", ")));
+
+const TURN_FORM_FIELDS: [&str; 4] = ["mail_before", "mail_after", "data_open", "data_close"];
+
+const TURN_FORM_LONGEST: usize = 400;
+
+static TURN_FORM_ALLOWED: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        "a table of {}, each a string with more than white space and at most {TURN_FORM_LONGEST} characters without {MAIL_OPEN}",
+        TURN_FORM_FIELDS.join(", ")
+    )
+});
 
 static EFFORT_ALLOWED: LazyLock<String> = LazyLock::new(|| quoted_or(&Effort::WORDS));
 
@@ -87,7 +99,7 @@ enum Quote {
     Provenance,
 }
 
-const SHIPPED_FIELDS: [(&str, Quote); 26] = [
+const SHIPPED_FIELDS: [(&str, Quote); 27] = [
     ("context_window", Quote::Provenance),
     ("native_compaction", Quote::Own("native_compaction")),
     ("web_search", Quote::Own("web_search")),
@@ -102,6 +114,7 @@ const SHIPPED_FIELDS: [(&str, Quote); 26] = [
     ("min_cacheable", Quote::Shared("min_cacheable")),
     ("max_output", Quote::Own("efforts")),
     ("reply_cap", Quote::Own("reply_cap")),
+    ("turn_form", Quote::Own("turn_form")),
     ("efforts", Quote::Own("efforts")),
     ("effort_variant", Quote::Shared("antigravity")),
     ("default_effort", Quote::Own("efforts")),
@@ -221,10 +234,19 @@ pub struct ModelRow {
     pub min_cacheable: Option<u64>,
     pub max_output: Option<u32>,
     pub reply_cap: Option<u32>,
+    pub turn_form: Option<TurnForm>,
     pub capabilities: Option<ModelCapabilities>,
     pub effort_variant: Option<EffortVariant>,
     pub source: Option<String>,
     pub sources: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnForm {
+    pub mail_before: String,
+    pub mail_after: String,
+    pub data_open: String,
+    pub data_close: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -281,6 +303,7 @@ impl ModelRow {
             min_cacheable: None,
             max_output: None,
             reply_cap: None,
+            turn_form: None,
             capabilities: None,
             effort_variant: None,
             source: None,
@@ -736,6 +759,29 @@ fn long_prompt(at: &Range<usize>, value: &DeValue<'_>) -> Result<LongPromptRow, 
     })
 }
 
+fn turn_form(at: &Range<usize>, value: &DeValue<'_>) -> Result<TurnForm, RowError> {
+    let bad = || bad_value("turn_form", &TURN_FORM_ALLOWED, at);
+    let [Some(before), Some(after), Some(open), Some(close)] =
+        table_of(TURN_FORM_FIELDS, value, &bad)?
+    else {
+        return Err(bad());
+    };
+    let text = |value: &DeValue<'_>| {
+        value
+            .as_str()
+            .filter(|text| !text.trim().is_empty() && text.chars().count() <= TURN_FORM_LONGEST)
+            .filter(|text| !text.contains(MAIL_OPEN))
+            .map(str::to_owned)
+            .ok_or_else(bad)
+    };
+    Ok(TurnForm {
+        mail_before: text(before)?,
+        mail_after: text(after)?,
+        data_open: text(open)?,
+        data_close: text(close)?,
+    })
+}
+
 fn check_sources(
     (table, id): (&'static str, &Spanned<DeString<'_>>),
     keys: &[Entry<'_, '_>],
@@ -874,6 +920,7 @@ pub fn walk_row(
             }
             "max_output" => row.max_output = Some(positive_u32("max_output", &at, value)?),
             "reply_cap" => row.reply_cap = Some(positive_u32("reply_cap", &at, value)?),
+            "turn_form" => row.turn_form = Some(turn_form(&at, value)?),
             "efforts" => described = Some(efforts(&at, value)?),
             "effort_variant" => row.effort_variant = Some(effort_variant(&at, value)?),
             "default_effort" => {
@@ -1302,11 +1349,13 @@ impl ModelTable {
                     family.bill_tool_use_prompt,
                     family.min_cacheable,
                     family.reply_cap,
+                    family.turn_form.clone(),
                 ))
             })
             .collect();
         for (row, family) in self.rows.iter_mut().zip(families) {
-            let Some((input, output, read, long, tool_prompt, min_cache, reply_cap)) = family
+            let Some((input, output, read, long, tool_prompt, min_cache, reply_cap, turn_form)) =
+                family
             else {
                 continue;
             };
@@ -1325,6 +1374,7 @@ impl ModelTable {
             }
             row.min_cacheable = row.min_cacheable.or(min_cache);
             row.reply_cap = row.reply_cap.or(reply_cap);
+            row.turn_form = row.turn_form.take().or(turn_form);
         }
     }
 
@@ -1360,6 +1410,10 @@ impl ModelTable {
 
     pub fn reply_cap(&self, model: &str) -> Option<u32> {
         self.find(model)?.reply_cap
+    }
+
+    pub fn turn_form(&self, model: &str) -> Option<&TurnForm> {
+        self.find(model)?.turn_form.as_ref()
     }
 
     pub fn capabilities(&self, kind: ProviderKind, model: &str) -> Option<&ModelCapabilities> {

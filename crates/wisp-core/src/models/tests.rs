@@ -130,9 +130,12 @@ fn the_shipped_file_parses() {
                 row.id
             );
         }
+        let form = table.turn_form(&row.id);
+        assert_eq!(form.is_some(), own.family == "gemini-4-neon", "{}", row.id);
     }
     assert_eq!(table.reply_cap("gemini-4-neon"), Some(32_768));
     assert_eq!(table.reply_cap("gemini-4-carbon"), None);
+    assert_eq!(table.turn_form("gemini-4-carbon"), None);
     assert_eq!(pairs.len(), 17);
     assert!(families.iter().all(|(family, count)| {
         let four = matches!(family.as_str(), "gemini-4-neon" | "gemini-4-hydrogen");
@@ -156,7 +159,7 @@ fn the_shipped_file_parses() {
     }
 }
 
-const INHERITED_FIELDS: [&str; 7] = [
+const INHERITED_FIELDS: [&str; 8] = [
     "price_input",
     "price_output",
     "price_cache_read",
@@ -164,6 +167,7 @@ const INHERITED_FIELDS: [&str; 7] = [
     "bill_tool_use_prompt",
     "min_cacheable",
     "reply_cap",
+    "turn_form",
 ];
 
 type Inherited = (
@@ -174,6 +178,7 @@ type Inherited = (
     bool,
     Option<u64>,
     Option<u32>,
+    Option<TurnForm>,
 );
 
 fn inherited_fields(table: &ModelTable, id: &str) -> Inherited {
@@ -186,6 +191,7 @@ fn inherited_fields(table: &ModelTable, id: &str) -> Inherited {
         row.bill_tool_use_prompt,
         row.min_cacheable,
         table.reply_cap(id),
+        table.turn_form(id).cloned(),
     )
 }
 
@@ -213,7 +219,8 @@ fn an_effort_variants_own_fields_win_over_its_family() {
             None,
             false,
             Some(2048),
-            Some(8192)
+            Some(8192),
+            None
         )
     );
 }
@@ -397,7 +404,7 @@ fn the_shipped_file_refuses_unknown_keys() {
     assert_eq!(error.line, Some(4));
     assert_eq!(
         error.to_string(),
-        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, reply_cap, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, source, sources"
+        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, reply_cap, turn_form, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, source, sources"
     );
     let error = ModelTable::parse_shipped("store_id = \"x\"\n").unwrap_err();
     assert_eq!(error.problem, RowProblem::UnknownTop);
@@ -463,6 +470,11 @@ fn a_shipped_row_needs_its_sources() {
     for (body, field, key) in [
         ("default_effort = \"high\"", "default_effort", "efforts"),
         ("reply_cap = 32768", "reply_cap", "reply_cap"),
+        (
+            "turn_form = { mail_before = \"a\", mail_after = \"b\", data_open = \"c\", data_close = \"d\" }",
+            "turn_form",
+            "turn_form",
+        ),
         (
             "images = { tier = \"high\", per_request = 20 }",
             "images",
@@ -735,6 +747,50 @@ fn bad_values_are_refused_with_their_line() {
 }
 
 #[test]
+fn the_neon_turn_form_is_the_measured_text_and_bad_strings_are_refused() {
+    let form = ModelTable::shared().turn_form("gemini-4-neon").unwrap();
+    assert_eq!(
+        form.mail_before,
+        "The following is a <SYSTEM_MESSAGE> not actually sent by the user. It is provided by the system as important information to pay attention to.\n\n<SYSTEM_MESSAGE>\n"
+    );
+    assert_eq!(form.mail_after, "\n</SYSTEM_MESSAGE>");
+    assert_eq!(form.data_open, "<ADDITIONAL_METADATA>\n");
+    assert_eq!(form.data_close, "</ADDITIONAL_METADATA>");
+    let long = "x".repeat(401);
+    for value in ["", "\\n", long.as_str(), "<wisp:message from=\\\"/a\\\">"] {
+        let body = format!(
+            "turn_form = {{ mail_before = \"{value}\", mail_after = \"b\", data_open = \"c\", data_close = \"d\" }}"
+        );
+        let problem = shipped_error(&format!("[models.\"m\"]\nsource = \"s\"\n{body}\n"));
+        let allowed = &*TURN_FORM_ALLOWED;
+        assert_eq!(
+            problem,
+            RowProblem::BadValue {
+                field: "turn_form",
+                allowed
+            },
+            "{value}"
+        );
+    }
+    let missing = "turn_form = { mail_before = \"a\", mail_after = \"b\", data_open = \"c\" }";
+    let problem = shipped_error(&format!("[models.\"m\"]\nsource = \"s\"\n{missing}\n"));
+    let allowed = &*TURN_FORM_ALLOWED;
+    assert_eq!(
+        problem,
+        RowProblem::BadValue {
+            field: "turn_form",
+            allowed
+        }
+    );
+    let fits = format!(
+        "[models.\"m\"]\nsource = \"s\"\nturn_form = {{ mail_before = \"{}\", mail_after = \"b\", data_open = \"c\", data_close = \"d\" }}\nsources = {{ turn_form = \"t\" }}\n",
+        "x".repeat(400)
+    );
+    let row = ModelTable::parse_shipped(&fits).unwrap().rows()[0].clone();
+    assert_eq!(row.turn_form.unwrap().mail_before.len(), 400);
+}
+
+#[test]
 fn an_id_may_name_only_one_row() {
     let text = "[models.\"a\"]\naliases = [\"b\"]\ncontext_window = 1\nsource = \"s\"\n\n[models.\"b\"]\ncontext_window = 1\nsource = \"s\"\n";
     assert_eq!(
@@ -803,6 +859,7 @@ fn config_tables_refuse_what_belongs_elsewhere() {
             "long_prompt",
             "bill_tool_use_prompt",
             "reply_cap",
+            "turn_form",
             "efforts",
         ] {
             let problem = refused(site, &format!("{field} = 1"));

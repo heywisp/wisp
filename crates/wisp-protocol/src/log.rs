@@ -17,7 +17,7 @@ use crate::{
 };
 use crate::{Dropped, MissCause, RewindPoint, RewindReason, SourceChange};
 
-pub const LOG_SCHEMA_VERSION: u16 = 41;
+pub const LOG_SCHEMA_VERSION: u16 = 42;
 
 pub const PROVISIONAL_SINCE: u16 = 15;
 
@@ -388,6 +388,8 @@ pub const LEAD_PROCESSES: &str = "shell/processes";
 
 pub const LEAD_TOOLS: &str = "core/tools";
 
+pub const LEAD_DATA: &str = "core/data";
+
 pub const SECTIONS_SINCE: u16 = 35;
 
 pub const CONTINUED: [(&str, &str); 2] = [
@@ -410,6 +412,8 @@ pub struct LeadEntry {
     pub snapshot: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub replay: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub tail: bool,
 }
 
 impl LeadEntry {
@@ -419,6 +423,7 @@ impl LeadEntry {
             text: text.into(),
             snapshot: None,
             replay: false,
+            tail: false,
         }
     }
 
@@ -504,7 +509,21 @@ impl TurnLead {
     }
 
     pub fn texts(&self) -> impl Iterator<Item = &str> {
-        self.entries.iter().map(|e| e.text.as_str())
+        self.entries
+            .iter()
+            .filter(|e| !e.tail)
+            .map(|e| e.text.as_str())
+    }
+
+    pub fn tail(&self) -> impl Iterator<Item = &str> {
+        self.entries
+            .iter()
+            .filter(|e| e.tail)
+            .map(|e| e.text.as_str())
+    }
+
+    pub fn leading(&self) -> usize {
+        self.texts().count()
     }
 }
 
@@ -2330,7 +2349,7 @@ fn rebuild_versioned<'a>(
                     pending = None;
                     continue;
                 }
-                let parts = match (inputs.is_empty(), lead.replays()) {
+                let mut parts = match (inputs.is_empty(), lead.replays()) {
                     (false, _) => parts(inputs),
                     (true, true) if text.is_empty() && images.is_empty() => Vec::new(),
                     (true, _) => vec![Part {
@@ -2339,6 +2358,11 @@ fn rebuild_versioned<'a>(
                         note: None,
                     }],
                 };
+                parts.extend(lead.tail().map(|text| Part {
+                    images: &[],
+                    text,
+                    note: None,
+                }));
                 pending = Some(PendingTurn {
                     turn: *turn,
                     lead,

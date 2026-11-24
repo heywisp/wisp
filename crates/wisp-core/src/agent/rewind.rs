@@ -818,7 +818,7 @@ impl Agent {
             .into_iter()
             .map(MarkInput::logged)
             .collect();
-        let lead = lead.len();
+        let lead = lead.leading();
         let baseline = point
             .baseline
             .as_ref()
