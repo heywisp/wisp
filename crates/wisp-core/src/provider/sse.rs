@@ -96,7 +96,7 @@ impl SseParser {
     }
 }
 
-type Item = Result<ProviderEvent, ProviderError>;
+pub(crate) type Item = Result<ProviderEvent, ProviderError>;
 
 pub(crate) trait Decoder: Send + 'static {
     fn push(&mut self, chunk: &[u8]) -> Vec<Item>;
