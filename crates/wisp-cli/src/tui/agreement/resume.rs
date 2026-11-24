@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use wisp_client::{interrupts, turn};
+use wisp_client::{Channels, interrupts};
 use wisp_core::clock::Clock;
 use wisp_core::session::{MemoryStore, SessionLog, SessionStore};
 use wisp_protocol::ErrorKind;
@@ -10,6 +10,7 @@ use wisp_protocol::log::{LogEvent, LogRecord};
 use wisp_tui::app::retry::{Choice, Ctx, Failed};
 
 use super::*;
+use crate::output::jsonl_loop;
 use crate::pick::pick;
 
 struct Still;
@@ -260,16 +261,19 @@ async fn the_jsonl_loop_shows_the_closed_turn_then_runs_the_next_message() {
     let (_, records, _) = crashed_mid_step().await;
     let (seen, respond) = recording();
     let h = resumed(&records, respond);
-    let (commands, mut events, task) = wisp_core::agent::spawn(h.agent);
-    commands
-        .send(ClientCommand::queue("jsonl-1", "go on"))
-        .await
-        .unwrap();
-    let mut interrupt = interrupts().unwrap();
+    let (commands, events, task) = wisp_core::agent::spawn(h.agent);
+    let channels = Channels {
+        commands,
+        events,
+        quit: None,
+    };
+    let (stdin, lines) = mpsc::channel(1);
+    stdin.send(Ok("go on".into())).await.unwrap();
+    drop(stdin);
     let mut shown = Vec::new();
     tokio::time::timeout(
         Duration::from_secs(20),
-        turn(&commands, &mut events, &mut interrupt, |event| {
+        jsonl_loop(channels, lines, interrupts().unwrap(), 0, |event| {
             shown.push(event.clone());
             Ok(())
         }),
@@ -298,8 +302,6 @@ async fn the_jsonl_loop_shows_the_closed_turn_then_runs_the_next_message() {
     let sent = seen.lock().unwrap().clone();
     assert_eq!(sent.len(), 1);
     assert!(messages(&sent[0]).to_string().contains("go on"));
-    drop(commands);
-    while events.recv().await.is_some() {}
     task.handle.await.unwrap();
 }
 

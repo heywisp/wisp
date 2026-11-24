@@ -1558,7 +1558,7 @@ crates/
     agents/        the agents service: the tree of named agents, spawns, Child routing, reports and the
                    turn-end guarantee, state and activity, quitting the tree (docs/agents.md)
   wisp-store/      SQLite EventStore: migrations, blobs, snapshots          (M4)
-  wisp-client/     protocol client: started with the run helpers (channels, quit wait, interrupts, a turn);
+  wisp-client/     protocol client: run helpers (channels, quit wait, interrupts);
                    UDS/WSS, handshake, reconnect                            (M7)
   wispd/           daemon: transport, auth, pairing, lifecycle              (M7, M12)
   wisp-cli/        binary: starts through wisp-start; wires transport; TUI or JSON output; run --headless

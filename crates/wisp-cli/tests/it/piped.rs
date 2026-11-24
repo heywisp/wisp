@@ -668,6 +668,83 @@ fn sigterm_mid_turn_and_sighup_when_idle_end_a_jsonl_session_cleanly_and_die_by_
 }
 
 #[test]
+fn sigint_mid_turn_ends_the_turn_cancelled_and_the_run_goes_on() {
+    let asked = Arc::new(AtomicBool::new(false));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let (held, freed) = (Arc::clone(&asked), Arc::clone(&cancelled));
+    let server = Server::start(move |request| {
+        if request.head.starts_with(COUNT) {
+            return json("200 OK", r#"{"input_tokens": 10}"#);
+        }
+        if request.body.contains("first line") && !request.body.contains("second line") {
+            held.store(true, Ordering::SeqCst);
+            wait_until(Duration::from_secs(20), || freed.load(Ordering::SeqCst));
+        }
+        text_reply("msg_piped", "claude-opus-5-5", "PIPED-DONE", (1, 5))
+    });
+    let home = Home::new("sigint");
+    let mut child = home
+        .logged(&[WISP], server.port)
+        .args(["--output", "jsonl"])
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"first line\n").unwrap();
+    assert!(wait_until(Duration::from_secs(20), || asked.load(Ordering::SeqCst)));
+    let pid = Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
+    kill_process(pid, Signal::INT).unwrap();
+    assert!(
+        wait_until(Duration::from_secs(20), || {
+            home.records()
+                .iter()
+                .any(|e| e["type"] == "turn_ended" && e["outcome"]["status"] == "cancelled")
+        }),
+        "{}",
+        home.logs()
+    );
+    cancelled.store(true, Ordering::SeqCst);
+    stdin.write_all(b"second line\n").unwrap();
+    drop(stdin);
+    let status = wait_for_exit(&mut child);
+    let output = child.wait_with_output().unwrap();
+    assert!(status.success(), "{}", both(&output));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let outcomes: Vec<_> = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .filter(|e| e["type"] == "turn_ended")
+        .map(|e| e["outcome"]["status"].clone())
+        .collect();
+    assert_eq!(outcomes, ["cancelled", "completed"], "{stdout}");
+}
+
+#[test]
+fn a_failed_turn_prints_its_kind() {
+    let server = Server::start(|request| {
+        if request.head.starts_with(COUNT) {
+            return json("200 OK", r#"{"input_tokens": 10}"#);
+        }
+        json(
+            "401 Unauthorized",
+            r#"{"type":"error","error":{"type":"authentication_error","message":"refused by test server"}}"#,
+        )
+    });
+    let home = Home::new("jsonl-auth");
+    let output = run(
+        home.piped_command(server.port).args(["--output", "jsonl"]),
+        "hello\n",
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let turn = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|e| e["type"] == "turn_ended")
+        .unwrap_or_else(|| panic!("{}", both(&output)));
+    assert_eq!(turn["outcome"]["status"], "error", "{turn}");
+    assert_eq!(turn["outcome"]["kind"], "auth", "{turn}");
+}
+
+#[test]
 fn a_hangup_ignored_at_start_stays_ignored_in_jsonl() {
     let server = replying_server();
     let home = Home::new("nohup");

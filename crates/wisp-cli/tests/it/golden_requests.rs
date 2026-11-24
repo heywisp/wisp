@@ -327,6 +327,15 @@ fn default_requests() -> Vec<(String, String)> {
 }
 
 #[test]
+fn jsonl_show_diff_only() {
+    let name = "jsonl_show_diff_only";
+    check(
+        name,
+        &jsonl(name, &["--tools", "show_diff"], with_env_endpoint),
+    );
+}
+
+#[test]
 fn jsonl_with_no_flags_and_no_file() {
     let setup = |home: &Home, server: &Server, command: &mut Command| {
         let mut doctor = home.golden_command(WISP);

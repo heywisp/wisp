@@ -653,8 +653,7 @@ pub async fn build(
         configured: configured.as_deref(),
         flagged: flagged.as_deref(),
     };
-    let (tools, skipped_tools) =
-        tools::tools(listed, inputs.tool_rule, registry).map_err(|e| format!("wisp: {e}"))?;
+    let (tools, skipped_tools) = tools::tools(listed, inputs.tool_rule, registry);
     let preload = wisp_protocol::settings::resolve_preload(
         main_preset
             .as_ref()
@@ -678,8 +677,20 @@ pub async fn build(
     kernel_host.set_mcp(mcp.clone());
     let started = tools.start(kit::ROOT, kernel_host).await;
     let toolbox = &started.toolbox;
-    let spawns = inputs.tool_rule != ToolRule::Exactly
-        || toolbox.is_enabled(wisp_protocol::agents::SPAWN_AGENT);
+    let spawn_agent = wisp_protocol::agents::SPAWN_AGENT;
+    let can_spawn = toolbox.is_enabled(spawn_agent);
+    if inputs.tool_rule == ToolRule::Flagged {
+        let mut refused = toolbox.asking();
+        if can_spawn {
+            refused.push(spawn_agent.to_owned());
+        }
+        if !refused.is_empty() {
+            refused.sort_unstable();
+            refused.dedup();
+            return Err(format!("wisp: {}", tools::tui_only(&refused)));
+        }
+    }
+    let spawns = inputs.tool_rule == ToolRule::Configured || can_spawn;
     let refreshed = catalog.as_ref().map(LiveCatalog::view);
     let provider = match refreshed
         .as_ref()

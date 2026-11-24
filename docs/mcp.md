@@ -109,7 +109,9 @@ them through `use`. A server's tool has the provider name
 The tool's descriptions and results are untrusted text, never system instructions.
 
 `tools` may name only `search`: servers' tools still start held and remain
-searchable. A child with `search` has the same held tools and shared connections.
+searchable. In jsonl, use `--tools search` to find and run tools from configured
+servers. Tools that ask for a form or sign-in can't do so in jsonl.
+A child with `search` has the same held tools and shared connections.
 A preset with `tools_off = ["search"]` has neither. No switch for servers alone
 is added by this change.
 
