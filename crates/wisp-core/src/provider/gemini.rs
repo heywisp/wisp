@@ -343,6 +343,7 @@ pub struct GeminiProvider {
     models_folder: Option<PathBuf>,
     waits: Waits,
     list: ListCell,
+    redirects: String,
 }
 
 impl fmt::Debug for GeminiProvider {
@@ -450,6 +451,7 @@ impl GeminiProvider {
                 idle: IDLE_TIMEOUT,
             },
             list: ListCell::default(),
+            redirects: search::REDIRECTS.to_owned(),
         })
     }
 
@@ -1014,7 +1016,12 @@ impl GeminiProvider {
                 .with_sent(sent);
             (Vec::new(), Ok((response, decoder)))
         };
-        super::sse::drive(call, open, self.waits)
+        search::real_addresses(
+            super::sse::drive(call, open, self.waits),
+            self.client.clone(),
+            self.redirects.clone(),
+            search::FOLLOW_WAIT,
+        )
     }
 }
 
@@ -2604,6 +2611,51 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn antigravity_passes_search_calls_on_and_flags_search_only_requests() {
+        const GOOD: &str = "https://www.visiticeland.example/article/placeholder";
+        const UNTITLED: &str = "https://guidetoiceland.example/placeholder";
+        const PLAIN: &str = "http://visiticeland.example/placeholder";
+        let kept = [
+            "ok200", "bare", "relative", "script", "userinfo", "password", "long", "space",
+            "broken",
+        ];
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let log = heard.clone();
+        let gateway = http::gateway(move |request: String| {
+            log.lock().unwrap().push(request.clone());
+            let path = request.split(' ').nth(1).unwrap().to_owned();
+            async move {
+                let moved = |to: &str| http::response("302 Found", &[("location", to)], "");
+                let long = format!("https://visiticeland.example/{}", "a".repeat(2048));
+                http::Reply::Send(match path.rsplit('/').next().unwrap() {
+                    "good" => moved(GOOD),
+                    "untitled" => moved(UNTITLED),
+                    "plain" => moved(PLAIN),
+                    "ok200" => http::response("200 OK", &[("location", GOOD)], ""),
+                    "bare" => http::response("302 Found", &[], ""),
+                    "relative" => moved("/article/placeholder"),
+                    "script" => moved("javascript:alert(1)"),
+                    "userinfo" => moved("https://user@visiticeland.example/"),
+                    "password" => moved("https://:pass@visiticeland.example/"),
+                    "long" => moved(&long),
+                    "space" => moved("https://visiticeland.example/a b"),
+                    _ => "not http\r\n\r\n".to_owned(),
+                })
+            }
+        })
+        .await;
+        let prefix = format!("{gateway}/grounding-api-redirect/");
+        let elsewhere = format!("{gateway}/elsewhere/placeholder");
+        let mut found = grounding();
+        let chunks = found["groundingChunks"].as_array_mut().unwrap();
+        chunks.push(
+            json!({"web": {"uri": format!("{prefix}good"), "title": "visiticeland.example"}}),
+        );
+        chunks.push(json!({"web": {"uri": format!("{prefix}untitled")}}));
+        chunks.push(json!({"web": {"uri": format!("{prefix}plain"), "title": "plain"}}));
+        for name in kept {
+            chunks.push(json!({"web": {"uri": format!("{prefix}{name}"), "title": name}}));
+        }
+        chunks.push(json!({"web": {"uri": elsewhere, "title": "elsewhere"}}));
         let mut server = http::serve(vec![
             http::Reply::Send(http::sse(&search_frame(search_call(), Value::Null, "STOP"))),
             http::Reply::Send(http::sse(&search_frame(
@@ -2611,12 +2663,12 @@ pub(crate) mod tests {
                     {"text": "[thought placeholder]", "thought": true},
                     {"text": "Facts found"},
                 ]),
-                grounding(),
+                found,
                 "STOP",
             ))),
         ])
         .await;
-        let provider = GeminiProvider::from_endpoint(&endpoint(
+        let mut provider = GeminiProvider::from_endpoint(&endpoint(
             Credential::Subscription {
                 kind: SubscriptionKind::Antigravity,
                 secret: "CANARY_subscription_token".into(),
@@ -2625,6 +2677,7 @@ pub(crate) mod tests {
             &server.url,
         ))
         .unwrap();
+        provider.redirects = prefix.clone();
         *provider.project_cache.lock().unwrap() = Some("placeholder-project".into());
         let reply = assembled(
             search_events(
@@ -2650,9 +2703,59 @@ pub(crate) mod tests {
                 _ => None,
             })
             .collect();
-        assert!(
-            matches!(signals.as_slice(), [super::super::SearchSignal::Started { query, .. }, super::super::SearchSignal::Ended { outcome: wisp_protocol::SearchOutcome::Results { hits }, .. }, super::super::SearchSignal::Cited { sources }] if query == "example query" && hits.len() == 1 && sources.len() == 1 && sources[0].url == hits[0].url)
-        );
+        let [
+            super::super::SearchSignal::Started { query, .. },
+            super::super::SearchSignal::Ended {
+                outcome: wisp_protocol::SearchOutcome::Results { hits },
+                ..
+            },
+            super::super::SearchSignal::Cited { sources },
+        ] = signals.as_slice()
+        else {
+            panic!("{signals:?}")
+        };
+        assert_eq!(query, "example query");
+        let mut want = vec![
+            (
+                "Example".to_owned(),
+                "https://example.com/source".to_owned(),
+            ),
+            ("visiticeland.example".to_owned(), GOOD.to_owned()),
+            (UNTITLED.to_owned(), UNTITLED.to_owned()),
+            ("plain".to_owned(), PLAIN.to_owned()),
+        ];
+        want.extend(kept.map(|name| (name.to_owned(), format!("{prefix}{name}"))));
+        want.push(("elsewhere".to_owned(), elsewhere));
+        let shown: Vec<_> = hits
+            .iter()
+            .map(|h| (h.title.clone(), h.url.clone()))
+            .collect();
+        assert_eq!(shown, want);
+        let cited: Vec<_> = sources
+            .iter()
+            .map(|s| (s.title.clone().unwrap(), s.url.clone()))
+            .collect();
+        assert_eq!(cited, want);
+        let heard = heard.lock().unwrap().clone();
+        let mut lines: Vec<&str> = heard.iter().map(|r| r.lines().next().unwrap()).collect();
+        lines.sort_unstable();
+        let mut followed: Vec<String> = ["good", "untitled", "plain"]
+            .into_iter()
+            .chain(kept)
+            .map(|name| format!("HEAD /grounding-api-redirect/{name} HTTP/1.1"))
+            .collect();
+        followed.sort_unstable();
+        assert_eq!(lines, followed);
+        for request in &heard {
+            let names: Vec<String> = http::header_lines(request)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect();
+            assert!(
+                names.iter().all(|name| name == "accept" || name == "host"),
+                "{names:?}"
+            );
+        }
         let reply = assembled(events).unwrap();
         assert_eq!(reply.stop_reason, wisp_protocol::StopReason::EndTurn);
         assert_eq!(reply.usage.input_tokens, 80);
@@ -2708,6 +2811,50 @@ pub(crate) mod tests {
         }
         assert_ne!(ids[0], ids[1]);
         assert_ne!(sessions[0], sessions[1]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn redirects_that_never_answer_keep_their_links_after_one_wait_for_the_whole_search() {
+        let gateway = http::gateway(|_| async { http::Reply::Hang }).await;
+        let prefix = format!("{gateway}/grounding-api-redirect/");
+        let urls: Vec<String> = (0..9).map(|n| format!("{prefix}{n}")).collect();
+        let hits = urls
+            .iter()
+            .map(|url| wisp_protocol::SearchHit {
+                title: "Example".into(),
+                url: url.clone(),
+                snippet: None,
+                page_age: None,
+            })
+            .collect();
+        let sources = urls
+            .iter()
+            .map(|url| wisp_protocol::CitedSource {
+                url: url.clone(),
+                title: None,
+            })
+            .collect();
+        let signals = [
+            super::super::SearchSignal::Ended {
+                call_id: "s1".into(),
+                outcome: wisp_protocol::SearchOutcome::Results { hits },
+            },
+            super::super::SearchSignal::Cited { sources },
+        ];
+        let sent = signals.map(|signal| ProviderEvent::Search { index: 0, signal });
+        let events = futures::stream::iter(sent.clone().map(Ok)).boxed();
+        let wait = Duration::from_secs(3);
+        let started = tokio::time::Instant::now();
+        let out: Vec<_> = tokio::time::timeout(
+            wait * 2,
+            search::real_addresses(events, Client::new(), prefix, wait).collect(),
+        )
+        .await
+        .unwrap();
+        let waited = started.elapsed();
+        assert!(waited >= wait && waited < wait * 2, "{waited:?}");
+        let out: Vec<ProviderEvent> = out.into_iter().map(Result::unwrap).collect();
+        assert_eq!(out, sent);
     }
 
     #[tokio::test]
