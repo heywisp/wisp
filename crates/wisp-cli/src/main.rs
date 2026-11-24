@@ -59,6 +59,8 @@ use crate::resume::{Asked, Shown};
 #[global_allocator]
 static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+const CHAT_ID: &str = "A chat's id, or the start of one";
+
 #[cfg_attr(test, derive(Debug))]
 #[derive(Parser, Default)]
 #[command(
@@ -331,15 +333,14 @@ enum Command {
     Setup,
     #[command(about = "Quit chats by id, without opening them")]
     Quit {
-        #[arg(
-            value_name = "ID",
-            required = true,
-            help = "A chat's id, or the start of one"
-        )]
+        #[arg(value_name = "ID", required = true, help = CHAT_ID)]
         ids: Vec<String>,
     },
-    #[command(about = "Restart the chats kept open on the newest version")]
-    Restart,
+    #[command(about = format!("{}, all or by id", wisp_render::transcript::copy::RESTART_KEPT))]
+    Restart {
+        #[arg(value_name = "ID", help = CHAT_ID)]
+        ids: Vec<String>,
+    },
     #[command(about = "Show the chats kept open, and start or stop Wisp's daemon")]
     Daemon {
         #[command(subcommand)]
@@ -538,8 +539,8 @@ fn main() -> ExitCode {
     if let Some(Command::Daemon { command }) = &args.command {
         return on_runtime(false, || daemon::run(command.as_ref()));
     }
-    if let Some(Command::Restart) = &args.command {
-        return on_runtime(false, restart::run);
+    if let Some(Command::Restart { ids }) = &args.command {
+        return on_runtime(false, || restart::run(ids));
     }
     if let Some(Command::Quit { ids }) = &args.command {
         return on_runtime(false, || keep::quit(ids));
@@ -631,7 +632,7 @@ fn main() -> ExitCode {
                 | Command::Endpoint { .. }
                 | Command::Setup
                 | Command::Quit { .. }
-                | Command::Restart
+                | Command::Restart { .. }
                 | Command::Daemon { .. }
                 | Command::Login { .. }
                 | Command::Status { .. }
@@ -642,7 +643,7 @@ fn main() -> ExitCode {
             let model = model_of(&args, &setup);
             return first_run::command(&manage_context(&args, &setup, &model, keychain));
         }
-        Some(Command::Daemon { .. } | Command::Quit { .. } | Command::Restart) => {
+        Some(Command::Daemon { .. } | Command::Quit { .. } | Command::Restart { .. }) => {
             return ExitCode::FAILURE;
         }
         None => {}
@@ -2978,7 +2979,23 @@ mod tests {
             commands.contains("daemon   Show the chats kept open, and start or stop Wisp's daemon")
         );
         assert!(commands.find("quit ").unwrap() < commands.find("daemon ").unwrap());
-        assert!(commands.contains("restart  Restart the chats kept open on the newest version"));
+        assert!(
+            commands.contains(
+                "restart  Restart the chats kept open on the newest version, all or by id\n"
+            ),
+            "{commands}"
+        );
+        let restart = Args::try_parse_from(["wisp", "restart", "--help"])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            restart.contains("Usage: wisp restart [OPTIONS] [ID]..."),
+            "{restart}"
+        );
+        assert!(
+            restart.contains("A chat's id, or the start of one"),
+            "{restart}"
+        );
         assert!(!help.contains("--restarted"));
         assert!(
             Args::try_parse_from(["wisp", "--restarted"])
@@ -2987,7 +3004,11 @@ mod tests {
         );
         assert!(matches!(
             Args::try_parse_from(["wisp", "restart"]).unwrap().command,
-            Some(Command::Restart)
+            Some(Command::Restart { ids }) if ids.is_empty()
+        ));
+        assert!(matches!(
+            Args::try_parse_from(["wisp", "restart", "0123", "4567"]).unwrap().command,
+            Some(Command::Restart { ids }) if ids == ["0123", "4567"]
         ));
         let daemon = Args::try_parse_from(["wisp", "daemon", "--help"])
             .unwrap_err()

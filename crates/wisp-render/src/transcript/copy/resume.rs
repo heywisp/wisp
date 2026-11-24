@@ -39,7 +39,12 @@ pub const RESTART_QUESTION: &str =
     "The open question was stopped; if its agent doesn't ask again, message it your answer.";
 pub const RESTART_CANCELLED: &str = "The restart was cancelled; this chat carries on.";
 pub const WINDOW_UNSENT: &str = "This window still runs the older one, to keep what you typed. To update it once that is sent: /leave, then wisp\u{a0}--resume";
-pub const CHAT_OLDER: &str = "This chat runs an older version. Restart the chats kept open on the newest version: wisp\u{a0}restart";
+pub const CHAT_OLDER: &str = "This chat runs an older version.";
+pub const RESTART_KEPT: &str = "Restart the chats kept open on the newest version";
+
+pub fn restart_hint() -> String {
+    format!("{RESTART_KEPT}: wisp\u{a0}restart")
+}
 
 pub fn window_restarted(unsent: bool, question: bool) -> String {
     let mut note = WINDOW_RESTARTED.to_owned();

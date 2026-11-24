@@ -540,7 +540,10 @@ pub(super) async fn dial(
     }
 }
 
-fn by_id(data: &Path, prefix: &str) -> Result<(wisp_core::session::JsonlStore, String), String> {
+pub(super) fn by_id(
+    data: &Path,
+    prefix: &str,
+) -> Result<(wisp_core::session::JsonlStore, String), String> {
     let store = wisp_core::session::JsonlStore::open(data.join("sessions"))
         .map_err(|error| error.to_string())?;
     let id = wisp_core::resume::find(&store, wisp_core::resume::Wanted::Id(prefix))?.id;
@@ -564,34 +567,37 @@ pub(super) async fn quit(ids: &[String]) -> std::process::ExitCode {
     code
 }
 
-async fn quit_one(data: &Path, prefix: &str) -> Result<String, String> {
-    let (store, id) = by_id(data, prefix)?;
-    let window = || {
-        format!(
-            "{} is open in a window; quit it there",
-            wisp_protocol::short_id(&id)
-        )
-    };
-    match client::connect(&link::socket(data, &id), crate::host::build()).await {
-        Ok(mut connection) => {
-            let saved = connection
-                .end_if_windowless()
-                .await
-                .map_err(|error| error.to_string())?
-                .ok_or_else(window)?;
-            end(async { Ok(saved) }).await?;
-            Ok(id)
-        }
-        Err(error) if error.is_gone() => match store.probe(&id) {
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Err(window()),
-            Err(error) => Err(error.to_string()),
-            Ok(_) => Err(format!(
-                "{} already ended; nothing to quit",
-                wisp_protocol::short_id(&id)
-            )),
-        },
-        Err(error) => Err(error.to_string()),
+pub(super) fn unreached(
+    store: &wisp_core::session::JsonlStore,
+    id: &str,
+    error: LinkError,
+    window: &str,
+    ended: &str,
+) -> String {
+    if !error.is_gone() {
+        return error.to_string();
     }
+    let short = wisp_protocol::short_id(id);
+    match store.probe(id) {
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => format!("{short} {window}"),
+        Err(error) => error.to_string(),
+        Ok(_) => format!("{short} {ended}"),
+    }
+}
+
+async fn quit_one(data: &Path, prefix: &str) -> Result<String, String> {
+    const WINDOW: &str = "is open in a window; quit it there";
+    let (store, id) = by_id(data, prefix)?;
+    let mut connection = client::connect(&link::socket(data, &id), crate::host::build())
+        .await
+        .map_err(|error| unreached(&store, &id, error, WINDOW, "already ended; nothing to quit"))?;
+    let saved = connection
+        .end_if_windowless()
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("{} {WINDOW}", wisp_protocol::short_id(&id)))?;
+    end(async { Ok(saved) }).await?;
+    Ok(id)
 }
 
 async fn end(ending: impl Future<Output = Result<bool, LinkError>>) -> Result<(), String> {
@@ -635,9 +641,11 @@ pub(super) fn session(
             ));
     }
     if link.welcome.build < crate::host::build() {
-        start
-            .warnings
-            .push(wisp_render::transcript::copy::CHAT_OLDER.to_owned());
+        start.warnings.push(format!(
+            "{} {}",
+            wisp_render::transcript::copy::CHAT_OLDER,
+            wisp_render::transcript::copy::restart_hint()
+        ));
     }
     let events = std::mem::replace(&mut link.channels.events, tokio::sync::mpsc::channel(1).1);
     let channels = wisp_client::Channels {

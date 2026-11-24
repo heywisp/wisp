@@ -608,8 +608,10 @@ turn it on in `/config`, Tools. See `docs/skills.md`.
 
 ## Restarting the chats kept open
 
-`wisp restart` restarts the chats kept open on the newest version. Each finishes
-what it is doing first, then comes back by itself; idle chats restart at once.
+`wisp restart` restarts the chats kept open on the newest version.
+`wisp restart <id>...` restarts only those chats and leaves the others alone; an
+id's start is enough, from any folder. Each finishes what it is doing first,
+then comes back by itself; idle chats restart at once.
 Enter stops what remains, and the command does so after five minutes at most.
 Ctrl-C before that leaves the chats still finishing as they were. Agents whose
 turns were stopped carry on; a stopped first reply's message is back in the composer.
