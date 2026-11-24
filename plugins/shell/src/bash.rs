@@ -23,8 +23,9 @@ pub const MAX_COMMAND_BYTES: usize = 256 * 1024;
 pub(crate) const INLINE_SCRIPT_BYTES: usize = 64 * 1024;
 const SCRIPT_POLL_MS: u64 = 10;
 const SCRIPT_WAIT_MS: u64 = 5_000;
-pub const SYSTEM_LINE: &str =
-    "You can run shell commands on the user's computer with the bash tool.";
+pub const SYSTEM_LINE: &str = "You can run shell commands on the user's computer with the bash tool. \
+Where you can, do each step's work in one bash script, run in a single bash call, rather than one \
+command per call; print only what you need.";
 
 const SHARED_ENV: [(&str, &str); 6] = [
     ("GH_PAGER", "cat"),
