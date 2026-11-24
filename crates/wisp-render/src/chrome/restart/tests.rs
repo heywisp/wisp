@@ -290,6 +290,13 @@ fn cancelled_and_failed_chats_stay_and_never_count_as_restarted() {
             .join("\n")
             .contains("It keeps running as it was; try wisp restart again later.")
     );
+    chats[2].state = State::StillRunning("placeholder link failure".to_owned());
+    chats[2].kept.title = String::new();
+    let running = trimmed(&end(&chats, &End::default(), layout)).join("\n");
+    assert!(running.starts_with("Restarted 3 of 4 chats on the newest version.\n"));
+    assert!(running.contains("019a7c55-7d12  still running\n      placeholder link failure"));
+    assert!(!running.contains("wisp --resume"), "{running}");
+    chats[2].kept.title = TITLES[2].to_owned();
     chats[2].state = State::Restarted(Vec::new());
     chats[2].kept.older = true;
     assert!(

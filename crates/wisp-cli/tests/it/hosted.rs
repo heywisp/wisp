@@ -889,6 +889,7 @@ fn fake_chat(
     let release = home.file("fake-host-release");
     let sent = home.file("fake-host-sent");
     let knows = home.file("fake-host-knows");
+    let other = home.file("fake-host-other");
     fs::create_dir_all(link::run_dir(&data)).unwrap();
     let listener = UnixListener::bind(link::socket(&data, ID)).unwrap();
     std::thread::spawn(move || {
@@ -906,7 +907,7 @@ fn fake_chat(
                 return;
             }
             let frame = ToClient::Welcome(Welcome {
-                contract: link::CONTRACT,
+                contract: link::CONTRACT + u32::from(other.exists()),
                 build,
                 wisp: "test".into(),
                 session: ID.into(),
@@ -920,6 +921,9 @@ fn fake_chat(
                 .is_err()
             {
                 continue;
+            }
+            if other.exists() {
+                return;
             }
             loop {
                 line.clear();
@@ -2314,8 +2318,13 @@ fn an_older_chat_is_untouched_before_yes_and_starts_even_after_the_terminal_clos
 }
 
 #[test]
-fn a_restart_peer_that_closes_is_not_shown_as_a_chat_that_keeps_running() {
-    for silent in [false, true] {
+fn a_lost_restart_peer_is_shown_running_only_while_its_log_is_held() {
+    for (silent, held, other) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, true, true),
+    ] {
         let home = Home::new("restart-closed");
         let server = serve();
         let mut records = String::new();
@@ -2335,6 +2344,14 @@ fn a_restart_peer_that_closes_is_not_shown_as_a_chat_that_keeps_running() {
         if silent {
             home.write("fake-host-silent", "");
         }
+        if other {
+            home.write("fake-host-other", "");
+        }
+        let _held = held.then(|| {
+            let log = fs::File::open(home.file(&format!("{SESSIONS}/{ID}.jsonl"))).unwrap();
+            log.try_lock().unwrap();
+            log
+        });
         let host = fake_chat(&home, 0, Some(true), false, None, true);
         let output = command(&home, &server, WISP)
             .arg("restart")
@@ -2347,6 +2364,18 @@ fn a_restart_peer_that_closes_is_not_shown_as_a_chat_that_keeps_running() {
         assert!(text.contains("Cache fix"), "{text}");
         if silent {
             assert!(text.contains("no answer, not restarted"), "{text}");
+        } else if held {
+            assert!(text.contains("still running"), "{text}");
+            assert!(
+                text.contains(if other {
+                    "which this client cannot open"
+                } else {
+                    "the chat connection closed"
+                }),
+                "{text}"
+            );
+            assert!(!text.contains("didn't start again"), "{text}");
+            assert!(!text.contains("wisp --resume"), "{text}");
         } else {
             assert!(text.contains("didn't start again"), "{text}");
             assert!(text.contains("the chat connection closed"), "{text}");
@@ -2356,5 +2385,86 @@ fn a_restart_peer_that_closes_is_not_shown_as_a_chat_that_keeps_running() {
             );
             assert!(!text.contains("It keeps running as it was"), "{text}");
         }
+    }
+}
+
+#[test]
+fn a_chat_never_restarts_itself_and_says_why_at_once() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    for named in [true, false] {
+        let home = Home::new("restart-self");
+        let id = home.file("self-id");
+        let out = home.file("self-out");
+        let target = if named {
+            format!("\"$(cat {id:?})\"")
+        } else {
+            String::new()
+        };
+        let work = format!(
+            "env -u WISP_JOB {WISP} restart {target} > {out:?} 2>&1; echo code=$? >> {out:?}"
+        );
+        let calls = AtomicUsize::new(0);
+        let server = Server::start(move |request| {
+            if request.head.contains("count_tokens") {
+                counted()
+            } else if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                support::server::tool_reply(
+                    "self-restart",
+                    "bash",
+                    &json!({"command": work, "description": "Restart this chat"}),
+                )
+            } else {
+                text_reply("after-self-restart", MODEL, DONE, (1, 5))
+            }
+        });
+        let (mut child, path) = headless(&home, &server, WISP, &[], &Start::default());
+        let (mut other, beside) = headless(&home, &server, WISP, &[], &Start::default());
+        let session = link::session_of(&path).unwrap().to_owned();
+        fs::write(&id, &session).unwrap();
+        let pids = || {
+            [&path, &beside]
+                .map(|path| crate::scratch::peer_pid(UnixStream::connect(path).unwrap()).unwrap())
+        };
+        let hosts = pids();
+        runtime().block_on(async {
+            let mut client =
+                wisp_client::link::open(wisp_client::link::connect(&path, 0).await.unwrap())
+                    .await
+                    .unwrap();
+            client
+                .channels
+                .commands
+                .send(ClientCommand::send("restart-self", "restart yourself"))
+                .await
+                .unwrap();
+            tokio::time::timeout(PATIENCE, async {
+                while let Some(event) = client.channels.events.recv().await {
+                    if matches!(event, wisp_protocol::AgentEvent::TurnEnded { .. }) {
+                        break;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+            assert_eq!(pids(), hosts);
+            assert!(client.end(false).await.unwrap());
+            assert!(
+                wisp_client::link::connect(&beside, 0)
+                    .await
+                    .unwrap()
+                    .end(false)
+                    .await
+                    .unwrap()
+            );
+        });
+        assert_eq!(
+            fs::read_to_string(&out).unwrap(),
+            format!(
+                "wisp: this chat ({}) can't restart itself; restart it from outside\ncode=1\n",
+                wisp_protocol::short_id(&session)
+            )
+        );
+        assert!(wait_for_exit(&mut child).success());
+        assert!(wait_for_exit(&mut other).success());
     }
 }

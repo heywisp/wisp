@@ -72,8 +72,8 @@ that lives in its window is not listed or restarted.
 `wisp restart <id>...` restarts only those chats, each named as `wisp quit`
 names it: an id or its start, from any folder. The other chats are left as they
 are. A bad id (one that matches no chat, matches several or isn't an id), or the
-id of a chat that ended or lives in its window, prints why; the other named
-chats still restart, and the command ends with an error.
+id of a chat that ended, lives in its window or runs this command, prints why;
+the other named chats still restart, and the command ends with an error.
 
 The command waits up to five minutes. Enter stops what is still running and
 restarts those chats now. Ctrl-C before that leaves the chats still finishing
@@ -118,10 +118,14 @@ A chat that says nothing for ten seconds is `not answering`. A stopped chat has
 up to sixty seconds to answer again; an early start failure shows its reason
 and `wisp --resume <id>`. A window whose chat doesn't start again closes with
 the failure and resume command, then any text only it held under `Not sent:`.
-A chat that never answers is left running and named.
+A chat that never answers is left running and named. A chat whose connection
+fails while its log is still held is `still running`, with the reason.
 Off a terminal, each changed line is printed once and no key is read. Inside
-a Wisp job the command restarts nothing. Names, descriptions and error lines
-are cleaned for display; line-mode output can be redirected to a file.
+a Wisp job the command restarts nothing; with the job mark cleared, `wisp
+restart` with no id still refuses the chat it runs in and restarts nothing.
+A row for a chat with no title shows its short id. Names, descriptions and
+error lines are cleaned for display; line-mode output can be redirected to a
+file.
 
 ## The daemon
 

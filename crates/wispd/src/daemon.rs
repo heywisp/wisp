@@ -187,11 +187,9 @@ pub async fn running(data: &Path) -> io::Result<Vec<String>> {
 
 #[cfg(target_os = "linux")]
 pub fn in_job(stream: &UnixStream) -> bool {
-    stream
-        .peer_cred()
+    crate::socket::peer_pid(stream)
         .ok()
-        .and_then(|peer| peer.pid())
-        .and_then(|pid| u32::try_from(pid).ok())
+        .flatten()
         .is_none_or(pid_in_job)
 }
 

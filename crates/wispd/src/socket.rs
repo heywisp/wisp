@@ -108,11 +108,21 @@ pub enum Admission {
 
 pub fn admit(stream: &UnixStream, window: bool) -> io::Result<Admission> {
     same_user(stream)?;
-    let pid = stream
+    admit_pid(peer_pid(stream)?, std::process::id(), window)
+}
+
+pub(crate) fn peer_pid(stream: &UnixStream) -> io::Result<Option<u32>> {
+    Ok(stream
         .peer_cred()?
         .pid()
-        .and_then(|pid| u32::try_from(pid).ok());
-    admit_pid(pid, std::process::id(), window)
+        .and_then(|pid| u32::try_from(pid).ok()))
+}
+
+pub fn runs_inside(stream: &UnixStream) -> bool {
+    peer_pid(stream)
+        .ok()
+        .flatten()
+        .is_some_and(|host| descendant(std::process::id(), host) == Some(true))
 }
 
 fn admit_pid(pid: Option<u32>, host: u32, window: bool) -> io::Result<Admission> {
