@@ -173,13 +173,6 @@ impl Turn {
                     self.done
                 );
             }
-            StopReason::MaxTokens => {
-                eprintln!(
-                    "live {name}: cut off at the output limit after {exact} tokens; measured anyway"
-                );
-                assert!(!self.done.contains(copy::DONE), "{name}: {}", self.done);
-                assert!(self.done.contains("output limit"), "{name}: {}", self.done);
-            }
             other => panic!("{name} stopped for {other:?}: {}", self.done),
         }
     }

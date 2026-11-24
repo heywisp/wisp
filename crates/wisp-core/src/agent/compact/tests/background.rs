@@ -1141,7 +1141,7 @@ async fn a_summary_arriving_before_a_request_that_carries_the_unsaved_message_is
         Step::from(
             [
                 vec![start(300, 0)],
-                finish(StopReason::MaxTokens, 300, 0, 0),
+                finish(StopReason::StopSequence, 300, 0, 0),
             ]
             .concat(),
         )

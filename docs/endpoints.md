@@ -1316,11 +1316,11 @@ be told apart from a busy one, so it keeps retrying until stopped.
 Gemini's `MALFORMED_FUNCTION_CALL` and `UNEXPECTED_TOOL_CALL` finish reasons
 always fail and discard the unfinished reply, even after a decoded tool call or
 search, and so does a `STOP` reply with nothing in it (`docs/gemini.md`); Wisp
-shows the plain cause and keeps known billed usage. `SAFETY`,
-`MAX_TOKENS`, and other non-`STOP` Gemini finishes after a decoded call stop
-the reply with their mapped stop reason instead of running the calls, except on
-a model whose shipped row sets `reply_cap`, where a `MAX_TOKENS` stop is never
-committed and becomes an `invalid_response` (`max_tokens`, usage complete) that
+shows the plain cause and keeps known billed usage. `SAFETY` and other
+non-`STOP` Gemini finishes after a decoded call stop the reply with their
+mapped stop reason instead of running the calls. A `MAX_TOKENS` stop, like a
+`max_tokens` stop on any provider, is never committed and becomes an
+`invalid_response` (`max_tokens`, usage complete) that, after a try a `reply_cap` lowered,
 resends once at the full limit and otherwise ends the turn (`docs/gemini.md`). Retryable
 `invalid_response` failures retry at most 3 times per step—`MALFORMED_FUNCTION_CALL`
 included—even under looser explicit policies, while tighter bounds still win,

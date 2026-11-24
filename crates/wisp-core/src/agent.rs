@@ -4632,7 +4632,7 @@ impl Agent {
         if finished.is_ok() {
             watch.succeeded(sent_model, sent_at);
         }
-        let finished = finished.and_then(|message| self.within_reply_cap(message, session));
+        let finished = finished.and_then(|message| self.uncut_reply(message, session));
         let shown = finished.as_ref().is_ok_and(|m| !self.is_quiet(m));
         self.release(&mut unshown, shown, events).await;
         match finished {
@@ -4836,14 +4836,12 @@ impl Agent {
         self.track().partial_output = asm.partial_text();
     }
 
-    fn within_reply_cap(
+    fn uncut_reply(
         &mut self,
         message: AssembledMessage,
         session: &SessionConfig,
     ) -> Result<AssembledMessage, ProviderError> {
-        if message.stop_reason != StopReason::MaxTokens
-            || self.models.reply_cap(&session.model).is_none()
-        {
+        if message.stop_reason != StopReason::MaxTokens {
             return Ok(message);
         }
         self.track().partial_output = reply_text(&message.content).unwrap_or_default();
