@@ -476,7 +476,7 @@ async fn a_steer_after_a_committed_final_reply_is_sent_again_as_its_own_message(
 #[tokio::test]
 async fn an_uncommittable_first_reply_then_a_failed_step_resends_the_message_and_the_steer() {
     let mut setup = Setup::new(vec![
-        reply(&[B::Think], StopReason::MaxTokens)
+        reply(&[B::Think], StopReason::StopSequence)
             .then(ClientCommand::send("tui-2", "are you there")),
         Step::from(vec![
             Ok(ProviderEvent::Sending),

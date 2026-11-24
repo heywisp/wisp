@@ -150,7 +150,7 @@ async fn a_steer_waiting_at_a_convert_follows_the_recomputed_marker() {
     let store = MemoryStore::default();
     let gate = Arc::new(Semaphore::new(0));
     let mut empty = vec![start(600, 0)];
-    empty.extend(finish(StopReason::MaxTokens, 600, 0, 0));
+    empty.extend(finish(StopReason::StopSequence, 600, 0, 0));
     let provider = scripted(vec![
         answer("Hello.", 1_000),
         compaction(SUMMARY),
@@ -236,7 +236,7 @@ async fn a_steer_image_withdrawn_after_a_late_marker_still_rebuilds() {
     let store = MemoryStore::default();
     let gate = Arc::new(Semaphore::new(0));
     let mut empty = vec![start(600, 0)];
-    empty.extend(finish(StopReason::MaxTokens, 600, 0, 0));
+    empty.extend(finish(StopReason::StopSequence, 600, 0, 0));
     let provider = scripted(vec![
         answer("Hello.", 1_000),
         compaction(SUMMARY),

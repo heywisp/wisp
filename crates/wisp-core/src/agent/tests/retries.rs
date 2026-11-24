@@ -1205,7 +1205,7 @@ async fn invalid_response_retries_cap_on_default_policy() {
     let store = MemoryStore::default();
     let provider = Fake::new(vec![
         malformed(),
-        Step::from(reply("", 10, 0, StopReason::MaxTokens)),
+        Step::from(reply("", 10, 0, StopReason::StopSequence)),
         Step::from(reply("after-steer", 10, 0, StopReason::EndTurn)),
     ]);
     let agent = logged_plain(provider.clone(), &store).with_retry_policy(deterministic);

@@ -374,7 +374,7 @@ async fn a_steer_during_a_text_reply_takes_one_more_step_in_the_same_turn() {
 #[tokio::test]
 async fn a_steer_after_an_uncommittable_reply_goes_with_the_turns_own_message() {
     let mut h = harness(vec![
-        reply(&[B::Text("   ")], StopReason::MaxTokens),
+        reply(&[B::Text("   ")], StopReason::StopSequence),
         done("both"),
     ]);
     let events = h.run(vec![steer("go"), steer("and this")], 1).await;
@@ -1134,7 +1134,7 @@ async fn a_steer_withdrawn_after_an_uncommittable_reply_completes_without_resend
 #[tokio::test]
 async fn a_steer_withdrawn_after_a_stopped_tool_reply_completes_on_the_results() {
     let mut h = harness(vec![
-        reply(&[steps("a", &[])], StopReason::MaxTokens)
+        reply(&[steps("a", &[])], StopReason::StopSequence)
             .then(steer("late"))
             .then(withdraw("late")),
     ]);
@@ -1146,7 +1146,7 @@ async fn a_steer_withdrawn_after_a_stopped_tool_reply_completes_on_the_results()
             [TurnOutcome::Completed {
                 steps: 1,
                 committed: true,
-                stop_reason: StopReason::MaxTokens,
+                stop_reason: StopReason::StopSequence,
                 ..
             }]
         ),
@@ -1249,7 +1249,7 @@ fn red(name: &str, mode: DeliveryMode, replaces: Option<&str>) -> ClientCommand 
 }
 
 fn blank() -> Step {
-    reply(&[B::Text("   ")], StopReason::MaxTokens)
+    reply(&[B::Text("   ")], StopReason::StopSequence)
 }
 
 #[tokio::test]

@@ -174,7 +174,7 @@ Live result (2026-10-23, `claude-sonnet-5-5`, effort `low`, direct API key; `cra
 - **`message_delta` events: one per message, at the end**, just before `message_stop`. No mid-stream output count arrives, so the line keeps the estimate and its `≈`, and there is no `AgentEvent::OutputTokens`.
 - **The estimate runs low:** 994 estimated against 1,300 exact output tokens, about 24% under.
 - A short turn read `Kindling… (1s · esc to stop)`, then `Done · 1.6s · ↓ 4 tokens · $0.000336 · cached 0%`.
-- The long turn hit that run's `max_tokens` of 1300 and ended with `Cut off at the output limit`, never `Done`, as it should. The check now gives the long turn a 2,400-token limit and asks for about 600 words, and it accepts a cut-off ending as a valid measurement.
+- The long turn hit that run's `max_tokens` of 1300 and ended with `Cut off at the output limit`, never `Done`. The check now gives the long turn a 2,400-token limit and asks for about 600 words; a reply cut at the limit now ends its turn with an error (`docs/architecture.md`, "Reply cut at the limit"), which fails the check.
 
 ## Images
 

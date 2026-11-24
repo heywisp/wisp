@@ -19,7 +19,7 @@ fn with_image(id: &str, text: &str, data: &str) -> ClientCommand {
 
 fn empty_step(gate: &Arc<Semaphore>) -> Step {
     let mut empty = vec![start(600, 0)];
-    empty.extend(finish(StopReason::MaxTokens, 600, 0, 0));
+    empty.extend(finish(StopReason::StopSequence, 600, 0, 0));
     Step::from(empty).gated(gate)
 }
 

@@ -794,7 +794,6 @@ async fn every_committed_call_gets_one_result_whatever_the_stop_reason() {
         let stops = [
             StopReason::ToolUse,
             StopReason::EndTurn,
-            StopReason::MaxTokens,
             StopReason::ContextWindowExceeded,
             StopReason::StopSequence,
         ];
@@ -924,7 +923,7 @@ async fn a_reply_that_cannot_be_committed_ends_the_turn_and_keeps_earlier_steps(
                     sample.input.clone(),
                 )]));
             }
-            scripts.push(reply(&[B::Text("   ")], StopReason::MaxTokens));
+            scripts.push(reply(&[B::Text("   ")], StopReason::StopSequence));
             let provider = scripted(scripts);
             let mut agent = agent(provider.clone(), &env);
             let (outcome, events) = turn(&mut agent, "go").await;
@@ -948,35 +947,34 @@ async fn a_reply_that_cannot_be_committed_ends_the_turn_and_keeps_earlier_steps(
 }
 
 #[tokio::test]
-async fn a_second_cut_on_a_capped_model_fails_the_turn_and_commits_no_reply() {
-    let model = "gemini-4-neon-low";
-    let cap = crate::models::ModelTable::shared()
-        .reply_cap(model)
-        .unwrap();
+async fn a_cut_reply_fails_the_turn_commits_nothing_and_resends_only_a_capped_try() {
+    let neon = "gemini-4-neon-low";
+    let cap = crate::models::ModelTable::shared().reply_cap(neon).unwrap();
     let full = DEFAULT_MAX_TOKENS;
-    let config = crate::models::ConfigModels::parse(&format!(
-        "[models.\"{model}\"]\nprice_input = 1\nprice_output = 4\nprice_cache_read = 0.1\n"
-    ))
-    .unwrap();
+    let prices = |model: &str| {
+        format!("[models.\"{model}\"]\nprice_input = 1\nprice_output = 4\nprice_cache_read = 0.1\n")
+    };
+    let config =
+        crate::models::ConfigModels::parse(&(prices(neon) + &prices(DEFAULT_MODEL))).unwrap();
     let models =
         crate::context::ModelSettings::new(crate::models::ModelTable::shipped().unwrap(), config);
-    let cut = |input| {
+    let cut = |model: &str, content: &[B], input| {
+        Step::from(reply_on(model, input, content, StopReason::MaxTokens))
+    };
+    let draft = [B::Text("cut draft")];
+    let tool_step = |model: &str| {
         Step::from(reply_on(
             model,
-            input,
-            &[B::Text("cut draft")],
-            StopReason::MaxTokens,
+            600,
+            &[call("c1", "sleep", json!({"ms": 0}))],
+            StopReason::ToolUse,
         ))
     };
-    let tool_step = Step::from(reply_on(
-        model,
-        600,
-        &[call("c1", "sleep", json!({"ms": 0}))],
-        StopReason::ToolUse,
-    ));
+    let cut_call = [B::Text("cut draft"), call("c2", "sleep", json!({"ms": 0}))];
     let cases = [
         (
-            vec![cut(200), cut(300)],
+            neon,
+            vec![cut(neon, &draft, 200), cut(neon, &draft, 300)],
             full,
             2,
             0,
@@ -985,7 +983,12 @@ async fn a_second_cut_on_a_capped_model_fails_the_turn_and_commits_no_reply() {
             usage(500, 0, 20),
         ),
         (
-            vec![tool_step, cut(200), cut(300)],
+            neon,
+            vec![
+                tool_step(neon),
+                cut(neon, &draft, 200),
+                cut(neon, &draft, 300),
+            ],
             full,
             2,
             1,
@@ -993,10 +996,57 @@ async fn a_second_cut_on_a_capped_model_fails_the_turn_and_commits_no_reply() {
             3,
             usage(1100, 0, 30),
         ),
-        (vec![cut(200)], cap, 1, 0, vec![cap], 0, usage(200, 0, 10)),
+        (
+            neon,
+            vec![cut(neon, &draft, 200)],
+            cap,
+            1,
+            0,
+            vec![cap],
+            0,
+            usage(200, 0, 10),
+        ),
+        (
+            DEFAULT_MODEL,
+            vec![cut(DEFAULT_MODEL, &[B::Think], 200)],
+            full,
+            1,
+            0,
+            vec![full],
+            0,
+            usage(200, 0, 10),
+        ),
+        (
+            DEFAULT_MODEL,
+            vec![cut(DEFAULT_MODEL, &draft, 200)],
+            full,
+            1,
+            0,
+            vec![full],
+            0,
+            usage(200, 0, 10),
+        ),
+        (
+            DEFAULT_MODEL,
+            vec![tool_step(DEFAULT_MODEL), cut(DEFAULT_MODEL, &cut_call, 200)],
+            full,
+            1,
+            1,
+            vec![full, full],
+            3,
+            usage(800, 0, 20),
+        ),
     ];
-    for (steps, max_tokens, want_attempts, want_steps, want_limits, want_history, want_usage) in
-        cases
+    for (
+        model,
+        steps,
+        max_tokens,
+        want_attempts,
+        want_steps,
+        want_limits,
+        want_history,
+        want_usage,
+    ) in cases
     {
         let env = Env::new("reply-cap");
         let provider = scripted(steps);
@@ -1357,7 +1407,7 @@ async fn sidebar_scenario(
         uses(&[B::Think, call("c", "sleep", json!({"ms": 60_000}))]),
         reply(
             &[B::Text("stopping"), call("d", "sleep", json!({"ms": 0}))],
-            StopReason::MaxTokens,
+            StopReason::StopSequence,
         ),
         done("fine"),
     ]);
@@ -1545,7 +1595,7 @@ async fn a_tool_loop_keeps_one_prefix_and_extends_it() {
         r#"{"type":"thinking","thinking":"thought 0","signature":"sig0+/=="}"#,
         r#"{"type":"redacted_thinking","data":"Encrypted1=="}"#,
         r#"{"type":"tool_result","tool_use_id":"b","content":[{"type":"text","text":"Invalid input: there is no tool named `teleport`"}],"is_error":true}"#,
-        r#"{"type":"tool_result","tool_use_id":"d","content":[{"type":"text","text":"Not run: the reply stopped (max_tokens) before this call could run."}],"is_error":true}"#,
+        r#"{"type":"tool_result","tool_use_id":"d","content":[{"type":"text","text":"Not run: the reply stopped (stop_sequence) before this call could run."}],"is_error":true}"#,
     ] {
         assert!(bodies[4].contains(needle), "{needle}\n{}", bodies[4]);
     }
@@ -2067,7 +2117,7 @@ async fn a_call_past_its_maximum_is_timed_out_and_its_result_stays_byte_stable()
             ]),
             reply(
                 &[B::Text("cut"), call("n", "sleep", json!({"ms": 0}))],
-                StopReason::MaxTokens,
+                StopReason::StopSequence,
             ),
             done("next"),
             done("again"),

@@ -344,7 +344,7 @@ async fn a_switching_retry_keeps_a_pending_effort_for_the_next_turn() {
         if steers == Steers::Fresh {
             retried_steps.insert(
                 0,
-                reply(&[B::Think], StopReason::MaxTokens)
+                reply(&[B::Think], StopReason::StopSequence)
                     .then(ClientCommand::send("tui-fresh", "and also this")),
             );
         }

@@ -121,7 +121,7 @@ fn empty_reply(input: u64) -> Script {
         }],
         input,
         5,
-        StopReason::MaxTokens,
+        StopReason::StopSequence,
     )
 }
 

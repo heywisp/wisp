@@ -455,7 +455,7 @@ async fn after_tool_is_silent_for_every_synthetic_result() {
             call("c3", "sleep", json!({"ms": 0})),
             echo("c4", "ran"),
         ]),
-        reply(&[echo("c5", "late")], StopReason::MaxTokens),
+        reply(&[echo("c5", "late")], StopReason::StopSequence),
         done("ok"),
     ]);
     let calls = Calls::default();

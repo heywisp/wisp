@@ -444,7 +444,7 @@ async fn an_empty_end_turn_reply_is_kept_as_a_quiet_end() {
         let stop = if kept.is_some() {
             StopReason::EndTurn
         } else {
-            StopReason::MaxTokens
+            StopReason::StopSequence
         };
         let mut script = vec![Ok(start(600, 0))];
         script.extend(blocks);

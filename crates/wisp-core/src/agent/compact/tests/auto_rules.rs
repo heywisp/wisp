@@ -9,7 +9,7 @@ use crate::agent::retry::{RetryPolicy, quick};
 
 fn empty_reply(input: u64) -> Step {
     let mut script = vec![start(input, 0)];
-    script.extend(finish(StopReason::MaxTokens, input, 0, 0));
+    script.extend(finish(StopReason::StopSequence, input, 0, 0));
     Step::from(script)
 }
 

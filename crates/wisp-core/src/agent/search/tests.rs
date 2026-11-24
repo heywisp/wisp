@@ -1428,9 +1428,9 @@ async fn a_closure_cut_survives_a_refused_request_and_the_sessions_end() {
 }
 
 #[tokio::test]
-async fn a_reply_cut_off_after_a_search_is_closed_before_a_waiting_steer() {
+async fn a_reply_that_stops_after_a_search_is_closed_before_a_waiting_steer() {
     let mut rig = rig(vec![
-        step(&[B::Search("s1", "rust")], StopReason::MaxTokens)
+        step(&[B::Search("s1", "rust")], StopReason::StopSequence)
             .then(ClientCommand::send("steer-1", "and this")),
         done(&[B::Text("ok")]),
     ]);
@@ -1458,11 +1458,11 @@ async fn a_reply_cut_off_after_a_search_is_closed_before_a_waiting_steer() {
 }
 
 #[tokio::test]
-async fn a_cut_off_reply_with_a_client_call_is_closed_before_a_waiting_steer() {
+async fn a_reply_that_stops_with_a_client_call_is_closed_before_a_waiting_steer() {
     let mut rig = rig(vec![
         step(
             &[B::Search("s1", "rust"), echo("e1")],
-            StopReason::MaxTokens,
+            StopReason::StopSequence,
         )
         .then(ClientCommand::send("steer-1", "and this")),
         done(&[B::Text("ok")]),
@@ -1479,7 +1479,7 @@ async fn a_cut_off_reply_with_a_client_call_is_closed_before_a_waiting_steer() {
     let second = rig.messages(1);
     assert_eq!(second[1]["content"][0], closed_text("rust"));
     let user = second[2].to_string();
-    assert!(user.contains("Not run: the reply stopped (max_tokens)"));
+    assert!(user.contains("Not run: the reply stopped (stop_sequence)"));
     assert!(user.contains("and this"));
     assert_resumes_byte_for_byte(&rig);
 }
@@ -1593,7 +1593,7 @@ async fn a_retried_request_that_succeeds_marks_no_later_call_billed() {
         failing(&[], mid_stream(ErrorKind::Network, RetryClass::Transient)),
         step(
             &[B::Found("s1"), B::Search("s2", "more")],
-            StopReason::MaxTokens,
+            StopReason::StopSequence,
         ),
     ]);
     let (outcome, events) = rig.turn("go").await;
@@ -1615,7 +1615,7 @@ async fn only_the_carried_call_of_a_tail_may_have_been_billed() {
     let mut rig = rig(vec![
         paused(&[B::Search("s1", "rust")]),
         failing(&[], mid_stream(ErrorKind::Network, RetryClass::Transient)),
-        step(&[B::Search("s2", "more")], StopReason::MaxTokens),
+        step(&[B::Search("s2", "more")], StopReason::StopSequence),
         done(&[B::Text("ok")]),
     ]);
     let (outcome, events) = rig.turn("go").await;
