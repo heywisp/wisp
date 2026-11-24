@@ -33,6 +33,16 @@ pub(crate) fn file(name: &str, number: u64) -> String {
 }
 
 fn listed(folder: &Path) -> io::Result<Vec<(String, u64)>> {
+    let mut tries = 1;
+    loop {
+        match scan(folder) {
+            Err(e) if e.kind() == ErrorKind::NotFound && tries < TRIES => tries += 1,
+            listing => return listing,
+        }
+    }
+}
+
+fn scan(folder: &Path) -> io::Result<Vec<(String, u64)>> {
     let entries = match fs::read_dir(folder) {
         Ok(entries) => entries,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Vec::new()),

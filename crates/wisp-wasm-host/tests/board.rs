@@ -7,6 +7,7 @@
 mod support;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use wisp_plugin_api::Plugin;
 use wisp_plugin_api::tools::{Effect, ToolKind};
@@ -138,4 +139,37 @@ async fn the_board_component_serves_its_tools_through_the_host() {
             before_start: false,
         })
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_read_never_fails_while_another_agent_writes_the_board() {
+    let rig = Rig::new("board-race");
+    let found = rig.board();
+    let writer = (found.make)(Arc::new(board_host(&rig)));
+    let reader = (found.make)(Arc::new(board_host(&rig)));
+    let titled = |n: u32| format!(r#"{{"board":"phase2","cards":[{{"id":"a","title":"A{n}"}}]}}"#);
+    let (created, _) = call(&*writer, "board_write", &titled(0)).await;
+    assert_eq!(created.outcome, completed(false));
+    let stop = Arc::new(AtomicBool::new(false));
+    let writing = stop.clone();
+    let writes = tokio::spawn(async move {
+        let mut n = 0;
+        while !writing.load(Ordering::SeqCst) {
+            n += 1;
+            let (written, _) = call(&*writer, "board_write", &titled(n)).await;
+            assert_eq!(written.outcome, completed(false));
+        }
+    });
+    for _ in 0..150 {
+        for input in [r#"{"board":"phase2"}"#, "{}"] {
+            let (read, _) = call(&*reader, "board_read", input).await;
+            assert_eq!(
+                (read.outcome, read.result),
+                (completed(false), None),
+                "{input}"
+            );
+        }
+    }
+    stop.store(true, Ordering::SeqCst);
+    writes.await.unwrap();
 }
