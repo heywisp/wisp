@@ -254,20 +254,38 @@ fn a_failed_connection_builds_nothing() {
     assert_eq!(logs.opened.load(Ordering::SeqCst), 0);
 }
 
-#[test]
-fn a_tool_that_asks_with_no_one_to_answer_opens_no_log() {
+#[tokio::test]
+async fn a_tool_that_asks_with_no_one_to_answer_opens_no_log() {
     let logs = Arc::new(CountedLogs::default());
-    let tools = tools(&["ask_user"]);
-    let kit = kit(Arc::new(connected(ROOT)), tools, logs.clone());
-    let Err(e) = kit.build(spec(ROOT)).now_or_never().unwrap() else {
-        panic!("built a session that asks with no one to answer");
-    };
-    assert!(matches!(e, KitError::Channel(_)), "{e:?}");
-    assert_eq!(
-        e.to_string(),
-        "ask_user asks the user, so the session needs a client that can answer"
-    );
-    assert_eq!(logs.opened.load(Ordering::SeqCst), 0);
+    for tools in [
+        tools(&["ask_user"]),
+        tools(&["ask_user"]).with_preload(vec!["none".into()]),
+    ] {
+        let asking = kit(Arc::new(connected(ROOT)), tools, logs.clone());
+        let Err(e) = asking.build(spec(ROOT)).await else {
+            panic!("built a session that asks with no one to answer");
+        };
+        assert!(matches!(e, KitError::Channel(_)), "{e:?}");
+        assert_eq!(
+            e.to_string(),
+            "ask_user asks the user, so the session needs a client that can answer"
+        );
+        assert_eq!(logs.opened.load(Ordering::SeqCst), 0);
+    }
+
+    #[cfg(unix)]
+    {
+        let headless = kit(
+            Arc::new(connected(ROOT)),
+            tools(&["bash", "process"]),
+            logs.clone(),
+        );
+        let built = headless.build(spec(ROOT)).await.unwrap();
+        let toolbox = built.agent.toolbox();
+        assert_eq!(toolbox.names(), ["bash", "process"]);
+        assert!(toolbox.questions().iter().any(|name| name == "ask_user"));
+        assert_eq!(logs.opened.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[test]

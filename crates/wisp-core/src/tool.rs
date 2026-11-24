@@ -686,10 +686,9 @@ impl Toolbox {
     }
 
     pub fn asking(&self) -> Vec<String> {
-        self.tools
-            .iter()
-            .filter(|t| t.meta().asks_user)
-            .map(|t| t.spec().name.clone())
+        self.questions()
+            .into_iter()
+            .filter(|name| self.is_enabled(name))
             .collect()
     }
 

@@ -13,7 +13,13 @@ use wisp_protocol::{Catalog, PluginEntry};
 
 pub const NONE: &str = "none";
 
-pub const TUI_ONLY: &str = "tools are only available in the TUI for now";
+pub(crate) fn tui_only(names: &[String]) -> String {
+    let verb = if names.len() == 1 { "is" } else { "are" };
+    format!(
+        "{} {verb} only available in the TUI for now",
+        listed(names, "and")
+    )
+}
 
 pub const FROM_FILES_NEEDS_WASM: &str =
     "adding a plugin from files needs a wisp built with --features wasm";
@@ -246,7 +252,7 @@ pub fn flag_help(catalog: &Catalog) -> String {
     if !off.is_empty() {
         parts.push(format!("{}, off unless named", listed(&off, "and")));
     }
-    parts.push(format!("or {NONE}. jsonl output is chat only"));
+    parts.push(format!("or {NONE}. In jsonl output, tools are off by default. Tools that ask questions or start agents need the tui"));
     let (lead, rest) = parts.split_at(1);
     format!("{}: {}", lead.join(""), rest.join("; "))
 }
@@ -444,11 +450,7 @@ pub enum ToolRule {
     Exactly,
 }
 
-pub fn tools(
-    listed: Listed<'_>,
-    rule: ToolRule,
-    registry: Arc<Registry>,
-) -> Result<(Tools, Vec<String>), String> {
+pub fn tools(listed: Listed<'_>, rule: ToolRule, registry: Arc<Registry>) -> (Tools, Vec<String>) {
     let chosen = match rule {
         ToolRule::Configured | ToolRule::Exactly => listed.configured,
         ToolRule::Flagged => listed.flagged,
@@ -457,15 +459,11 @@ pub fn tools(
     let requested = requested.as_deref();
     let on = match rule {
         ToolRule::Configured => names(requested, &registry),
-        ToolRule::Exactly => {
+        ToolRule::Exactly | ToolRule::Flagged => {
             requested.map_or_else(BTreeSet::new, |list| names(Some(list), &registry))
         }
-        ToolRule::Flagged if requested.is_some_and(|list| list.iter().any(|t| t != NONE)) => {
-            return Err(TUI_ONLY.to_owned());
-        }
-        ToolRule::Flagged => BTreeSet::new(),
     };
-    Ok((Tools::watching(registry, on, watched()), skipped))
+    (Tools::watching(registry, on, watched()), skipped)
 }
 
 pub fn web_search_on(requested: Option<&[String]>) -> bool {
@@ -496,7 +494,7 @@ mod tests {
         names.iter().map(|n| (*n).to_owned()).collect()
     }
 
-    async fn toolbox(requested: Option<&[&str]>, rule: ToolRule) -> Result<Toolbox, String> {
+    async fn toolbox(requested: Option<&[&str]>, rule: ToolRule) -> Toolbox {
         let (registry, problems) = registry();
         assert!(problems.is_empty(), "{problems:?}");
         let requested = requested.map(list);
@@ -504,12 +502,12 @@ mod tests {
             configured: requested.as_deref(),
             flagged: requested.as_deref(),
         };
-        let (tools, _) = tools(listed, rule, registry)?;
-        Ok(tools.start("/", Arc::new(KernelHost::new())).await.toolbox)
+        let (tools, _) = tools(listed, rule, registry);
+        tools.start("/", Arc::new(KernelHost::new())).await.toolbox
     }
 
-    fn listed(t: Result<Toolbox, String>) -> Result<(Vec<String>, bool), String> {
-        t.map(|t| (t.names(), t.web_search()))
+    fn listed(t: Toolbox) -> (Vec<String>, bool) {
+        (t.names(), t.web_search())
     }
 
     fn unix(names: &[&str]) -> Vec<String> {
@@ -544,60 +542,57 @@ mod tests {
     #[tokio::test]
     async fn the_tui_turns_every_default_tool_on_unless_asked_not_to() {
         let tui = ToolRule::Configured;
-        assert_eq!(listed(toolbox(None, tui).await), Ok((all_tools(), true)));
+        assert_eq!(listed(toolbox(None, tui).await), (all_tools(), true));
         assert_eq!(
             listed(toolbox(Some(&["ask_user"]), tui).await),
-            Ok((list(&["ask_user"]), false))
+            (list(&["ask_user"]), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["show_diff"]), tui).await),
-            Ok((list(&["show_diff"]), false))
+            (list(&["show_diff"]), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["bash"]), tui).await),
-            Ok((unix(&["bash", "process"]), false))
+            (unix(&["bash", "process"]), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["view_file"]), tui).await),
-            Ok((unix(&["view_file"]), false))
+            (unix(&["view_file"]), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["web_search"]), tui).await),
-            Ok((vec![], true))
+            (vec![], true)
         );
         assert_eq!(
             listed(toolbox(Some(&["bash", "web_search"]), tui).await),
-            Ok((unix(&["bash", "process"]), true))
+            (unix(&["bash", "process"]), true)
         );
-        assert_eq!(
-            listed(toolbox(Some(&["none"]), tui).await),
-            Ok((vec![], false))
-        );
+        assert_eq!(listed(toolbox(Some(&["none"]), tui).await), (vec![], false));
         assert_eq!(
             listed(toolbox(Some(&["write_todos"]), tui).await),
-            Ok((list(&["write_todos"]), false))
+            (list(&["write_todos"]), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["show_diff", "write_todos"]), tui).await),
-            Ok((list(&["show_diff", "write_todos"]), false))
+            (list(&["show_diff", "write_todos"]), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["spawn_agent"]), tui).await),
-            Ok((list(&AGENTS), false))
+            (list(&AGENTS), false)
         );
         let mut with_todos = list(&AGENTS);
         with_todos.push("write_todos".to_owned());
         assert_eq!(
             listed(toolbox(Some(&["spawn_agent", "list_agents", "write_todos"]), tui).await),
-            Ok((with_todos, false))
+            (with_todos, false)
         );
         assert_eq!(
             listed(toolbox(Some(&["spawn_agent", "report"]), tui).await),
-            Ok((list(&AGENTS), false))
+            (list(&AGENTS), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["list_agents", "show_diff"]), tui).await),
-            Ok((list(&["show_diff"]), false))
+            (list(&["show_diff"]), false)
         );
     }
 
@@ -701,8 +696,7 @@ mod tests {
             },
             ToolRule::Exactly,
             registry,
-        )
-        .unwrap();
+        );
         assert!(skipped.is_empty());
         let started = tools
             .without_tools(BTreeSet::from(["process".to_owned()]))
@@ -774,38 +768,35 @@ mod tests {
         let web = ToolRule::Exactly;
         assert_eq!(
             listed(toolbox(Some(&["show_page"]), web).await),
-            Ok((list(&["show_page"]), false))
+            (list(&["show_page"]), false)
         );
         assert_eq!(
             listed(toolbox(Some(&["show_diff", "write_todos"]), web).await),
-            Ok((list(&["show_diff", "write_todos"]), false))
+            (list(&["show_diff", "write_todos"]), false)
         );
         for requested in [None, Some(&["none"][..])] {
-            assert_eq!(listed(toolbox(requested, web).await), Ok((vec![], false)));
+            assert_eq!(listed(toolbox(requested, web).await), (vec![], false));
         }
     }
 
     #[tokio::test]
-    async fn jsonl_refuses_any_tool_and_has_none() {
-        for name in [
-            "bash",
-            "view_file",
-            "web_search",
-            "show_diff",
-            "ask_user",
-            "write_todos",
-            "spawn_agent",
+    async fn jsonl_has_exactly_the_flagged_tools_and_none_without_them() {
+        let saved = list(&["ask_user", "show_page"]);
+        for (flags, expected) in [
+            (Some(&["show_diff"][..]), &["show_diff"][..]),
+            (None, &[]),
+            (Some(&["none"]), &[]),
         ] {
-            assert_eq!(
-                toolbox(Some(&[name]), ToolRule::Flagged)
-                    .await
-                    .map(|t| t.names()),
-                Err(TUI_ONLY.to_owned())
-            );
-        }
-        for requested in [None, Some(&["none"][..])] {
-            let toolbox = toolbox(requested, ToolRule::Flagged).await.unwrap();
-            assert!(toolbox.is_empty());
+            let flags = flags.map(|names| flag_names(&list(names)).unwrap());
+            let (registry, _) = registry();
+            let listed = Listed {
+                configured: Some(&saved),
+                flagged: flags.as_deref(),
+            };
+            let (tools, skipped) = tools(listed, ToolRule::Flagged, registry);
+            assert!(skipped.is_empty());
+            let toolbox = tools.start("/", Arc::new(KernelHost::new())).await.toolbox;
+            assert_eq!(toolbox.names(), expected);
             assert!(!toolbox.web_search());
         }
     }
@@ -914,7 +905,7 @@ mod tests {
         }
         assert_eq!(
             flag_help(&catalog),
-            "Which tools the model may use, comma-separated: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, spawn_agent, view_file, web_search and write_todos, on by default in the tui; show_page, off unless named; or none. jsonl output is chat only"
+            "Which tools the model may use, comma-separated: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, spawn_agent, view_file, web_search and write_todos, on by default in the tui; show_page, off unless named; or none. In jsonl output, tools are off by default. Tools that ask questions or start agents need the tui"
         );
     }
 

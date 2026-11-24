@@ -7,10 +7,10 @@
 
 use crate::support;
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use rustix::process::{Signal, kill_process};
@@ -18,10 +18,9 @@ use support::pty::{PATIENCE, Pty, READY, Stdout, usable, wait_for_exit, wait_unt
 use support::server::{Server, message_start, sse};
 use support::{
     WISP,
-    home::{CONFIG_DIR, Home, SESSIONS, both, command_in},
+    home::{CONFIG_DIR, Home, SESSIONS, both, command_in, run},
 };
 
-const TUI_ONLY: &str = "tools are only available in the TUI for now";
 const DONE: &str = "ALL-CHECKS-DONE";
 const DEFAULT_TOOLS: [&str; 18] = [
     "ask_secret",
@@ -83,26 +82,185 @@ impl Home {
             .env("ANTHROPIC_BASE_URL", format!("http://127.0.0.1:{port}"));
         command
     }
+
+    fn jsonl_tools(&self, port: u16) -> Command {
+        let mut command = self.tools_command(WISP, port);
+        command
+            .args(["--output", "jsonl", "--time", "off", "--env-file"])
+            .arg(self.env_file());
+        command
+    }
 }
 
 #[test]
-fn tools_bash_is_refused_outside_the_tui() {
-    let server = serve(vec![]);
-    let home = Home::new("refused");
-    let output = home
-        .tools_command(env!("CARGO_BIN_EXE_wisp"), server.port)
-        .args(["--no-log", "--env-file"])
-        .arg(home.env_file())
-        .args(["--output", "jsonl", "--tools", "bash"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+fn jsonl_runs_a_named_tool_and_keeps_its_prefix_over_turns_and_a_resume() {
+    let server = serve(vec![
+        tool_reply("printf 'TOOL-DONE\\n'"),
+        text_reply("First reply"),
+        text_reply("Second reply"),
+        text_reply("Resumed reply"),
+    ]);
+    let home = Home::new("jsonl-tool-prefix");
+    let start = || {
+        let mut command = home.jsonl_tools(server.port);
+        command.args(["--tools", "bash"]);
+        command
+    };
+    let output = run(&mut start(), "run the tool\nsecond turn\n");
+    assert!(output.status.success(), "{}", both(&output));
+    let events: Vec<serde_json::Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let tool = events
+        .iter()
+        .find(|e| e["type"] == "tool_call_requested")
         .unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!output.status.success(), "{}", both(&output));
-    assert!(stderr.contains(TUI_ONLY), "{stderr}");
+    assert_eq!(tool["tool"], "bash");
+    let finished = events
+        .iter()
+        .find(|e| e["type"] == "tool_call_finished")
+        .unwrap();
+    assert_eq!(finished["call_id"], tool["call_id"]);
+    assert_eq!(finished["output"]["tail"], "TOOL-DONE\n");
+    assert_eq!(
+        events.iter().filter(|e| e["type"] == "turn_ended").count(),
+        2
+    );
+    let resumed = run(start().arg("--resume"), "resumed turn\n");
+    assert!(resumed.status.success(), "{}", both(&resumed));
+    assert!(String::from_utf8_lossy(&resumed.stdout).contains("Resumed reply"));
+    let requests = turns(&server.bodies());
+    assert_eq!(requests.len(), 4, "{requests:#?}");
+    assert_eq!(
+        requests[0]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["bash", "process"]
+    );
+    support::prefix::assert_prefix_stable(&requests, None);
+}
+
+#[test]
+fn jsonl_refuses_the_tools_that_need_the_tui() {
+    let server = serve(vec![]);
+    let home = Home::new("refused-jsonl-tools");
+    for (tools, expected) in [
+        ("ask_user", "ask_user is only available in the TUI for now"),
+        (
+            "spawn_agent,ask_user,ask_secret",
+            "ask_secret, ask_user and spawn_agent are only available in the TUI for now",
+        ),
+    ] {
+        let output = run(
+            home.jsonl_tools(server.port)
+                .args(["--no-log", "--tools", tools]),
+            "hello\n",
+        );
+        assert_eq!(output.status.code(), Some(1), "{}", both(&output));
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            format!("wisp: {expected}\n")
+        );
+    }
     assert!(server.bodies().is_empty());
+}
+
+#[test]
+fn a_turn_started_by_a_process_ending_prints_live_and_the_next_line_gets_its_own_turn() {
+    let server = serve(vec![
+        support::server::tool_reply(
+            "toolu_01",
+            "bash",
+            &serde_json::json!({
+                "command": "while [ ! -e release-job ]; do sleep 0.05; done; printf finished",
+                "run_in_background": true,
+            }),
+        ),
+        text_reply("Process started"),
+        text_reply("Process finished"),
+        text_reply("Second line answered"),
+    ]);
+    let home = Home::new("jsonl-process-wake");
+    let mut child = home
+        .jsonl_tools(server.port)
+        .args(["--no-log", "--tools", "bash"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (send, read) = mpsc::channel();
+    let reader = std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            send.send(line.unwrap()).unwrap();
+        }
+    });
+    let read_turn = || {
+        let deadline = Instant::now() + PATIENCE;
+        let mut events = Vec::new();
+        loop {
+            let line = read
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or_else(|e| panic!("{e}: {events:#?}"));
+            let event: serde_json::Value = serde_json::from_str(&line).unwrap();
+            let ended = event["type"] == "turn_ended";
+            events.push(event);
+            if ended {
+                return events;
+            }
+        }
+    };
+    stdin.write_all(b"start a background process\n").unwrap();
+    let first = read_turn();
+    assert!(
+        first
+            .iter()
+            .any(|e| e["type"] == "input_delivered" && e["ids"][0] == "jsonl-1")
+    );
+    std::fs::write(home.file("release-job"), "").unwrap();
+    let wake = read_turn();
+    let started = wake
+        .iter()
+        .position(|e| e["type"] == "turn_started")
+        .unwrap();
+    let process_ended = wake
+        .iter()
+        .position(|e| e["type"] == "process_ended")
+        .unwrap();
+    assert!(process_ended < started, "{wake:#?}");
+    assert_eq!(wake[started]["turn"], 2, "{wake:#?}");
+    assert_eq!(wake[started]["origin"], "process_exit", "{wake:#?}");
+    assert!(
+        !wake.iter().any(|e| e["type"] == "input_delivered"),
+        "{wake:#?}"
+    );
+    assert!(
+        wake.iter()
+            .any(|e| e["type"] == "text_delta" && e["text"] == "Process finished"),
+        "{wake:#?}"
+    );
+    stdin.write_all(b"a new line\n").unwrap();
+    drop(stdin);
+    let next = read_turn();
+    assert!(
+        next.iter()
+            .any(|e| e["type"] == "turn_started" && e["turn"] == 3),
+        "{next:#?}"
+    );
+    assert!(
+        next.iter()
+            .any(|e| e["type"] == "input_delivered" && e["ids"][0] == "jsonl-2"),
+        "{next:#?}"
+    );
+    assert!(wait_for_exit(&mut child).success());
+    reader.join().unwrap();
+    assert_eq!(turns(&server.bodies()).len(), 4);
 }
 
 #[test]

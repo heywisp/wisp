@@ -1,11 +1,274 @@
 use clap::{CommandFactory, Parser};
-use wisp_protocol::{ErrorKind, TurnOutcome, TurnStats};
+use wisp_protocol::{ErrorKind, StopReason, TurnOutcome, TurnStats, WithdrawnBy};
 
 use super::*;
 use crate::Args;
 use hostile::{corpus, hostile_detail, hostile_events};
 
 mod hostile;
+
+fn pending_line() -> JsonlState {
+    JsonlState {
+        line: Some(InputId("jsonl-1".into())),
+        ..JsonlState::default()
+    }
+}
+
+fn delivered() -> AgentEvent {
+    AgentEvent::InputDelivered {
+        ids: vec![InputId("jsonl-1".into())],
+        step: 1,
+    }
+}
+
+fn ended(outcome: TurnOutcome) -> AgentEvent {
+    AgentEvent::TurnEnded {
+        outcome,
+        stats: TurnStats::default(),
+    }
+}
+
+fn completed() -> AgentEvent {
+    ended(TurnOutcome::Completed {
+        stop_reason: StopReason::EndTurn,
+        model: "test".into(),
+        usage: Default::default(),
+        cost: None,
+        committed: true,
+        steps: 1,
+        tool_calls: 0,
+    })
+}
+
+fn failed(kind: ErrorKind) -> AgentEvent {
+    ended(TurnOutcome::Error {
+        kind,
+        message: "did not finish".into(),
+        usage: None,
+        cost: None,
+        committed_steps: 0,
+        detail: None,
+        attempts: 0,
+        gave_up: None,
+        offer: None,
+    })
+}
+
+fn see(state: &mut JsonlState, event: AgentEvent) {
+    assert_eq!(settle(state, JsonlEvent::Agent(&event)), None, "{event:?}");
+}
+
+#[test]
+fn a_line_settles_on_its_turn_ending_even_if_the_first_step_failed_or_never_started() {
+    for case in ["completed", "failed step", "failed before step"] {
+        let mut state = pending_line();
+        see(&mut state, AgentEvent::turn_started(1));
+        if case != "failed before step" {
+            see(&mut state, AgentEvent::StepStarted { step: 1 });
+        }
+        if case == "completed" {
+            see(&mut state, delivered());
+        } else {
+            see(
+                &mut state,
+                AgentEvent::InputWithdrawn {
+                    ids: vec![InputId("jsonl-1".into())],
+                    by: WithdrawnBy::TurnFailed,
+                },
+            );
+        }
+        assert!(state.line.is_some(), "{case}");
+        see(
+            &mut state,
+            if case == "completed" {
+                completed()
+            } else {
+                failed(ErrorKind::Auth)
+            },
+        );
+        assert!(!state.active(), "{case}");
+    }
+}
+
+#[test]
+fn a_blocked_or_cancelled_hook_settles_the_line_on_rejection() {
+    for id in [Some(InputId("jsonl-1".into())), None] {
+        let mut state = pending_line();
+        see(
+            &mut state,
+            AgentEvent::InputWithdrawn {
+                ids: vec![InputId("jsonl-1".into())],
+                by: WithdrawnBy::Hook {
+                    hook: "test/input".into(),
+                    reason: "blocked".into(),
+                },
+            },
+        );
+        assert!(state.line.is_some());
+        see(
+            &mut state,
+            AgentEvent::Rejected {
+                id,
+                request: None,
+                kind: None,
+                reason: "blocked".into(),
+            },
+        );
+        assert!(!state.active());
+    }
+}
+
+#[test]
+fn rejecting_a_line_does_not_rearm_cancellation_for_an_independent_turn() {
+    let mut state = pending_line();
+    see(&mut state, AgentEvent::turn_started(1));
+    assert_eq!(
+        settle(&mut state, JsonlEvent::Interrupt),
+        Some(ClientCommand::Cancel)
+    );
+    see(
+        &mut state,
+        AgentEvent::Rejected {
+            id: Some(InputId("jsonl-1".into())),
+            request: None,
+            kind: None,
+            reason: "rejected waiting input".into(),
+        },
+    );
+    assert!(state.line.is_none());
+    assert!(state.in_turn);
+    assert_eq!(settle(&mut state, JsonlEvent::Interrupt), None);
+}
+
+#[test]
+fn a_turn_closed_at_resume_before_the_first_message_does_not_end_that_message() {
+    let mut state = pending_line();
+    assert_eq!(
+        settle(&mut state, JsonlEvent::Interrupt),
+        Some(ClientCommand::Cancel)
+    );
+    see(&mut state, failed(ErrorKind::Interrupted));
+    assert!(state.line.is_some());
+    assert_eq!(settle(&mut state, JsonlEvent::Interrupt), None);
+    see(&mut state, AgentEvent::turn_started(2));
+    see(&mut state, delivered());
+    see(&mut state, completed());
+    assert!(!state.active());
+}
+
+#[test]
+fn a_turn_started_by_itself_does_not_settle_a_waiting_line() {
+    let mut state = pending_line();
+    see(&mut state, AgentEvent::turn_started(1));
+    see(&mut state, AgentEvent::rejected("unrelated"));
+    see(&mut state, completed());
+    assert!(state.line.is_some());
+    see(&mut state, AgentEvent::turn_started(2));
+    see(&mut state, delivered());
+    see(&mut state, completed());
+    assert!(!state.active());
+}
+
+#[test]
+fn sigint_cancels_once_before_a_line_starts_and_once_per_turn() {
+    let mut state = pending_line();
+    let interrupt_once = |state: &mut JsonlState| {
+        assert_eq!(
+            settle(state, JsonlEvent::Interrupt),
+            Some(ClientCommand::Cancel)
+        );
+        assert_eq!(settle(state, JsonlEvent::Interrupt), None);
+    };
+    interrupt_once(&mut state);
+    let held = AgentEvent::InputHeld {
+        ids: vec![InputId("jsonl-1".into())],
+        by: WithdrawnBy::TurnStopped,
+    };
+    assert_eq!(
+        settle(&mut state, JsonlEvent::Agent(&held)),
+        Some(ClientCommand::Release)
+    );
+    assert!(state.line.is_some());
+    see(&mut state, AgentEvent::turn_started(1));
+    see(&mut state, delivered());
+    interrupt_once(&mut state);
+    see(&mut state, completed());
+    assert!(!state.cancelling);
+    see(&mut state, AgentEvent::turn_started(2));
+    assert!(state.line.is_none());
+    interrupt_once(&mut state);
+}
+
+#[tokio::test]
+async fn an_agent_that_exits_while_idle_is_an_error() {
+    let (commands, _sent) = mpsc::channel(1);
+    let (emit, events) = mpsc::channel(1);
+    let (_stdin, lines) = mpsc::channel(1);
+    drop(emit);
+    let channels = Channels {
+        commands,
+        events,
+        quit: None,
+    };
+    let result = jsonl_loop(channels, lines, interrupts().unwrap(), 0, |_| Ok(())).await;
+    assert_eq!(result, Err(AGENT_STOPPED.to_owned()));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_sigint_delivered_while_rendering_still_cancels() {
+    use rustix::process::{Signal, getpid, kill_process};
+    use std::time::Duration;
+
+    let interrupt = interrupts().unwrap();
+    let (commands, mut sent) = mpsc::channel(2);
+    let (emit, events) = mpsc::channel(32);
+    let (stdin, lines) = mpsc::channel(1);
+    stdin.send(Ok("hello".into())).await.unwrap();
+    drop(stdin);
+    let agent = tokio::spawn(async move {
+        assert_eq!(
+            sent.recv().await,
+            Some(ClientCommand::queue("jsonl-1", "hello"))
+        );
+        for event in [AgentEvent::turn_started(1), delivered()]
+            .into_iter()
+            .chain((0..20).map(|i| AgentEvent::TextDelta {
+                index: 0,
+                text: format!("line {i}"),
+            }))
+        {
+            emit.try_send(event).unwrap();
+        }
+        assert_eq!(sent.recv().await, Some(ClientCommand::Cancel));
+        emit.send(ended(TurnOutcome::Cancelled {
+            usage: None,
+            cost: None,
+            committed_steps: 0,
+        }))
+        .await
+        .unwrap();
+        assert_eq!(sent.recv().await, None);
+    });
+    let channels = Channels {
+        commands,
+        events,
+        quit: None,
+    };
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        jsonl_loop(channels, lines, interrupt, 0, |event| {
+            if matches!(event, AgentEvent::TextDelta { text, .. } if text == "line 0") {
+                kill_process(getpid(), Signal::INT).unwrap();
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(())
+        }),
+    )
+    .await;
+    assert_eq!(result.unwrap(), Ok(Drained::Closed));
+    agent.await.unwrap();
+}
 
 #[test]
 fn verbose_is_the_only_jsonl_warning() {

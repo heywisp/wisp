@@ -129,7 +129,7 @@ The child's `<environment>` names the file (`Preset instructions: ~/…`), `--in
 
 A resumed main agent keeps its logged block too, but an edit to its preset's files since then reaches it as an update: its next new turn's message carries `<instructions-update>` with each changed file whole (`scope="preset"`, named from the preset file's directory, with its `~/…` path), after the instructions plugin's update and before the `Sent:` stamp, logged as the `core/preset` lead entry with its snapshot and shown as `instructions updated · <path>`. A head states it again, from the logged block's version, and a Retry resends it. The files are the ones loaded when Wisp started, so an edit made while it runs arrives at the next start.
 
-Sessions without tools (jsonl output, `--tools none`) load instructions too: the CLI always detects the working directory, and the agent gets it through `Agent::with_workspace`. A session without tools still sends no `<environment>` block, unless its main agent started from a preset, whose block names the file there.
+Sessions without tools (jsonl output without `--tools`, `--tools none`) load instructions too: the CLI always detects the working directory, and the agent gets it through `Agent::with_workspace`. A session without tools still sends no `<environment>` block, unless its main agent started from a preset, whose block names the file there.
 
 The agent emits `InstructionsLoaded` once, before any turn, and logs `instructions_loaded` (`docs/session-log.md`). jsonl prints the event; `wisp doctor` has an `instructions` section listing each candidate, import, its size and status, the total and any warning.
 

@@ -63,33 +63,3 @@ pub const AGENT_STOPPED: &str = "the agent stopped unexpectedly";
 pub fn interrupts() -> Result<Signal, String> {
     signal(SignalKind::interrupt()).map_err(|e| format!("could not listen for ctrl-c: {e}"))
 }
-
-pub async fn turn(
-    commands: &mpsc::Sender<ClientCommand>,
-    events: &mut mpsc::Receiver<AgentEvent>,
-    interrupt: &mut Signal,
-    mut show: impl FnMut(&AgentEvent) -> Result<(), String>,
-) -> Result<(), String> {
-    let mut cancelling = false;
-    let mut running = false;
-    loop {
-        tokio::select! {
-            event = events.recv() => {
-                let Some(event) = event else {
-                    return Err(AGENT_STOPPED.to_owned());
-                };
-                show(&event)?;
-                match event {
-                    AgentEvent::TurnStarted { .. } => running = true,
-                    AgentEvent::Rejected { request: None, .. } if !running => return Ok(()),
-                    AgentEvent::TurnEnded { .. } if running => return Ok(()),
-                    _ => {}
-                }
-            }
-            _ = interrupt.recv(), if !cancelling => {
-                cancelling = true;
-                let _ = commands.send(ClientCommand::Cancel).await;
-            }
-        }
-    }
-}

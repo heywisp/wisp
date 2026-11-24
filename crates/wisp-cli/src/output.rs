@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use tokio::sync::mpsc;
 use wisp_protocol::{AgentEvent, ClientCommand, InputId, Opening, SessionView};
 
-use wisp_client::{AGENT_STOPPED, Channels, QuitBound, drain_within, interrupts, turn};
+use wisp_client::{AGENT_STOPPED, Channels, QuitBound, drain_within, interrupts};
 pub(crate) use wisp_start::start::{FORCED_EXIT, SAVE_CUT};
 use wisp_tui::present::choose::{self, Chosen, Presenter, Requested};
 use wisp_tui::term::{Env, Streams, death};
@@ -140,7 +140,7 @@ async fn drained(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Drained {
+pub(crate) enum Drained {
     Closed,
     Forced,
 }
@@ -181,47 +181,134 @@ pub(crate) fn read_lines(
 
 const JSONL_PREFIX: &str = "jsonl-";
 
-async fn jsonl(channels: Channels, mut sent: u64) -> Result<Drained, String> {
+#[derive(Default)]
+struct JsonlState {
+    line: Option<InputId>,
+    in_turn: bool,
+    line_in_turn: bool,
+    cancelling: bool,
+}
+
+impl JsonlState {
+    fn active(&self) -> bool {
+        self.in_turn || self.line.is_some()
+    }
+
+    fn line_settled(&mut self) {
+        self.line = None;
+        self.line_in_turn = false;
+        if !self.in_turn {
+            self.cancelling = false;
+        }
+    }
+}
+
+enum JsonlEvent<'a> {
+    Agent(&'a AgentEvent),
+    Interrupt,
+}
+
+fn settle(state: &mut JsonlState, event: JsonlEvent<'_>) -> Option<ClientCommand> {
+    let names_line = |ids: &[InputId]| state.line.as_ref().is_some_and(|id| ids.contains(id));
+    match event {
+        JsonlEvent::Agent(AgentEvent::TurnStarted { .. }) => {
+            state.in_turn = true;
+            state.cancelling = false;
+        }
+        JsonlEvent::Agent(AgentEvent::TurnEnded { .. }) if state.in_turn => {
+            state.in_turn = false;
+            state.cancelling = false;
+            if state.line_in_turn {
+                state.line_settled();
+            }
+        }
+        JsonlEvent::Agent(
+            AgentEvent::InputDelivered { ids, .. } | AgentEvent::InputWithdrawn { ids, .. },
+        ) if state.in_turn && names_line(ids) => {
+            state.line_in_turn = true;
+        }
+        JsonlEvent::Agent(AgentEvent::Rejected { id, request, .. })
+            if state.line.is_some()
+                && (id.as_ref() == state.line.as_ref()
+                    || (request.is_none() && !state.in_turn)) =>
+        {
+            state.line_settled();
+        }
+        JsonlEvent::Agent(AgentEvent::InputHeld { ids, .. }) if names_line(ids) => {
+            return Some(ClientCommand::Release);
+        }
+        JsonlEvent::Interrupt if state.active() && !state.cancelling => {
+            state.cancelling = true;
+            return Some(ClientCommand::Cancel);
+        }
+        _ => {}
+    }
+    None
+}
+
+async fn jsonl(channels: Channels, sent: u64) -> Result<Drained, String> {
+    let lines = read_lines(std::io::BufReader::new(std::io::stdin()));
+    jsonl_loop(channels, lines, interrupts()?, sent, write_event).await
+}
+
+pub(crate) async fn jsonl_loop(
+    channels: Channels,
+    mut lines: mpsc::Receiver<Result<String, String>>,
+    mut interrupt: tokio::signal::unix::Signal,
+    mut sent: u64,
+    mut show: impl FnMut(&AgentEvent) -> Result<(), String>,
+) -> Result<Drained, String> {
     let Channels {
         commands,
         mut events,
         quit,
     } = channels;
-    let mut lines = read_lines(std::io::BufReader::new(std::io::stdin()));
-    let mut waiting = interrupts()?;
+    let mut state = JsonlState::default();
     let mut failure = None;
     loop {
-        let line = tokio::select! {
-            line = lines.recv() => line,
-            _ = waiting.recv() => None,
-            _ = death() => None,
-        };
-        let text = match line {
-            None => break,
-            Some(Err(e)) => {
-                failure = Some(e);
-                break;
+        let command = tokio::select! {
+            line = lines.recv(), if state.line.is_none() => {
+                let text = match line {
+                    None => break,
+                    Some(Err(e)) => {
+                        failure = Some(e);
+                        break;
+                    }
+                    Some(Ok(line)) => line,
+                };
+                let text = text.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                sent = sent.saturating_add(1);
+                let id = format!("{JSONL_PREFIX}{sent}");
+                let command = ClientCommand::queue(id.clone(), text);
+                state.line = Some(InputId(id));
+                Some(command)
             }
-            Some(Ok(line)) => line,
+            event = events.recv() => {
+                let Some(event) = event else {
+                    return Err(AGENT_STOPPED.to_owned());
+                };
+                show(&event)?;
+                settle(&mut state, JsonlEvent::Agent(&event))
+            }
+            _ = interrupt.recv() => {
+                if !state.active() {
+                    break;
+                }
+                settle(&mut state, JsonlEvent::Interrupt)
+            }
+            _ = death() => break,
         };
-        let text = text.trim();
-        if text.is_empty() {
-            continue;
-        }
-        sent = sent.saturating_add(1);
-        let command = ClientCommand::queue(format!("{JSONL_PREFIX}{sent}"), text);
-        let mut interrupt = interrupts()?;
-        if commands.send(command).await.is_err() {
+        if let Some(command) = command
+            && commands.send(command).await.is_err()
+        {
             return Err(AGENT_STOPPED.to_owned());
         }
-        tokio::select! {
-            ended = turn(&commands, &mut events, &mut interrupt, write_event) => ended?,
-            _ = death() => break,
-        }
-        waiting = interrupts()?;
     }
     drop(commands);
-    let ended = drained(&mut events, quit, write_event).await?;
+    let ended = drained(&mut events, quit, show).await?;
     if let Some(failure) = failure {
         return Err(failure);
     }

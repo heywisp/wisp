@@ -621,6 +621,38 @@ finishing go out after the restart. A window keeps unsent text; `/leave`, then
 `wisp --resume` updates that older window once the text is sent.
 See `docs/daemon.md`, “Restarting”.
 
+## wisp --output jsonl
+
+Give Wisp one message per line on stdin. Blank lines are ignored. Wisp waits
+for each message's turn to finish, or for the message to be rejected, before
+sending the next. Stdout streams protocol events as JSON objects, one per line,
+including events from turns that start when a background process ends between
+input lines.
+
+```sh
+printf '%s\n' 'Count the files here' | wisp --output jsonl --tools bash
+```
+
+Tools are off by default; the saved `tools` list is ignored. Name the tools the
+model may use with `--tools`, separated by commas. Followers come with their
+leader, such as `process` with `bash`. Tools that ask questions or start agents
+need the TUI. A tool can't ask someone to attach to a process, approve an action,
+fill in a server form or sign in through this output. Stdout includes tool call
+inputs and results, so treat the stream as you would the conversation itself.
+
+Each turn ends with `turn_ended`. For a failed turn, read `outcome.kind` and
+`outcome.message`; `outcome.detail` is optional. See [the session log's outcome
+kinds](session-log.md) for the allowed names, such as `auth` and `rate_limit`.
+A failed turn doesn't promise a particular process exit code.
+
+SIGINT (Ctrl-C) stops a running turn (`outcome.status` is `cancelled`) or
+cancels a line whose input hook is running. The run then goes on. A line only
+waiting in the queue can still run: if held, Wisp releases it. With no running
+turn or pending line, SIGINT ends the run. See [Quitting](agents.md#quitting)
+for how SIGTERM and SIGHUP end the run and when they're ignored. Closing stdin
+ends the run once the last line has settled, stopping any turn that started
+by itself.
+
 ## Quitting a chat from the terminal
 
 `wisp quit <id>...` quits chats without opening them. An id's prefix is enough, from any folder.
