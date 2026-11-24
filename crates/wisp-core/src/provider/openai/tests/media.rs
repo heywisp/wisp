@@ -8,18 +8,18 @@ use super::{
 };
 use crate::agent::Agent;
 use crate::agent::testing::{stream_error, turn, withdrawn};
-use crate::provider::openai::SUBSCRIPTION_MEDIA_TYPES;
 use crate::provider::{Refused, Rendering};
 use crate::test_guard::http;
 use crate::tool::Toolbox;
 use crate::workspace::Workspace;
-use wisp_tool_text::files::uncarried;
 
 const REFUSED: &str = r#"{"error":{"type":"invalid_request_error","message":"Invalid image"}}"#;
 const NOTE: &str = "[shot.png (image/png) couldn't be processed: OpenAI request refused (HTTP 400): \
 invalid_request_error. It can't be read in this session.]";
 const SHEET: &[u8] =
     b"PK\x03\x04\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0xl/workbook.xml";
+const WEBP: &[u8] =
+    b"RIFF\x1e\0\0\0WEBPVP8L\x11\0\0\0/\x01@\0\0\x07\xd0\x88\x22\xd4\xbf\xff\x81\x88\xe8\x7f\0\0";
 const BINARY_PDF: &[u8] = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj << /Type /Catalog >> endobj\n";
 
 async fn viewing(
@@ -28,6 +28,7 @@ async fn viewing(
 ) -> (Agent, http::Server, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("shot.png"), wisp_plugin_testkit::png()).unwrap();
+    std::fs::write(dir.path().join("shot.webp"), WEBP).unwrap();
     std::fs::write(dir.path().join("spec.pdf"), BINARY_PDF).unwrap();
     std::fs::write(dir.path().join("sheet.xlsx"), SHEET).unwrap();
     let (mut provider, server) = serving(replies).await;
@@ -75,13 +76,14 @@ async fn viewed_files_reach_openai_as_each_connection_carries_them() {
     for subscription in [true, false] {
         let calls = [
             view("call_png", "shot.png"),
+            view("call_webp", "shot.webp"),
             view("call_pdf", "spec.pdf"),
             view("call_xlsx", "sheet.xlsx"),
         ];
         let reply = || ok(&[created(), completed(&[message()])]);
         let replies = vec![ok(&[created(), completed(&calls)]), reply(), reply()];
         let (mut agent, server, _dir) = viewing(replies, subscription).await;
-        let (outcome, _) = turn(&mut agent, "look at all three", &[]).await;
+        let (outcome, _) = turn(&mut agent, "look at all four", &[]).await;
         crate::agent::testing::completed(&outcome);
         let (outcome, _) = turn(&mut agent, "and now?", &[]).await;
         crate::agent::testing::completed(&outcome);
@@ -100,6 +102,10 @@ async fn viewed_files_reach_openai_as_each_connection_carries_them() {
         );
         assert_eq!(png[1], json!({"type":"input_image","image_url":url}));
         assert_eq!(png.as_array().unwrap().len(), 2);
+        let webp = output(&sent[1], "call_webp");
+        let url = format!("data:image/webp;base64,{}", wisp_media::encode_base64(WEBP));
+        assert_eq!(webp[1], json!({"type":"input_image","image_url":url}));
+        assert_eq!(webp.as_array().unwrap().len(), 2);
         let pdf = output(&sent[1], "call_pdf");
         let data = wisp_media::encode_base64(BINARY_PDF);
         let file = json!({"type":"input_file","filename":"file.pdf",
@@ -108,18 +114,13 @@ async fn viewed_files_reach_openai_as_each_connection_carries_them() {
         assert_eq!(pdf.as_array().unwrap().len(), 2);
         let xlsx = output(&sent[1], "call_xlsx");
         let sheet = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-        if subscription {
-            let carried = SUBSCRIPTION_MEDIA_TYPES.as_slice();
-            assert_eq!(xlsx, &json!(uncarried("sheet.xlsx", sheet, carried, None)));
-        } else {
-            let data = wisp_media::encode_base64(SHEET);
-            let file = json!({"type":"input_file","filename":"file.xlsx",
-                "file_data":format!("data:{sheet};base64,{data}")});
-            assert_eq!(xlsx[1], file, "{xlsx}");
-        }
+        let data = wisp_media::encode_base64(SHEET);
+        let file = json!({"type":"input_file","filename":"file.xlsx",
+            "file_data":format!("data:{sheet};base64,{data}")});
+        assert_eq!(xlsx[1], file, "{xlsx}");
         assert!(extends(&sent[0], &sent[1]));
         assert!(extends(&sent[1], &sent[2]));
-        for call in ["call_png", "call_pdf", "call_xlsx"] {
+        for call in ["call_png", "call_webp", "call_pdf", "call_xlsx"] {
             assert_eq!(output(&sent[2], call), output(&sent[1], call));
         }
     }

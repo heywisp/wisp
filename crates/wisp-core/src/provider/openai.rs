@@ -17,8 +17,8 @@ use sha2::{Digest, Sha256};
 use wisp_protocol::plan_usage::{PlanUsage, PlanUsageError};
 use wisp_protocol::settings::ClientVersion;
 use wisp_protocol::{
-    CitedSource, ContentBlock, Effort, ErrorKind, FailurePhase, ImageSource, MediaSource, Message,
-    Role, Secret, StopReason, ToolRef, Usage, VariableName,
+    CitedSource, ContentBlock, Effort, ErrorKind, FailurePhase, Message, Role, Secret, StopReason,
+    ToolRef, Usage, VariableName,
 };
 
 use super::anthropic::{status_outcome, unexpected, unreachable};
@@ -41,46 +41,27 @@ pub static BASE_URL: VariableName = VariableName::from_static("OPENAI_BASE_URL")
 pub static CREDENTIAL_VARS: [VariableName; 1] = [VariableName::from_static("OPENAI_API_KEY")];
 const PROVIDER: &str = "openai";
 const ADDITIONAL_TOOLS: &str = "additional_tools";
-const IMAGES: [&str; 2] = ["image/jpeg", "image/png"];
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Takes {
-    Everywhere,
-    ApiKeyOnly,
-}
-const FILES: [(&str, &str, Takes); 5] = [
-    ("application/pdf", "file.pdf", Takes::Everywhere),
-    (
-        "application/vnd.oasis.opendocument.text",
-        "file.odt",
-        Takes::ApiKeyOnly,
-    ),
+const IMAGES: [&str; 3] = ["image/jpeg", "image/png", "image/webp"];
+const FILES: [(&str, &str); 5] = [
+    ("application/pdf", "file.pdf"),
+    ("application/vnd.oasis.opendocument.text", "file.odt"),
     (
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         "file.pptx",
-        Takes::ApiKeyOnly,
     ),
     (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "file.xlsx",
-        Takes::ApiKeyOnly,
     ),
     (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "file.docx",
-        Takes::Everywhere,
     ),
 ];
-pub(crate) static MEDIA_TYPES: LazyLock<Vec<&str>> = LazyLock::new(|| carried(false));
-static SUBSCRIPTION_MEDIA_TYPES: LazyLock<Vec<&str>> = LazyLock::new(|| carried(true));
-
-fn carried(subscription: bool) -> Vec<&'static str> {
-    FILES
-        .iter()
-        .filter(|(_, _, takes)| !subscription || *takes == Takes::Everywhere)
-        .map(|(media_type, _, _)| *media_type)
-        .chain(IMAGES)
-        .collect()
-}
+pub(crate) static MEDIA_TYPES: LazyLock<Vec<&str>> = LazyLock::new(|| {
+    let files = FILES.into_iter().map(|(media_type, _)| media_type);
+    files.chain(IMAGES).collect()
+});
 
 pub(crate) const FIRST_BYTE: Duration = Duration::from_secs(300);
 pub const DEFAULT_MODEL: &str = "gpt-6.1-sol";
@@ -707,8 +688,7 @@ fn append_block(
             for block in content {
                 match block {
                     ContentBlock::Text {text} => output.push(text_part(role, text)),
-                    ContentBlock::Image {source:ImageSource::Base64 {media_type,data}} => output.push(media_part(role, carried, why, media_type.as_str(), data)),
-                    ContentBlock::Media {source:MediaSource::Base64 {media_type,data}} => output.push(media_part(role, carried, why, media_type.as_str(), data)),
+                    ContentBlock::Image { .. } | ContentBlock::Media { .. } => if let Some(media) = block.inline_media() { output.push(media_part(role, carried, why, media.media_type, media.data)); },
                     ContentBlock::Opaque { .. } => { if let Some(text) = super::foreign::text(block, PROVIDER) { output.push(text_part(role, &text)); } },
                     _ => return Err(ProviderError::new(ErrorKind::InvalidRequest,"this OpenAI connection cannot represent this block inside a tool result")),
                 }
@@ -718,8 +698,7 @@ fn append_block(
             } else { Value::Array(output) };
             input.push(json!({"type":"function_call_output","call_id":tool_use_id,"output":output}));
         }
-        ContentBlock::Image { source: ImageSource::Base64 {media_type,data} } => input.push(message_item(role, media_part(role, carried, why, media_type.as_str(), data))),
-        ContentBlock::Media { source: MediaSource::Base64 {media_type,data} } => input.push(message_item(role, media_part(role, carried, why, media_type.as_str(), data))),
+        ContentBlock::Image { .. } | ContentBlock::Media { .. } => if let Some(media) = block.inline_media() { input.push(message_item(role, media_part(role, carried, why, media.media_type, media.data))); },
         ContentBlock::ToolAddition { .. } | ContentBlock::ToolRemoval { .. } | ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } | ContentBlock::Effort { .. } => {},
         ContentBlock::Opaque { .. } => {
             if let Some(text) = super::foreign::text(block, PROVIDER) { input.push(message_item(role, text_part(role, &text))); }
@@ -745,7 +724,7 @@ fn media_part(role: &str, carried: &[&str], why: NotSent, media_type: &str, data
     if wisp_tool_text::files::carries(carried, media_type) {
         let url = format!("data:{media_type};base64,{data}");
         return match FILES.iter().find(|(listed, ..)| *listed == media_type) {
-            Some((_, filename, _)) => {
+            Some((_, filename)) => {
                 json!({"type":"input_file","filename":filename,"file_data":url})
             }
             None => json!({"type":"input_image","image_url":url}),
@@ -824,11 +803,7 @@ impl Provider for OpenAiProvider {
         true
     }
     fn media_types(&self) -> &'static [&'static str] {
-        if self.subscription {
-            SUBSCRIPTION_MEDIA_TYPES.as_slice()
-        } else {
-            MEDIA_TYPES.as_slice()
-        }
+        MEDIA_TYPES.as_slice()
     }
     fn cache_prefix(&self, request: &Request<'_>) -> Option<String> {
         Some(prefix_hash(&self.body(request).ok()?))
