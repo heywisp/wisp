@@ -122,6 +122,24 @@ fn grows_from(next: &Sent, earlier: &Sent, what: &str) {
     assert!(next.messages.starts_with(&earlier.messages), "{what}");
 }
 
+fn ended_line(path: &str, below: u32) -> String {
+    wisp_tool_text::agents::stopped(&wisp_plugin_api::host::Stopped {
+        path: path.to_owned(),
+        below,
+        ended: true,
+    })
+}
+
+fn one_running() -> Setup {
+    Setup {
+        limits: Limits {
+            max_running: Some(1),
+            ..Limits::default()
+        },
+        ..Setup::default()
+    }
+}
+
 fn result_of(request: &Sent, id: &str) -> (bool, String) {
     request
         .messages

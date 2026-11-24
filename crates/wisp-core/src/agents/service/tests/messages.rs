@@ -904,10 +904,7 @@ async fn a_child_that_reported_takes_follow_up_work_in_the_same_context_until_it
         result_of(&root[3], "m1").1,
         "Sent to /reviewer (idle: woken). Its report will arrive as a message; don't poll it, and end your turn unless you have other independent work."
     );
-    assert_eq!(
-        result_of(&root[5], "k1").1,
-        "Ended /reviewer. Ended agents take no more messages and no longer count toward the agent limit."
-    );
+    assert_eq!(result_of(&root[5], "k1").1, ended_line("/reviewer", 0));
     let (is_error, text) = result_of(&root[6], "m2");
     assert!(is_error);
     assert_eq!(text, "/reviewer has ended");
@@ -1188,7 +1185,7 @@ async fn an_ended_childs_parent_is_told_who_ended_it_without_being_woken() {
     run.root_ended().await;
     assert_eq!(
         result_of(&run.requests("/")[2], "k1").1,
-        "Ended /lead/v. Ended agents take no more messages and no longer count toward the agent limit."
+        ended_line("/lead/v", 0)
     );
     tokio::time::sleep(Duration::from_secs(10)).await;
     let run = run.quit().await;
@@ -1602,7 +1599,14 @@ async fn ending_a_running_agent_or_same_reply_stop_then_end_is_refused_and_halts
     gate.add_permits(1);
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     let after = crate::agent::not_run_text(&NotRunReason::AfterRefusal);
+    assert_eq!(
+        after,
+        "Not run: it came after a refused call in the same reply, so it wasn't run. Call it again if it still applies."
+    );
     let want_running = end_refused("/w", None, EndRefusal::Running);
     assert!(!result_of(&root[2], "l0").0);
     assert_eq!(result_of(&root[2], "k1"), (true, want_running.clone()));
@@ -1624,14 +1628,7 @@ async fn ending_a_running_agent_or_same_reply_stop_then_end_is_refused_and_halts
     assert!(!result_of(&root[4], "k_stop").0);
     assert_eq!(result_of(&root[4], "k_same"), (true, want_running));
     assert_eq!(result_of(&root[4], "l3"), (true, after));
-    assert_eq!(
-        result_of(&root[5], "k_end"),
-        (
-            false,
-            "Ended /w. Ended agents take no more messages and no longer count toward the agent limit."
-                .to_owned()
-        )
-    );
+    assert_eq!(result_of(&root[5], "k_end"), (false, ended_line("/w", 0)));
     for skipped in ["m1", "l1", "l3"] {
         assert!(
             !run.seen.iter().any(|e| matches!(
@@ -1744,6 +1741,9 @@ async fn ending_a_target_with_an_unread_report_or_mid_reply_exit_without_report_
     root_gate2.add_permits(1);
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     let after = crate::agent::not_run_text(&NotRunReason::AfterRefusal);
     assert_eq!(
         result_of(&root[2], "k1"),
@@ -1798,6 +1798,9 @@ async fn ending_an_idle_target_with_a_running_descendant_is_refused() {
     gate.add_permits(1);
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     assert_eq!(
         result_of(&root[2], "k1"),
         (
@@ -1806,14 +1809,7 @@ async fn ending_an_idle_target_with_a_running_descendant_is_refused() {
         )
     );
     assert!(!result_of(&root[3], "k2").0);
-    assert_eq!(
-        result_of(&root[4], "k3"),
-        (
-            false,
-            "Ended /lead and 1 agent below it. Ended agents take no more messages and no longer count toward the agent limit."
-                .to_owned()
-        )
-    );
+    assert_eq!(result_of(&root[4], "k3"), (false, ended_line("/lead", 1)));
     let run = run.quit().await;
     assert!(notices(&run, "/").is_empty(), "the caller isn't told");
     let mut ended = ended_in(&run, "/");
@@ -1921,6 +1917,9 @@ async fn waking_an_idle_child_and_ending_it_in_the_same_reply_is_refused() {
     run.say("go").await;
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     assert!(!result_of(&root[2], "m1").0);
     assert_eq!(
         result_of(&root[2], "k1"),

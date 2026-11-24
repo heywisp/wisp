@@ -827,13 +827,7 @@ async fn a_child_that_leaves_the_queue_shows_its_idle_state_again() {
     let gate = Arc::new(Semaphore::new(0));
     let mut run = start(
         "limits-leave-queue",
-        Setup {
-            limits: Limits {
-                max_running: Some(1),
-                ..Limits::default()
-            },
-            ..Setup::default()
-        },
+        one_running(),
         vec![
             ("/b", vec![uses(&[report_call("r1", "b")]), done("more")]),
             ("/a", vec![gated(uses(&[report_call("r1", "a")]), &gate)]),
@@ -1547,19 +1541,13 @@ async fn voice_calls_are_booked_in_main_spend_and_a_subscription_call_as_subscri
 }
 
 #[tokio::test(start_paused = true)]
-async fn ending_a_queued_agent_is_refused_until_stopped_in_an_earlier_reply() {
+async fn ending_a_queued_agent_is_refused_even_in_the_reply_that_stops_it() {
     use wisp_protocol::NotRunReason;
     use wisp_tool_text::agents::{EndRefusal, LIST_AGENTS, end_refused};
     let gate = Arc::new(Semaphore::new(0));
     let mut run = start(
         "limits-end-refused-queued",
-        Setup {
-            limits: Limits {
-                max_running: Some(1),
-                ..Limits::default()
-            },
-            ..Setup::default()
-        },
+        one_running(),
         vec![
             (
                 "/",
@@ -1576,8 +1564,7 @@ async fn ending_a_queued_agent_is_refused_until_stopped_in_an_earlier_reply() {
                         &gate,
                     ),
                     uses(&[stop_call("k2", "b", false), stop_call("k_same", "b", true)]),
-                    uses(&[stop_call("k3", "b", true)]),
-                    done("ended b"),
+                    done("stopped b"),
                 ],
             ),
             ("/a", vec![hanging("busy")]),
@@ -1597,6 +1584,9 @@ async fn ending_a_queued_agent_is_refused_until_stopped_in_an_earlier_reply() {
     gate.add_permits(1);
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     assert_eq!(
         result_of(&root[2], "k1"),
         (true, end_refused("/b", None, EndRefusal::Queued))
@@ -1613,17 +1603,9 @@ async fn ending_a_queued_agent_is_refused_until_stopped_in_an_earlier_reply() {
         result_of(&root[3], "k_same"),
         (true, end_refused("/b", None, EndRefusal::Queued))
     );
-    assert_eq!(
-        result_of(&root[4], "k3"),
-        (
-            false,
-            "Ended /b. Ended agents take no more messages and no longer count toward the agent limit."
-                .to_owned()
-        )
-    );
     assert!(run.requests("/b").is_empty());
     let run = run.quit().await;
-    assert_eq!(super::messages::ended_in(&run, "/"), ["/b"]);
+    assert!(super::messages::ended_in(&run, "/").is_empty());
 }
 
 #[tokio::test(start_paused = true)]
@@ -1633,13 +1615,7 @@ async fn stop_then_end_of_a_queued_agent_succeeds_even_when_cancel_settles_mid_s
     let at_select = pause_at("/b", "restart-idle-select");
     let mut run = start(
         "limits-queued-settle-mid-reply",
-        Setup {
-            limits: Limits {
-                max_running: Some(1),
-                ..Limits::default()
-            },
-            ..Setup::default()
-        },
+        one_running(),
         vec![
             (
                 "/",
@@ -1676,15 +1652,12 @@ async fn stop_then_end_of_a_queued_agent_succeeds_even_when_cancel_settles_mid_s
     end_gate.add_permits(1);
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     assert!(!result_of(&root[2], "k1").0);
-    assert_eq!(
-        result_of(&root[3], "k2"),
-        (
-            false,
-            "Ended /b. Ended agents take no more messages and no longer count toward the agent limit."
-                .to_owned()
-        )
-    );
+    assert_eq!(result_of(&root[3], "k2"), (false, ended_line("/b", 0)));
+    assert!(run.requests("/b").is_empty());
     let run = run.quit().await;
     assert_eq!(super::messages::ended_in(&run, "/"), ["/b"]);
 }
@@ -1695,13 +1668,7 @@ async fn a_stopped_idle_child_retasked_and_queued_refuses_end() {
     let gate = Arc::new(Semaphore::new(0));
     let mut run = start(
         "limits-stopped-idle-retasked-queued",
-        Setup {
-            limits: Limits {
-                max_running: Some(1),
-                ..Limits::default()
-            },
-            ..Setup::default()
-        },
+        one_running(),
         vec![
             (
                 "/",
@@ -1744,6 +1711,9 @@ async fn a_stopped_idle_child_retasked_and_queued_refuses_end() {
     gate.add_permits(1);
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     assert!(!result_of(&root[5], "k_idle").0);
     assert!(!result_of(&root[6], "m1").0);
     assert!(!result_of(&root[7], "l1").0);

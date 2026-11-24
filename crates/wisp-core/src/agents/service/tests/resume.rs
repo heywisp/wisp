@@ -1078,16 +1078,9 @@ async fn a_stopped_and_a_failed_child_stay_held_after_a_resume_until_mail_from_a
 
 #[tokio::test(start_paused = true)]
 async fn queued_spawns_queue_again_after_a_resume_and_one_stopped_while_queued_stays_held() {
-    let setup = || Setup {
-        limits: Limits {
-            max_running: Some(1),
-            ..Limits::default()
-        },
-        ..Setup::default()
-    };
     let mut run = start(
         "resume-queued",
-        setup(),
+        one_running(),
         vec![
             ("/", vec![done("noted"); 4]),
             ("/q1", vec![hanging("busy")]),
@@ -1118,7 +1111,7 @@ async fn queued_spawns_queue_again_after_a_resume_and_one_stopped_while_queued_s
     let gate = Arc::new(Semaphore::new(0));
     let back = resume(
         run,
-        setup(),
+        one_running(),
         vec![
             (
                 "/",
@@ -2163,16 +2156,9 @@ async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resum
 
 #[tokio::test(start_paused = true)]
 async fn a_failed_child_queued_for_a_task_from_above_at_the_exit_runs_it_after_a_resume() {
-    let setup = || Setup {
-        limits: Limits {
-            max_running: Some(1),
-            ..Limits::default()
-        },
-        ..Setup::default()
-    };
     let mut run = start(
         "resume-queued-task",
-        setup(),
+        one_running(),
         vec![
             ("/", vec![done("noted"); 3]),
             ("/f", vec![server_error_step()]),
@@ -2204,7 +2190,7 @@ async fn a_failed_child_queued_for_a_task_from_above_at_the_exit_runs_it_after_a
 
     let back = resume(
         run,
-        setup(),
+        one_running(),
         vec![
             ("/f", vec![uses(&[report_call("r1", "f done")])]),
             ("/", vec![done("ok"); 3]),
@@ -2885,8 +2871,7 @@ async fn a_root_started_without_the_agent_tools_gets_them_on_resume_and_sends_it
         "{env}"
     );
     for pair in after.windows(2) {
-        assert_eq!(pair[1].prefix(), pair[0].prefix());
-        assert!(pair[1].messages.starts_with(&pair[0].messages));
+        grows_from(&pair[1], &pair[0], "after the resume");
         assert_eq!(environment_of(&pair[1]), None);
     }
     let _ = run.quit().await;
@@ -4364,6 +4349,9 @@ async fn an_unread_report_survives_a_resume_and_refuses_end_until_committed() {
     .await;
     run.root_ended().await;
     let root = run.requests("/");
+    for pair in root.windows(2) {
+        grows_from(&pair[1], &pair[0], "the root");
+    }
     let after = crate::agent::not_run_text(&NotRunReason::AfterRefusal);
     assert_eq!(
         result_of(&root[2], "k1"),
@@ -4371,14 +4359,7 @@ async fn an_unread_report_survives_a_resume_and_refuses_end_until_committed() {
     );
     assert_eq!(result_of(&root[2], "l1"), (true, after));
     assert!(root[2].all_text().contains("c finished"));
-    assert_eq!(
-        result_of(&root[3], "k2"),
-        (
-            false,
-            "Ended /c. Ended agents take no more messages and no longer count toward the agent limit."
-                .to_owned()
-        )
-    );
+    assert_eq!(result_of(&root[3], "k2"), (false, ended_line("/c", 0)));
     let run = run.quit().await;
     assert_eq!(super::messages::ended_in(&run, "/"), ["/c"]);
 }
