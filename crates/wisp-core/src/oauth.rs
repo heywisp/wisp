@@ -948,7 +948,7 @@ pub fn save_project_id(path: &Path, project_id: &str) -> Result<(), AuthError> {
 }
 
 pub(crate) fn project_redactions(project_id: Option<&str>) -> crate::session::Redactions {
-    crate::session::Redactions::log_only(project_id.map(str::to_owned))
+    crate::session::Redactions::held_only(project_id.map(str::to_owned))
 }
 
 fn register_tokens(tokens: &Tokens) {

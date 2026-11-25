@@ -32,6 +32,8 @@ use wisp_protocol::{
 use wisp_media::Tier;
 
 use crate::endpoints::ProviderKind;
+use crate::secrets::scan::{is_account_id, is_token_char, redact_emails, redacting_tokens};
+use crate::session::RedactionKind;
 use crate::tool::ToolSpec;
 
 pub(crate) struct Envelope<'a> {
@@ -1327,10 +1329,6 @@ pub(crate) fn without_identity(mut value: Value) -> Value {
     value
 }
 
-const ID_PREFIXES: [&str; 3] = ["org-", "user-", "proj_"];
-
-const ID_MIN_CHARS: usize = 20;
-
 pub(crate) fn without_secret_text(text: &str) -> String {
     without_secret_tokens(&crate::session::without_registered_secrets(text))
 }
@@ -1400,10 +1398,7 @@ fn scrub_error_text(message: &str, mode: ErrorText) -> String {
         ))
         .ok()
     });
-    static EMAIL: std::sync::LazyLock<Option<regex::Regex>> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"[\w.!#$%&'*+/=?^`{|}~-]+(?:@|%40)[\w-]+(?:(?:\.|%2[eE])[\w-]+)+").ok()
-    });
-    let (Some(bearer), Some(email)) = (BEARER.as_ref(), EMAIL.as_ref()) else {
+    let Some(bearer) = BEARER.as_ref() else {
         return REDACTED.to_owned();
     };
     let registered = crate::session::without_registered_secrets(message);
@@ -1414,7 +1409,7 @@ fn scrub_error_text(message: &str, mode: ErrorText) -> String {
             (prose, redact.map(|redact| redact(prose)))
         }
     };
-    let without_email = email.replace_all(fields.as_deref().unwrap_or(text), REDACTED);
+    let without_email = redact_emails(fields.as_deref().unwrap_or(text));
     let without_bearer = bearer.replace_all(&without_email, |found: &regex::Captures<'_>| {
         format!("{}{REDACTED}", &found[1])
     });
@@ -1454,30 +1449,6 @@ fn clean_error_message(message: &str, redact_fields: Option<fn(&str) -> String>)
     (!capped.trim().is_empty()).then_some(capped)
 }
 
-fn redacting_tokens(text: &str, redacts: impl Fn(&str) -> bool) -> String {
-    let mut kept = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(start) = rest.find(is_token_char) {
-        let (before, tail) = rest.split_at(start);
-        let end = tail.find(|c| !is_token_char(c)).unwrap_or(tail.len());
-        let (token, after) = tail.split_at(end);
-        kept.push_str(before);
-        let escaped = before.ends_with('\\') && token.starts_with(['n', 'r', 't']);
-        let (escape, candidate) = token.split_at(usize::from(escaped));
-        if redacts(candidate) {
-            kept.push_str(escape);
-            kept.push_str(crate::session::REDACTED);
-        } else if escaped && redacts(token) {
-            kept.push_str(crate::session::REDACTED);
-        } else {
-            kept.push_str(token);
-        }
-        rest = after;
-    }
-    kept.push_str(rest);
-    kept
-}
-
 fn scrub_error_text_capped(text: &str, max_chars: usize) -> String {
     scrub_error_text(text, ErrorText::Whole)
         .chars()
@@ -1490,24 +1461,15 @@ const KNOWN_LONG_ERROR_TYPES: &[&str] = &["ServiceUnavailableException"];
 
 fn scrub_error_type(text: &str) -> String {
     if KNOWN_LONG_ERROR_TYPES.contains(&text)
-        && crate::session::without_registered_secrets(text) == text
+        && !crate::session::held().has_match(text, RedactionKind::LogOnly)
     {
         return text.to_owned();
     }
     scrub_error_text_capped(text, MAX_ERROR_DETAIL_CHARS)
 }
 
-fn is_token_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '-' || c == '_'
-}
-
 fn is_identity(token: &str) -> bool {
-    let uuid = token.len() == 36 && uuid::Uuid::try_parse(token).is_ok();
-    uuid || ID_PREFIXES.iter().any(|prefix| {
-        token.strip_prefix(prefix).is_some_and(|id| {
-            id.len() >= ID_MIN_CHARS && id.bytes().all(|b| b.is_ascii_alphanumeric())
-        })
-    })
+    (token.len() == 36 && uuid::Uuid::try_parse(token).is_ok()) || is_account_id(token)
 }
 
 fn append_str(raw: &mut Value, field: &str, s: &str) {

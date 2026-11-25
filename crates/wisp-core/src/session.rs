@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -18,6 +19,7 @@ use wisp_protocol::{BlobRef, ImageType, MediaSource, Mime, valid_id};
 mod redaction;
 
 use crate::runtime::in_parallel;
+use crate::secrets::scan::is_token_char;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Stamp {
@@ -1458,10 +1460,24 @@ pub(crate) struct MaskTail {
     pub(crate) covered: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum RedactionKind {
+    LogOnly,
+    Held,
+    Masked,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 struct Redaction {
     value: String,
-    mask: bool,
+    kind: RedactionKind,
+}
+
+static SECRETS_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+#[allow(dead_code, reason = "used by the plugin secret-check host in MR 2")]
+pub(crate) fn held_generation() -> u64 {
+    SECRETS_GENERATION.load(Ordering::Acquire)
 }
 
 fn process_secrets() -> &'static std::sync::Mutex<Redactions> {
@@ -1473,7 +1489,11 @@ pub fn register(redactions: &Redactions) {
     let mut secrets = process_secrets()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *secrets = secrets.union([redactions]);
+    let updated = secrets.union([redactions]);
+    if updated != *secrets {
+        *secrets = updated;
+        SECRETS_GENERATION.fetch_add(1, Ordering::Release);
+    }
 }
 
 pub fn register_secrets(items: impl IntoIterator<Item = String>) {
@@ -1591,16 +1611,15 @@ fn spliced(
     out
 }
 
-fn matched(
-    entries: &[&[u8]],
+fn for_each_escape_view(
     bytes: &[u8],
-    covered: usize,
     pending: bool,
-    floor: usize,
-) -> (Vec<std::ops::Range<usize>>, usize, Option<Vec<usize>>) {
-    let runs = (covered > 0).then_some(0..covered).into_iter().collect();
+    mut visit: impl FnMut(&[u8], usize, Option<&[usize]>) -> bool,
+) -> Option<Vec<usize>> {
     let (mut view, cut) = unescaped(bytes, pending);
-    let (mut runs, mut boundary) = found(entries, bytes, cut, runs, pending);
+    if visit(bytes, cut, None) {
+        return None;
+    }
     let mut starts = None;
     for level in 1..=ESCAPE_LEVELS {
         let Some((decoded, origin)) = view.take() else {
@@ -1611,24 +1630,82 @@ fn matched(
         } else {
             (None, decoded.len())
         };
-        let (hits, prefix) = found(entries, &decoded, cut, Vec::new(), pending);
-        runs.extend(
-            hits.into_iter()
-                .map(|run| origin[run.start]..origin[run.end]),
-        );
-        boundary = boundary.min(origin[prefix]);
-        if pending {
-            boundary = snap_escape(&origin, boundary, floor);
+        let stop = visit(&decoded, cut, Some(&origin));
+        if !stop {
+            view = next.and_then(|(next, from)| {
+                let composed: Option<Vec<_>> =
+                    from.into_iter().map(|at| origin.get(at).copied()).collect();
+                Some((next, composed?))
+            });
         }
-        view = next.map(|(next, from)| (next, from.into_iter().map(|at| origin[at]).collect()));
         starts = Some(origin);
+        if stop {
+            break;
+        }
     }
+    starts
+}
+
+fn matched(
+    entries: &[&[u8]],
+    bytes: &[u8],
+    covered: usize,
+    pending: bool,
+    floor: usize,
+) -> (Vec<std::ops::Range<usize>>, usize, Option<Vec<usize>>) {
+    let mut runs = Vec::new();
+    let mut boundary = bytes.len();
+    let starts = for_each_escape_view(bytes, pending, |view, cut, origin| {
+        if let Some(origin) = origin {
+            let (hits, prefix) = found(entries, view, cut, Vec::new(), pending);
+            runs.extend(
+                hits.into_iter()
+                    .filter_map(|run| Some(*origin.get(run.start)?..*origin.get(run.end)?)),
+            );
+            if let Some(&prefix) = origin.get(prefix) {
+                boundary = boundary.min(prefix);
+            }
+            if pending {
+                boundary = snap_escape(origin, boundary, floor);
+            }
+        } else {
+            let covered = (covered > 0).then_some(0..covered).into_iter().collect();
+            (runs, boundary) = found(entries, view, cut, covered, pending);
+        }
+        false
+    });
     runs.sort_by_key(|run| run.start);
     let runs = runs.into_iter().fold(Vec::new(), |mut merged, run| {
         joined(&mut merged, run);
         merged
     });
     (runs, boundary, starts)
+}
+
+fn is_token_bounded(view: &[u8], start: usize, end: usize) -> bool {
+    let token_at = |at: Option<usize>| {
+        at.and_then(|at| view.get(at))
+            .is_some_and(|&b| is_token_char(char::from(b)))
+    };
+    (!token_at(Some(start)) || !token_at(start.checked_sub(1)))
+        && (!token_at(end.checked_sub(1)) || !token_at(Some(end)))
+}
+
+fn has_bounded_match(entries: &[&[u8]], bytes: &[u8]) -> bool {
+    if entries.is_empty() {
+        return false;
+    }
+    let mut hit = false;
+    for_each_escape_view(bytes, false, |view, _, _| {
+        hit = entries.iter().any(|value| {
+            (0..view.len()).any(|at| {
+                view.get(at..).is_some_and(|tail| tail.starts_with(value))
+                    && is_token_bounded(view, at, at + value.len())
+            })
+        });
+        hit
+    });
+    hit
 }
 
 fn snap_escape(starts: &[usize], at: usize, floor: usize) -> usize {
@@ -1724,18 +1801,31 @@ fn code_point(text: &[u8]) -> Option<(char, usize)> {
 
 impl Redactions {
     pub fn new(items: impl IntoIterator<Item = String>) -> Self {
-        Self::entries(items, maskable)
+        Self::entries(items, |value| {
+            if maskable(value) {
+                RedactionKind::Masked
+            } else {
+                RedactionKind::Held
+            }
+        })
     }
 
     pub(crate) fn typed(items: impl IntoIterator<Item = String>) -> Self {
-        Self::entries(items, |_| true)
+        Self::entries(items, |_| RedactionKind::Masked)
+    }
+
+    pub(crate) fn held_only(items: impl IntoIterator<Item = String>) -> Self {
+        Self::entries(items, |_| RedactionKind::Held)
     }
 
     pub fn log_only(items: impl IntoIterator<Item = String>) -> Self {
-        Self::entries(items, |_| false)
+        Self::entries(items, |_| RedactionKind::LogOnly)
     }
 
-    fn entries(items: impl IntoIterator<Item = String>, mask: impl Fn(&str) -> bool) -> Self {
+    fn entries(
+        items: impl IntoIterator<Item = String>,
+        kind: impl Fn(&str) -> RedactionKind,
+    ) -> Self {
         Self::sorted(
             items
                 .into_iter()
@@ -1747,7 +1837,7 @@ impl Redactions {
                         == MIN_REDACTION_CHARS
                 })
                 .flat_map(|s| {
-                    let mask = mask(&s);
+                    let kind = kind(&s);
                     let escaped_spelling = |quoted: String| {
                         quoted
                             .strip_prefix('"')
@@ -1757,12 +1847,13 @@ impl Redactions {
                     };
                     let debug = escaped_spelling(format!("{s:?}"));
                     let json = serde_json::to_string(&s).ok().and_then(escaped_spelling);
-                    let encoded = (mask && maskable(&s)).then(|| base64_forms(&s));
+                    let encoded =
+                        (kind >= RedactionKind::Held && maskable(&s)).then(|| base64_forms(&s));
                     std::iter::once(s)
                         .chain(debug)
                         .chain(json)
                         .chain(encoded.into_iter().flatten())
-                        .map(move |value| Redaction { value, mask })
+                        .map(move |value| Redaction { value, kind })
                 }),
         )
     }
@@ -1774,7 +1865,7 @@ impl Redactions {
                 .len()
                 .cmp(&a.value.len())
                 .then_with(|| a.value.cmp(&b.value))
-                .then_with(|| b.mask.cmp(&a.mask))
+                .then_with(|| b.kind.cmp(&a.kind))
         });
         items.dedup_by(|a, b| a.value == b.value);
         Self(items)
@@ -1794,22 +1885,47 @@ impl Redactions {
         Redactions::sorted(items)
     }
 
-    fn values(&self, masked_only: bool) -> Vec<&[u8]> {
+    fn values(&self, min: RedactionKind) -> Vec<&[u8]> {
         self.0
             .iter()
-            .filter(|entry| !masked_only || entry.mask)
+            .filter(|entry| entry.kind >= min)
             .map(|entry| entry.value.as_bytes())
             .collect()
+    }
+
+    pub(crate) fn has_match(&self, text: &str, min: RedactionKind) -> bool {
+        let entries = self.values(min);
+        !entries.is_empty() && !matched(&entries, text.as_bytes(), 0, false, 0).0.is_empty()
+    }
+
+    pub(crate) fn has_secret_check_match(&self, text: &str) -> bool {
+        let mut long = Vec::new();
+        let mut short = Vec::new();
+        for entry in self
+            .0
+            .iter()
+            .filter(|entry| entry.kind >= RedactionKind::Held)
+        {
+            let values = if entry.kind == RedactionKind::Masked || maskable(&entry.value) {
+                &mut long
+            } else {
+                &mut short
+            };
+            values.push(entry.value.as_bytes());
+        }
+        let bytes = text.as_bytes();
+        (!long.is_empty() && !matched(&long, bytes, 0, false, 0).0.is_empty())
+            || has_bounded_match(&short, bytes)
     }
 
     fn replaced(
         &self,
         bytes: &[u8],
-        masked_only: bool,
+        min: RedactionKind,
         pending: bool,
         covered: usize,
     ) -> (Option<Vec<u8>>, usize, usize) {
-        let entries = self.values(masked_only);
+        let entries = self.values(min);
         let Some(longest) = entries.first() else {
             return (
                 (covered > 0).then(|| bytes[covered..].to_vec()),
@@ -1867,7 +1983,11 @@ impl Redactions {
     }
 
     pub fn scrub(&self, text: &str) -> String {
-        redacted_text(text, self.replaced(text.as_bytes(), false, false, 0).0)
+        redacted_text(
+            text,
+            self.replaced(text.as_bytes(), RedactionKind::LogOnly, false, 0)
+                .0,
+        )
     }
 
     pub fn mask(&self, text: &str) -> String {
@@ -1875,13 +1995,14 @@ impl Redactions {
     }
 
     pub(crate) fn mask_bytes(&self, bytes: &[u8]) -> Option<Vec<u8>> {
-        self.replaced(bytes, true, false, 0).0
+        self.replaced(bytes, RedactionKind::Masked, false, 0).0
     }
 
     fn stream(&self, bytes: &[u8], pending: &mut MaskTail, last: bool) -> (Vec<u8>, bool) {
         let mut input = std::mem::take(&mut pending.bytes);
         input.extend_from_slice(bytes);
-        let (replaced, boundary, covered) = self.replaced(&input, true, !last, pending.covered);
+        let (replaced, boundary, covered) =
+            self.replaced(&input, RedactionKind::Masked, !last, pending.covered);
         let masked = replaced.is_some();
         pending.bytes = input.split_off(boundary);
         pending.covered = covered;

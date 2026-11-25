@@ -30,7 +30,7 @@ mod question;
 mod retry;
 mod rewind;
 mod search;
-pub use command_secret::{command_secret, masked_command};
+pub use command_secret::{command_secret, has_url_password, masked_command};
 mod secret;
 pub mod settings;
 pub mod slot;

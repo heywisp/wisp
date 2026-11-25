@@ -8,7 +8,7 @@ use wisp_plugin_api::mcp::PromptArgument;
 use super::keys::RunKeyOwner;
 use crate::config::McpServer;
 use crate::plan_usage::record::{self, Claim};
-use crate::session::{self, Redactions, sha256_bytes_hex, sha256_hex};
+use crate::session::{self, RedactionKind, Redactions, sha256_bytes_hex, sha256_hex};
 use crate::tool::{ToolSpec, canonical_specs};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -70,7 +70,8 @@ impl From<rmcp::model::Resource> for Resource {
 pub(crate) const HELD_CREDENTIAL: &str = "the server's list contained a held credential";
 
 pub(super) fn has_secret(text: &str, held: &Redactions, redactions: &Redactions) -> bool {
-    held.mask(text) != text || redactions.scrub(text) != text
+    held.has_match(text, RedactionKind::Masked)
+        || redactions.has_match(text, RedactionKind::LogOnly)
 }
 
 pub(super) fn json_has_secret(value: &Value, contains: &impl Fn(&str) -> bool) -> bool {

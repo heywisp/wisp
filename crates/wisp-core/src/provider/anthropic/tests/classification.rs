@@ -232,31 +232,84 @@ fn error_objects_in_a_200_stream_are_read_in_every_shape() {
 
 #[test]
 fn identity_shaped_tokens_leave_provider_text() {
-    use crate::provider::{ErrorText, scrub_error_text};
+    use crate::provider::{ErrorText, clean_error_message, scrub_error_text};
+    use crate::secrets::scan::{contains_secret_or_identity, email_regression_cases};
+    use crate::session::REDACTED;
 
-    for (text, kept) in [
+    for (text, kept, refused) in [
         (
             "your organization (00000000-0000-0000-0000-000000000000) of 50,000",
             "your organization ([redacted]) of 50,000",
+            false,
         ),
         (
             "org FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF.",
             "org [redacted].",
+            false,
         ),
         (
-            "in org-PLACEHOLDER0000000000000000 for user-PLACEHOLDER0000000000000000 in proj_PLACEHOLDER0000000000000000 or org-PLACEHOLDER000000000",
+            "in org-CANARYFAKE00000000000000000 for user-CANARYFAKE00000000000000000 in proj_CANARYFAKE00000000000000000 or org-CANARYFAKE0000000000",
             "in [redacted] for [redacted] in [redacted] or [redacted]",
+            true,
         ),
         (
-            "req_PLACEHOLDER0000000000000000 toolu_PLACEHOLDER0000 user-provided org-wide messages.1.content.0",
+            "req_CANARYFAKE00000000000000000 toolu_CANARYFAKE00000 user-provided org-wide messages.1.content.0",
             "[redacted] [redacted] user-provided org-wide messages.1.content.0",
+            false,
         ),
         (
             "0000000-0000-0000-0000-000000000000 x00000000-0000-0000-0000-000000000000 org-placeholderplaceholderx- 00000000000000000000000000000000 org-placeholder",
             "0000000-0000-0000-0000-000000000000 x00000000-0000-0000-0000-000000000000 org-placeholderplaceholderx- 00000000000000000000000000000000 org-placeholder",
+            false,
         ),
     ] {
         assert_eq!(scrub_error_text(text, ErrorText::Whole), kept, "{text}");
+        assert_eq!(contains_secret_or_identity(text, None), refused, "{text}");
+    }
+
+    let plain = ["CANARY", "example.invalid"].join("@");
+    let encoded = plain.replace('@', "%40").replace('.', "%2e");
+    for (text, kept) in [
+        (["CANARY", "müller.invalid"].join("@"), REDACTED.to_owned()),
+        (
+            ["CANARY", "mu\u{0308}ller.invalid"].join("@"),
+            REDACTED.to_owned(),
+        ),
+        (
+            ["CANARYcafe\u{0301}", "cafe\u{0301}.invalid"].join("@"),
+            REDACTED.to_owned(),
+        ),
+        (format!("**{plain}**"), format!("**{REDACTED}**")),
+        (
+            format!("<mailto:{plain}>,"),
+            format!("<mailto:{REDACTED}>,"),
+        ),
+        (format!("`{encoded}`"), format!("`{REDACTED}`")),
+    ] {
+        assert_eq!(scrub_error_text(&text, ErrorText::Whole), kept, "{text}");
+        assert!(contains_secret_or_identity(&text, None), "{text}");
+    }
+    for (text, kept) in email_regression_cases() {
+        assert_eq!(
+            contains_secret_or_identity(&text, None),
+            text != kept,
+            "{text}"
+        );
+        assert_eq!(scrub_error_text(&text, ErrorText::Whole), kept);
+        assert_eq!(
+            clean_error_message(&text, None).as_deref(),
+            Some(kept.as_str())
+        );
+    }
+    for text in [
+        ["wisp:plugin", "0.4.0"].join("@"),
+        ["lodash", "4.17.21"].join("@"),
+        ["CANARY", "127.0.0.1"].join("@"),
+        ["https://social.invalid/", "CANARY.handle"].join("@"),
+        ["https://cdn.example.invalid/", "pkg.js"].join("@"),
+    ] {
+        assert_eq!(scrub_error_text(&text, ErrorText::Whole), text);
+        assert!(!contains_secret_or_identity(&text, None), "{text}");
     }
 }
 

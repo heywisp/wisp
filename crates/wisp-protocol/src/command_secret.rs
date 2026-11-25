@@ -25,6 +25,48 @@ fn secret_header(value: &str, is_header: bool) -> bool {
                 .is_some_and(|(name, _)| secret_name(name))
 }
 
+fn url_password_in_authority(authority: &str) -> Option<Range<usize>> {
+    let at = authority.rfind('@')?;
+    let start = authority.get(..at)?.find(':')? + 1;
+    (start < at).then_some(start..at)
+}
+
+fn url_tail(text: &str, scheme_end: usize) -> Option<(&str, bool)> {
+    let scheme = text
+        .get(..scheme_end)?
+        .rsplit(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
+        .next()?;
+    let tail = text.get(scheme_end + "://".len()..)?;
+    if ["http", "https", "ws", "wss", "ftp"]
+        .iter()
+        .any(|special| scheme.eq_ignore_ascii_case(special))
+    {
+        Some((tail.trim_start_matches(['/', '\\']), true))
+    } else {
+        Some((tail, scheme.eq_ignore_ascii_case("file")))
+    }
+}
+
+fn free_text_authority_end(tail: &str, special: bool) -> usize {
+    tail.find(|c: char| {
+        c.is_whitespace()
+            || c.is_control()
+            || matches!(c, '/' | '?' | '#')
+            || (special && c == '\\')
+    })
+    .unwrap_or(tail.len())
+}
+
+pub fn has_url_password(text: &str) -> bool {
+    text.match_indices("://").any(|(at, _)| {
+        url_tail(text, at).is_some_and(|(tail, special)| {
+            tail.get(..free_text_authority_end(tail, special))
+                .and_then(url_password_in_authority)
+                .is_some()
+        })
+    })
+}
+
 fn secrets(word: &str, previous: Option<&str>) -> Vec<Range<usize>> {
     if word.is_empty() {
         return Vec::new();
@@ -40,15 +82,14 @@ fn secrets(word: &str, previous: Option<&str>) -> Vec<Range<usize>> {
         return std::iter::once(0..word.len()).collect();
     }
     let mut ranges = Vec::new();
-    if let Some(start) = word.find("://").map(|start| start + 3) {
-        let authority = &word[start..];
-        let end = authority.find(['/', '?', '#']).unwrap_or(authority.len());
-        if let Some(at) = authority[..end].rfind('@')
-            && let Some(colon) = authority[..at].find(':')
-            && colon + 1 < at
-        {
-            ranges.push(start + colon + 1..start + at);
-        }
+    if let Some((tail, _)) = word.find("://").and_then(|at| url_tail(word, at))
+        && let Some(password) = tail
+            .split(['/', '?', '#'])
+            .next()
+            .and_then(url_password_in_authority)
+    {
+        let start = word.len() - tail.len();
+        ranges.push(start + password.start..start + password.end);
     }
     if let Some((head, query)) = word.split_once('?') {
         let query = query.split('#').next().unwrap_or_default();
@@ -187,6 +228,79 @@ fn words(text: &str) -> Vec<Range<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn free_text_url_password_check_catches_credentials_and_skips_plain_urls() {
+        let joined_urls = ["https://example.invalid:443,https://user", "other.invalid"].join("@");
+        for (url, free_text, word) in [
+            (r"postgres://u:CANARY\x@localhost/db", true, true),
+            (r"postgres://u:CANARY\n\r\t@localhost/db", true, true),
+            (r"postgres://example.invalid:5432\n@scope/pkg", true, true),
+            ("http://u:p@[::1]:8080", true, true),
+            ("https://:token@host", true, true),
+            ("https://example.invalid:443", false, false),
+            ("http://[::1]:8080", false, false),
+            ("https://user:@example.invalid", false, false),
+            (joined_urls.as_str(), false, false),
+            ("postgres://example.invalid:5432\n@scope/pkg", false, true),
+            ("postgres://example.invalid:5432\r@scope/pkg", false, true),
+            ("postgres://example.invalid:5432\t@scope/pkg", false, true),
+            ("https://example.invalid:443 @scope/pkg", false, true),
+        ] {
+            assert_eq!(has_url_password(url), free_text, "{url}");
+            assert_eq!(!secrets(url, None).is_empty(), word, "{url}");
+        }
+        assert!(!has_url_password(
+            r"https://example.invalid:443\n@scope/pkg"
+        ));
+        assert!(!has_url_password(
+            r"HTTPS://example.invalid:443\n@scope/pkg"
+        ));
+        assert!(has_url_password(
+            "[a](https://example.invalid:443)[b](http://u:p@localhost)"
+        ));
+        assert!(!has_url_password(
+            "[a](https://example.invalid:443)[b](https://other.invalid)"
+        ));
+    }
+
+    #[test]
+    fn redundant_special_scheme_slashes_keep_command_password_offsets() {
+        let password = "CANARYpass";
+        let hidden = masked(password, 20, "");
+        let rest = "@localhost/db";
+        for (head, password_expected) in [
+            ("https:///user:", true),
+            (r"HTTPS://\user:", true),
+            (r"https:///\/\user:", true),
+            ("http://///user:", true),
+            (r"ws://\user:", true),
+            (r"wss:///\user:", true),
+            ("ftp:////user:", true),
+            ("file:///user:", false),
+            ("postgres:///user:", false),
+        ] {
+            let word = format!("{head}{password}{rest}");
+            assert_eq!(has_url_password(&word), password_expected, "{word}");
+            let ranges = secrets(&word, None);
+            if password_expected {
+                assert_eq!(ranges.len(), 1);
+                assert_eq!(
+                    ranges.first(),
+                    Some(&(head.len()..head.len() + password.len()))
+                );
+            } else {
+                assert!(ranges.is_empty());
+            }
+            let command = format!("/mcp add http server '{word}'");
+            let shown = if password_expected {
+                format!("/mcp add http server '{head}{hidden}{rest}'")
+            } else {
+                command.clone()
+            };
+            assert_eq!(masked_command(&command).as_deref(), Some(shown.as_str()));
+        }
+    }
 
     #[test]
     fn secret_flags_assignments_and_known_prefixes_share_one_guard() {

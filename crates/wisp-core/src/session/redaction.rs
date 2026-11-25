@@ -5,7 +5,7 @@ use wisp_protocol::ToolView;
 use wisp_protocol::log::LogEvent;
 use wisp_protocol::plan_usage::{UsageScope, UsageWindow};
 
-use super::Redactions;
+use super::{RedactionKind, Redactions};
 
 trait Content {
     fn redact(&mut self, redactions: &Redactions);
@@ -343,7 +343,7 @@ content!(wisp_protocol::StreamDiagnostics, redactions, {
 });
 
 fn omit_redacted_window(window: &mut Option<Box<UsageWindow>>, redactions: &Redactions) {
-    let affected = |text: &str| redactions.scrub(text) != text;
+    let affected = |text: &str| redactions.has_match(text, RedactionKind::LogOnly);
     if window.as_deref().is_some_and(|w| {
         affected(&w.key)
             || affected(&w.label)

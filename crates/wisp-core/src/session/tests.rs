@@ -1614,6 +1614,60 @@ fn tool_result_masks_only_held_credentials_at_the_length_floor() {
 }
 
 #[test]
+fn secret_checks_respect_redaction_kind_and_boundaries() {
+    let short = "CANARYpin";
+    let long = "CANARYlongheldcredential";
+    let log = "/CANARY-logged";
+    let held = Redactions::new([short.to_owned(), "tag:CANARYpin".to_owned()]);
+    let project = Redactions::held_only([long.to_owned()]);
+    let log_only = Redactions::log_only([log.to_owned(), short.to_owned(), long.to_owned()]);
+    let all = log_only.union([&held, &project]);
+    for text in [
+        "CANARYpin",
+        r"key\u003dCANARYpin",
+        "notag:CANARYpin",
+        "preCANARYlongheldcredentialpost",
+    ] {
+        assert!(all.has_secret_check_match(text), "{text}");
+    }
+    for text in [log, "preCANARYpin", "CANARYpin_old"] {
+        assert!(!all.has_secret_check_match(text), "{text}");
+        assert!(all.has_match(text, RedactionKind::LogOnly), "{text}");
+    }
+    assert!(!log_only.has_secret_check_match(short));
+    assert!(!all.has_match(long, RedactionKind::Masked));
+    assert!(!all.has_match(log, RedactionKind::Held));
+    assert!(all.has_match(short, RedactionKind::Held));
+    assert_eq!(all.mask(long), long);
+    assert_eq!(all.scrub(long), REDACTED);
+
+    let typed = Redactions::typed([short.to_owned()]);
+    let strongest = all.union([&typed, &held, &log_only]);
+    assert!(strongest.has_secret_check_match("preCANARYpin"));
+    assert!(strongest.has_match(short, RedactionKind::Masked));
+    assert_eq!(strongest.mask(short), REDACTED);
+    let marker = Redactions::new([REDACTED.to_owned()]);
+    assert!(marker.has_match(REDACTED, RedactionKind::Held));
+    assert!(marker.has_secret_check_match(REDACTED));
+}
+
+#[test]
+fn registered_redaction_generation_changes_only_with_the_set() {
+    let value = "CANARYgenerationupdate";
+    let before = held_generation();
+    let log_only = Redactions::log_only([value.to_owned()]);
+    register(&log_only);
+    let after = held_generation();
+    assert!(after > before);
+    register(&log_only);
+    assert_eq!(held_generation(), after);
+    let upgraded = Redactions::held_only([value.to_owned()]);
+    register(&upgraded);
+    assert!(held_generation() > after);
+    assert!(held().has_secret_check_match(value));
+}
+
+#[test]
 fn byte_redactions_keep_non_utf8_and_typed_values_stay_local() {
     let fake = "CANARY-byte-mask-credential";
     let redactions = Redactions::new([fake.to_owned()]);
