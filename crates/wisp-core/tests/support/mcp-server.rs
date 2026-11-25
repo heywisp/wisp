@@ -382,6 +382,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],"structuredContent":{"job":std::env::var("WISP_JOB")?,"cwd":std::env::current_dir()?.file_name().and_then(|name| name.to_str())},"isError":message["params"]["arguments"]["fail"] == true}),
             _ => json!({}),
         };
+        if method.ends_with("/list") && Path::new("catalog.json").exists() {
+            let catalog: Value = serde_json::from_slice(&std::fs::read("catalog.json")?)?;
+            if let Some(list) = catalog.get(method) {
+                result = list.clone();
+            }
+        }
         if slow_list {
             std::fs::write("slow-list-started", "yes")?;
             std::thread::sleep(Duration::from_secs(1));

@@ -8,7 +8,7 @@ use wisp_plugin_api::index::{Entry, Index, Kind};
 use wisp_plugin_api::manifest::Origin;
 
 use super::{KernelHost, PluginHost, locked};
-use crate::mcp::PLUGIN as MCP_PLUGIN;
+use crate::mcp::{PLUGIN as MCP_PLUGIN, Service};
 use crate::plugin::imports::Import;
 use crate::plugin::{Problem, panicked};
 use crate::tool::{ToolSpec, Toolbox};
@@ -24,11 +24,32 @@ pub(super) struct State {
     off: BTreeSet<String>,
     described: u64,
     mcp_scope: Option<BTreeSet<String>>,
+    mcp_entries: BTreeSet<String>,
     pub(super) switching: Option<super::manage::Switching>,
     pub(super) pending: Vec<super::manage::Switch>,
     pub(super) managing: super::manage::Managing,
     pub(super) added_servers: Vec<String>,
     pub(super) links: Vec<wisp_protocol::plugin::LinkNote>,
+}
+
+impl State {
+    fn entry_has_secret(&self, mcp: &Service, name: &str, entry: Option<&Entry>) -> bool {
+        self.mcp_entries.contains(name)
+            && mcp.index_has_secret(
+                name,
+                entry.map_or("", |entry| &entry.summary),
+                entry.map_or("", |entry| &entry.text),
+                self.parameters.get(name).map(String::as_str),
+            )
+    }
+
+    fn named_entry_has_secret(&self, mcp: &Service, name: &str) -> bool {
+        self.entry_has_secret(
+            mcp,
+            name,
+            self.entries.iter().find(|entry| entry.name == name),
+        )
+    }
 }
 
 impl KernelHost {
@@ -53,11 +74,16 @@ impl KernelHost {
     }
 
     pub(crate) fn index_entries(&self) -> Vec<Entry> {
-        let off = self.mcp().disabled_entries();
-        locked(&self.index)
+        let mcp = self.mcp();
+        let off = mcp.disabled_entries();
+        let state = locked(&self.index);
+        state
             .entries
             .iter()
-            .filter(|entry| !off.contains_key(&entry.name))
+            .filter(|entry| {
+                !off.contains_key(&entry.name)
+                    && !state.entry_has_secret(&mcp, &entry.name, Some(entry))
+            })
             .cloned()
             .collect()
     }
@@ -85,18 +111,27 @@ impl KernelHost {
     }
 
     pub(crate) fn index_kind(&self, name: &str) -> Option<Kind> {
-        locked(&self.index)
+        let mcp = self.mcp();
+        let state = locked(&self.index);
+        state
             .entries
             .iter()
-            .find(|entry| entry.name == name)
+            .find(|entry| {
+                entry.name == name && !state.entry_has_secret(&mcp, &entry.name, Some(entry))
+            })
             .map(|entry| entry.kind)
     }
 
     pub(crate) fn index_parameters(&self, name: &str) -> Option<String> {
-        if self.mcp().disabled_entries().contains_key(name) {
+        let mcp = self.mcp();
+        if mcp.disabled_entries().contains_key(name) {
             return None;
         }
-        locked(&self.index).parameters.get(name).cloned()
+        let state = locked(&self.index);
+        if state.named_entry_has_secret(&mcp, name) {
+            return None;
+        }
+        state.parameters.get(name).cloned()
     }
 
     pub(crate) async fn gather_index(
@@ -174,12 +209,16 @@ impl KernelHost {
         let mut entries = Vec::new();
         let mcp = self.mcp();
         let scoped = scope.map(|servers| mcp.entries_of(&servers));
+        let mut mcp_entries: BTreeSet<_> = parameters
+            .keys()
+            .filter(|name| held_by(name, MCP_PLUGIN))
+            .cloned()
+            .collect();
         for (entry, owner) in candidates {
-            let mcp_entry = scoped.is_some()
-                && owner.as_ref().map_or_else(
-                    || held_by(&entry.name, MCP_PLUGIN),
-                    |(id, _)| id == MCP_PLUGIN,
-                );
+            let mcp_entry = owner.as_ref().map_or_else(
+                || held_by(&entry.name, MCP_PLUGIN),
+                |(id, _)| id == MCP_PLUGIN,
+            );
             if mcp_entry
                 && scoped
                     .as_ref()
@@ -202,6 +241,9 @@ impl KernelHost {
                 }
                 continue;
             }
+            if mcp_entry {
+                mcp_entries.insert(entry.name.clone());
+            }
             if let Some((_, owner)) = owner {
                 owners.insert(entry.name.clone(), Arc::downgrade(&owner));
             }
@@ -211,6 +253,7 @@ impl KernelHost {
         state.entries = entries;
         state.owners = owners;
         state.parameters = parameters;
+        state.mcp_entries = mcp_entries;
         problems
     }
 }
@@ -237,13 +280,17 @@ impl Index for PluginHost {
             if locked(&self.kernel.index).off.contains(name) {
                 return Err(wisp_tool_text::manage::turned_off(name));
             }
-            if let Some(parameters) = self.kernel.index_parameters(name) {
-                return Ok(parameters);
-            }
-            let owner = locked(&self.kernel.index)
-                .owners
-                .get(name)
-                .and_then(Weak::upgrade);
+            let owner = {
+                let mcp = self.kernel.mcp();
+                let state = locked(&self.kernel.index);
+                if mcp.entry_name_hidden(name) || state.named_entry_has_secret(&mcp, name) {
+                    return Err(crate::mcp::HELD_CREDENTIAL.into());
+                }
+                if let Some(parameters) = state.parameters.get(name) {
+                    return Ok(parameters.clone());
+                }
+                state.owners.get(name).and_then(Weak::upgrade)
+            };
             let Some(owner) = owner else {
                 return Index::open(&(), name).await;
             };
@@ -260,5 +307,53 @@ impl Index for PluginHost {
         if !Import::IndexChanged.refused() {
             self.kernel.index_changed();
         }
+    }
+}
+
+#[cfg(test)]
+mod mcp {
+    use super::*;
+
+    #[test]
+    fn already_indexed_mcp_metadata_is_hidden_once_its_credential_is_held() {
+        const HELD: &str = "CANARY-late-index-metadata-credential";
+        let host = KernelHost::new();
+        let names = [
+            "mcp__local__schema",
+            "mcp__local__prompt:notes",
+            "mcp__local__safe",
+        ];
+        {
+            let mut index = locked(&host.index);
+            index.mcp_entries.extend(names.map(str::to_owned));
+            for (name, kind, text) in [
+                (names[0], Kind::Tool, "Schema tool"),
+                (names[1], Kind::Skill, HELD),
+                (names[2], Kind::Tool, "Safe stale tool"),
+            ] {
+                index.entries.push(Entry {
+                    name: name.into(),
+                    kind,
+                    summary: text.into(),
+                    text: text.into(),
+                });
+            }
+            index.parameters.insert(
+                names[0].into(),
+                serde_json::json!({"items": [(HELD)]}).to_string(),
+            );
+        }
+        assert_eq!(host.index_entries().len(), 3);
+        assert!(host.index_parameters(names[0]).is_some());
+        crate::session::register_secrets([HELD.to_owned()]);
+        assert_eq!(host.index_kind(names[1]), None);
+        assert!(host.index_parameters(names[0]).is_none());
+        assert_eq!(
+            host.index_entries()
+                .into_iter()
+                .map(|entry| entry.name)
+                .collect::<Vec<_>>(),
+            [names[2]]
+        );
     }
 }

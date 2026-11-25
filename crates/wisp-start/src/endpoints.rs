@@ -6,6 +6,7 @@ use std::time::Duration;
 use futures::future::BoxFuture;
 use wisp_core::agent::{Connection, account_listing};
 use wisp_core::agents::endpoints::EndpointView;
+use wisp_core::config::{MCP_CONFIG_FILE, McpServer, mcp_servers_in};
 use wisp_core::endpoints::catalog::LiveCatalog;
 use wisp_core::endpoints::{
     AuthKind, Availability, Choice, ConfigFile, EndpointBook, EndpointError, EndpointName,
@@ -73,6 +74,14 @@ pub fn missing_given(path: &Path) -> String {
     }
 }
 
+fn read_error(shown: &str, kind: std::io::ErrorKind) -> String {
+    format!("could not read {shown}: {kind}")
+}
+
+fn config_text(bytes: Vec<u8>, shown: &str) -> Result<String, String> {
+    String::from_utf8(bytes).map_err(|_| format!("{shown} is not valid UTF-8"))
+}
+
 pub fn read_config(path: &Path, explicit: bool) -> Result<Option<ConfigFile>, String> {
     crate::tools::declare_settings();
     let shown = if explicit {
@@ -81,10 +90,10 @@ pub fn read_config(path: &Path, explicit: bool) -> Result<Option<ConfigFile>, St
         wisp_core::workspace::home_shown(path)
     };
     let text = match std::fs::read(path) {
-        Ok(bytes) => String::from_utf8(bytes).map_err(|_| format!("{shown} is not valid UTF-8"))?,
+        Ok(bytes) => config_text(bytes, &shown)?,
         Err(e) if missing(e.kind()) && !explicit => return Ok(None),
         Err(e) if missing(e.kind()) => return Err(missing_given(path)),
-        Err(e) => return Err(format!("could not read {shown}: {}", e.kind())),
+        Err(e) => return Err(read_error(&shown, e.kind())),
     };
     let origin = if explicit {
         PathShown::Given
@@ -110,6 +119,8 @@ pub struct Sources {
     pub config_shown: PathShown,
     pub default_config: Option<PathBuf>,
     pub config: Result<Option<ConfigFile>, String>,
+    pub run_servers: BTreeMap<String, McpServer>,
+    pub run_config: Option<PathBuf>,
     pub secrets: Prefetched,
     pub choice: Option<String>,
     pub choice_reason: StartReason,
@@ -227,6 +238,8 @@ impl Sources {
                     .unwrap_or_default(),
             )),
             config,
+            run_servers: BTreeMap::new(),
+            run_config: None,
             secrets,
             only: crate::paths::in_job().then(|| choice.clone()).flatten(),
             choice,
@@ -234,6 +247,43 @@ impl Sources {
             variable: chosen_variable(),
             set: flags.set.to_vec(),
         }
+    }
+
+    pub fn add_servers(&mut self, file: &Path) -> Result<(), String> {
+        let read = |e: std::io::Error| {
+            if missing(e.kind()) {
+                format!("{MCP_CONFIG_FILE} doesn't exist")
+            } else {
+                read_error(MCP_CONFIG_FILE, e.kind())
+            }
+        };
+        let file = std::fs::canonicalize(file).map_err(read)?;
+        let bytes = std::fs::read(&file).map_err(read)?;
+        let servers = mcp_servers_in(&config_text(bytes, MCP_CONFIG_FILE)?)?;
+        let saved = self.config.as_ref().ok().and_then(Option::as_ref);
+        if let Some(name) = servers
+            .keys()
+            .find(|name| saved.is_some_and(|config| config.mcp_servers.contains_key(*name)))
+        {
+            return Err(format!(
+                "--mcp-config names {name}, which is already a saved server; give it another name"
+            ));
+        }
+        self.run_servers = servers;
+        self.run_config = Some(file);
+        Ok(())
+    }
+
+    pub fn mcp_servers(&self) -> BTreeMap<String, McpServer> {
+        let mut servers = self
+            .config
+            .as_ref()
+            .ok()
+            .and_then(Option::as_ref)
+            .map(|config| config.mcp_servers.clone())
+            .unwrap_or_default();
+        servers.extend(self.run_servers.clone());
+        servers
     }
 
     pub fn filter(&self, entries: &mut BTreeMap<EndpointName, Availability>) {
@@ -284,7 +334,7 @@ impl Sources {
 
     pub fn redactions(&self) -> Redactions {
         let config = self.config.as_ref().ok().and_then(Option::as_ref);
-        self.inputs.redactions(config)
+        self.inputs.redactions(config, self.run_servers.values())
     }
 
     pub fn file_words(&self) -> String {

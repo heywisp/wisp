@@ -18,7 +18,7 @@ use support::pty::{PATIENCE, Pty, READY, Stdout, usable, wait_for_exit, wait_unt
 use support::server::{Server, message_start, sse};
 use support::{
     WISP,
-    home::{CONFIG_DIR, Home, SESSIONS, both, command_in, run},
+    home::{CONFIG, CONFIG_DIR, Home, SESSIONS, both, command_in, run},
 };
 
 const DONE: &str = "ALL-CHECKS-DONE";
@@ -168,6 +168,357 @@ fn jsonl_refuses_the_tools_that_need_the_tui() {
         );
     }
     assert!(server.bodies().is_empty());
+}
+
+const MCP_TEST_API_KEY: &str = "CANARY-loopback-mcp-api-credential";
+const FLAG_SERVER: &str = "[mcp.servers.notes]\ncommand = 'unused-mcp-server'\n";
+
+#[test]
+fn mcp_config_refusals_send_nothing() {
+    let server = serve(vec![text_reply(DONE)]);
+    let home = Home::configured("mcp-config-refusals");
+    use wisp_core::models::list::{SavedList, key};
+    use wisp_core::provider::credential::Credential;
+
+    let url = server.url();
+    home.write(CONFIG, &format!(
+        "[endpoints.catalogue]\nauth = 'api_key'\nkey_env = 'ANTHROPIC_API_KEY'\nurl = '{url}'\n[mcp.servers.zulu]\ncommand = 'unused'\n[mcp.servers.notes]\ncommand = 'unused'\n"
+    ));
+    let list = SavedList {
+        attempted: jiff::Timestamp::now().as_second(),
+        failed: false,
+        list: serde_json::from_str(r#"[{"id":"claude-sonnet-5-5","shown":true,"levels":[],"images":false,"search":false}]"#).unwrap(),
+        default_model: None,
+        web_search_models: Vec::new(),
+    };
+    let key = key(
+        &url,
+        &Credential::ApiKey(MCP_TEST_API_KEY.into()),
+        "catalogue",
+    )
+    .unwrap();
+    list.save(&home.dir(".local/share/wisp/models"), &key)
+        .unwrap();
+    let chat = || {
+        let mut command = home.jsonl_tools(server.port);
+        command
+            .env("ANTHROPIC_API_KEY", MCP_TEST_API_KEY)
+            .args(["--account", "catalogue"]);
+        command
+    };
+    let invalid_utf8 = home.file("utf8.toml");
+    std::fs::write(&invalid_utf8, [0xff]).unwrap();
+    let cases = [
+        (
+            invalid_utf8,
+            "search",
+            "the --mcp-config file is not valid UTF-8",
+        ),
+        (
+            home.file("missing.toml"),
+            "search",
+            "the --mcp-config file doesn't exist",
+        ),
+        (
+            home.write(
+                "syntax.toml",
+                "[mcp.servers.local]\ncommand = 'unused'\nargs = ]",
+            ),
+            "search",
+            "the --mcp-config file line 3 is not valid TOML; nothing was loaded",
+        ),
+        (
+            home.write("other.toml", "[unrelated]\nvalue = 'private-value'"),
+            "search",
+            "the --mcp-config file may hold only [mcp.servers.<name>] tables",
+        ),
+        (
+            home.write(
+                "table.toml",
+                "[mcp.servers.local]\ncommand = 'unused'\nkeys = [1]",
+            ),
+            "search",
+            "the --mcp-config file: mcp.servers must hold named tables with a nonempty command and optional lists of args and keys",
+        ),
+        (
+            home.write(
+                "saved.toml",
+                &format!("[mcp.servers.zulu]\ncommand = 'unused'\n{FLAG_SERVER}"),
+            ),
+            "search",
+            "--mcp-config names notes, which is already a saved server; give it another name",
+        ),
+        (
+            home.write("run.toml", "[mcp.servers.run]\ncommand = 'unused'\n"),
+            "none",
+            "--mcp-config needs the search tool, which finds a server's tools; add search to --tools",
+        ),
+        (
+            home.dir("not-a-file"),
+            "search",
+            "could not read the --mcp-config file: is a directory",
+        ),
+    ];
+    for (path, tools, expected) in cases {
+        let output = run(
+            chat()
+                .args([
+                    "--model",
+                    "claude-unlisted-mcp-test-model",
+                    "--tools",
+                    tools,
+                    "--mcp-config",
+                ])
+                .arg(path),
+            "hello\n",
+        );
+        assert_eq!(output.status.code(), Some(1), "{expected}");
+        assert!(output.stdout.is_empty(), "{expected}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            format!("wisp: {expected}\n")
+        );
+        assert_eq!(server.requests_received(), 0, "{expected}");
+    }
+    run(
+        chat().args([
+            "--model",
+            "claude-unlisted-mcp-test-model",
+            "--tools",
+            "search",
+            "--mcp-config",
+            "run.toml",
+        ]),
+        "",
+    );
+    assert!(
+        server.requests_received() > 0,
+        "the fixture did not attempt model discovery"
+    );
+    assert!(
+        server.bodies().is_empty(),
+        "the empty input should not send a turn"
+    );
+    let empty = home.write("empty.toml", "");
+    let output = run(
+        chat().args(["--tools", "none", "--mcp-config"]).arg(empty),
+        "hello\n",
+    );
+    assert!(output.status.success(), "{}", both(&output));
+    assert!(String::from_utf8_lossy(&output.stdout).contains(DONE));
+}
+
+#[test]
+fn a_resumed_preset_that_disables_search_refuses_mcp_before_discovery() {
+    if !usable() {
+        return;
+    }
+    let chat = serve(vec![text_reply(DONE)]);
+    let catalogue = serve(Vec::new());
+    let home = Home::configured("mcp-resume-no-search");
+    let preset = "[agents.presets.quiet]\ndescription = 'Quiet'\ninstructions = 'quiet.md'\ntools_off = ['search']\n";
+    home.write(CONFIG, &format!("preset = 'quiet'\n{preset}"));
+    home.write(".config/wisp/quiet.md", "Keep replies short.");
+    home.write("run.toml", FLAG_SERVER);
+    let launch = Launch {
+        log: true,
+        env: &[("ANTHROPIC_API_KEY", MCP_TEST_API_KEY)],
+        ..Launch::default()
+    };
+    let mut seed = tui_at(&home, chat.port, &[], &launch);
+    seed.wait_for(READY);
+    seed.send(b"hello\r");
+    seed.wait_for(DONE);
+    seed.wait_idle();
+    seed.send(b"\x04");
+    assert!(wait_for_exit(&mut seed.child).success());
+    drop(seed);
+    assert!(
+        home.records()
+            .iter()
+            .any(|row| row["type"] == "session_started" && row["preset"] == "quiet")
+    );
+
+    home.write(CONFIG, &format!("store_id = '0123456789abcdef'\n{preset}[endpoints.antigravity]\nprovider = 'gemini'\nauth = 'antigravity_subscription'\nkey_store = 'file'\nurl = '{}'\n", catalogue.url()));
+    home.antigravity(Some("CANARY-loopback-test-project"));
+    let expected = "wisp: --mcp-config needs the search tool, which finds a server's tools; add search to --tools";
+    let mut refused = tui_at(
+        &home,
+        chat.port,
+        &["--resume", "--mcp-config", "run.toml"],
+        &launch,
+    );
+    refused.wait_for(expected);
+    assert_eq!(wait_for_exit(&mut refused.child).code(), Some(1));
+    assert_eq!(catalogue.requests_received(), 0);
+    let mut control = tui_at(&home, chat.port, &["--resume"], &launch);
+    control.wait_for(READY);
+    control.send(b"\x04");
+    assert!(wait_for_exit(&mut control.child).success());
+    assert!(
+        catalogue.requests_received() > 0,
+        "the cold subscription did not attempt model discovery"
+    );
+}
+
+fn flag_service(
+    home: &Home,
+    file: &Path,
+    servers: &std::collections::BTreeMap<String, wisp_core::config::McpServer>,
+) -> wisp_core::mcp::Service {
+    wisp_core::mcp::Service::new_with_run_config(
+        servers.clone(),
+        home.0.clone(),
+        Some(home.dir(".local/share/wisp/mcp")),
+        file,
+        servers,
+        Some(&home.file(CONFIG)),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_flag_server_changes_no_prefix_bytes() {
+    let server = serve(vec![text_reply(DONE), text_reply(DONE)]);
+    let home = Home::new("mcp-config-prefix");
+    let file = home.write("servers.toml", FLAG_SERVER);
+    let servers = wisp_core::config::mcp_servers_in(FLAG_SERVER).unwrap();
+    let folder = home.dir(".local/share/wisp/mcp");
+    let service = || flag_service(&home, &file, &servers);
+    service()
+        .seed_saved_tools(
+            "notes",
+            vec![wisp_core::tool::ToolSpec {
+                name: "list".into(),
+                description: "List notes".into(),
+                input_schema: serde_json::json!({"type":"object"}),
+            }],
+        )
+        .await
+        .unwrap();
+    assert_eq!(service().saved("notes").unwrap().tools[0].name, "list");
+    assert!(
+        wisp_core::mcp::Service::new(servers, home.0.clone(), Some(folder))
+            .saved("notes")
+            .is_none()
+    );
+    for args in [None, Some(file)] {
+        let mut command = home.jsonl_tools(server.port);
+        command
+            .env("ANTHROPIC_API_KEY", MCP_TEST_API_KEY)
+            .args(["--tools", "search"]);
+        if let Some(path) = args {
+            command.arg("--mcp-config").arg(path);
+        }
+        let output = run(&mut command, "hello\n");
+        assert!(output.status.success(), "{}", both(&output));
+    }
+    fn raw_array<'a>(body: &'a str, field: &str) -> &'a str {
+        let (_, tail) = body.split_once(&format!("\"{field}\":")).unwrap();
+        let mut stream = serde_json::Deserializer::from_str(tail).into_iter::<serde_json::Value>();
+        assert!(stream.next().unwrap().unwrap().is_array(), "{field}");
+        &tail[..stream.byte_offset()]
+    }
+    let requests = server.bodies();
+    assert_eq!(requests.len(), 2);
+    for field in ["system", "tools"] {
+        assert_eq!(
+            raw_array(&requests[0], field),
+            raw_array(&requests[1], field),
+            "{field}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cached_mcp_credentials_are_evicted_before_jsonl_tools_start() {
+    const KEY: &str = "CANARY:cached:secret:token";
+    let original = format!("run:{KEY}");
+    let mapped = wisp_core::mcp::tool_name("notes", &original);
+    let server = serve(vec![
+        support::server::tool_reply("call_cached", "use", &serde_json::json!({"name":mapped})),
+        text_reply(DONE),
+    ]);
+    let home = Home::new("mcp-config-stale-cache");
+    let config = format!("{FLAG_SERVER}keys = ['FLAG_MCP_AUTH']\n");
+    let file = home.write("servers.toml", &config);
+    let servers = wisp_core::config::mcp_servers_in(&config).unwrap();
+    flag_service(&home, &file, &servers)
+        .seed_saved_tools(
+            "notes",
+            vec![wisp_core::tool::ToolSpec {
+                name: original,
+                description: "Read notes".into(),
+                input_schema: serde_json::json!({"type":"object"}),
+            }],
+        )
+        .await
+        .unwrap();
+    let folder = home.file(".local/share/wisp/mcp");
+    let json_cache = || {
+        std::fs::read_dir(&folder)
+            .unwrap()
+            .flatten()
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+            .count()
+    };
+    assert_eq!(json_cache(), 1);
+    let output = run(
+        home.jsonl_tools(server.port)
+            .env("ANTHROPIC_API_KEY", MCP_TEST_API_KEY)
+            .env("FLAG_MCP_AUTH", KEY)
+            .args(["--tools", "search", "--mcp-config"])
+            .arg(file),
+        "use the cached tool\n",
+    );
+    assert!(output.status.success());
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    assert!(stdout.contains("tool_call_finished"));
+    assert!(!stdout.contains(KEY) && !stdout.contains("plugins_changed"));
+    assert!(!home.logs().contains(KEY));
+    let requests = server.bodies();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|request| !request.contains(KEY)));
+    assert_eq!(json_cache(), 0);
+}
+
+#[test]
+fn a_flag_servers_key_is_masked_in_the_stream_and_the_log() {
+    const VALUE: &str = "CANARY-flag-server-exported-value";
+    let server = serve(vec![tool_reply("printenv FLAG_MCP_AUTH"), text_reply(DONE)]);
+    let home = Home::new("mcp-config-mask");
+    let file = home.write(
+        "servers.toml",
+        &format!("{FLAG_SERVER}keys = ['FLAG_MCP_AUTH']\n"),
+    );
+    let output = run(
+        home.jsonl_tools(server.port)
+            .env("ANTHROPIC_API_KEY", MCP_TEST_API_KEY)
+            .env("FLAG_MCP_AUTH", VALUE)
+            .args(["--tools", "bash,search", "--mcp-config"])
+            .arg(file),
+        "read the variable\n",
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains(VALUE), "unmasked value in the stream");
+    assert!(output.status.success(), "session did not complete");
+    let finished = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|event| event["type"] == "tool_call_finished")
+        .unwrap();
+    assert_eq!(finished["output"]["tail"], "[redacted]\n");
+    let log = home.logs();
+    assert!(!log.contains(VALUE), "unmasked value in the log");
+    assert!(log.contains("[redacted]"), "no masked value in the log");
+    let bodies = server.bodies();
+    assert!(
+        bodies.iter().all(|body| !body.contains(VALUE)),
+        "unmasked value in a provider request"
+    );
+    let requests = turns(&bodies);
+    assert_eq!(requests.len(), 2);
+    assert!(result_text(&result_of(&requests[1..], "toolu_01")).contains("[redacted]"));
 }
 
 #[test]

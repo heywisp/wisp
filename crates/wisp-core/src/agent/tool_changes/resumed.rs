@@ -279,6 +279,11 @@ impl Agent {
         input: &'a Value,
         sent_search: &'a [ServerToolSpec],
     ) -> BoxFuture<'a, Result<Prepared, InvalidInput>> {
+        if self.hidden_mcp_name(name) {
+            return Box::pin(std::future::ready(Err(InvalidInput::new(
+                crate::mcp::HELD_CREDENTIAL,
+            ))));
+        }
         if self.toolbox.definition(name).is_none() && self.dynamic_plugin(name).is_some() {
             return self.prepare_missing_dynamic(name, input);
         }

@@ -725,6 +725,7 @@ fn an_unreachable_endpoint_fails_the_check() {
         port: held.local_addr().unwrap().port(),
         seen: Arc::new(Mutex::new(Vec::new())),
         named: Arc::default(),
+        received: Arc::default(),
     };
     let home = Home::configured("check-unreachable");
     home.write(CONFIG, &check_config(&[("closed", &closed)]));

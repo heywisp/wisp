@@ -1552,6 +1552,67 @@ async fn a_call_through_use_after_mcp_remove_has_the_removed_sentence_and_no_ind
 }
 
 #[tokio::test]
+async fn mcp_calls_hide_a_cached_original_after_its_credential_becomes_held() {
+    const SECRET: &str = "CANARY:late:mcp:original";
+    let original = format!("run:{SECRET}");
+    let mapped = crate::mcp::tool_name("local", &original);
+    let env = Env::new("cached-mcp-late-secret");
+    let server = Server::start(vec![
+        says("msg_ready", 500, "Ready."),
+        reply(
+            "msg_late",
+            600,
+            vec![call("mcp_late", "use", json!({"name":mapped}))],
+            "tool_use",
+        ),
+        says("msg_after", 700, "Done."),
+    ])
+    .await;
+    let configs = std::collections::BTreeMap::from([(
+        "local".into(),
+        crate::config::McpServer {
+            command: "no-adapter-needed".into(),
+            args: Vec::new(),
+            keys: Vec::new(),
+        },
+    )]);
+    let folder = Some(env.root.join("mcp"));
+    crate::mcp::Service::new(configs.clone(), env.work(), folder.clone())
+        .seed_saved_tools(
+            "local",
+            vec![crate::tool::ToolSpec {
+                name: original.clone(),
+                description: "Run a task".into(),
+                input_schema: json!({"type":"object"}),
+            }],
+        )
+        .await
+        .unwrap();
+    let service = crate::mcp::Service::new(configs, env.work(), folder);
+    let store = MemoryStore::default();
+    let mut kit = found_kit(&server, &env, &store, false);
+    kit.mcp = service.clone();
+    let mut session = Session::start(
+        kit.build(on(CAPABLE, kit::Start::Fresh))
+            .await
+            .unwrap()
+            .agent,
+    );
+    session.turn("u1", "Get ready.").await;
+    assert_eq!(service.definitions()[0].original, original);
+    crate::session::register_secrets([SECRET.to_owned()]);
+    let events = session.turn("u2", "Run the cached tool.").await;
+    assert!(events.iter().any(|event| matches!(event, AgentEvent::ToolCallRequested { call_id, display, .. }
+        if call_id == "mcp_late" && display.action == wisp_protocol::ToolAction::Other { name: "mcp".into() })));
+    assert!(events.iter().any(|event| matches!(event, AgentEvent::ToolCallFinished { call_id, outcome: wisp_protocol::ToolOutcome::InvalidInput { message }, .. }
+        if call_id == "mcp_late" && message == crate::mcp::HELD_CREDENTIAL)));
+    assert!(!serde_json::to_string(&events).unwrap().contains(&original));
+    let result = result_text(&body(&server, 2), "mcp_late");
+    assert!(result.contains(crate::mcp::HELD_CREDENTIAL) && !result.contains(SECRET));
+    session.end().await;
+}
+
+#[tokio::test]
 async fn cached_mcp_tools_follow_the_plugin_switch_at_start_off_and_back_on() {
     use wisp_protocol::settings::ENABLED_KEY;
     for start_off in [false, true] {

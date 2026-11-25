@@ -176,6 +176,13 @@ struct Args {
     #[arg(
         long,
         global = true,
+        value_name = "FILE",
+        help = "Add the MCP servers in this file for this run, written as config.toml's [mcp.servers.<name>] tables. config.toml isn't changed"
+    )]
+    mcp_config: Option<PathBuf>,
+    #[arg(
+        long,
+        global = true,
         value_name = "MODE",
         value_parser = usage::choices(&KeychainSetting::ALL, KeychainSetting::as_str),
         help = concat!("Use the system keychain: auto (the default: when this machine has one, not under WSL), on or off (keys only in variables and ", wisp_protocol::credentials_file!(), "). WISP_KEYCHAIN and keychain in ", wisp_protocol::config_file!(), " set it too")
@@ -995,7 +1002,13 @@ fn doctor(
     use std::io::Write;
     let mut out = std::io::stdout().lock();
     let home = std::env::var("HOME").ok();
-    let sources = sources(args, setup, keychain);
+    let mut sources = sources(args, setup, keychain);
+    if let Some(path) = &args.mcp_config
+        && let Err(err) = sources.add_servers(path)
+    {
+        eprintln!("wisp: {err}");
+        return ExitCode::FAILURE;
+    }
     let book = sources.book().ok();
     let start_endpoint = setup
         .endpoint
@@ -1009,20 +1022,22 @@ fn doctor(
         variables.as_ref().map_err(String::as_str),
         home.as_deref(),
     );
+    let mcp = match start::mcp_service(
+        &sources,
+        std::env::current_dir().unwrap_or_default(),
+        keychain,
+        false,
+    ) {
+        Ok(mcp) => mcp,
+        Err(err) => {
+            eprintln!("wisp: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
     let (hook_rows, hooks_broken) = hooks_report(&tools::registry().0);
     let loaded = context::load(sources.config_path.as_deref()).with_flags(&resolved.flags);
     let mut written = wisp_tui::term::doctor::run(&mut out, &display_of(setup, &sources))
-        .and_then(|()| {
-            tools_doctor(
-                &mut out,
-                start::mcp_service(
-                    &sources,
-                    std::env::current_dir().unwrap_or_default(),
-                    keychain,
-                    false,
-                ),
-            )
-        })
+        .and_then(|()| tools_doctor(&mut out, mcp))
         .and_then(|()| {
             out.write_all(rows_text("hooks", &hook_rows).as_bytes())?;
             out.write_all(rows_text("plugins", &plugin_rows(home.as_deref())).as_bytes())?;
@@ -1545,6 +1560,7 @@ async fn build_session(
     let on_tui = chosen.presenter == Presenter::Tui;
     let inputs = start::Inputs {
         config: args.config.as_deref(),
+        mcp_config: args.mcp_config.as_deref(),
         env_file: args.env_file.as_deref(),
         keychain,
         setup,
@@ -1636,6 +1652,7 @@ fn run(args: Args, setup: Setup, keychain: Arc<keychain::Keychain>) -> ExitCode 
 fn relaunch(args: &Args, id: String) -> Args {
     let mut next = Args {
         config: args.config.clone(),
+        mcp_config: args.mcp_config.clone(),
         env_file: args.env_file.clone(),
         keychain: args.keychain,
         verbose: args.verbose,
@@ -1644,7 +1661,11 @@ fn relaunch(args: &Args, id: String) -> Args {
         resume: Some(Some(id)),
         ..Args::default()
     };
-    for (flag, path) in [("--config", &next.config), ("--env-file", &next.env_file)] {
+    for (flag, path) in [
+        ("--config", &next.config),
+        ("--mcp-config", &next.mcp_config),
+        ("--env-file", &next.env_file),
+    ] {
         if let Some(path) = path {
             next.host_args
                 .extend([flag.into(), path.clone().into_os_string()]);

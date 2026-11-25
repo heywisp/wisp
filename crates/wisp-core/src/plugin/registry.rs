@@ -1587,13 +1587,21 @@ impl Tools {
     pub fn registry(&self) -> Arc<Registry> {
         self.live.registry()
     }
+
+    pub fn is_enabled(&self, name: &str) -> bool {
+        self.enabled(&self.registry()).contains(name)
+    }
+
+    fn enabled(&self, registry: &Registry) -> BTreeSet<String> {
+        &registry.on_tools(&(&self.on - &self.off)) - &self.off
+    }
 }
 
 impl BuildTools for Tools {
     fn start<'a>(&'a self, _path: &'a str, host: Arc<KernelHost>) -> BoxFuture<'a, Started> {
         async move {
             let registry = self.registry();
-            let on = &registry.on_tools(&(&self.on - &self.off)) - &self.off;
+            let on = self.enabled(&registry);
             let mut started = registry.start_resolved(on, host).await;
             if let Some(names) = &self.preload {
                 started.toolbox = started.toolbox.preload(&started.catalog, names);

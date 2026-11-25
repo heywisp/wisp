@@ -32,7 +32,7 @@ fn contains(case: &Case) {
     let config = case.config.map(config);
     let env = lookup(&case.env);
     let file = file_of(case.file);
-    let reader = variable_redactions(config.as_ref(), &env, Some(case.file));
+    let reader = variable_redactions(config.as_ref(), [], &env, Some(case.file));
     if case.config.is_none() {
         for (name, value) in &case.env {
             if name.ends_with("_BASE_URL") {
@@ -116,7 +116,13 @@ fn both_sources_are_read_for_every_name() {
     let config = config(
         "[mcp.servers.local]\ncommand = \"test-server\"\nkeys = [\"SERVER_KEY\", \"SHORT_KEY\"]\n[endpoints.work]\nauth = \"bearer\"\nkey_env = \"WORK_KEY\"\nurl_env = \"WORK_URL\"\n[endpoints.odd]\nauth = \"bearer\"\nkey_env = \"ODD_KEY\"\nurl_env = \"ODD_URL\"\n",
     );
+    let run_servers = crate::config::mcp_servers_in(
+        "[mcp.servers.run]\ncommand = 'test-server'\nkeys = ['FLAG_MCP_AUTH']\n",
+    )
+    .unwrap();
+    const FLAG_VALUE: &str = "CANARY-exported-flag-server-value";
     let env = lookup(&[
+        ("FLAG_MCP_AUTH", FLAG_VALUE),
         ("ANTHROPIC_API_KEY", "sk-ant-CANARYA-credential"),
         (
             "WORK_URL",
@@ -127,7 +133,7 @@ fn both_sources_are_read_for_every_name() {
         ("SHORT_KEY", "CANARY-short-secret"),
     ]);
     let text = "ANTHROPIC_API_KEY=sk-ant-CANARYB-credential\nthis line has CANARYSKIPPED no equals\nWORK_KEY=  CANARYWORK  \nANTHROPIC_BASE_URL=https://gw.example.com/CANARYBASE\n";
-    let reader = variable_redactions(Some(&config), &env, Some(text));
+    let reader = variable_redactions(Some(&config), run_servers.values(), &env, Some(text));
     let scrubbed = reader.scrub(
         "sk-ant-CANARYA-credential sk-ant-CANARYB-credential CANARYWORK CANARYPASS-long-password /CANARYPATH-long-account-path CANARYQUERY-long-query not a url CANARYODDURL /CANARYBASE",
     );
@@ -144,6 +150,8 @@ fn both_sources_are_read_for_every_name() {
             "{REDACTED} {REDACTED} {REDACTED} /CANARYPATH-long-account-path CANARYQUERY-long-query not a url CANARYODDURL /CANARYBASE"
         )
     );
+    assert_eq!(reader.mask(FLAG_VALUE), REDACTED);
+    assert_eq!(reader.scrub(FLAG_VALUE), REDACTED);
     assert_eq!(reader.mask("CANARY-exported-mcp-key-credential"), REDACTED);
     assert_eq!(reader.scrub("CANARY-exported-mcp-key-credential"), REDACTED);
     assert_eq!(reader.mask("CANARY-short-secret"), "CANARY-short-secret");
@@ -177,10 +185,11 @@ fn exported_key_names_hold_only_long_non_path_values() {
 
 #[test]
 fn nothing_set_holds_nothing() {
-    let reader = variable_redactions(None, &|_| None, None);
+    let reader = variable_redactions(None, [], &|_| None, None);
     assert!(reader.is_empty());
     let blank = variable_redactions(
         None,
+        [],
         &|_| Some("   ".to_owned()),
         Some("ANTHROPIC_API_KEY=\n"),
     );

@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
@@ -11,6 +12,7 @@ pub(crate) struct Seen {
 
 pub(crate) struct Server {
     pub(crate) port: u16,
+    pub(crate) received: Arc<AtomicUsize>,
     pub(crate) seen: Arc<Mutex<Vec<Seen>>>,
     pub(crate) named: Arc<Mutex<Vec<Seen>>>,
 }
@@ -44,16 +46,20 @@ impl Server {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let named = Arc::new(Mutex::new(Vec::new()));
         let logs = (Arc::clone(&seen), Arc::clone(&named));
+        let received = Arc::new(AtomicUsize::new(0));
+        let arrive = Arc::clone(&received);
         let answer = Arc::new(answer);
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else { return };
                 let (recorded, naming) = (Arc::clone(&logs.0), Arc::clone(&logs.1));
                 let (answer, name) = (Arc::clone(&answer), name.clone());
+                let arrive = Arc::clone(&arrive);
                 std::thread::spawn(move || {
                     let mut writer = stream.try_clone().unwrap();
                     let mut reader = BufReader::new(stream);
                     while let Some(request) = read_request(&mut reader) {
+                        arrive.fetch_add(1, Ordering::Relaxed);
                         let (reply, log) = if request.head.starts_with("GET /v1/models") {
                             (json("404 Not Found", "{}"), None)
                         } else if is_naming(&request.body) {
@@ -71,7 +77,16 @@ impl Server {
                 });
             }
         });
-        Server { port, seen, named }
+        Server {
+            port,
+            seen,
+            named,
+            received,
+        }
+    }
+
+    pub(crate) fn requests_received(&self) -> usize {
+        self.received.load(Ordering::Relaxed)
     }
 
     pub(crate) fn named(&self) -> Vec<(String, String)> {

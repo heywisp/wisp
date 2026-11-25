@@ -30,6 +30,7 @@ mod http;
 mod keys;
 mod saved;
 mod sign_in;
+pub(crate) use saved::HELD_CREDENTIAL;
 pub use saved::{List, Prompt as SavedPrompt, Resource as SavedResource};
 pub use sign_in::is_sign_in_link;
 
@@ -57,6 +58,7 @@ pub(crate) fn link_note(
 const START_LIMIT: Duration = Duration::from_millis(wisp_plugin_api::mcp::START_LIMIT_MS);
 const OPTIONAL_LIMIT: Duration = Duration::from_secs(START_LIMIT.as_secs() / 12);
 const SIGN_IN_REQUIRED: &str = "needs sign-in";
+const TOOL_PREFIX: &str = "mcp__";
 const NAME_OVERLAP: &str = "has overlapping mapped tool names";
 
 #[derive(Clone)]
@@ -79,7 +81,8 @@ struct Inner {
     cwd: PathBuf,
     revision: AtomicU64,
     changes: AtomicU64,
-    known: Mutex<BTreeMap<String, (String, String)>>,
+    known: Mutex<BTreeMap<String, KnownTool>>,
+    retired_redactions: Mutex<BTreeMap<CacheOwner, Redactions>>,
     off: Mutex<BTreeSet<String>>,
     notes: Mutex<Vec<Note>>,
     ended: Mutex<Vec<SignInEnd>>,
@@ -88,8 +91,17 @@ struct Inner {
     forms: AtomicBool,
 }
 
+type CacheOwner = (String, String);
+
+#[derive(Clone)]
+struct KnownTool {
+    owner: CacheOwner,
+    original: String,
+}
+
 struct Server {
     config: McpServer,
+    owner: Option<Arc<keys::RunKeyOwner>>,
     flights: elicit::Flights,
     keys: Mutex<BTreeMap<String, wisp_protocol::Secret>>,
     redactions: Mutex<Redactions>,
@@ -227,6 +239,10 @@ impl Server {
         self.snapshot.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn cache_owner(&self) -> CacheOwner {
+        (self.watch.name.clone(), self.saved.key().to_owned())
+    }
+
     fn redactions(&self) -> MutexGuard<'_, Redactions> {
         self.redactions
             .lock()
@@ -251,15 +267,111 @@ impl std::fmt::Debug for Service {
     }
 }
 
+fn saved_servers(config: &Path) -> Result<BTreeMap<String, McpServer>, &'static str> {
+    crate::config_file::ConfigText::read(config, crate::endpoints::PathShown::Given)
+        .and_then(|text| text.current())
+        .map(|config| config.mcp_servers)
+        .map_err(|_| "could not read config.toml")
+}
+
+fn pin_config(path: &Path) -> Option<PathBuf> {
+    match std::fs::canonicalize(path) {
+        Ok(path) => Some(path),
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && path
+                    .symlink_metadata()
+                    .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new("."));
+            Some(pin_config(parent)?.join(path.file_name()?))
+        }
+        Err(_) => None,
+    }
+}
+
+fn check_pinned_config(config: &Path) -> Result<(), &'static str> {
+    (pin_config(config).as_deref() == Some(config))
+        .then_some(())
+        .ok_or("config.toml has moved")
+}
+
+fn run_config_read_error() -> String {
+    format!("could not read {}", crate::config::MCP_CONFIG_FILE)
+}
+
+fn check_pinned_run(run: &Path) -> Result<(), String> {
+    if std::fs::canonicalize(run).is_ok_and(|canonical| canonical == run) {
+        return Ok(());
+    }
+    Err(run_config_read_error())
+}
+
+fn run_definition(config: &Path, run: &Path, name: &str) -> Result<McpServer, String> {
+    use crate::config::{MCP_CONFIG_FILE, mcp_servers_in};
+    check_pinned_config(config)?;
+    check_pinned_run(run)?;
+    if saved_servers(config)?.contains_key(name) {
+        return Err(text::NAME_EXISTS.into());
+    }
+    let text = std::fs::read_to_string(run).map_err(|_| run_config_read_error())?;
+    mcp_servers_in(&text)?
+        .remove(name)
+        .ok_or_else(|| format!("the server is no longer in {MCP_CONFIG_FILE}"))
+}
+
 impl Service {
     pub fn new(
         servers: BTreeMap<String, McpServer>,
         cwd: PathBuf,
         folder: Option<PathBuf>,
     ) -> Self {
+        Self::start_servers(servers, cwd, folder, |_, _| None)
+    }
+
+    pub fn new_with_run_config(
+        servers: BTreeMap<String, McpServer>,
+        cwd: PathBuf,
+        folder: Option<PathBuf>,
+        run_file: &Path,
+        run_servers: &BTreeMap<String, McpServer>,
+        config: Option<&Path>,
+    ) -> Result<Self, String> {
+        if run_servers.is_empty() {
+            return Ok(Self::new(servers, cwd, folder));
+        }
+        check_pinned_run(run_file)?;
+        let run_cwd = std::fs::canonicalize(&cwd)
+            .map_err(|_| "could not find the server's working directory")?;
+        let config = config
+            .map(|path| pin_config(path).ok_or("could not resolve config.toml"))
+            .transpose()?;
+        let origin = |name: &str, server: &McpServer| {
+            run_servers.contains_key(name).then(|| {
+                Arc::new(keys::RunKeyOwner::new(
+                    name,
+                    server,
+                    run_cwd.clone(),
+                    run_file.to_owned(),
+                    config.clone(),
+                ))
+            })
+        };
+        Ok(Self::start_servers(servers, cwd, folder, origin))
+    }
+
+    fn start_servers(
+        servers: BTreeMap<String, McpServer>,
+        cwd: PathBuf,
+        folder: Option<PathBuf>,
+        origin: impl Fn(&str, &McpServer) -> Option<Arc<keys::RunKeyOwner>>,
+    ) -> Self {
         let closed = CancellationToken::new();
         let guard = Arc::new(closed.clone().drop_guard());
-        let service = Self::build(servers, cwd, folder, closed, Some(guard));
+        let service = Self::build(servers, cwd, folder, closed, Some(guard), origin);
         for server in service.servers().values() {
             server.watch.bind(Arc::downgrade(&service.0));
         }
@@ -272,27 +384,40 @@ impl Service {
         folder: Option<PathBuf>,
         closed: CancellationToken,
         guard: Option<Arc<DropGuard>>,
+        origin: impl Fn(&str, &McpServer) -> Option<Arc<keys::RunKeyOwner>>,
     ) -> Self {
         let prefixes: Vec<_> = servers.keys().map(|name| tool_name(name, "")).collect();
         let servers = servers
             .into_iter()
             .map(|(name, config)| {
-                let saved = saved::Saved::new(folder.as_deref(), &name, &config);
+                let owner = origin(&name, &config);
+                let saved = saved::Saved::new(folder.as_deref(), &name, &config, owner.as_deref());
                 let overlap = prefixes
                     .iter()
                     .filter(|prefix| **prefix == tool_name(&name, ""))
                     .count()
                     > 1;
-                let list = (!overlap)
-                    .then(|| saved.read())
-                    .flatten()
-                    .filter(|list| check_names(&name, &list.tools).is_ok());
+                let (list, failure) = if overlap {
+                    (
+                        None,
+                        Some("has a configured name that overlaps after mapping"),
+                    )
+                } else {
+                    match saved.load_safe(&Redactions::default()) {
+                        Ok(list) => (
+                            list.filter(|list| check_names(&name, &list.tools).is_ok()),
+                            None,
+                        ),
+                        Err(reason) => (None, Some(reason)),
+                    }
+                };
                 let name_problem =
                     overlap.then_some("has a configured name that overlaps after mapping");
-                let state = name_problem.map_or(State::Stopped, |reason| {
+                let state = failure.map_or(State::Stopped, |reason| {
                     State::Failed(format!("{name} {reason}"))
                 });
                 let server = Server {
+                    owner,
                     config,
                     flights: Arc::default(),
                     keys: Mutex::default(),
@@ -327,6 +452,7 @@ impl Service {
                 revision: AtomicU64::new(0),
                 changes: AtomicU64::new(0),
                 known: Mutex::default(),
+                retired_redactions: Mutex::default(),
                 off: Mutex::default(),
                 notes: Mutex::default(),
                 ended: Mutex::default(),
@@ -343,12 +469,24 @@ impl Service {
     fn remember_names(&self, publish: impl FnOnce()) {
         let mut known = self.0.known.lock().unwrap_or_else(PoisonError::into_inner);
         publish();
-        known.extend(self.catalog().into_iter().filter_map(
-            |(name, tools)| match tools.as_slice() {
-                [(server, tool)] => Some((name, (server.clone(), tool.name.clone()))),
-                _ => None,
-            },
-        ));
+        let servers = self.servers();
+        known.extend(
+            self.catalog_of(&servers)
+                .into_iter()
+                .filter_map(|(name, tools)| {
+                    let [(server, tool)] = tools.as_slice() else {
+                        return None;
+                    };
+                    let owner = servers.get(server)?.cache_owner();
+                    Some((
+                        name,
+                        KnownTool {
+                            owner,
+                            original: tool.name.clone(),
+                        },
+                    ))
+                }),
+        );
     }
 
     fn servers(&self) -> MutexGuard<'_, BTreeMap<String, Arc<Server>>> {
@@ -386,6 +524,17 @@ impl Service {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .unwrap_or(crate::secrets::StoreKind::File),
+        )
+    }
+
+    fn credentials_for(&self, server: &Server) -> (Option<PathBuf>, crate::secrets::StoreKind) {
+        let (config, store) = self.credentials();
+        (
+            server
+                .owner
+                .as_ref()
+                .map_or(config, |owner| owner.config.clone()),
+            store,
         )
     }
 
@@ -448,6 +597,7 @@ impl Service {
         &self,
         name: &str,
         config: &McpServer,
+        owner: Option<Arc<keys::RunKeyOwner>>,
         keys: BTreeMap<String, wisp_protocol::Secret>,
     ) -> Self {
         let staged = Self::build(
@@ -456,6 +606,7 @@ impl Service {
             None,
             self.0.closed.clone(),
             self.1.clone(),
+            |_, _| owner.clone(),
         )
         .with_forms(self.0.forms.load(Ordering::Acquire));
         if let Ok(server) = staged.server(name) {
@@ -492,9 +643,9 @@ impl Service {
         {
             return Err(text::NAME_EXISTS.into());
         }
-        let mut found = self.keys_for(name, &config).await?;
+        let mut found = self.keys_for(name, &config, None).await?;
         found.extend(typed.clone());
-        let staged = self.staged(name, &config, found);
+        let staged = self.staged(name, &config, None, found);
         let started = tokio::select! {
             biased;
             () = cancelled => return Err(wisp_tool_text::manage::NO_ANSWER.into()),
@@ -533,7 +684,7 @@ impl Service {
         &self,
         name: &str,
         staged: Self,
-        typed: BTreeMap<String, wisp_protocol::Secret>,
+        mut typed: BTreeMap<String, wisp_protocol::Secret>,
         by: Option<String>,
         persist: impl FnOnce(&McpServer) -> Result<(), String> + Send,
     ) -> Result<KeyResult, String> {
@@ -542,7 +693,12 @@ impl Service {
             .remove(name)
             .ok_or("the server could not be added")?;
         let mut server = Arc::try_unwrap(server).map_err(|_| "the server is still starting")?;
-        server.saved = saved::Saved::new(self.0.folder.as_deref(), name, &server.config);
+        server.saved = saved::Saved::new(
+            self.0.folder.as_deref(),
+            name,
+            &server.config,
+            server.owner.as_deref(),
+        );
         let (list, listed) = {
             let snapshot = server.snapshot();
             (snapshot.list.clone(), snapshot.listed)
@@ -553,16 +709,48 @@ impl Service {
             Some(old) => Some(old.connection.lock().await),
             None => None,
         };
+        let mut redactions = self.live_redactions(&server);
+        if let Some(old) = old
+            .as_ref()
+            .filter(|old| old.saved.key() == server.saved.key())
+        {
+            redactions = redactions.union([&*old.redactions()]);
+        }
         if let Some(list) = &list {
             self.check_overlaps(name, list)?;
+            list.check_secrets(&redactions)?;
         }
-        server
-            .saved
-            .commit(list.as_ref(), || persist(&server.config))
-            .await?;
+        let cache = match &list {
+            Some(list) => Some((server.saved.edit().await?, list)),
+            None => None,
+        };
+        let run_kept = if let Some(owner) = &server.owner {
+            let cache = cache.map(|(edit, list)| (edit, list.clone()));
+            Some(
+                self.commit_run_keys(
+                    name,
+                    &server.config,
+                    owner.clone(),
+                    std::mem::take(&mut typed),
+                    cache,
+                    redactions,
+                )
+                .await?,
+            )
+        } else {
+            let save = || persist(&server.config);
+            match cache {
+                Some((cache, list)) => cache.commit(list, &redactions, save)?,
+                None => save()?,
+            }
+            None
+        };
         let count =
             u32::try_from(list.as_ref().map_or(0, |list| list.tools.len())).unwrap_or(u32::MAX);
         let config = server.config.clone();
+        if let Some(old) = &old {
+            self.retire_redactions(old);
+        }
         self.remember_names(|| {
             let mut servers = self.servers();
             servers.insert(name.into(), Arc::new(server));
@@ -590,7 +778,10 @@ impl Service {
                 self.note(Note::SignIn(name.into()));
             }
         }
-        let kept = self.keep_keys(name.into(), config, typed).await;
+        let kept = match run_kept {
+            Some(kept) => kept,
+            None => self.keep_keys(name.into(), config, typed).await,
+        };
         Ok(KeyResult { tools: count, kept })
     }
 
@@ -608,39 +799,81 @@ impl Service {
             .unwrap_or_else(PoisonError::into_inner)
             .remove(name);
         let mut connection = server.connection.lock().await;
-        server.saved.remove().await?;
-        if let (Some(config), _) = self.credentials() {
-            let path = crate::oauth::mcp_sign_in_profile(&config, name)
-                .map_err(|_| sign_in::STORE_ERROR)?;
-            let config_folder = crate::config_file::lock_folder(&config);
-            let folder = path.parent().ok_or(sign_in::STORE_ERROR)?.to_owned();
-            let locks = tokio::task::spawn_blocking(move || {
-                crate::secrets::lock(
-                    &[
-                        (config_folder.as_path(), crate::secrets::LockKind::Config),
-                        (folder.as_path(), crate::secrets::LockKind::Credentials),
-                    ],
-                    crate::endpoints::PathShown::Given,
-                    crate::secrets::LOCK_WAIT,
-                )
+        let run = server.owner.is_some();
+        if run {
+            self.unregister(name, &server, by);
+            *connection = None;
+        }
+        self.erase_server(name, &server).await?;
+        if !run {
+            self.unregister(name, &server, by);
+            *connection = None;
+        }
+        Ok(())
+    }
+
+    async fn erase_server(&self, name: &str, server: &Server) -> Result<(), String> {
+        if let Some(owner) = &server.owner {
+            owner.check_paths()?;
+        }
+        let cache = server.saved.edit().await?;
+        let (config, _) = self.credentials_for(server);
+        let Some(config) = config else {
+            if let Some(owner) = &server.owner {
+                owner.check_paths()?;
+            }
+            return cache.remove().map_err(str::to_owned);
+        };
+        let path = sign_in::profile(&config, name, server.owner.as_deref())
+            .map_err(|_| sign_in::STORE_ERROR)?;
+        let locks = {
+            let (config, path) = (config.clone(), path.clone());
+            tokio::task::spawn_blocking(move || {
+                crate::oauth::lock_profile_with_config(&path, Some(&config))
             })
             .await
             .map_err(|_| sign_in::STORE_ERROR)?
-            .map_err(|_| sign_in::STORE_ERROR)?;
-            keys::clear(&config, name, &locks)?;
-            crate::oauth::clear_value_locked(&path, &locks).map_err(|_| sign_in::STORE_ERROR)?;
-            if is_address(&server.config.command) {
-                let legacy = crate::oauth::mcp_profile(&config, &server.config.command)
+            .map_err(|_| sign_in::STORE_ERROR)?
+        };
+        let http = is_address(&server.config.command);
+        if let Some(owner) = &server.owner {
+            owner.check_paths()?;
+            cache.remove()?;
+            if http {
+                crate::oauth::clear_value_locked(&path, &locks)
                     .map_err(|_| sign_in::STORE_ERROR)?;
-                crate::oauth::clear_value_locked(&legacy, &locks)
-                    .map_err(|_| sign_in::STORE_ERROR)?;
+            } else {
+                owner.clear(&config, &locks)?;
             }
-            self.persist(name, Edit::Remove, Some(&locks))?;
-        } else {
-            self.persist(name, Edit::Remove, None)?;
+            return Ok(());
         }
+        cache.remove()?;
+        keys::clear(&config, name, &locks)?;
+        crate::oauth::clear_value_locked(&path, &locks).map_err(|_| sign_in::STORE_ERROR)?;
+        if http {
+            let legacy = crate::oauth::mcp_profile(&config, &server.config.command)
+                .map_err(|_| sign_in::STORE_ERROR)?;
+            crate::oauth::clear_value_locked(&legacy, &locks).map_err(|_| sign_in::STORE_ERROR)?;
+        }
+        self.persist(name, Edit::Remove, Some(&locks))
+    }
+
+    fn retire_redactions(&self, server: &Server) {
+        let mut retired = self
+            .0
+            .retired_redactions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let redactions = server.redactions();
+        if !redactions.is_empty() {
+            let entry = retired.entry(server.cache_owner()).or_default();
+            *entry = entry.union([&*redactions]);
+        }
+    }
+
+    fn unregister(&self, name: &str, server: &Server, by: Option<&str>) {
+        self.retire_redactions(server);
         self.servers().remove(name);
-        *connection = None;
         self.0.revision.fetch_add(1, Ordering::AcqRel);
         if let Some(by) = by {
             self.note(Note::Changed {
@@ -649,7 +882,6 @@ impl Service {
                 added: false,
             });
         }
-        Ok(())
     }
 
     fn persist(
@@ -784,8 +1016,10 @@ impl Service {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .filter(|(_, (server, _))| servers.contains(server))
-            .map(|(name, (server, _))| (name.clone(), server.clone()))
+            .filter(|(name, known)| {
+                servers.contains(&known.owner.0) && self.known_name_visible(name, known)
+            })
+            .map(|(name, known)| (name.clone(), known.owner.0.clone()))
             .collect()
     }
 
@@ -806,8 +1040,7 @@ impl Service {
             .iter()
             .filter(|(server, _)| servers.contains(*server))
         {
-            let snapshot = state.snapshot();
-            if let Some(list) = &snapshot.list {
+            if let Some(list) = self.visible_list(state, &mut state.snapshot()) {
                 entries.extend(
                     list.prompts
                         .iter()
@@ -829,7 +1062,7 @@ impl Service {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(name)
-            .is_some_and(|(owner, _)| owner == server)
+            .is_some_and(|known| known.owner.0 == server)
     }
 
     pub fn revision(&self) -> u64 {
@@ -844,21 +1077,25 @@ impl Service {
         self.servers()
             .iter()
             .map(|(name, server)| {
-                let snapshot = server.snapshot();
+                let mut snapshot = server.snapshot();
+                let tools = self
+                    .visible_list(server, &mut snapshot)
+                    .map_or(0, |list| list.tools.len());
                 Row {
                     name: name.clone(),
                     off: self.is_off(name),
-                    state: if server
-                        .challenge
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .is_some()
+                    state: if !matches!(snapshot.state, State::Failed(_))
+                        && server
+                            .challenge
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .is_some()
                     {
                         State::NeedsSignIn
                     } else {
                         snapshot.state.clone()
                     },
-                    tools: snapshot.list.as_ref().map_or(0, |list| list.tools.len()),
+                    tools,
                     fresh: snapshot.listed == Some(server.watch.notices().seen),
                 }
             })
@@ -866,13 +1103,36 @@ impl Service {
     }
 
     pub fn saved(&self, name: &str) -> Option<List> {
-        self.servers().get(name)?.snapshot().list.clone()
+        let server = self.server(name).ok()?;
+        self.visible_list(&server, &mut server.snapshot()).cloned()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn seed_saved_tools(&self, name: &str, tools: Vec<ToolSpec>) -> Result<(), String> {
+        let server = self.server(name)?;
+        let redactions = server.redactions().clone();
+        server
+            .saved
+            .write(&List::new(tools, Vec::new(), Vec::new(), None), &redactions)
+            .await
+            .map_err(str::to_owned)
     }
 
     fn catalog(&self) -> BTreeMap<String, Vec<(String, ToolSpec)>> {
+        self.catalog_of(&self.servers())
+    }
+
+    fn catalog_of(
+        &self,
+        servers: &BTreeMap<String, Arc<Server>>,
+    ) -> BTreeMap<String, Vec<(String, ToolSpec)>> {
         let mut catalog = BTreeMap::<String, Vec<(String, ToolSpec)>>::new();
-        for (name, server) in self.servers().iter() {
-            for tool in server.snapshot().list.iter().flat_map(|list| &list.tools) {
+        for (name, server) in servers {
+            let mut snapshot = server.snapshot();
+            let Some(list) = self.visible_list(server, &mut snapshot) else {
+                continue;
+            };
+            for tool in &list.tools {
                 catalog
                     .entry(tool_name(name, &tool.name))
                     .or_default()
@@ -957,7 +1217,12 @@ impl Service {
             return Ok(connected.running.peer().clone());
         }
         *connection = None;
-        let mut found = self.keys_for(name, &server.config).await?;
+        if let Some(owner) = &server.owner {
+            owner.check_paths()?;
+        }
+        let mut found = self
+            .keys_for(name, &server.config, server.owner.clone())
+            .await?;
         found.extend(
             server
                 .keys
@@ -971,6 +1236,7 @@ impl Service {
             .collect();
         crate::session::register_secrets(values.iter().cloned());
         *server.redactions() = Redactions::new(values);
+        self.evict_catalog(server).await?;
         let missing = keys::missing(&server.config, &found);
         if !missing.is_empty() {
             server.snapshot().state = State::NeedsKey(missing.clone());
@@ -986,7 +1252,10 @@ impl Service {
                 } else {
                     start(
                         &server.config,
-                        &self.0.cwd,
+                        server
+                            .owner
+                            .as_ref()
+                            .map_or(self.0.cwd.as_path(), |owner| owner.cwd.as_path()),
                         &found,
                         self.0.forms.load(Ordering::Acquire),
                         server.flights.clone(),
@@ -1080,9 +1349,12 @@ impl Service {
         let (list, complete) = fetch_list(peer).await?;
         check_names(name, &list.tools)?;
         self.check_overlaps(name, &list)?;
+        let redactions = self.live_redactions(server);
+        list.check_secrets(&redactions)?;
         if complete {
-            server.saved.write(&list).await?;
+            server.saved.write(&list, &redactions).await?;
         }
+        list.check_secrets(&redactions)?;
         self.remember(server, list.clone(), seen);
         Ok(list)
     }
@@ -1109,18 +1381,20 @@ impl Service {
         if result.is_ok() || challenge.is_none() {
             return result;
         }
-        let (config, store) = self.credentials();
+        let (config, store) = self.credentials_for(server);
         let manager = sign_in::restored(
             name,
             &server.config.command,
             config,
+            server.owner.clone(),
             store,
             challenge.as_deref(),
         )
         .await
         .ok()
-        .flatten()
-        .ok_or(SIGN_IN_REQUIRED)?;
+        .flatten();
+        self.evict_catalog(server).await?;
+        let manager = manager.ok_or(SIGN_IN_REQUIRED)?;
         *server
             .challenge
             .lock()
@@ -1167,7 +1441,7 @@ impl Service {
         if server.snapshot().state != State::NeedsSignIn {
             return Err(format!("couldn't reach {name}"));
         }
-        let (config, store) = self.credentials();
+        let (config, store) = self.credentials_for(&server);
         let challenge = server
             .challenge
             .lock()
@@ -1179,6 +1453,7 @@ impl Service {
                 name,
                 &server.config.command,
                 config,
+                server.owner.clone(),
                 store,
                 challenge.as_deref(),
             ),
@@ -1289,10 +1564,8 @@ impl Service {
         self.connect(name)
             .await
             .inspect_err(|line| self.ended(name, line.clone()))?;
-        let count = server
-            .snapshot()
-            .list
-            .as_ref()
+        let count = self
+            .visible_list(&server, &mut server.snapshot())
             .map_or(0, |list| list.tools.len());
         *server.connection.lock().await = None;
         server.snapshot().state = State::Stopped;
@@ -1318,10 +1591,8 @@ impl Service {
             .iter()
             .filter(|(server, _)| !self.is_off(server))
             .flat_map(|(server, state)| {
-                state
-                    .snapshot()
-                    .list
-                    .iter()
+                self.visible_list(state, &mut state.snapshot())
+                    .into_iter()
                     .flat_map(|list| &list.prompts)
                     .map(|prompt| Prompt {
                         name: prompt_name(server, &prompt.name),
@@ -1340,10 +1611,8 @@ impl Service {
             .iter()
             .filter(|(server, _)| !self.is_off(server))
             .flat_map(|(server, state)| {
-                state
-                    .snapshot()
-                    .list
-                    .iter()
+                self.visible_list(state, &mut state.snapshot())
+                    .into_iter()
                     .flat_map(|list| &list.resources)
                     .map(|resource| Resource {
                         name: resource_name(server, &resource.uri),
@@ -1370,7 +1639,7 @@ impl Service {
             .iter()
             .any(|current| current.name == name && current.original == prompt.original)
         {
-            return Err(text::gone(&prompt.server, &prompt.original));
+            return Err(self.gone(&server, &prompt.original));
         }
         match peer
             .get_prompt_once(GetPromptRequestParams::new(prompt.original))
@@ -1406,7 +1675,7 @@ impl Service {
             .iter()
             .any(|current| current.name == name && current.uri == resource.uri)
         {
-            return Err(text::gone(&resource.server, &resource.uri));
+            return Err(self.gone(&server, &resource.uri));
         }
         match peer
             .read_resource_once(ReadResourceRequestParams::new(resource.uri))
@@ -1458,13 +1727,13 @@ impl Service {
             result = self.ready(&server_name) => result?,
             _ = cancel.cancelled() => return Err(text::CALL_CANCELLED.into()),
         };
+        let server = self.server(&server_name)?;
         if self.catalog().get(name).is_none_or(|entries| !matches!(entries.as_slice(), [(server, tool)] if server == &server_name && tool.name == original)) {
-            return Err(text::gone(&server_name, &original));
+            return Err(self.gone(&server, &original));
         }
         let Some(arguments) = input.as_object() else {
             return Err("MCP tool arguments must be an object".into());
         };
-        let server = self.server(&server_name)?;
         let redactions = server.redactions().clone();
         let registered = elicit::Flight::register(
             server.flights.clone(),
@@ -1593,7 +1862,152 @@ impl Service {
         result
     }
 
+    pub(crate) fn entry_name_hidden(&self, name: &str) -> bool {
+        name.starts_with(TOOL_PREFIX) && self.index_has_secret(name, "", "", None)
+    }
+
+    fn metadata_redactions(&self, owner: &CacheOwner, server: Option<&Server>) -> Redactions {
+        let retired = self
+            .0
+            .retired_redactions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        match (retired.get(owner), server) {
+            (Some(retired), Some(server)) => retired.union([&*server.redactions()]),
+            (None, Some(server)) => server.redactions().clone(),
+            (Some(retired), None) => retired.clone(),
+            (None, None) => Redactions::default(),
+        }
+    }
+
+    fn live_redactions(&self, server: &Server) -> Redactions {
+        self.metadata_redactions(&server.cache_owner(), Some(server))
+    }
+
+    fn visible_list<'a>(&self, server: &Server, snapshot: &'a mut Snapshot) -> Option<&'a List> {
+        let redactions = self.live_redactions(server);
+        if snapshot.list.as_ref()?.check_secrets(&redactions).is_ok() {
+            return snapshot.list.as_ref();
+        }
+        if let Err(reason) = server.saved.try_evict_if_contaminated(&redactions) {
+            self.cache_failed(server, snapshot, reason);
+        }
+        None
+    }
+
+    fn cache_failed(&self, server: &Server, snapshot: &mut Snapshot, reason: &str) -> String {
+        let message = format!("{} {reason}", server.watch.name);
+        let state = State::Failed(message.clone());
+        let changed =
+            snapshot.list.is_some() || snapshot.listed.is_some() || snapshot.state != state;
+        snapshot.list = None;
+        snapshot.listed = None;
+        snapshot.state = state;
+        if changed {
+            self.0.revision.fetch_add(1, Ordering::AcqRel);
+            self.0.changes.fetch_add(1, Ordering::AcqRel);
+        }
+        message
+    }
+
+    async fn evict_catalog(&self, server: &Server) -> Result<(), String> {
+        server
+            .saved
+            .evict_if_contaminated(&self.live_redactions(server))
+            .await
+            .map_err(|reason| self.cache_failed(server, &mut server.snapshot(), reason))
+    }
+
+    fn known_live_server(&self, known: &KnownTool) -> Option<Arc<Server>> {
+        self.server(&known.owner.0)
+            .ok()
+            .filter(|server| server.saved.key() == known.owner.1)
+    }
+
+    pub(crate) fn index_has_secret(
+        &self,
+        name: &str,
+        summary: &str,
+        text: &str,
+        schema: Option<&str>,
+    ) -> bool {
+        let known = self
+            .0
+            .known
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(name)
+            .cloned();
+        let has_entry_prefix = |server: &str| {
+            name.starts_with(&prompt_name(server, ""))
+                || name.starts_with(&resource_name(server, ""))
+        };
+        let server = match &known {
+            Some(known) => self.known_live_server(known),
+            None => self
+                .servers()
+                .iter()
+                .find(|(server, _)| has_entry_prefix(server))
+                .map(|(_, server)| server.clone()),
+        };
+        let redactions = match (&known, &server) {
+            (Some(known), server) => self.metadata_redactions(&known.owner, server.as_deref()),
+            (None, Some(server)) => self.live_redactions(server),
+            (None, None) => {
+                let retired = self
+                    .0
+                    .retired_redactions
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                Redactions::default().union(retired.iter().filter_map(
+                    |((server, _), redactions)| has_entry_prefix(server).then_some(redactions),
+                ))
+            }
+        };
+        let held = crate::session::held();
+        if held.is_empty() && redactions.is_empty() {
+            return false;
+        }
+        let contains = |text: &str| saved::has_secret(text, &held, &redactions);
+        let contaminated = [name, summary, text].into_iter().any(contains)
+            || known.is_some_and(|known| contains(&known.original))
+            || schema
+                .and_then(|schema| serde_json::from_str(schema).ok())
+                .is_some_and(|schema| saved::json_has_secret(&schema, &contains));
+        if contaminated
+            && let Some(server) = server
+            && let Err(reason) = server.saved.try_evict_if_contaminated(&redactions)
+        {
+            self.cache_failed(&server, &mut server.snapshot(), reason);
+        }
+        contaminated
+    }
+
+    fn known_name_visible(&self, name: &str, known: &KnownTool) -> bool {
+        let held = crate::session::held();
+        let redactions =
+            self.metadata_redactions(&known.owner, self.known_live_server(known).as_deref());
+        ![name, &known.original]
+            .iter()
+            .any(|text| saved::has_secret(text, &held, &redactions))
+    }
+
+    fn gone(&self, server: &Server, original: &str) -> String {
+        if saved::has_secret(
+            original,
+            &crate::session::held(),
+            &self.live_redactions(server),
+        ) {
+            HELD_CREDENTIAL.into()
+        } else {
+            text::gone(&server.watch.name, original)
+        }
+    }
+
     fn resolve(&self, name: &str) -> Result<(String, String), String> {
+        if self.entry_name_hidden(name) {
+            return Err(HELD_CREDENTIAL.into());
+        }
         let mut catalog = self.catalog();
         match catalog.remove(name).as_deref() {
             Some([(server, tool)]) => Ok((server.clone(), tool.name.clone())),
@@ -1603,8 +2017,16 @@ impl Service {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .get(name)
-                .cloned()
-                .ok_or_else(|| text::unavailable(name)),
+                .map_or_else(
+                    || Err(text::unavailable(name)),
+                    |known| {
+                        if self.known_name_visible(name, known) {
+                            Ok((known.owner.0.clone(), known.original.clone()))
+                        } else {
+                            Err(saved::HELD_CREDENTIAL.into())
+                        }
+                    },
+                ),
             _ => Err("MCP tool names overlap after unsupported characters are replaced".into()),
         }
     }
@@ -1994,7 +2416,7 @@ pub fn tool_name(server: &str, tool: &str) -> String {
             })
             .collect::<String>()
     };
-    format!("mcp__{}__{}", safe(server), safe(tool))
+    format!("{TOOL_PREFIX}{}__{}", safe(server), safe(tool))
 }
 
 pub(crate) fn check_add(name: &str, command: &str, args: &[String]) -> Result<(), String> {

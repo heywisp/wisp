@@ -51,11 +51,12 @@ fn store(config: PathBuf, address: &str) -> Store {
     }
     let store = Store {
         path,
-        legacy: oauth::mcp_profile(&config, address).unwrap(),
+        legacy: Some(oauth::mcp_profile(&config, address).unwrap()),
         kind: StoreKind::File,
         record: Arc::default(),
         issuer: "https://issuer.example.invalid".into(),
         config,
+        owner: None,
         name: "local".into(),
         address: address.into(),
         registration: None,
@@ -311,7 +312,7 @@ async fn changing_the_issuer_or_server_address_never_reuses_a_token() {
     .unwrap();
     let mut moved = newer.clone();
     moved.address = address.into();
-    moved.legacy = oauth::mcp_profile(&config, address).unwrap();
+    moved.legacy = Some(oauth::mcp_profile(&config, address).unwrap());
     moved.record = Arc::default();
     assert!(moved.load().await.unwrap().is_none());
     assert!(!first.path.exists());
@@ -340,6 +341,7 @@ async fn sign_in_refuses_insecure_resources_metadata_and_unusable_store() {
         "local",
         "http://server.example.invalid/mcp",
         Some(config.clone()),
+        None,
         StoreKind::File,
         None,
     )
@@ -352,6 +354,7 @@ async fn sign_in_refuses_insecure_resources_metadata_and_unusable_store() {
         "local",
         &server.address(),
         Some(config),
+        None,
         StoreKind::File,
         None,
     )
@@ -380,6 +383,7 @@ async fn sign_in_refuses_insecure_resources_metadata_and_unusable_store() {
         "local",
         &server.address(),
         Some(config),
+        None,
         StoreKind::File,
         None,
     )
@@ -421,6 +425,7 @@ async fn another_name_at_the_old_address_has_no_sign_in() {
         "other",
         &server.address(),
         Some(config),
+        None,
         StoreKind::File,
         None,
     )
@@ -472,7 +477,7 @@ async fn legacy_address_credentials_are_cleared_without_being_reused() {
         )
         .unwrap();
         assert!(
-            restored("local", &address, Some(config), StoreKind::File, None)
+            restored("local", &address, Some(config), None, StoreKind::File, None)
                 .await
                 .unwrap()
                 .is_none()
@@ -486,4 +491,73 @@ async fn legacy_address_credentials_are_cleared_without_being_reused() {
             });
         }
     }
+}
+
+#[tokio::test]
+async fn a_run_profile_preloads_only_for_its_current_definition_and_has_no_legacy_slot() {
+    const ACCESS: &str = "CANARY-run-preloaded-sign-in-credential";
+    let folder = tempfile::tempdir().unwrap();
+    let cwd = folder.path().canonicalize().unwrap();
+    let config = cwd.join("config.toml");
+    let run = cwd.join("run.toml");
+    let endpoint = crate::mcp_test::Server::start(true, None).await;
+    let address = endpoint.address();
+    let server = McpServer {
+        command: address.clone(),
+        args: Vec::new(),
+        keys: Vec::new(),
+    };
+    let definition = format!("[mcp.servers.local]\ncommand = {address:?}\n");
+    std::fs::write(&run, &definition).unwrap();
+    let owner = Arc::new(RunKeyOwner::new(
+        "local",
+        &server,
+        cwd.clone(),
+        run.clone(),
+        Some(config.clone()),
+    ));
+    hold_stored(&config, "local", &server, Some(&owner));
+    assert!(!cwd.join("oauth").exists());
+    let (_, run_store) = manager(
+        "local",
+        &address,
+        Some(config.clone()),
+        Some(owner.clone()),
+        StoreKind::File,
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(run_store.legacy.is_none());
+    let saved = profile(&config, "local", None).unwrap();
+    let legacy = oauth::mcp_profile(&config, &address).unwrap();
+    assert_ne!(run_store.path, saved);
+    assert_ne!(run_store.path, legacy);
+    {
+        let locks = oauth::lock_profile_with_config(&run_store.path, Some(&config)).unwrap();
+        oauth::persist_value_locked(&legacy, &Record::default(), StoreKind::File, &locks).unwrap();
+        oauth::persist_value_locked(
+            &run_store.path,
+            &Record {
+                address,
+                credentials: Some(credentials(ACCESS)),
+                registration: None,
+            },
+            StoreKind::File,
+            &locks,
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        &run,
+        "[mcp.servers.local]\ncommand = 'https://changed.invalid'\n",
+    )
+    .unwrap();
+    hold_stored(&config, "local", &server, Some(&owner));
+    assert_eq!(crate::session::held().mask(ACCESS), ACCESS);
+    std::fs::write(&run, definition).unwrap();
+    hold_stored(&config, "local", &server, Some(&owner));
+    assert_ne!(crate::session::held().mask(ACCESS), ACCESS);
+    assert!(run_store.read().await.unwrap().credentials.is_some());
+    assert!(legacy.exists());
 }

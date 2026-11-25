@@ -2393,21 +2393,44 @@ fn a_declared_row_is_set_saved_listed_and_refused_out_of_range() {
 #[test]
 fn doctor_shows_a_configured_mcp_server_without_starting_it() {
     let home = Home::configured("doctor-mcp");
-    home.write(CONFIG, "default = 'local'\n[endpoints.local]\nauth = 'api_key'\nkey_env = 'LOCAL_KEY'\nurl = 'http://127.0.0.1:9'\n[mcp.servers.local]\ncommand = 'wisp-mcp-must-not-start'\nargs = []\n");
+    let config = "default = 'local'\n[endpoints.local]\nauth = 'api_key'\nkey_env = 'LOCAL_KEY'\nurl = 'http://127.0.0.1:9'\n[mcp.servers.local]\ncommand = 'wisp-mcp-must-not-start'\nargs = []\n";
+    home.write(CONFIG, config);
+    home.write(
+        "servers.toml",
+        "[mcp.servers.run]\ncommand = 'wisp-mcp-must-not-start'\n",
+    );
+    let env = &[("LOCAL_KEY", "CANARY_DOCTOR_MCP_VALUE"), ("WISP_JOB", "1")];
     let output = home.run_with(
-        &["doctor"],
-        &[("LOCAL_KEY", "CANARY_DOCTOR_MCP_VALUE"), ("WISP_JOB", "1")],
+        &["--mcp-config", "servers.toml", "--tools", "none", "doctor"],
+        env,
         "",
     );
     assert!(output.status.success(), "{}", both(&output));
     let shown = out(&output);
-    let row: Vec<_> = shown
+    let rows: Vec<_> = shown
         .lines()
-        .find(|line| line.trim_start().starts_with("mcp local "))
-        .unwrap_or_else(|| panic!("{shown}"))
-        .split_whitespace()
+        .filter(|line| line.trim_start().starts_with("mcp "))
+        .map(|line| line.split_whitespace().collect::<Vec<_>>())
         .collect();
-    assert_eq!(row, ["mcp", "local", "starts", "on", "use", "—"]);
+    assert_eq!(
+        rows,
+        [
+            ["mcp", "local", "starts", "on", "use", "—"],
+            ["mcp", "run", "starts", "on", "use", "—"],
+        ]
+    );
     assert!(!shown.contains("wisp-mcp-must-not-start"), "{shown}");
     clean(&output, &home);
+    home.write("bad.toml", "[unrelated]\nvalue = 'private-value'");
+    let bad = home.run_with(&["--mcp-config", "bad.toml", "doctor"], env, "");
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(bad.stdout.is_empty());
+    assert_eq!(
+        err(&bad),
+        "wisp: the --mcp-config file may hold only [mcp.servers.<name>] tables\n"
+    );
+    assert!(
+        home.read(CONFIG) == config,
+        "doctor changed the saved config"
+    );
 }

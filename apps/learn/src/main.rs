@@ -99,6 +99,7 @@ async fn lesson(args: Args) -> Result<ExitCode, String> {
     };
     let inputs = Inputs {
         config: None,
+        mcp_config: None,
         env_file: None,
         keychain: &keychain,
         setup: &setup,

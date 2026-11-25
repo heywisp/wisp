@@ -1582,6 +1582,365 @@ async fn optional_listing_failures_keep_tools_and_good_saved_metadata_until_refr
 }
 
 #[tokio::test]
+async fn discovery_refuses_metadata_that_echoes_a_held_credential() {
+    const HELD: &str = "CANARY-discovery-metadata-credential";
+    const REFUSED: &str = "local couldn't start: the server's list contained a held credential";
+    wisp_core::session::register_secrets([HELD.to_owned()]);
+    for (label, method, metadata) in [
+        (
+            "schema-key",
+            "tools/list",
+            json!({"tools":[{"name":"list","inputSchema":{"type":"object","properties":{(HELD):{"type":"string"}}}}]}),
+        ),
+        (
+            "schema-value",
+            "tools/list",
+            json!({"tools":[{"name":"list","inputSchema":{"type":"object","properties":{"param":{"enum":[HELD]}}}}]}),
+        ),
+        (
+            "partial",
+            "tools/list",
+            json!({"tools":[{"name":"list","description":HELD,"inputSchema":{"type":"object"}}]}),
+        ),
+        (
+            "prompt-title",
+            "prompts/list",
+            json!({"prompts":[{"name":"review","title":HELD}]}),
+        ),
+        (
+            "prompt-arg",
+            "prompts/list",
+            json!({"prompts":[{"name":"review","arguments":[{"name":"kind","description":HELD}]}]}),
+        ),
+        (
+            "resource-uri",
+            "resources/list",
+            json!({"resources":[{"uri":format!("test:///{HELD}"),"name":"notes"}]}),
+        ),
+    ] {
+        let scratch = ScratchDir::new("wisp-mcp-", label);
+        let mut metadata = metadata;
+        metadata["resultType"] = json!("complete");
+        scratch.write("catalog.json", &json!({(method): metadata}).to_string());
+        if label == "partial" {
+            scratch.write("fail-resources", "yes");
+        }
+        let mcp = service(&scratch, "local", "modern");
+        assert_eq!(mcp.connect("local").await.unwrap_err(), REFUSED, "{label}");
+        assert!(mcp.saved("local").is_none());
+        assert!(mcp.tools().is_empty() && mcp.prompts().is_empty() && mcp.resources().is_empty());
+        let staged = key_service(&scratch, BTreeMap::new());
+        assert_eq!(
+            staged
+                .add("local", stdio_server("modern"))
+                .await
+                .unwrap_err(),
+            REFUSED
+        );
+        assert!(staged.rows().is_empty());
+        assert!(!scratch.root.join("config.toml").exists());
+        for file in fs::read_dir(scratch.root.join("mcp"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            assert!(!fs::read_to_string(file.path()).unwrap().contains(HELD));
+        }
+        assert!(
+            service(&scratch, "local", "modern")
+                .saved("local")
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_numeric_schema_value_cannot_echo_a_stored_key() {
+    const PIN: u64 = 106943177;
+    let scratch = ScratchDir::new("wisp-mcp-", "numeric-schema");
+    scratch.write(
+        "catalog.json",
+        &json!({"tools/list": {
+            "resultType":"complete","tools":[{"name":"list","inputSchema":{"type":"object",
+            "properties":{"code":{"type":"integer","enum":[PIN]}}}}]
+        }})
+        .to_string(),
+    );
+    let mcp = key_service(&scratch, BTreeMap::new());
+    let refused = mcp
+        .add_with_keys("local", key_spec(), typed_key(&PIN.to_string()))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        refused,
+        "local couldn't start: the server's list contained a held credential"
+    );
+    assert!(mcp.rows().is_empty());
+    assert!(
+        fs::read_dir(scratch.root.join("mcp"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .all(|entry| entry.path().extension().is_none_or(|ext| ext != "json"))
+    );
+}
+
+fn cache_file(scratch: &ScratchDir) -> std::path::PathBuf {
+    fs::read_dir(scratch.root.join("mcp"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .unwrap()
+}
+
+fn poison_tool_name(path: &std::path::Path, name: &str) {
+    let mut catalog: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    catalog["tools"][0]["name"] = json!(name);
+    fs::write(path, catalog.to_string()).unwrap();
+}
+
+#[tokio::test]
+async fn cached_metadata_is_hidden_and_evicted_when_its_credential_becomes_held() {
+    const HELD: &str = "CANARY:older:catalog:credential";
+    let original = format!("run:{HELD}");
+    let scratch = ScratchDir::new("wisp-mcp-", "cache-held");
+    service(&scratch, "local", "modern")
+        .connect("local")
+        .await
+        .unwrap();
+    let path = cache_file(&scratch);
+    poison_tool_name(&path, &original);
+    let contaminated = fs::read(&path).unwrap();
+    let mcp = service(&scratch, "local", "modern");
+    assert!(mcp.saved("local").is_some());
+    wisp_core::session::register_secrets([HELD.to_owned()]);
+    assert!(
+        service(&scratch, "local", "modern")
+            .saved("local")
+            .is_none()
+    );
+    assert!(!path.exists(), "construction should evict the file");
+    fs::write(&path, &contaminated).unwrap();
+    assert!(mcp.saved("local").is_none());
+    assert!(mcp.definitions().is_empty() && mcp.prompts().is_empty() && mcp.resources().is_empty());
+    assert_eq!(mcp.rows()[0].tools, 0);
+    assert_eq!(
+        mcp.call(
+            &tool_name("local", &original),
+            json!({}),
+            Duration::from_secs(2),
+            CancellationToken::new()
+        )
+        .await
+        .unwrap_err(),
+        "the server's list contained a held credential"
+    );
+    assert!(!path.exists(), "publication should also evict the file");
+    fs::write(&path, contaminated).unwrap();
+    mcp.refresh_keys().await;
+    assert!(!path.exists(), "refresh should evict the file too");
+    assert_eq!(mcp.revision(), 1);
+}
+
+#[tokio::test]
+async fn obstructed_catalog_lock_fails_closed_before_and_after_the_key_is_held() {
+    const HELD: &str = "CANARY:obstructed:catalog:lock";
+    const FAILURE: &str = "local could not lock its saved tool list";
+    let scratch = ScratchDir::new("wisp-mcp-", "blocked-lock");
+    service(&scratch, "local", "modern")
+        .connect("local")
+        .await
+        .unwrap();
+    let path = cache_file(&scratch);
+    poison_tool_name(&path, &format!("run:{HELD}"));
+    let cached = service(&scratch, "local", "modern");
+    assert!(cached.saved("local").is_some());
+    let lock = path.with_extension("lock");
+    fs::remove_file(&lock).unwrap();
+    fs::create_dir(&lock).unwrap();
+    let without_key = service(&scratch, "local", "modern");
+    assert!(without_key.saved("local").is_none() && without_key.tools().is_empty());
+    assert!(without_key.prompts().is_empty() && without_key.resources().is_empty());
+    wisp_core::session::register_secrets([HELD.to_owned()]);
+    assert_eq!(
+        service(&scratch, "local", "modern").rows()[0].state,
+        State::Failed(FAILURE.into())
+    );
+    cached.refresh_keys().await;
+    assert_eq!(cached.rows()[0].state, State::Failed(FAILURE.into()));
+    assert!(cached.saved("local").is_none() && path.exists());
+    assert_eq!(without_key.connect("local").await.unwrap_err(), FAILURE);
+    assert_eq!(without_key.rows()[0].state, State::Failed(FAILURE.into()));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn read_only_catalog_reports_failed_erasure_and_is_not_loaded_without_the_key() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if rustix::process::geteuid().is_root() {
+        return;
+    }
+    const HELD: &str = "CANARY:readonly:catalog:key";
+    const FAILURE: &str = "local could not remove its saved tool list";
+    let scratch = ScratchDir::new("wisp-mcp-", "readonly-cache");
+    service(&scratch, "local", "modern")
+        .connect("local")
+        .await
+        .unwrap();
+    let path = cache_file(&scratch);
+    poison_tool_name(&path, &format!("run:{HELD}"));
+    let folder = scratch.root.join("mcp");
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o500)).unwrap();
+    let without_key = service(&scratch, "local", "modern");
+    let rejected = without_key.tools().is_empty()
+        && without_key.prompts().is_empty()
+        && without_key.resources().is_empty()
+        && without_key.saved("local").is_none();
+    wisp_core::session::register_secrets([HELD.to_owned()]);
+    let state = service(&scratch, "local", "modern").rows()[0].state.clone();
+    let refused = without_key.connect("local").await;
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(rejected && path.exists());
+    assert_eq!(state, State::Failed(FAILURE.into()));
+    assert_eq!(refused.unwrap_err(), FAILURE);
+}
+
+#[tokio::test]
+async fn a_short_stored_key_evicts_its_cache_and_still_hides_names_after_remove() {
+    const KEY: &str = "CANARY:pin:7";
+    let original = format!("run:{KEY}");
+    let scratch = ScratchDir::new("wisp-mcp-", "short-cache");
+    let servers = BTreeMap::from([
+        ("local".into(), key_spec()),
+        ("other".into(), stdio_server("modern")),
+    ]);
+    assert!(
+        key_service(&scratch, BTreeMap::new())
+            .add_with_keys("local", key_spec(), typed_key(KEY))
+            .await
+            .unwrap()
+            .kept
+    );
+    let path = cache_file(&scratch);
+    let other_tool = format!("ordinary:{KEY}");
+    key_service(&scratch, servers.clone())
+        .seed_saved_tools(
+            "other",
+            vec![wisp_core::tool::ToolSpec {
+                name: other_tool.clone(),
+                description: format!("Ordinary tool: {KEY}"),
+                input_schema: json!({"type":"object"}),
+            }],
+        )
+        .await
+        .unwrap();
+    let other_cache = fs::read_dir(scratch.root.join("mcp"))
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|other| *other != path && other.extension().is_some_and(|ext| ext == "json"))
+        .unwrap();
+    poison_tool_name(&path, &original);
+    let contaminated = fs::read(&path).unwrap();
+    let mcp = key_service(&scratch, servers.clone());
+    assert!(mcp.saved("local").is_some());
+    mcp.refresh_keys().await;
+    assert!(mcp.saved("local").is_none() && !path.exists());
+    fs::write(&path, contaminated).unwrap();
+    let direct = key_service(&scratch, servers);
+    assert!(direct.saved("local").is_some());
+    scratch.write(
+        "catalog.json",
+        &json!({"tools/list":{
+            "resultType":"complete","tools":[{"name":original,"inputSchema":{"type":"object"}}]
+        }})
+        .to_string(),
+    );
+    assert!(direct.connect("local").await.is_err());
+    assert!(!path.exists(), "connection should evict before listing");
+    fs::remove_file(scratch.root.join("catalog.json")).unwrap();
+    assert!(
+        mcp.set_keys("local", typed_key("CANARY:pin:8"))
+            .await
+            .unwrap()
+            .kept
+    );
+    scratch.write("catalog.json", &single_catalog(&other_tool));
+    let other_name = tool_name("other", &other_tool);
+    for remove in [false, true] {
+        if remove {
+            mcp.remove("local").await.unwrap();
+        }
+        assert!(mcp.tools().iter().any(|tool| tool.name == other_name));
+        assert!(other_cache.exists());
+        mcp.call(
+            &other_name,
+            json!({}),
+            Duration::from_secs(2),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert!(other_cache.exists());
+    }
+    assert_eq!(
+        mcp.call(
+            &tool_name("local", &original),
+            json!({}),
+            Duration::from_secs(2),
+            CancellationToken::new()
+        )
+        .await
+        .unwrap_err(),
+        "the server's list contained a held credential"
+    );
+}
+
+fn single_catalog(name: &str) -> String {
+    json!({"tools/list":{"resultType":"complete","tools":[{"name":name,"inputSchema":{"type":"object"}}]}}).to_string()
+}
+
+#[tokio::test]
+async fn retired_run_keys_do_not_hide_the_same_names_on_a_new_saved_server() {
+    const KEY: &str = "CANARY:run:5";
+    let scratch = ScratchDir::new("wisp-mcp-", "same-name-retire");
+    let spec = key_spec();
+    let run = scratch.write(
+        "run.toml",
+        &format!(
+            "[mcp.servers.local]\ncommand = {:?}\nargs = {:?}\nkeys = {:?}\n",
+            spec.command, spec.args, spec.keys
+        ),
+    );
+    let run = load_run_service(&scratch, "", &run).with_config(
+        scratch.root.join("config.toml"),
+        wisp_core::endpoints::PathShown::Given,
+    );
+    assert!(run.set_keys("local", typed_key(KEY)).await.unwrap().kept);
+    let run_cache = cache_file(&scratch);
+    run.remove("local").await.unwrap();
+    assert!(!run_cache.exists());
+    let tool = format!("run:{KEY}");
+    scratch.write("catalog.json", &single_catalog(&tool));
+    assert_eq!(run.add("local", stdio_server("modern")).await.unwrap(), 1);
+    let saved_cache = cache_file(&scratch);
+    assert_ne!(saved_cache, run_cache);
+    let name = tool_name("local", &tool);
+    assert!(run.tools().iter().any(|tool| tool.name == name));
+    run.call(
+        &name,
+        json!({}),
+        Duration::from_secs(2),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(saved_cache.exists());
+}
+
+#[tokio::test]
 async fn optional_lists_that_never_answer_do_not_block_tools() {
     for family in ["prompts", "resources", "listen"] {
         let scratch = ScratchDir::new("wisp-mcp-", family);
@@ -1646,14 +2005,393 @@ fn key_service(scratch: &ScratchDir, servers: BTreeMap<String, McpServer>) -> Se
     .with_store(wisp_core::secrets::StoreKind::File)
 }
 
+fn run_service(scratch: &ScratchDir, spec: &McpServer) -> (Service, String) {
+    run_service_in(scratch, spec, "", "run.toml")
+}
+
+fn run_service_in(
+    scratch: &ScratchDir,
+    spec: &McpServer,
+    cwd: &str,
+    file: &str,
+) -> (Service, String) {
+    let text = format!(
+        "[mcp.servers.local]\ncommand = {:?}\nargs = {:?}\nkeys = {:?}\n",
+        spec.command, spec.args, spec.keys,
+    );
+    let run = scratch.write(file, &text);
+    (load_run_service(scratch, cwd, &run), text)
+}
+
+fn load_run_service(scratch: &ScratchDir, cwd: &str, run: &std::path::Path) -> Service {
+    let run = fs::canonicalize(run).unwrap();
+    let servers = wisp_core::config::mcp_servers_in(&fs::read_to_string(&run).unwrap()).unwrap();
+    Service::new_with_run_config(
+        servers.clone(),
+        scratch.dir(cwd),
+        Some(scratch.root.join("mcp")),
+        &run,
+        &servers,
+        Some(&scratch.root.join("config.toml")),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_run_server_keeps_declared_keys_without_editing_either_config() {
+    let scratch = ScratchDir::new("wisp-mcp-", "run-key");
+    let (mcp, text) = run_service(&scratch, &key_spec());
+    assert!(mcp.connect("local").await.is_err());
+    assert!(!scratch.root.join("oauth").exists());
+    assert!(mcp.set_keys("local", typed_key(KEY)).await.unwrap().kept);
+    assert!(!scratch.root.join("config.toml").exists());
+    assert_eq!(
+        fs::read_to_string(scratch.root.join("run.toml")).unwrap(),
+        text
+    );
+    let (reopened, _) = run_service(&scratch, &key_spec());
+    has_key(&reopened).await;
+}
+
+#[tokio::test]
+async fn a_run_server_cannot_read_keys_saved_in_another_working_directory() {
+    let scratch = ScratchDir::new("wisp-mcp-", "run-key-isolation");
+    let spec = McpServer {
+        command: "sh".into(),
+        args: vec!["./adapter".into()],
+        keys: key_spec().keys,
+    };
+    let (trial, text) = run_service(&scratch, &spec);
+    scratch.write("adapter", "touch launched\nexit 1\n");
+    let work = scratch.dir("permanent");
+    let helper = env!("CARGO_BIN_EXE_mcp-test-server");
+    scratch.write("permanent/adapter", &format!("exec \"{helper}\" key\n"));
+    let config = scratch.write("config.toml", &text);
+    let saved = Service::new(BTreeMap::from([("local".into(), spec)]), work, None)
+        .with_config(config, wisp_core::endpoints::PathShown::Given);
+    assert!(saved.set_keys("local", typed_key(KEY)).await.unwrap().kept);
+    has_key(&saved).await;
+    assert!(trial.connect("local").await.is_err());
+    assert!(trial.set_keys("local", BTreeMap::new()).await.is_err());
+    assert!(!scratch.root.join("launched").exists());
+}
+
+#[tokio::test]
+async fn a_run_server_cannot_read_replace_or_clear_another_run_owners_key() {
+    const SECOND: &str = "CANARY-second-run-server-value";
+    let scratch = ScratchDir::new("wisp-mcp-", "run-owner-isolation");
+    let spec = McpServer {
+        command: "sh".into(),
+        args: vec!["./adapter".into()],
+        keys: key_spec().keys,
+    };
+    let helper = env!("CARGO_BIN_EXE_mcp-test-server");
+    for (cwd, value) in [("first", KEY), ("second", SECOND)] {
+        scratch.write(
+            &format!("{cwd}/adapter"),
+            &format!("test \"$WISP_TEST_TOKEN\" = '{value}' || exit 9\nexec \"{helper}\" key\n"),
+        );
+    }
+    let load = |cwd, file| run_service_in(&scratch, &spec, cwd, file).0;
+    let first = || load("first", "first/run.toml");
+    let second = || load("second", "second/run.toml");
+    assert!(
+        first()
+            .set_keys("local", typed_key(KEY))
+            .await
+            .unwrap()
+            .kept
+    );
+    has_key(&first()).await;
+    for attempt in [
+        load("first", "second/run.toml"),
+        load("second", "first/run.toml"),
+        second(),
+    ] {
+        attempt.refresh_keys().await;
+        assert!(matches!(attempt.rows()[0].state, State::NeedsKey(_)));
+        assert!(attempt.connect("local").await.is_err());
+    }
+    assert!(
+        second()
+            .set_keys("local", typed_key(SECOND))
+            .await
+            .unwrap()
+            .kept
+    );
+    has_key(&first()).await;
+    has_key(&second()).await;
+    second().remove("local").await.unwrap();
+    assert!(second().connect("local").await.is_err());
+    let first = first();
+    first.connect("local").await.unwrap();
+    has_key(&first).await;
+    assert!(!scratch.root.join("config.toml").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_run_server_keeps_its_owner_when_the_flag_symlink_is_retargeted() {
+    use std::os::unix::fs::symlink;
+
+    const SECOND: &str = "CANARY-second-pinned-profile";
+    const REPLACEMENT: &str = "CANARY-first-pinned-replacement";
+    let scratch = ScratchDir::new("wisp-mcp-", "run-symlink-owner");
+    let spec = McpServer {
+        command: "sh".into(),
+        args: vec!["./adapter".into()],
+        keys: key_spec().keys,
+    };
+    let helper = env!("CARGO_BIN_EXE_mcp-test-server");
+    let marker = scratch.write("allowed", KEY);
+    scratch.write(
+        "adapter",
+        &format!(
+            "test \"$WISP_TEST_TOKEN\" = \"$(cat allowed)\" || exit 9\nexec \"{helper}\" key\n"
+        ),
+    );
+    let first_file = scratch.root.join("first.toml");
+    let second_file = scratch.root.join("second.toml");
+    let (first, _) = run_service_in(&scratch, &spec, "", "first.toml");
+    assert!(first.set_keys("local", typed_key(KEY)).await.unwrap().kept);
+    drop(first);
+    fs::write(&marker, SECOND).unwrap();
+    let (second, _) = run_service_in(&scratch, &spec, "", "second.toml");
+    assert!(
+        second
+            .set_keys("local", typed_key(SECOND))
+            .await
+            .unwrap()
+            .kept
+    );
+    drop(second);
+    let alias = scratch.root.join("current.toml");
+    symlink(&first_file, &alias).unwrap();
+    let old = load_run_service(&scratch, "", &alias);
+    fs::remove_file(&alias).unwrap();
+    symlink(&second_file, &alias).unwrap();
+    fs::write(&marker, KEY).unwrap();
+    old.connect("local").await.unwrap();
+    fs::write(&marker, REPLACEMENT).unwrap();
+    assert!(
+        old.set_keys("local", typed_key(REPLACEMENT))
+            .await
+            .unwrap()
+            .kept
+    );
+    load_run_service(&scratch, "", &first_file)
+        .connect("local")
+        .await
+        .unwrap();
+    old.remove("local").await.unwrap();
+    assert!(
+        load_run_service(&scratch, "", &first_file)
+            .connect("local")
+            .await
+            .is_err()
+    );
+    fs::write(&marker, SECOND).unwrap();
+    load_run_service(&scratch, "", &alias)
+        .connect("local")
+        .await
+        .unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn run_catalogs_belong_to_their_file_workspace_and_wisp_config() {
+    use std::os::unix::fs::symlink;
+
+    let scratch = ScratchDir::new("wisp-mcp-", "run-catalog");
+    let spec = McpServer {
+        command: "./adapter".into(),
+        ..stdio_server("modern")
+    };
+    for cwd in ["first", "second", ""] {
+        symlink(
+            env!("CARGO_BIN_EXE_mcp-test-server"),
+            scratch.dir(cwd).join("adapter"),
+        )
+        .unwrap();
+    }
+    let load = |cwd, file| run_service_in(&scratch, &spec, cwd, file).0;
+    let first = load("first", "run.toml").list("local").await.unwrap();
+    assert!(!first.tools.is_empty() && !first.prompts.is_empty() && !first.resources.is_empty());
+    let other_file = load("first", "other.toml");
+    assert!(other_file.saved("local").is_none());
+    let run = scratch.root.join("run.toml");
+    let servers = BTreeMap::from([("local".into(), spec.clone())]);
+    let other_config = Service::new_with_run_config(
+        servers.clone(),
+        scratch.dir("first"),
+        Some(scratch.root.join("mcp")),
+        &run,
+        &servers,
+        Some(&scratch.root.join("other-config.toml")),
+    )
+    .unwrap();
+    assert!(other_config.saved("local").is_none());
+    let saved = key_service(&scratch, servers.clone());
+    assert!(saved.saved("local").is_none());
+    let saved_list = saved.list("local").await.unwrap();
+    let second = load("second", "run.toml");
+    assert!(
+        second.tools().is_empty() && second.prompts().is_empty() && second.resources().is_empty()
+    );
+    scratch.write("second/resources-changed", "yes");
+    assert_ne!(
+        second.list("local").await.unwrap().resources,
+        first.resources
+    );
+    assert_eq!(
+        load("first", "run.toml").saved("local"),
+        Some(first.clone())
+    );
+    second.remove("local").await.unwrap();
+    assert!(load("second", "run.toml").saved("local").is_none());
+    assert_eq!(load("first", "run.toml").saved("local"), Some(first));
+    assert_eq!(
+        key_service(&scratch, servers).saved("local"),
+        Some(saved_list)
+    );
+}
+
+#[tokio::test]
+async fn removing_or_rekeying_a_run_server_leaves_a_new_saved_server_untouched() {
+    let scratch = ScratchDir::new("wisp-mcp-", "run-remove");
+    let spec = key_spec();
+    let (mcp, text) = run_service(&scratch, &spec);
+    mcp.set_keys("local", typed_key(KEY)).await.unwrap();
+    let config = format!("# independently saved\n{text}");
+    scratch.write("config.toml", &config);
+    let saved = key_service(&scratch, BTreeMap::from([("local".into(), spec.clone())]));
+    assert!(
+        saved
+            .set_keys("local", typed_key("CANARY-independently-saved-key"))
+            .await
+            .unwrap()
+            .kept
+    );
+    let path = key_profile(&scratch);
+    let keys = fs::read(&path).unwrap();
+    let cached = saved.saved("local").unwrap();
+    let config = fs::read_to_string(scratch.root.join("config.toml")).unwrap();
+    let refused = mcp
+        .set_keys("local", typed_key("CANARY-refused-run-server-rekey"))
+        .await;
+    assert!(refused.is_err());
+    mcp.remove("local").await.unwrap();
+    assert!(mcp.rows().is_empty());
+    assert_eq!(
+        fs::read_to_string(scratch.root.join("config.toml")).unwrap(),
+        config
+    );
+    assert_eq!(
+        fs::read_to_string(scratch.root.join("run.toml")).unwrap(),
+        text
+    );
+    assert!(
+        fs::read(path).unwrap() == keys,
+        "the saved server's key state changed"
+    );
+    let saved = key_service(&scratch, BTreeMap::from([("local".into(), spec)]));
+    assert_eq!(saved.saved("local"), Some(cached));
+    fs::write(scratch.root.join("config.toml"), "").unwrap();
+    let reopened = load_run_service(&scratch, "", &scratch.root.join("run.toml"));
+    assert!(
+        reopened.connect("local").await.is_err(),
+        "the run server's own key survived removal"
+    );
+}
+
+#[tokio::test]
+async fn a_run_server_is_stopped_even_if_its_unlinked_definition_prevents_cleanup() {
+    let scratch = ScratchDir::new("wisp-mcp-", "unlink-run");
+    let (mcp, _) = run_service(&scratch, &stdio_server("modern"));
+    mcp.connect("local").await.unwrap();
+    assert_eq!(mcp.rows()[0].state, State::Ready);
+    let path = cache_file(&scratch);
+    fs::remove_file(scratch.root.join("run.toml")).unwrap();
+    assert!(mcp.remove("local").await.is_err());
+    assert!(mcp.rows().is_empty());
+    assert!(mcp.connect("local").await.is_err());
+    assert!(
+        path.exists(),
+        "cleanup must fail closed when the owner cannot be checked"
+    );
+}
+
+#[tokio::test]
+async fn a_run_server_can_sign_in_and_restore_until_the_name_is_saved() {
+    let scratch = ScratchDir::new("wisp-mcp-", "run-sign-in");
+    let http = http::Server::start(true, None).await;
+    let spec = McpServer {
+        command: http.address(),
+        args: Vec::new(),
+        keys: Vec::new(),
+    };
+    let (mcp, text) = run_service(&scratch, &spec);
+    let link = mcp.sign_in_start("local").await.unwrap().unwrap();
+    mcp.sign_in_finish("local", &http::redirected(&link, None))
+        .await
+        .unwrap();
+    let same_address = run_service_in(&scratch, &spec, "other", "other.toml").0;
+    assert!(same_address.connect("local").await.is_err());
+    assert_eq!(same_address.rows()[0].state, State::NeedsSignIn);
+    let other = http::Server::start(true, Some(http.issuer())).await;
+    let other_spec = McpServer {
+        command: other.address(),
+        ..spec.clone()
+    };
+    let other_address = run_service_in(&scratch, &other_spec, "other", "other.toml").0;
+    assert!(other_address.connect("local").await.is_err());
+    assert_eq!(other_address.rows()[0].state, State::NeedsSignIn);
+    let (reopened, _) = run_service(&scratch, &spec);
+    assert!(reopened.connect("local").await.is_ok());
+    assert!(!scratch.root.join("config.toml").exists());
+    let config = format!("# independently saved\n{text}");
+    scratch.write("config.toml", &config);
+    let (blocked, _) = run_service(&scratch, &spec);
+    assert!(blocked.sign_in_start("local").await.is_err());
+    let saved_server = || key_service(&scratch, BTreeMap::from([("local".into(), spec.clone())]));
+    let saved = saved_server();
+    assert!(saved.connect("local").await.is_err());
+    assert_eq!(saved.rows()[0].state, State::NeedsSignIn);
+    let link = saved.sign_in_start("local").await.unwrap().unwrap();
+    saved
+        .sign_in_finish("local", &http::redirected(&link, None))
+        .await
+        .unwrap();
+    let current = mcp_profile(&scratch, "sign-in/local");
+    let legacy = mcp_profile(&scratch, &http.address());
+    fs::copy(&current, &legacy).unwrap();
+    let stored = fs::read(&current).unwrap();
+    mcp.remove("local").await.unwrap();
+    assert!(fs::read(current).unwrap() == stored);
+    assert!(fs::read(legacy).unwrap() == stored);
+    assert!(saved_server().connect("local").await.is_ok());
+    assert_eq!(
+        fs::read_to_string(scratch.root.join("config.toml")).unwrap(),
+        config
+    );
+    assert_eq!(
+        fs::read_to_string(scratch.root.join("run.toml")).unwrap(),
+        text
+    );
+}
+
 fn typed_key(value: &str) -> BTreeMap<String, wisp_protocol::Secret> {
     BTreeMap::from([("WISP_TEST_TOKEN".into(), wisp_protocol::Secret::new(value))])
 }
 
 fn key_profile(scratch: &ScratchDir) -> std::path::PathBuf {
+    mcp_profile(scratch, "keys/local")
+}
+
+fn mcp_profile(scratch: &ScratchDir, name: &str) -> std::path::PathBuf {
     let config = scratch.root.canonicalize().unwrap().join("config.toml");
     let hash = wisp_core::session::sha256_bytes_hex(config.as_os_str().as_encoded_bytes());
-    let identity = wisp_core::session::sha256_hex(&json!([hash, "keys/local"]).to_string());
+    let identity = wisp_core::session::sha256_hex(&json!([hash, name]).to_string());
     scratch
         .root
         .join("oauth")

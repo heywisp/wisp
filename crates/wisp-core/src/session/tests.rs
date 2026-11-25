@@ -863,6 +863,7 @@ fn redactions_scrub_every_string_but_the_conversation() {
         let url = format!("http://{host}:11434/v1");
         let redactions = crate::secrets::variable_redactions(
             None,
+            [],
             &|name| (name == "OPENAI_BASE_URL").then(|| url.clone()),
             None,
         );

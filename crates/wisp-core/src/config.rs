@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use toml::de::DeValue;
+use toml::de::{DeTable, DeValue};
 use wisp_protocol::SECRET_FIELDS;
 use wisp_protocol::settings::{
     AGENTS_GROUP, Kind, PRESETS_TABLE, Place, SETTINGS, SavedEntry, SavedValue, Secrecy,
@@ -12,6 +12,7 @@ use wisp_protocol::settings::{
 
 use crate::config_file::SiteEdit;
 use crate::context::CompactAt;
+use crate::endpoints::{line_of, not_toml};
 use crate::models::{ConfigModels, ModelRow};
 
 #[derive(Clone, PartialEq, Eq)]
@@ -254,6 +255,28 @@ impl fmt::Debug for McpServer {
             .field("arguments", &self.args.len())
             .finish_non_exhaustive()
     }
+}
+
+pub const MCP_CONFIG_FILE: &str = "the --mcp-config file";
+pub(crate) const MCP_SERVERS_RULE: &str = "mcp.servers must hold named tables with a nonempty command and optional lists of args and keys";
+
+pub fn mcp_servers_in(text: &str) -> Result<BTreeMap<String, McpServer>, String> {
+    let only_servers = || format!("{MCP_CONFIG_FILE} may hold only [mcp.servers.<name>] tables");
+    let root = DeTable::parse(text)
+        .map_err(|e| not_toml(MCP_CONFIG_FILE, e.span().map(|span| line_of(text, span))))?;
+    let table = root.get_ref();
+    if table.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let mcp = table.get("mcp").ok_or_else(only_servers)?.get_ref();
+    if table.len() != 1
+        || mcp
+            .as_table()
+            .is_none_or(|table| table.keys().any(|key| key.get_ref() != "servers"))
+    {
+        return Err(only_servers());
+    }
+    mcp_servers(mcp).ok_or_else(|| format!("{MCP_CONFIG_FILE}: {MCP_SERVERS_RULE}"))
 }
 
 pub(crate) fn mcp_servers(value: &DeValue<'_>) -> Option<BTreeMap<String, McpServer>> {
