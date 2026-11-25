@@ -81,6 +81,7 @@ fn gemini_lists_keep_only_limits_and_ignore_saved_copies_of_shipped_facts() {
     let id = "gemini-4-carbon";
     let shipped = ModelTable::shared().find(id).unwrap();
     let caps = shipped.capabilities.unwrap();
+    assert_eq!(caps.slices, wisp_plugin_api::types::SliceKind::ALL);
     for (input, output) in [
         (500_000, 65_535),
         (500_000, COMPACTION_MAX_TOKENS),

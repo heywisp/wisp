@@ -17,6 +17,7 @@ use crate::provider::gemini::antigravity::{
 };
 use crate::provider::{ImageCaps, ModelCapabilities, ThinkingBudgets};
 use wisp_media::Tier;
+use wisp_plugin_api::types::SliceKind;
 use wisp_protocol::agents::MAIL_OPEN;
 use wisp_protocol::settings::{
     A_STRING, EffortVariant, SettingValue, TOKEN_COUNT, TOKENS_OR_SHARE, TRUE_OR_FALSE, USD_WORDS,
@@ -62,6 +63,11 @@ static EFFORT_ALLOWED: LazyLock<String> = LazyLock::new(|| quoted_or(&Effort::WO
 static EFFORTS_ALLOWED: LazyLock<String> =
     LazyLock::new(|| format!("a list of {}", *EFFORT_ALLOWED));
 
+static SLICES_ALLOWED: LazyLock<String> = LazyLock::new(|| {
+    let kinds: Vec<_> = SliceKind::ALL.iter().map(SliceKind::name).collect();
+    format!("a list of {}", quoted_or(&kinds))
+});
+
 const IMAGE_FIELDS: [&str; 2] = ["tier", "per_request"];
 
 static IMAGES_ALLOWED: LazyLock<String> = LazyLock::new(|| {
@@ -70,26 +76,39 @@ static IMAGES_ALLOWED: LazyLock<String> = LazyLock::new(|| {
     format!("a table of {tier} ({tiers}) and {count}")
 });
 
-static LEVELS: [Effort; 5] = Effort::ALL;
-static EFFORT_SETS: LazyLock<Vec<Vec<Effort>>> = LazyLock::new(|| {
-    (0..1_usize << LEVELS.len())
+fn subsets<T: Copy>(all: &[T]) -> Vec<Vec<T>> {
+    (0..1_usize << all.len())
         .map(|mask| {
-            let named = |(bit, _): &(usize, &Effort)| mask & (1 << bit) != 0;
-            LEVELS
-                .iter()
+            all.iter()
+                .copied()
                 .enumerate()
-                .filter(named)
-                .map(|(_, level)| *level)
+                .filter(|(bit, _)| mask & (1 << bit) != 0)
+                .map(|(_, item)| item)
                 .collect()
         })
         .collect()
-});
+}
+
+fn subset_mask<T: PartialEq>(all: &[T], subset: &[T]) -> usize {
+    all.iter()
+        .enumerate()
+        .filter(|(_, item)| subset.contains(item))
+        .fold(0, |mask, (bit, _)| mask | 1 << bit)
+}
+
+static EFFORT_SETS: LazyLock<Vec<Vec<Effort>>> = LazyLock::new(|| subsets(&Effort::ALL));
+static SLICE_SETS: LazyLock<Vec<Vec<SliceKind>>> = LazyLock::new(|| subsets(SliceKind::ALL));
 
 pub(crate) fn effort_set(levels: &[Effort]) -> &'static [Effort] {
-    let named = |(_, level): &(usize, &Effort)| levels.contains(level);
-    let mask = LEVELS.iter().enumerate().filter(named);
-    let mask = mask.fold(0, |mask, (bit, _)| mask | 1 << bit);
-    EFFORT_SETS.get(mask).map_or(&[], Vec::as_slice)
+    EFFORT_SETS
+        .get(subset_mask(&Effort::ALL, levels))
+        .map_or(&[], Vec::as_slice)
+}
+
+fn slice_set(kinds: &[SliceKind]) -> &'static [SliceKind] {
+    SLICE_SETS
+        .get(subset_mask(SliceKind::ALL, kinds))
+        .map_or(&[], Vec::as_slice)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,7 +118,7 @@ enum Quote {
     Provenance,
 }
 
-const SHIPPED_FIELDS: [(&str, Quote); 28] = [
+const SHIPPED_FIELDS: [(&str, Quote); 29] = [
     ("context_window", Quote::Provenance),
     ("native_compaction", Quote::Own("native_compaction")),
     ("web_search", Quote::Own("web_search")),
@@ -126,6 +145,7 @@ const SHIPPED_FIELDS: [(&str, Quote); 28] = [
     ("adaptive_thinking", Quote::Own("efforts")),
     ("thinking_budgets", Quote::Own("efforts")),
     ("images", Quote::Own("images")),
+    ("slices", Quote::Shared("slices")),
     ("source", Quote::Provenance),
     ("sources", Quote::Provenance),
 ];
@@ -686,6 +706,16 @@ fn efforts(at: &Range<usize>, value: &DeValue<'_>) -> Result<&'static [Effort], 
     Ok(effort_set(&levels.ok_or_else(bad)?))
 }
 
+fn slices(at: &Range<usize>, value: &DeValue<'_>) -> Result<&'static [SliceKind], RowError> {
+    let bad = || bad_value("slices", &SLICES_ALLOWED, at);
+    let items = value.as_array().ok_or_else(bad)?;
+    let kinds: Option<Vec<_>> = items
+        .iter()
+        .map(|item| SliceKind::named(item.get_ref().as_str()?))
+        .collect();
+    Ok(slice_set(&kinds.ok_or_else(bad)?))
+}
+
 const EFFORT_VARIANT_ALLOWED: &str =
     "a table of family (a model ID) and effort (an effort level), without efforts";
 
@@ -859,6 +889,7 @@ pub fn walk_row(
     let mut row = ModelRow::new(id.get_ref().to_string());
     let mut described = None;
     let mut caps = ModelCapabilities::default();
+    let mut slices_at = None;
     for (field, value) in in_order(table) {
         let at = field.span();
         let value = value.get_ref();
@@ -950,10 +981,24 @@ pub fn walk_row(
                 caps.thinking_budgets = Some(thinking_budgets(&at, value)?);
             }
             "images" => caps.images = Some(images(&at, value)?),
+            "slices" => {
+                caps.slices = slices(&at, value)?;
+                slices_at = Some(at);
+            }
             "source" => row.source = Some(string("source", &at, value)?),
             "sources" => row.sources = sources(&at, value)?,
             _ => return Err(RowError::at(at, RowProblem::UnknownField { site })),
         }
+    }
+    if let Some(at) = slices_at
+        && !caps.slices.is_empty()
+        && row.provider != Some(ProviderKind::Gemini)
+    {
+        return Err(bad_value(
+            "slices",
+            "an empty list for models outside Gemini",
+            &at,
+        ));
     }
     if let Some(variant) = &row.effort_variant {
         if described.is_some() {
@@ -1335,6 +1380,7 @@ impl ModelTable {
             .map(in_order)
             .unwrap_or_default();
         let mut explicit_tool_prompt = BTreeSet::new();
+        let mut explicit_slices = BTreeSet::new();
         for ((id, entry), row) in ids.iter().zip(&table.rows) {
             let keys = entry.get_ref().as_table().map(in_order).unwrap_or_default();
             if keys
@@ -1342,6 +1388,9 @@ impl ModelTable {
                 .any(|(key, _)| &**key.get_ref() == "bill_tool_use_prompt")
             {
                 explicit_tool_prompt.insert(&**id.get_ref());
+            }
+            if keys.iter().any(|(key, _)| &**key.get_ref() == "slices") {
+                explicit_slices.insert(&**id.get_ref());
             }
             let provider = row.provider.and_then(|kind| table.providers.get(&kind));
             check_sources(
@@ -1355,11 +1404,15 @@ impl ModelTable {
                 },
             )?;
         }
-        table.inherit_from_family(&explicit_tool_prompt);
+        table.inherit_from_family(&explicit_tool_prompt, &explicit_slices);
         Ok(table)
     }
 
-    fn inherit_from_family(&mut self, explicit_tool_prompt: &BTreeSet<&str>) {
+    fn inherit_from_family(
+        &mut self,
+        explicit_tool_prompt: &BTreeSet<&str>,
+        explicit_slices: &BTreeSet<&str>,
+    ) {
         let families: Vec<_> = self
             .rows
             .iter()
@@ -1379,6 +1432,7 @@ impl ModelTable {
                     family.min_cacheable,
                     family.reply_cap,
                     family.turn_form.clone(),
+                    family.capabilities.map_or(&[][..], |caps| caps.slices),
                 ))
             })
             .collect();
@@ -1393,6 +1447,7 @@ impl ModelTable {
                 min_cache,
                 reply_cap,
                 turn_form,
+                slices,
             )) = family
             else {
                 continue;
@@ -1411,6 +1466,12 @@ impl ModelTable {
             }
             if !explicit_tool_prompt.contains(row.id.as_str()) {
                 row.bill_tool_use_prompt = tool_prompt;
+            }
+            if row.provider == Some(ProviderKind::Gemini)
+                && !explicit_slices.contains(row.id.as_str())
+                && let Some(caps) = &mut row.capabilities
+            {
+                caps.slices = slices;
             }
             row.min_cacheable = row.min_cacheable.or(min_cache);
             row.reply_cap = row.reply_cap.or(reply_cap);

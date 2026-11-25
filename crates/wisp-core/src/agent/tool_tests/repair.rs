@@ -370,18 +370,27 @@ fn result_content(messages: &[Message], call_id: &str) -> Vec<ContentBlock> {
 }
 
 async fn attached_then_cut(env: &Env) -> (Vec<LogRecord>, MemoryStore, Arc<Fake>) {
-    let provider = scripted(vec![
-        uses(&[
-            call("c1", "snap", json!({})),
-            call("c2", "sleep", json!({"ms": 0, "text": "slept\n"})),
-        ]),
-        done("ok"),
-    ]);
+    let provider = Fake::with(
+        Knobs {
+            kind: Some(crate::endpoints::ProviderKind::Gemini),
+            caps: Some(Caps::Fn(crate::provider::gemini::model_capabilities)),
+            media_types: Some(crate::provider::gemini::MEDIA_TYPES.as_slice()),
+            ..Knobs::default()
+        },
+        [
+            uses(&[
+                call("c1", "snap", json!({"pdf":true,"slice":"14-16"})),
+                call("c2", "sleep", json!({"ms": 0, "text": "slept\n"})),
+            ]),
+            done("ok"),
+        ],
+    );
     let store = MemoryStore::default();
     let mut agent = base(provider.clone(), env).with_log(
         SessionLog::new(Box::new(store.clone()), "s1"),
         log_context(),
     );
+    agent.session.model = "gemini-4-neon".into();
     let (outcome, _) = turn(&mut agent, "go").await;
     assert!(
         matches!(outcome, TurnOutcome::Completed { .. }),
@@ -407,13 +416,15 @@ async fn a_finished_calls_attachment_is_sent_again_after_a_crash() {
         ),
         "{live_blocks:?}"
     );
-    let png = crate::tool::snap::png();
-    let sha256 = crate::session::sha256_bytes_hex(&png);
-    let media_type = crate::tool::snap::mime("image/png");
+    let slice = wisp_protocol::FileSlice::pages(14, 16).unwrap();
+    assert_eq!(live_blocks[1].inline_media().unwrap().slice, Some(slice));
+    let pdf = crate::tool::snap::PDF;
+    let sha256 = crate::session::sha256_bytes_hex(pdf);
+    let media_type = crate::tool::snap::mime("application/pdf");
     assert!(live_store.get_blob(&sha256, &media_type).is_ok());
 
     let (mut store, log) = continued(&cut);
-    store.put_blob(&sha256, &media_type, &png).unwrap();
+    store.put_blob(&sha256, &media_type, pdf).unwrap();
     let mut resumed = Resumed::in_store(&env, &cut, store, log);
     let written = resumed.next().await;
     assert_eq!(resumed.sent_blocks("c1"), live_blocks);
@@ -456,8 +467,8 @@ async fn a_finished_calls_attachment_is_sent_again_after_a_crash() {
     assert!(matches!(&live_blocks[0], ContentBlock::Text { text: live } if live == text));
     assert_eq!(
         note,
-        "[snap.png (image/png) couldn't be processed: its saved copy was gone when Wisp resumed. \
-It can't be read in this session.]"
+        "[snap.pdf (application/pdf, pages 14-16) couldn't be processed: its saved copy was gone when Wisp resumed. \
+Check the requested range and try again, or omit the slice to read the whole file.]"
     );
 }
 

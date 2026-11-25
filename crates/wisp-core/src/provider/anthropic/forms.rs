@@ -100,7 +100,12 @@ impl<'a> Flattener<'a> {
         if let Some(media) = block.inline_media() {
             return Some(RenderedText::block(not_sent_note(
                 media.media_type,
-                NotSent::Model,
+                media.slice,
+                if media.slice.is_some() {
+                    NotSent::Slice
+                } else {
+                    NotSent::Model
+                },
             )));
         }
         match block {
@@ -202,6 +207,14 @@ fn result_text(content: &[ContentBlock]) -> String {
         .filter_map(|block| match block {
             ContentBlock::Text { text } => Some(text.clone()),
             ContentBlock::Image { .. } => Some("[image]".to_owned()),
+            ContentBlock::Media {
+                source,
+                slice: Some(slice),
+            } => Some(not_sent_note(
+                source.media_type().as_str(),
+                Some(*slice),
+                NotSent::Slice,
+            )),
             ContentBlock::Media { .. } => Some("[file]".to_owned()),
             _ => None,
         })

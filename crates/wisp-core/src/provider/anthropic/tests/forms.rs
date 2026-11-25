@@ -381,11 +381,18 @@ fn form_3_names_a_file_attachment_without_its_bytes() {
     let ContentBlock::ToolResult { content, .. } = &mut messages[4].content[0] else {
         panic!("{:?}", messages[4])
     };
-    content[1] = ContentBlock::media("application/pdf".parse().unwrap(), "JVBERi0xLjQK");
+    let pdf = "application/pdf".parse().unwrap();
+    content[1] = ContentBlock::media(pdf, "JVBERi0xLjQK");
+    content.push(ContentBlock::media_sliced(
+        "application/pdf".parse().unwrap(),
+        "YQ==",
+        Some(wisp_protocol::FileSlice::pages(14, 16).unwrap()),
+    ));
     let flat = body(&messages, &closed(RenderingForm::Flattened));
     assert_eq!(
         flat["messages"][4]["content"][0],
-        json!({"type": "text", "text": "[result of bash: a.txt\n[file]]"})
+        json!({"type": "text", "text": "[result of bash: a.txt\n[file]\n[application/pdf file (pages 14-16) not sent: this model can't read the selected part]]"})
     );
     assert!(!flat.to_string().contains("JVBERi0xLjQK"));
+    assert!(!flat.to_string().contains("YQ=="));
 }

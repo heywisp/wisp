@@ -41,6 +41,7 @@ struct Mock {
 }
 
 static ADAPTIVE: crate::provider::ModelCapabilities = crate::provider::ModelCapabilities {
+    slices: &[],
     efforts: &[],
     default_effort: None,
     per_message_effort: false,

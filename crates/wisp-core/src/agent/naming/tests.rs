@@ -22,6 +22,7 @@ use crate::session::MemoryStore;
 use crate::test_guard::{log_events, records};
 
 static HIGH_ONLY: ModelCapabilities = ModelCapabilities {
+    slices: &[],
     efforts: &[Effort::High],
     default_effort: None,
     per_message_effort: false,

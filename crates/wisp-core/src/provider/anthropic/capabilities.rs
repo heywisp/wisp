@@ -6,6 +6,7 @@ use crate::models::{ModelTable, ProviderRow};
 use crate::provider::{ImageCaps, ModelCapabilities};
 
 const LISTED_ONLY: ModelCapabilities = ModelCapabilities {
+    slices: &[],
     efforts: &[],
     default_effort: None,
     per_message_effort: false,

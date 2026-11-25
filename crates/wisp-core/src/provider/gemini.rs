@@ -119,6 +119,7 @@ const LIST_LIMIT: usize = 8 * 1024 * 1024;
 const MAX_MODEL_PAGES: usize = 5;
 
 pub(crate) const LISTED_ONLY: ModelCapabilities = ModelCapabilities {
+    slices: &[],
     efforts: &[],
     default_effort: None,
     per_message_effort: false,

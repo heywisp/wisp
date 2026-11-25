@@ -654,10 +654,12 @@ fn audio_history() -> Message {
 #[tokio::test]
 async fn only_audio_sent_to_a_differently_priced_model_marks_the_cost() {
     let carried = gemini::MEDIA_TYPES.as_slice();
-    for (model, has_audio, expected_usd, lower_bound) in [
-        (AUDIO_PRICED, true, 0.275, true),
-        (AUDIO_PRICED, false, 0.275, false),
-        ("gemini-4-neon", true, 3.15, false),
+    let clip = Some(wisp_protocol::FileSlice::seconds(30, 90).unwrap());
+    for (model, has_audio, slice, sent_sound, expected_usd, lower_bound) in [
+        (AUDIO_PRICED, true, None, true, 0.275, true),
+        (AUDIO_PRICED, true, clip, false, 0.275, false),
+        (AUDIO_PRICED, false, None, false, 0.275, false),
+        ("gemini-4-neon", true, clip, true, 3.15, false),
     ] {
         let usage = usage(1_000_000, 1_000_000, 0);
         let mut script = vec![Ok(started(None, model, usage))];
@@ -667,6 +669,7 @@ async fn only_audio_sent_to_a_differently_priced_model_marks_the_cost() {
             Knobs {
                 kind: Some(ProviderKind::Gemini),
                 media_types: Some(carried),
+                caps: Some(crate::agent::testing::Caps::Fn(gemini::model_capabilities)),
                 ..Knobs::default()
             },
             [Step::from(script)],
@@ -679,14 +682,17 @@ async fn only_audio_sent_to_a_differently_priced_model_marks_the_cost() {
             },
         );
         if has_audio {
-            agent.history.push(audio_history());
+            let mut message = audio_history();
+            *message.content.last_mut().unwrap() =
+                ContentBlock::media_sliced("audio/wav".parse().unwrap(), "YQ==", slice);
+            agent.history.push(message);
         }
         let (outcome, _) = turn(&mut agent, "go").await;
         let cost = cost_of(&outcome).unwrap();
         assert_eq!(
             (cost.turn_lower_bound, cost.session_lower_bound),
             (lower_bound, lower_bound),
-            "{model}, has_audio={has_audio}"
+            "{model}, has_audio={has_audio}, slice={slice:?}"
         );
         assert!(
             (cost.turn_usd - expected_usd).abs() < 1e-9,
@@ -694,8 +700,8 @@ async fn only_audio_sent_to_a_differently_priced_model_marks_the_cost() {
         );
         let sent = provider.sent();
         assert_eq!(
-            images::sent_sound(&sent[0].messages, &sent[0].rendering, carried),
-            has_audio
+            agent.sent_sound(&sent[0].messages, &sent[0].rendering),
+            sent_sound
         );
     }
 }
@@ -759,7 +765,8 @@ fn rendering_attachments_as_notes_does_not_send_sound() {
     assert!(!images::sent_sound(
         &[audio_history()],
         &rendering,
-        &gemini::MEDIA_TYPES
+        &gemini::MEDIA_TYPES,
+        &[],
     ));
 }
 
@@ -901,7 +908,8 @@ async fn unbilled_failure_keeps_the_session_total_exact() {
     assert!(images::sent_sound(
         &sent[0].messages,
         &sent[0].rendering,
-        provider.media_types()
+        provider.media_types(),
+        &[],
     ));
     assert!(
         !agent

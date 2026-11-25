@@ -15,7 +15,7 @@ use wisp_protocol::{
 
 use super::retry::{backoff, is_busy};
 use super::side::{Landed, Replies, kind_name};
-use super::{Agent, Spend, emit, images};
+use super::{Agent, Spend, emit};
 use crate::lanes::{Lanes, Pass};
 use crate::provider::{ProviderError, Request, RequestOptions};
 
@@ -380,7 +380,7 @@ impl Agent {
         Some((
             replies,
             session.model,
-            images::sent_sound(messages, &rendering, self.provider().media_types()),
+            self.sent_sound(messages, &rendering),
         ))
     }
 

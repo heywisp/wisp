@@ -124,7 +124,7 @@ fn the_ledger_names_attached_and_withdrawn_files() {
             purpose: ToolPurpose::Run,
         },
     };
-    let finished = |id: &str, types: &[&str]| {
+    let finished = |id: &str, files: &[(&str, Option<wisp_protocol::FileSlice>)]| {
         let mut event = AgentEvent::call_finished(
             id.to_owned(),
             ToolOutcome::Completed {
@@ -133,21 +133,21 @@ fn the_ledger_names_attached_and_withdrawn_files() {
             },
         );
         if let AgentEvent::ToolCallFinished { attachments, .. } = &mut event {
-            *attachments = types
+            *attachments = files
                 .iter()
-                .map(|t| wisp_protocol::AttachmentRef {
+                .map(|(t, slice)| wisp_protocol::AttachmentRef {
                     media_type: snap::mime(t),
                     sha256: "0".repeat(64),
                     bytes: 1,
                     saved: None,
-                    slice: None,
+                    slice: *slice,
                 })
                 .collect();
         }
         event
     };
     agent.note_event(&requested("w", "shots/a.png"), None);
-    agent.note_event(&finished("w", &["image/png"]), None);
+    agent.note_event(&finished("w", &[("image/png", None)]), None);
     agent.note_event(
         &AgentEvent::AttachmentsWithdrawn {
             step: 1,
@@ -175,11 +175,18 @@ fn the_ledger_names_attached_and_withdrawn_files() {
     );
 
     agent.note_event(&requested("p", "docs"), None);
-    agent.note_event(&finished("p", &["application/pdf", "image/png"]), None);
+    let slice = wisp_protocol::FileSlice::pages(14, 16).unwrap();
+    agent.note_event(
+        &finished(
+            "p",
+            &[("application/pdf", Some(slice)), ("image/png", None)],
+        ),
+        None,
+    );
     let text = super::wisp_layout(&agent, (1, (1, 1)), None);
     assert!(
         text.contains(
-            "- turn 0: snap docs \u{b7} done \u{b7} attached application/pdf, image/png\n"
+            "- turn 0: snap docs \u{b7} done \u{b7} attached application/pdf (read only pages 14-16), image/png\n"
         ),
         "{text}"
     );

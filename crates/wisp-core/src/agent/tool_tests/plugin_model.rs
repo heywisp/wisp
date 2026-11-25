@@ -272,6 +272,7 @@ async fn a_text_only_model_ask_stays_exact_in_a_chat_with_audio() {
         &sent[0].messages,
         &sent[0].rendering,
         provider.media_types(),
+        &[],
     ));
     assert_eq!(
         sent[1].messages,

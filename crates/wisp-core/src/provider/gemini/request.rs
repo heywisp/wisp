@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value, json};
+use wisp_plugin_api::types::SliceKind;
 use wisp_protocol::agents::MAIL_OPEN;
 use wisp_protocol::settings::GEMINI_WEB_SEARCH;
-use wisp_protocol::{ContentBlock, Effort, ErrorKind, Message, Role};
+use wisp_protocol::{ContentBlock, Effort, ErrorKind, FileSlice, InlineMedia, Message, Role};
+use wisp_tool_text::files::{carries, slice_supported};
 use wisp_tool_text::{CONTEXT_PREFIX, SENT_PREFIX};
 
 use super::super::{
@@ -13,6 +15,7 @@ use super::super::{
 use super::{CALL_SIGNATURES_ITEM, FOLD_TEXT, PART_ITEM, TEXT_SIGNATURE_ITEM};
 use crate::endpoints::ProviderKind;
 use crate::models::{ModelTable, TurnForm};
+use crate::plugin::convert;
 use crate::tool::Entry;
 
 const SKIP_SIGNATURE_VALIDATOR: &str = "skip_thought_signature_validator";
@@ -115,7 +118,7 @@ pub(super) fn build_body(
     official: bool,
 ) -> Result<BuiltBody, ProviderError> {
     let prefix = build_prefix(request, capabilities, official)?;
-    let contents = build_contents(request, identity)?;
+    let contents = build_contents(request, capabilities.as_ref(), identity)?;
 
     let mut generation_config = Map::new();
     generation_config.insert(
@@ -175,7 +178,7 @@ pub(super) fn wire_print(
     official: bool,
 ) -> Option<WirePrint> {
     validate_request(request, capabilities, official).ok()?;
-    let contents = build_contents(request, identity).ok()?;
+    let contents = build_contents(request, capabilities.as_ref(), identity).ok()?;
     let messages = contents
         .iter()
         .map(crate::session::sha256_json_hex)
@@ -385,27 +388,71 @@ fn extract_call_signatures<'a>(
     out
 }
 
-fn media_part(carried: &[&str], why: NotSent, media_type: &str, data: &str) -> Value {
-    if wisp_tool_text::files::carries(carried, media_type) {
-        json!({
-            "inlineData": {
-                "mimeType": media_type,
-                "data": data,
-            }
-        })
-    } else {
-        json!({
-            "text": not_sent_note(media_type, why),
-        })
+fn slice_metadata(media_type: &str, slice: FileSlice) -> (&'static str, Value) {
+    match slice {
+        FileSlice::Pages { start, end } => (
+            "documentMetadata",
+            json!({"startPage": start, "endPage": end}),
+        ),
+        FileSlice::Seconds { start, end } => (
+            if media_type.starts_with("audio/") {
+                "audioMetadata"
+            } else {
+                "videoMetadata"
+            },
+            json!({"startOffset": format!("{start}s"), "endOffset": format!("{end}s")}),
+        ),
+        FileSlice::Sheet { index } => ("spreadsheetMetadata", json!({"sheetIndex": index})),
     }
 }
 
-fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, ProviderError> {
+enum MediaPart {
+    Inline(Value),
+    Note(Value),
+}
+
+impl MediaPart {
+    fn into_value(self) -> Value {
+        match self {
+            Self::Inline(part) | Self::Note(part) => part,
+        }
+    }
+}
+
+fn media_part(media: InlineMedia<'_>, carried: &[&str], slices: &[SliceKind]) -> MediaPart {
+    let media_type = media.media_type;
+    let note = |why| MediaPart::Note(json!({"text": not_sent_note(media_type, media.slice, why)}));
+    if !carries(carried, media_type) {
+        return note(if carried.is_empty() {
+            NotSent::Model
+        } else {
+            NotSent::Server
+        });
+    }
+    if let Some(slice) = media.slice
+        && !slice_supported(media_type, convert::slice_kind(&slice), carried, slices)
+    {
+        return note(NotSent::Slice);
+    }
+    let mut part = json!({"inlineData": {"mimeType": media_type, "data": media.data}});
+    if let Some(slice) = media.slice {
+        let (key, value) = slice_metadata(media_type, slice);
+        part[key] = value;
+    }
+    MediaPart::Inline(part)
+}
+
+fn build_contents(
+    request: &Request<'_>,
+    capabilities: Option<&ModelCapabilities>,
+    identity: &str,
+) -> Result<Vec<Value>, ProviderError> {
+    let slices = capabilities.map_or(&[][..], |caps| caps.slices);
     let tool_names = index_tool_names(request.messages);
-    let (carried, why) = if request.rendering.attachments_as_notes {
-        (&[][..], NotSent::Model)
+    let carried = if request.rendering.attachments_as_notes {
+        &[]
     } else {
-        (super::MEDIA_TYPES.as_slice(), NotSent::Server)
+        super::MEDIA_TYPES.as_slice()
     };
 
     let mut contents: Vec<Value> = Vec::new();
@@ -584,7 +631,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                         }
                         ContentBlock::Image { .. } | ContentBlock::Media { .. } => {
                             if let Some(media) = block.inline_media() {
-                                parts.push(media_part(carried, why, media.media_type, media.data));
+                                parts.push(media_part(media, carried, slices).into_value());
                             }
                         }
                         ContentBlock::Opaque { provider, .. } => {
@@ -632,7 +679,7 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                         }
                         ContentBlock::Image { .. } | ContentBlock::Media { .. } => {
                             if let Some(media) = block.inline_media() {
-                                parts.push(media_part(carried, why, media.media_type, media.data));
+                                parts.push(media_part(media, carried, slices).into_value());
                             }
                         }
                         ContentBlock::ToolResult {
@@ -644,18 +691,17 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                                 .or_else(|| tool_names.get(tool_use_id.as_str()).copied())
                                 .unwrap_or("unknown_tool");
                             let mut lines = Vec::new();
-                            let mut inline_media = Vec::new();
+                            let mut media_parts = Vec::new();
+                            let mut sent_slice = false;
                             for inner in content {
                                 match inner {
                                     ContentBlock::Text { text } => lines.push(text.clone()),
                                     ContentBlock::Image { .. } | ContentBlock::Media { .. } => {
                                         if let Some(media) = inner.inline_media() {
-                                            inline_media.push(media_part(
-                                                carried,
-                                                why,
-                                                media.media_type,
-                                                media.data,
-                                            ));
+                                            let part = media_part(media, carried, slices);
+                                            sent_slice |= media.slice.is_some()
+                                                && matches!(part, MediaPart::Inline(_));
+                                            media_parts.push(part);
                                         }
                                     }
                                     ContentBlock::Opaque { .. } => {
@@ -673,17 +719,28 @@ fn build_contents(request: &Request<'_>, identity: &str) -> Result<Vec<Value>, P
                                     }
                                 }
                             }
-                            parts.push(json!({
-                                "functionResponse": {
-                                    "id": tool_use_id,
-                                    "name": name,
-                                    "response": {
+                            let mut response = Map::from_iter([
+                                ("id".into(), Value::String(tool_use_id.clone())),
+                                ("name".into(), Value::String(name.to_owned())),
+                                (
+                                    "response".into(),
+                                    json!({
                                         "output": lines.join("\n"),
                                         "is_error": is_error,
-                                    }
-                                }
-                            }));
-                            parts.extend(inline_media);
+                                    }),
+                                ),
+                            ]);
+                            if sent_slice {
+                                let inline_parts = media_parts
+                                    .extract_if(.., |part| matches!(part, MediaPart::Inline(_)))
+                                    .map(MediaPart::into_value)
+                                    .collect();
+                                response.insert("parts".into(), Value::Array(inline_parts));
+                            }
+                            let mut outer = Map::new();
+                            outer.insert("functionResponse".into(), Value::Object(response));
+                            parts.push(Value::Object(outer));
+                            parts.extend(media_parts.into_iter().map(MediaPart::into_value));
                         }
                         ContentBlock::Opaque { .. } => {
                             if let Some(text) = super::super::foreign::text(block, super::PROVIDER)
@@ -818,7 +875,7 @@ mod tests {
             },
         ];
         let request = make_req(&session, &messages, &[], &[], &rendering);
-        let contents = build_contents(&request, TEST_ID).unwrap();
+        let contents = build_contents(&request, None, TEST_ID).unwrap();
         assert_eq!(contents.len(), 3);
         assert_eq!(contents[1]["role"], "model");
         assert_eq!(contents[1]["parts"][0], part);
@@ -833,7 +890,7 @@ mod tests {
                 .unwrap()
                 .contains("sources")
         );
-        let foreign = build_contents(&request, "other account").unwrap();
+        let foreign = build_contents(&request, None, "other account").unwrap();
         assert_eq!(
             foreign[1]["parts"][0],
             json!({"text": crate::search::call_line("q")})
@@ -853,7 +910,7 @@ mod tests {
         let unsigned_call = super::super::search::call_item("s1", &unsigned_part);
         unsigned[1].content[0] = crate::provider::envelope("gemini", &unsigned_call, 0, TEST_ID);
         let request = make_req(&session, &unsigned, &[], &[], &rendering);
-        let replayed = build_contents(&request, TEST_ID).unwrap();
+        let replayed = build_contents(&request, None, TEST_ID).unwrap();
         assert_eq!(
             replayed[1]["parts"][0]["thoughtSignature"],
             SKIP_SIGNATURE_VALIDATOR
@@ -1075,6 +1132,42 @@ mod tests {
             &tagged_next["contents"].as_array().unwrap()[..with_audio.len()],
             with_audio
         );
+
+        let mut sliced = audio[..audio.len() - 2].to_vec();
+        let result = &mut sliced.last_mut().unwrap().content[0];
+        let ContentBlock::ToolResult { content, .. } = result else {
+            panic!("expected audio result")
+        };
+        content[0] = ContentBlock::media_sliced(
+            "audio/wav".parse().unwrap(),
+            "YQ==",
+            Some(FileSlice::seconds(30, 90).unwrap()),
+        );
+        let before = make_req(&s1, &sliced, &[], &[], &rendering);
+        let before_print = wire_print(&before, caps, TEST_ID, true).unwrap();
+        let before_tag = tag(&before);
+        assert_eq!(
+            &before_tag["contents"].as_array().unwrap()[..with_audio.len() - 1],
+            &with_audio[..with_audio.len() - 1]
+        );
+        assert_eq!(
+            before_tag["contents"].as_array().unwrap().last().unwrap()["parts"][0]["functionResponse"]
+                ["parts"][0]["audioMetadata"],
+            json!({"startOffset":"30s", "endOffset":"90s"})
+        );
+        sliced.extend_from_slice(&audio[audio.len() - 2..]);
+        let after = make_req(&s1, &sliced, &[], &[], &rendering);
+        assert_eq!(prefix_bytes(&after, caps, true).unwrap(), pb1);
+        assert_eq!(
+            cache_prefix(&after, caps, true),
+            cache_prefix(&r1, caps, true)
+        );
+        let after_print = wire_print(&after, caps, TEST_ID, true).unwrap();
+        assert_eq!(
+            &after_print.messages[..before_print.messages.len()],
+            &before_print.messages
+        );
+        assert_eq!(after_print.messages, content_digests(&tag(&after)));
 
         let other = [Message::user_text("another conversation")];
         let other = make_req(&s1, &other, &[], &[], &rendering);
@@ -2058,6 +2151,192 @@ mod tests {
             "captured\n[web search: \"rust borrow checker\"]"
         );
         assert_eq!(result_parts[1]["inlineData"]["mimeType"], "image/png");
+        assert!(result_parts[0]["functionResponse"].get("parts").is_none());
+
+        let pages = FileSlice::pages(14, 16).unwrap();
+        let seconds = FileSlice::seconds(30, 90).unwrap();
+        let sheet = FileSlice::sheet(2).unwrap();
+        let sliced = [
+            (
+                "application/pdf",
+                pages,
+                "documentMetadata",
+                json!({"startPage":14,"endPage":16}),
+            ),
+            (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                sheet,
+                "spreadsheetMetadata",
+                json!({"sheetIndex":2}),
+            ),
+            (
+                "video/mp4",
+                seconds,
+                "videoMetadata",
+                json!({"startOffset":"30s","endOffset":"90s"}),
+            ),
+            (
+                "audio/wav",
+                seconds,
+                "audioMetadata",
+                json!({"startOffset":"30s","endOffset":"90s"}),
+            ),
+        ];
+        messages[1].content.push(ContentBlock::opaque("gemini", json!({"type": CALL_SIGNATURES_ITEM, "identity": TEST_ID, "signatures": {}, "fold_text": true})));
+        let ContentBlock::ToolResult { content, .. } = &mut messages[2].content[0] else {
+            panic!("expected result")
+        };
+        content.extend(sliced.iter().map(|(media, slice, ..)| {
+            ContentBlock::media_sliced(media.parse().unwrap(), "Yg==", Some(*slice))
+        }));
+        content.push(ContentBlock::media_sliced(
+            "application/pdf".parse().unwrap(),
+            "Yw==",
+            Some(sheet),
+        ));
+        messages[2].content.push(ContentBlock::Text {
+            text: "folded".into(),
+        });
+        let built = build_body(
+            &make_req(&session, &messages, &[], &[], &rendering),
+            caps,
+            TEST_ID,
+            true,
+        )
+        .unwrap();
+        let result = built.body["contents"][2]["parts"].as_array().unwrap();
+        let response = &result[0]["functionResponse"];
+        assert_eq!(
+            response["response"]["output"],
+            "captured\n[web search: \"rust borrow checker\"]\n\nfolded"
+        );
+        let nested = response["parts"].as_array().unwrap();
+        assert_eq!(nested.len(), 4 + sliced.len());
+        assert_eq!(nested[0], result_parts[1]);
+        assert_eq!(&nested[1..4], &result_parts[2..5]);
+        for (part, (mime, _, key, metadata)) in nested[4..].iter().zip(sliced) {
+            assert_eq!(
+                part,
+                &json!({"inlineData":{"mimeType":mime, "data":"Yg=="},(key):metadata})
+            );
+        }
+        assert!(nested.iter().all(|part| part.get("text").is_none()));
+        assert_eq!(&result[1..3], &result_parts[5..]);
+        assert_eq!(
+            result[3],
+            json!({"text":"[application/pdf file (sheet 2) not sent: this model can't read the selected part]"})
+        );
+        assert_eq!(result.len(), 4);
+        assert!(!built.body.to_string().contains("Yw=="));
+    }
+
+    #[test]
+    fn sliced_history_switches_across_models_and_restores_on_switch_back() {
+        let pdf = ContentBlock::media_sliced(
+            "application/pdf".parse().unwrap(),
+            "YQ==",
+            Some(FileSlice::pages(5, 5).unwrap()),
+        );
+        let audio = ContentBlock::media_sliced(
+            "audio/wav".parse().unwrap(),
+            "Yg==",
+            Some(FileSlice::seconds(30, 90).unwrap()),
+        );
+        let messages = [
+            Message {
+                role: Role::User,
+                content: vec![pdf.clone()],
+            },
+            Message {
+                role: Role::Assistant,
+                content: vec![ContentBlock::ToolUse {
+                    id: "t".into(),
+                    name: "read".into(),
+                    input: json!({}),
+                }],
+            },
+            Message {
+                role: Role::User,
+                content: vec![ContentBlock::ToolResult {
+                    tool_use_id: "t".into(),
+                    content: vec![pdf, audio],
+                    is_error: false,
+                }],
+            },
+        ];
+        let body = |model: &str, caps: Option<ModelCapabilities>, attachments_as_notes| {
+            let session = gemini_session(model, Effort::Low);
+            let rendering = Rendering {
+                attachments_as_notes,
+                ..Rendering::default()
+            };
+            build_body(
+                &make_req(&session, &messages, &[], &[], &rendering),
+                caps,
+                TEST_ID,
+                true,
+            )
+            .unwrap()
+            .body
+        };
+        let caps = |model| super::super::model_capabilities(model).copied();
+        let g4 = || body("gemini-4-neon", caps("gemini-4-neon"), false);
+        let original = g4();
+        let page = json!({"inlineData":{"mimeType":"application/pdf","data":"YQ=="},"documentMetadata":{"startPage":5,"endPage":5}});
+        assert_eq!(original["contents"][0]["parts"], json!([page]));
+        let nested = &original["contents"][2]["parts"][0]["functionResponse"]["parts"];
+        assert_eq!(nested[0], page);
+        assert_eq!(nested[1]["inlineData"]["data"], "Yg==");
+        let g3 = body(
+            "gemini-3.1-flash-lite",
+            caps("gemini-3.1-flash-lite"),
+            false,
+        );
+        let audio_note = json!({"text":"[audio/wav file (seconds 30-90) not sent: this model can't read the selected part]"});
+        assert_eq!(
+            g3["contents"][2]["parts"][0]["functionResponse"]["parts"],
+            json!([page])
+        );
+        assert_eq!(g3["contents"][2]["parts"][1], audio_note);
+        for (model, caps, notes, why) in [
+            (
+                "gemini-2.5-pro",
+                caps("gemini-2.5-pro"),
+                false,
+                "this model can't read the selected part",
+            ),
+            (
+                "gemini-unlisted",
+                Some(super::super::LISTED_ONLY),
+                false,
+                "this model can't read the selected part",
+            ),
+            (
+                "gemini-4-neon",
+                caps("gemini-4-neon"),
+                true,
+                "this model can't take it",
+            ),
+        ] {
+            let fallback = body(model, caps, notes);
+            let parts = fallback["contents"][2]["parts"].as_array().unwrap();
+            let pdf_note =
+                json!({"text": format!("[application/pdf file (page 5) not sent: {why}]")});
+            assert!(parts[0]["functionResponse"].get("parts").is_none());
+            assert_eq!(
+                &parts[1..],
+                &[
+                    pdf_note.clone(),
+                    json!({"text":format!("[audio/wav file (seconds 30-90) not sent: {why}]")})
+                ]
+            );
+            assert_eq!(fallback["contents"][0]["parts"][0], pdf_note);
+            assert!(!fallback.to_string().contains("inlineData"));
+        }
+        assert_eq!(
+            serde_json::to_vec(&g4()).unwrap(),
+            serde_json::to_vec(&original).unwrap()
+        );
     }
 
     #[test]

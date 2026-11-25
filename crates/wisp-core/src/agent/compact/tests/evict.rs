@@ -361,6 +361,11 @@ fn only_stored_canonical_media_before_the_cut_is_evicted() {
             &bytes,
         )
         .unwrap();
+    let pdf = crate::tool::snap::mime("application/pdf");
+    writer
+        .put_blob(&sha256_bytes_hex(&bytes), &pdf, &bytes)
+        .unwrap();
+    let slice = Some(wisp_protocol::FileSlice::pages(14, 16).unwrap());
     let mut agent = logged(scripted(Vec::new()), store);
     let history = vec![
         user(vec![
@@ -371,7 +376,7 @@ fn only_stored_canonical_media_before_the_cut_is_evicted() {
         reply(),
         user(vec![ContentBlock::ToolResult {
             tool_use_id: "t1".into(),
-            content: vec![ContentBlock::media(Mime::from(ImageType::Png), BLUE)],
+            content: vec![ContentBlock::media_sliced(pdf, BLUE, slice)],
             is_error: false,
         }]),
         reply(),
@@ -399,6 +404,12 @@ fn only_stored_canonical_media_before_the_cut_is_evicted() {
     assert_eq!(agent.history[4], history[4]);
     assert_ne!(agent.history[0], history[0]);
     assert_ne!(agent.history[2], history[2]);
+    let ContentBlock::ToolResult { content, .. } = &agent.history[2].content[0] else {
+        panic!("expected a tool result")
+    };
+    let held = content[0].inline_media().unwrap();
+    assert_eq!(held.slice, slice);
+    assert_eq!(held.data, "");
     assert_eq!(*agent.history(), *history);
     let held: Vec<u64> = agent
         .history

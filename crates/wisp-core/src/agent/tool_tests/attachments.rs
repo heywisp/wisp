@@ -596,6 +596,7 @@ async fn a_type_the_endpoint_cant_carry_is_refused_in_the_kernel_with_a_bash_hin
                 json!({"name": format!("{KEY}.mp3"), "type": "audio/mpeg"}),
             ),
             snap("b", json!({"pdf": true, "slice": "1"})),
+            snap("c", json!({"slice": "1"})),
         ]),
         done("ok"),
     ]);
@@ -612,6 +613,10 @@ those or to text, or inspect it another way (file, xxd, strings).";
     refused_alone(&calls[0], sentence);
     let sliced = "No file was sent: snap.pdf can't be sliced with `pages` on this model (this model does not slice files). Cut out only the part you need with bash and view that copy, or omit `pages` to send and store the whole file.";
     refused_alone(&calls[1], sliced);
+    refused_alone(
+        &calls[2],
+        "No file was sent: snap.png is image/png, which can't be sliced with `pages`. Cut out only the part you need with bash and view that copy, or omit `pages` to send and store the whole file.",
+    );
     let requests = scripted.sent();
     assert_eq!(requests.len(), 2, "the next request goes out");
     assert_eq!(media_count(&requests[1].messages), 0);
@@ -625,6 +630,33 @@ those or to text, or inspect it another way (file, xxd, strings).";
     assert_eq!(rebuilt, &*agent.history());
     assert_eq!(media_count(&agent.history()), 0);
     assert_eq!(store.blob_names().unwrap(), Vec::<String>::new());
+    let supported = Fake::with(
+        Knobs {
+            kind: Some(crate::endpoints::ProviderKind::Gemini),
+            caps: Some(Caps::Fn(crate::provider::gemini::model_capabilities)),
+            media_types: Some(crate::provider::gemini::MEDIA_TYPES.as_slice()),
+            ..Knobs::default()
+        },
+        [
+            uses(&[snap("p", json!({"pdf": true, "slice": "14-16"}))]),
+            done("ok"),
+        ],
+    );
+    let store = MemoryStore::default();
+    let mut agent = snap_agent(supported.clone(), &env, Some(Box::new(store.clone())));
+    agent.session.model = "gemini-4-neon".into();
+    let (outcome, events) = turn(&mut agent, "read").await;
+    assert!(
+        matches!(outcome, TurnOutcome::Completed { .. }),
+        "{events:#?}"
+    );
+    let expected = Some(wisp_protocol::FileSlice::pages(14, 16).unwrap());
+    assert_eq!(calls_done(&events)[0].attachments[0].slice, expected);
+    let requests = supported.sent();
+    assert_eq!(media_count(&requests[1].messages), 1);
+    assert_eq!(store.blob_names().unwrap().len(), 1);
+    assert!(requests[1].messages.iter().any(|m| m.content.iter().any(|b| matches!(b,
+        ContentBlock::ToolResult {content, ..} if content.iter().any(|b| b.inline_media().is_some_and(|m| m.slice == expected))))));
     assert_eq!(
         wisp_tool_text::files::uncarried("x.bin", "application/zip", &[], Some("bash")),
         "x.bin is application/zip, which this server can't carry (it takes no files). Convert \

@@ -19,13 +19,14 @@ use futures::stream::BoxStream;
 use jiff::SignedDuration;
 use serde::Serialize;
 use serde_json::Value;
+use wisp_plugin_api::types::SliceKind;
 pub use wisp_protocol::Feature;
 use wisp_protocol::log::Cut;
 use wisp_protocol::plan_usage::{PlanUsage, PlanUsageError};
 use wisp_protocol::{
     CacheTtl, CitedSource, ContentBlock, Effort, ErrorDetail, ErrorKind, FailurePhase,
-    FailureSource, InputTransformation, Message, NATIVE_ITEM, RenderingForm, RetryClass, Role,
-    SearchAction, SearchOutcome, SessionConfig, StopReason, ToolRef, Usage,
+    FailureSource, FileSlice, InputTransformation, Message, NATIVE_ITEM, RenderingForm, RetryClass,
+    Role, SearchAction, SearchOutcome, SessionConfig, StopReason, ToolRef, Usage,
 };
 
 use wisp_media::Tier;
@@ -392,6 +393,7 @@ pub struct ModelCapabilities {
     pub thinking_budgets: Option<ThinkingBudgets>,
     pub max_output: Option<u32>,
     pub images: Option<ImageCaps>,
+    pub slices: &'static [SliceKind],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1151,14 +1153,19 @@ pub(crate) const MODEL_CANT_TAKE: &str = "this model can't take it";
 pub(crate) enum NotSent {
     Server,
     Model,
+    Slice,
 }
 
-pub(crate) fn not_sent_note(media_type: &str, why: NotSent) -> String {
+pub(crate) fn not_sent_note(media_type: &str, slice: Option<FileSlice>, why: NotSent) -> String {
     let reason = match why {
         NotSent::Server => "this server can't carry it",
         NotSent::Model => MODEL_CANT_TAKE,
+        NotSent::Slice => "this model can't read the selected part",
     };
-    format!("[{media_type} file not sent: {reason}]")
+    match slice {
+        Some(slice) => format!("[{media_type} file ({slice}) not sent: {reason}]"),
+        None => format!("[{media_type} file not sent: {reason}]"),
+    }
 }
 
 pub(crate) const NO_TEXT: &str = "[no text]";

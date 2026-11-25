@@ -521,6 +521,7 @@ fn rendering<F: std::future::Future>(future: F) -> impl std::future::Future<Outp
 
 fn counting_snapshot() -> Snapshot {
     Snapshot {
+        media_types: vec!["image/png".into()],
         count: MediaCount::new(|_| {
             futures::future::ready(crate::provider::TokenCount::Counted { tokens: 9 }).boxed()
         }),
@@ -529,34 +530,72 @@ fn counting_snapshot() -> Snapshot {
 }
 
 #[tokio::test]
-async fn count_tokens_refuses_slices_locally() {
-    use wisp_plugin_api::types::PageSlice;
+async fn count_tokens_gates_media_and_slices_locally() {
+    use wisp_plugin_api::types::{PageSlice, SecondSlice};
 
     let kernel = Arc::new(KernelHost::new());
+    let blocks = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let forwarded = blocks.clone();
     kernel.publish(Snapshot {
-        media_types: vec!["application/pdf".to_owned()],
+        media_types: vec!["application/pdf".into(), "audio/*".into()],
         media_slices: vec![SliceKind::Pages],
-        ..counting_snapshot()
+        count: MediaCount::new(move |block| {
+            forwarded.lock().unwrap().push(block);
+            ready(crate::provider::TokenCount::Counted { tokens: 9 })
+        }),
+        ..Snapshot::default()
     });
+    let pdf = "application/pdf";
+    let pages = Some(FileSlice::Pages(PageSlice { start: 1, end: 2 }));
     for world in ["0.1.0", "0.3.0"] {
         let host = PluginHost::new("probe", world, &[], kernel.clone());
         assert!(host.media_slices().is_empty(), "world {world}");
+        assert_eq!(
+            host.count_tokens(pdf.into(), vec![1], pages).await,
+            TokenCount::Unsupported,
+            "world {world}"
+        );
+        assert_eq!(
+            host.count_tokens(pdf.into(), vec![1], None).await,
+            TokenCount::Counted(9),
+            "world {world}"
+        );
     }
     let host = PluginHost::new("probe", "0.4.0", &[], kernel);
     assert_eq!(host.media_slices(), vec![SliceKind::Pages]);
-    for start in [0, 1] {
-        let slice = Some(FileSlice::Pages(PageSlice { start, end: 1 }));
+    assert_eq!(
+        host.count_tokens("audio/wav".into(), vec![1], None).await,
+        TokenCount::Counted(9)
+    );
+    for (media, slice) in [
+        ("image/png", None),
+        ("audio/wav", pages),
+        (
+            "audio/wav",
+            Some(FileSlice::Seconds(SecondSlice { start: 30, end: 90 })),
+        ),
+        (pdf, Some(FileSlice::Pages(PageSlice { start: 0, end: 1 }))),
+    ] {
         assert_eq!(
-            host.count_tokens("application/pdf".into(), vec![1], slice)
-                .await,
+            host.count_tokens(media.into(), vec![1], slice).await,
             TokenCount::Unsupported,
-            "start={start}"
+            "{media} {slice:?}"
         );
     }
     assert_eq!(
-        host.count_tokens("application/pdf".into(), vec![1], None)
-            .await,
+        host.count_tokens(pdf.into(), vec![1], pages).await,
         TokenCount::Counted(9)
+    );
+    let whole = ContentBlock::media(pdf.parse().unwrap(), "AQ==");
+    let sliced = ContentBlock::media_sliced(
+        pdf.parse().unwrap(),
+        "AQ==",
+        Some(wisp_protocol::FileSlice::pages(1, 2).unwrap()),
+    );
+    let audio = ContentBlock::media("audio/wav".parse().unwrap(), "AQ==");
+    assert_eq!(
+        *blocks.lock().unwrap(),
+        vec![whole.clone(), whole, audio, sliced]
     );
 }
 
