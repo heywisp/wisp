@@ -101,6 +101,13 @@ impl Agent {
             })
     }
 
+    pub(super) fn hidden_mcp_name(&self, name: &str) -> bool {
+        self.hooks
+            .host
+            .as_ref()
+            .is_some_and(|host| host.mcp().entry_name_hidden(name))
+    }
+
     pub(super) fn forward_call(
         &self,
         name: &str,
@@ -125,8 +132,12 @@ impl Agent {
         let Some(host) = &self.hooks.host else {
             return Ok(None);
         };
-        if let Some(server) = host.mcp().disabled_entries().get(target) {
+        let mcp = host.mcp();
+        if let Some(server) = mcp.disabled_entries().get(target) {
             return Err(wisp_tool_text::manage::turned_off(server));
+        }
+        if mcp.entry_name_hidden(target) {
+            return Err(crate::mcp::HELD_CREDENTIAL.into());
         }
         if host.index_parameters(target).is_none() {
             if self.turned_off(&self.settings.session).contains(target) {
@@ -178,6 +189,11 @@ impl Agent {
         name: &'a str,
         input: &'a Value,
     ) -> wisp_plugin_api::BoxFuture<'a, Result<Prepared, InvalidInput>> {
+        if self.hidden_mcp_name(name) {
+            return Box::pin(std::future::ready(Err(InvalidInput::new(
+                crate::mcp::HELD_CREDENTIAL,
+            ))));
+        }
         let owner = self.dynamic_plugin(name);
         Box::pin(async move {
             let missing = || InvalidInput::new(format!("there is no tool named `{name}`"));
@@ -204,6 +220,9 @@ impl Agent {
         name: &'a str,
         input: &'a Value,
     ) -> wisp_plugin_api::BoxFuture<'a, Option<wisp_protocol::ToolDisplay>> {
+        if self.hidden_mcp_name(name) {
+            return Box::pin(std::future::ready(None));
+        }
         let owner = self.dynamic_plugin(name);
         Box::pin(async move {
             let (_, plugin) = owner?;
@@ -219,6 +238,11 @@ impl Agent {
         name: &'a str,
         input: &'a Value,
     ) -> wisp_plugin_api::BoxFuture<'a, Result<Prepared, InvalidInput>> {
+        if self.hidden_mcp_name(name) {
+            return Box::pin(std::future::ready(Err(InvalidInput::new(
+                crate::mcp::HELD_CREDENTIAL,
+            ))));
+        }
         let Some(tool) = self.runnable_tool(name).cloned() else {
             return self.prepare_missing_dynamic(name, input);
         };

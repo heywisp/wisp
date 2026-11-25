@@ -1067,8 +1067,8 @@ that none of them appear in the file.
   chat running; a chat that lives in its window ends instead. The window then
   attaches to the picked host or starts it, carrying `RunEnd.resume` and
   only the flags a fresh `wisp --resume ID` would carry: the ID, `--config`,
-  `--env-file`, `--keychain`, `--verbose`, `--output` and the `--set` keys
-  that aren't chat settings (`display.*`, per-account and keychain keys).
+  `--mcp-config`, `--env-file`, `--keychain`, `--verbose`, `--output` and the
+  `--set` keys that aren't chat settings (`display.*`, per-account and keychain keys).
   Every other flag, `--no-log` included, is dropped, so the picked chat logs
   and sends what a fresh resume sends. With `log = false` from config, `--set`
   or the environment, a pick shows the `--resume` refusal and this chat stays.

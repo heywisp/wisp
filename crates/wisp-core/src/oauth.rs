@@ -534,14 +534,12 @@ pub fn profile_path(config: &Path, handle: &str) -> Option<PathBuf> {
         return None;
     }
     let config = crate::config_file::canonical_config(config)?;
+    Some(profile_folder_at(&config)?.join(format!("oauth-{id}.json")))
+}
+
+fn profile_folder_at(config: &Path) -> Option<PathBuf> {
     let identity = crate::session::sha256_bytes_hex(config.as_os_str().as_encoded_bytes());
-    Some(
-        config
-            .parent()?
-            .join(crate::secrets::OAUTH)
-            .join(identity)
-            .join(format!("oauth-{id}.json")),
-    )
+    Some(config.parent()?.join(crate::secrets::OAUTH).join(identity))
 }
 
 pub fn prepare(config: &Path) -> Result<(), AuthError> {
@@ -575,15 +573,24 @@ fn persist_profile(
 }
 
 pub(crate) fn lock_profile(path: &Path) -> Result<secrets::Locks, AuthError> {
+    lock_profile_with_config(path, None)
+}
+
+pub(crate) fn lock_profile_with_config(
+    path: &Path,
+    config: Option<&Path>,
+) -> Result<secrets::Locks, AuthError> {
     let folder = path.parent().ok_or(AuthError::Store)?;
     secrets::create_folder(folder).map_err(|_| AuthError::Store)?;
     secure_folder(folder)?;
-    secrets::lock(
-        &[(folder, LockKind::Credentials)],
-        PathShown::Given,
-        secrets::LOCK_WAIT,
-    )
-    .map_err(|_| AuthError::Store)
+    let mut folders = vec![(folder, LockKind::Credentials)];
+    let config_folder = config.map(crate::config_file::lock_folder);
+    folders.extend(
+        config_folder
+            .as_deref()
+            .map(|folder| (folder, LockKind::Config)),
+    );
+    secrets::lock(&folders, PathShown::Given, secrets::LOCK_WAIT).map_err(|_| AuthError::Store)
 }
 
 pub(crate) fn persist_value_locked<T: Serialize>(
@@ -663,12 +670,16 @@ struct KeyringProfile {
 pub(crate) fn mcp_profile(config: &Path, name: &str) -> Result<PathBuf, AuthError> {
     prepare(config)?;
     let config = crate::config_file::canonical_config(config).ok_or(AuthError::Store)?;
+    mcp_profile_at(&config, name)
+}
+
+pub(crate) fn mcp_profile_at(config: &Path, name: &str) -> Result<PathBuf, AuthError> {
     let identity = serde_json::to_string(&(
         crate::session::sha256_bytes_hex(config.as_os_str().as_encoded_bytes()),
         name,
     ))
     .map_err(|_| AuthError::Store)?;
-    Ok(profile_folder(&config)
+    Ok(profile_folder_at(config)
         .ok_or(AuthError::Store)?
         .join(format!(
             "oauth-mcp-{}.json",

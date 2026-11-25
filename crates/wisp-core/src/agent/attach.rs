@@ -127,6 +127,9 @@ impl Agent {
 
     pub(super) async fn call_display(&mut self, call_id: &str) -> Option<ToolDisplay> {
         let (_, name, input) = self.calls().find(|(id, _, _)| *id == call_id)?;
+        if self.hidden_mcp_name(name) {
+            return Some(fallback_display(crate::mcp::PLUGIN, &Value::Null));
+        }
         let prepared = match self.toolbox.get(name) {
             Some(tool) => tool.prepare(&input).await.ok(),
             None => None,

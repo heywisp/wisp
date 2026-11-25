@@ -826,13 +826,7 @@ impl fmt::Display for FileError {
             PathShown::Given => GIVEN_CONFIG.to_owned(),
         };
         if self.problem == Problem::Syntax {
-            return match self.line {
-                Some(line) => write!(
-                    f,
-                    "{path} line {line} is not valid TOML; nothing was loaded"
-                ),
-                None => write!(f, "{path} is not valid TOML; nothing was loaded"),
-            };
+            return f.write_str(&not_toml(&path, self.line));
         }
         match self.line {
             Some(line) => write!(f, "{path} line {line}: ")?,
@@ -935,12 +929,26 @@ impl fmt::Display for FileError {
             Problem::PluginName => f.write_str(
                 "a plugin id, hook name or section name must be a-z, 0-9 and -, starting with a letter",
             ),
-            Problem::McpServers => write!(f, "mcp.servers must hold named tables with a nonempty command and an optional list of args"),
+            Problem::McpServers => f.write_str(config::MCP_SERVERS_RULE),
             Problem::PluginField => f.write_str(
                 "[plugins.<id>] holds only the enabled and installed switches, the plugin's own settings and [plugins.<id>.hooks] and [plugins.<id>.slots] tables of switches",
             ),
         }
     }
+}
+
+pub(crate) fn not_toml(shown: &str, line: Option<usize>) -> String {
+    let at = line.map_or_else(String::new, |line| format!(" line {line}"));
+    format!("{shown}{at} is not valid TOML; nothing was loaded")
+}
+
+pub(crate) fn line_of(text: &str, span: Range<usize>) -> usize {
+    let end = span.start.min(text.len());
+    text.as_bytes()[..end]
+        .iter()
+        .filter(|b| **b == b'\n')
+        .count()
+        + 1
 }
 
 struct Walk<'a> {
@@ -951,12 +959,7 @@ struct Walk<'a> {
 
 impl Walk<'_> {
     fn line(&self, span: Range<usize>) -> usize {
-        let end = span.start.min(self.text.len());
-        self.text.as_bytes()[..end]
-            .iter()
-            .filter(|b| **b == b'\n')
-            .count()
-            + 1
+        line_of(self.text, span)
     }
 
     fn fail(&self, span: Option<Range<usize>>, problem: Problem) -> EndpointError {

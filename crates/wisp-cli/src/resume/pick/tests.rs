@@ -17,8 +17,15 @@ fn row(id: &str, open_elsewhere: bool) -> ChatRow {
 
 const HERE: &str = "~/Projects/Wisp";
 
-const KEPT_FLAGS: [&str; 7] = [
-    "config", "env_file", "keychain", "verbose", "output", "set", "resume",
+const KEPT_FLAGS: [&str; 8] = [
+    "config",
+    "mcp_config",
+    "env_file",
+    "keychain",
+    "verbose",
+    "output",
+    "set",
+    "resume",
 ];
 
 const DROPPED_FLAGS: [&str; 22] = [
@@ -186,6 +193,8 @@ fn the_relaunch_keeps_only_the_kept_flags() {
         "--self-check",
         "--config",
         "c.toml",
+        "--mcp-config",
+        "servers.toml",
         "--env-file",
         "e.env",
         "--verbose",
@@ -201,6 +210,8 @@ fn the_relaunch_keeps_only_the_kept_flags() {
     let kept = [
         "--config",
         "c.toml",
+        "--mcp-config",
+        "servers.toml",
         "--env-file",
         "e.env",
         "--keychain=off",

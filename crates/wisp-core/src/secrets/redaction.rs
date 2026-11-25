@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use wisp_protocol::VariableName;
 
+use crate::config::McpServer;
 use crate::endpoints::{ConfigFile, KeyFrom, ProviderKind, clean, url_redactions};
 use crate::session::Redactions;
 
@@ -67,8 +68,9 @@ pub fn named_key_values(vars: impl IntoIterator<Item = (String, String)>) -> Red
     }))
 }
 
-pub fn variable_redactions(
-    config: Option<&ConfigFile>,
+pub fn variable_redactions<'a>(
+    config: Option<&'a ConfigFile>,
+    run_servers: impl IntoIterator<Item = &'a McpServer>,
     env: &dyn Fn(&str) -> Option<String>,
     env_file_text: Option<&str>,
 ) -> Redactions {
@@ -89,8 +91,9 @@ pub fn variable_redactions(
         }
     }
     let keys = config
-        .iter()
+        .into_iter()
         .flat_map(|c| c.mcp_servers.values())
+        .chain(run_servers)
         .flat_map(|server| &server.keys)
         .filter_map(|name| env(name))
         .filter(|value| crate::session::maskable(value));
@@ -106,7 +109,8 @@ pub fn live_redactions(env: &dyn Fn(&str) -> Option<String>) -> Redactions {
         .filter_map(env)
         .collect();
     let hosts: Vec<String> = values.iter().flat_map(|v| url_parts(v)).collect();
-    variable_redactions(None, env, None).union([&Redactions::new(values.into_iter().chain(hosts))])
+    variable_redactions(None, [], env, None)
+        .union([&Redactions::new(values.into_iter().chain(hosts))])
 }
 
 #[cfg(any(test, feature = "test-support"))]

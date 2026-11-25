@@ -337,10 +337,12 @@ fn mcp_servers_parse_commands_and_argument_vectors_without_becoming_settings() {
     assert_eq!(file.settings.len(), 1);
     assert!(parse("[mcp]\n").unwrap().mcp_servers.is_empty());
     assert!(top_keys().contains(&"mcp"));
-    let file = parse(
-        "[mcp.servers.sentry]\ncommand = \"server\"\nkeys = [\"SENTRY_TOKEN\", \"SENTRY_KEY\"]\n",
-    )
-    .unwrap();
+    let text = "[mcp.servers.sentry]\ncommand = 'server'\nargs = ['--stdio']\nkeys = ['SENTRY_TOKEN', 'SENTRY_KEY']\n";
+    let file = parse(text).unwrap();
+    assert_eq!(mcp_servers_in(text).unwrap(), file.mcp_servers);
+    for empty in ["", "[mcp]\n", "[mcp.servers]\n"] {
+        assert!(mcp_servers_in(empty).unwrap().is_empty());
+    }
     assert_eq!(
         file.mcp_servers["sentry"].keys,
         ["SENTRY_TOKEN", "SENTRY_KEY"]
@@ -365,7 +367,27 @@ fn invalid_mcp_tables_fail_without_repeating_their_values() {
         "[mcp.servers.\"\"]\ncommand = \"private-command\"",
     ] {
         let error = parse(input).unwrap_err().to_string();
-        assert!(error.contains("mcp.servers"), "{input}: {error}");
-        assert!(!error.contains("private"), "{error}");
+        assert!(error.contains(MCP_SERVERS_RULE));
+        assert!(!error.contains("private"));
+    }
+    let only = "the --mcp-config file may hold only [mcp.servers.<name>] tables";
+    for (input, expected) in [
+        ("[other]\nvalue = 'private-value'", only),
+        ("[mcp]\nunknown = 'private-value'", only),
+        ("mcp = 1", only),
+        (
+            "[mcp.servers.a]\ncommand = 'server'\n[other]\nvalue = 'private'",
+            only,
+        ),
+        (
+            "[mcp.servers.local]\ncommand = 'server'\nkeys = [1]",
+            "the --mcp-config file: mcp.servers must hold named tables with a nonempty command and optional lists of args and keys",
+        ),
+        (
+            "[mcp.servers.local]\ncommand = 'server'\nkeys = ]",
+            "the --mcp-config file line 3 is not valid TOML; nothing was loaded",
+        ),
+    ] {
+        assert_eq!(mcp_servers_in(input).unwrap_err(), expected);
     }
 }

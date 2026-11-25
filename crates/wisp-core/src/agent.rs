@@ -4098,9 +4098,17 @@ impl Agent {
             {
                 self.search_not_run(model, events).await;
             }
-            let prepared = prepared.map_err(|e| e.message);
+            let hidden = self.hidden_mcp_name(&run_name);
+            let prepared = if hidden {
+                Err(crate::mcp::HELD_CREDENTIAL.to_owned())
+            } else {
+                prepared.map_err(|e| e.message)
+            };
             let mut display = match &prepared {
                 Ok(p) => p.display().clone(),
+                Err(message) if message == crate::mcp::HELD_CREDENTIAL => {
+                    crate::tool::fallback_display(crate::mcp::PLUGIN, &Value::Null)
+                }
                 Err(_) if is_forwarded => match self.runnable_tool(&run_name).cloned() {
                     Some(tool) => tool
                         .rejected_display(&run_input)

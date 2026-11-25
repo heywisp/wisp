@@ -476,7 +476,7 @@ fn older<'a>(
                 &chat.kept.id,
                 &Start::default(),
                 &wisp_start::keychain::KeychainInputs::load(false, None, false, None)
-                    .redactions(None),
+                    .redactions(None, []),
             )
             .await;
             match keep::dial(&link::socket(data, &chat.kept.id)).await {

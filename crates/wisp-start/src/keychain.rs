@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use wisp_core::config::McpServer;
 use wisp_core::endpoints::{ConfigFile, EndpointName, Variables};
 use wisp_core::provider::credential::EnvFile;
 use wisp_core::secrets::detect::{
@@ -524,7 +525,11 @@ impl KeychainInputs {
         }
     }
 
-    pub fn redactions(&self, config: Option<&ConfigFile>) -> Redactions {
+    pub fn redactions<'a>(
+        &self,
+        config: Option<&'a ConfigFile>,
+        run_servers: impl IntoIterator<Item = &'a McpServer>,
+    ) -> Redactions {
         #[cfg(not(any(test, feature = "test-support")))]
         let env: Lookup = &crate::paths::real_env;
         #[cfg(any(test, feature = "test-support"))]
@@ -537,7 +542,7 @@ impl KeychainInputs {
         let vars = crate::paths::real_vars();
         #[cfg(any(test, feature = "test-support"))]
         let vars = Vec::new();
-        wisp_core::secrets::variable_redactions(config, env, text.map(EnvText::as_str))
+        wisp_core::secrets::variable_redactions(config, run_servers, env, text.map(EnvText::as_str))
             .union([&wisp_core::secrets::named_key_values(vars)])
     }
 }

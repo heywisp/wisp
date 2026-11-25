@@ -221,14 +221,14 @@ fn redactions_cover_ambient_values_with_or_without_a_keychain() {
     let config = config(TABLES);
     let line = "sk-ant-CANARYEXPORTED CANARYFILEKEY CANARYPASS gw.example.com/CANARYPATH";
     let on = KeychainInputs::load(true, Some(path.clone()), false, None).with_env(&fake_env);
-    let scrubbed = on.redactions(Some(&config)).scrub(line);
+    let scrubbed = on.redactions(Some(&config), []).scrub(line);
     assert!(!scrubbed.contains("CANARY"), "{scrubbed}");
     assert!(matches!(
         crate::keychain::keychain(&on),
         Ok(wisp_core::endpoints::Keychain::Available(_))
     ));
     let off = KeychainInputs::load(false, Some(path), false, None).with_env(&fake_env);
-    let scrubbed = off.redactions(Some(&config)).scrub(line);
+    let scrubbed = off.redactions(Some(&config), []).scrub(line);
     assert!(!scrubbed.contains("CANARYEXPORTED"), "{scrubbed}");
     assert!(!scrubbed.contains("CANARYPASS"), "{scrubbed}");
     assert!(!scrubbed.contains("CANARYPATH"), "{scrubbed}");
@@ -246,7 +246,9 @@ fn redactions_cover_ambient_values_with_or_without_a_keychain() {
     assert!(inherited.scan().is_none());
     assert!(inherited.env_file().unwrap().is_none());
     assert_eq!(
-        inherited.redactions(None).scrub("sk-ant-CANARYEXPORTED"),
+        inherited
+            .redactions(None, [])
+            .scrub("sk-ant-CANARYEXPORTED"),
         wisp_core::session::REDACTED
     );
     let keychain = crate::keychain::keychain(&inherited).unwrap();
@@ -261,7 +263,9 @@ fn a_non_utf8_env_file_is_still_scrubbed_where_it_can_be_read() {
     bytes.extend_from_slice(&[0xff, 0xfe, b'\n']);
     std::fs::write(&path, bytes).unwrap();
     let inputs = KeychainInputs::load(true, Some(path), false, None);
-    let scrubbed = inputs.redactions(None).scrub("x sk-ant-CANARYREADABLE y");
+    let scrubbed = inputs
+        .redactions(None, [])
+        .scrub("x sk-ant-CANARYREADABLE y");
     assert_eq!(scrubbed, "x [redacted] y");
     assert_eq!(
         scan_problem(&inputs, FILE).as_deref(),

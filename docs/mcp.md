@@ -17,6 +17,16 @@ command = "example-mcp-server"
 args = ["--stdio"]
 ```
 
+Pass `--mcp-config FILE` to add servers for one run without changing
+`config.toml`. The file is TOML and can hold only these `[mcp.servers.<name>]`
+tables. With at least one server in the file, keep `search` enabled so the
+model can find its tools. `--config FILE` reads a full config instead, including
+its `[mcp.servers]` tables.
+
+A server added with `--mcp-config` keeps its tool list, sign-in and stored
+command keys separately for that MCP file and working directory, under the
+selected Wisp config. A name already in the saved config is refused.
+
 `command` is a nonempty executable name, path or HTTP(S) address. `args` is an optional array of
 strings. Arguments are passed directly, not interpreted by a shell.
 Unknown fields, invalid types and NUL characters are refused without echoing
@@ -32,12 +42,14 @@ inherited.
 A table may name its keys with `keys = ["SENTRY_TOKEN"]`: names only, never values.
 Wisp reads the named keys from its secret store and sets them on that server's command only.
 It masks these stored values in that server's call text, structured results, resource and prompt text, form text and call errors, and in session-log side fields.
-A named key inherited from Wisp's starting environment is masked in tool results when it is 20 characters or more.
+Name every credential variable in `keys`.
+An inherited credential value under 20 characters is not masked.
+A shell command in the same run can read an inherited credential variable.
 Exported values whose names contain `KEY`, `TOKEN`, `SECRET` or `PASSWORD` (any case) are also held from start unless they look like paths (`docs/tools.md`), even for a server added later. Other inherited keys for a server added while Wisp runs are covered from the next start.
 Configured keys alone do not withhold attachments.
 Other tools' results mask those stored key values when they are 20 characters or more, from the chat's first turn, with the same held-key mask used for account credentials.
 Shorter values and tokens not yet held by Wisp are outside that result mask.
-Tool, prompt and resource listings are not masked.
+Tool, prompt and resource listings are not rewritten. A listing containing a held credential is refused and not cached.
 Use `keys` for credentials; a stored value of at least three non-whitespace
 characters is masked wherever it appears in that server's text output and in the
 log's scrubbed fields. Shorter values are not masked (`docs/session-log.md`,
@@ -88,6 +100,7 @@ The server has 120 seconds of its own time over all rounds; asking time is exclu
 
 Each server has a JSON file in Wisp's data folder under `mcp/`. Its filename is
 a digest of the configured name, command and arguments, not the command itself.
+Run-server lists also include the MCP file, working directory and Wisp config in that digest.
 The file holds sorted canonical tools, the server's prompts and resources sorted by name and URI, the time
 observed and `ttlMs`. The cache is local and contains no connection credentials.
 Writes are atomic under the same private-file lock used by usage and model lists.
@@ -139,8 +152,9 @@ installed plugins cannot add or remove servers.
 `needs sign-in`, `needs a key` or `failed`. A failure includes its sentence below the row. While search is off,
 the list and a successful add say where to turn it on.
 
-`/mcp remove <name>` stops that server, removes its config table and saved list,
-and removes its tools from the next turn's search. A tool already offered stays
+`/mcp remove <name>` stops that server, clears its saved list, keys and sign-in,
+and leaves its tools out of the next turn's search. It removes a saved server's
+config table but does not change `config.toml` for a `--mcp-config` server. A tool already offered stays
 declared; calling it fails with `<server> was removed`. A tool gone on reconnect
 fails with `<server> no longer has <tool>`. A start failure says
 `<server> couldn't start: <reason>`.
@@ -206,10 +220,11 @@ authorization, token and registration endpoint before sending credentials.
 rmcp may fetch public discovery metadata over HTTP; these requests carry no credentials.
 rmcp discovers the sign-in service, registers Wisp with its fixed name and the
 loopback redirect, exchanges the code and refreshes tokens. Its credential
-adapter uses the existing account OAuth profile store, scoped by config and
-server name, checking the stored address and issuer before each use. Changing the
-address clears its old sign-in at the next connection. A sign-in an earlier Wisp saved under the
-address is deleted, never reused, so that server asks for sign-in once more.
+adapter uses the existing account OAuth profile store, checking the stored address
+and issuer before each use. A saved server's sign-in is scoped by config and name.
+Changing its address clears its old sign-in at the next connection; a legacy saved
+sign-in stored by address is also deleted, never reused. A `--mcp-config` server
+uses only its own sign-in for that MCP file, working directory and server definition.
 Access/refresh tokens and the returned client registration, including any client secret, use
 the existing keychain-or-0600-file choice and Credentials lock. Refresh holds
 that lock across load, exchange and save; removing a server deletes its profile
@@ -240,8 +255,10 @@ repeat `from` or a saved server table.
 
 An add starts and lists the server before saving its table and list, as `/mcp add`
 does. The main agent can find and use its new tools in the same reply; changed
-loaded definitions wait until the next message. A remove stops it at once and
-removes its settings and list. Both write the user's settings for every chat.
+loaded definitions wait until the next message. Removing a saved server stops it
+at once, removes its list and updates `config.toml` for every chat. Removing a
+`--mcp-config` server stops it for this run and clears its run-scoped list, keys
+and sign-in without changing `config.toml`.
 
 An agent with a shell, loaded or held, may add or remove. A main chat without one
 asks first: the approval card says the change affects every chat. An add's card
@@ -287,6 +304,8 @@ An unsuccessful keep leaves the add counted and the server running in this chat;
 Ask the agent to set a key anew with `manage` (`action add`, `kind server`, its `name` and `keys`); `from` is ignored.
 Wisp restarts with the new key and keeps it only after listing. A failed start leaves the old key stored and the row failed until the next start.
 `needs a key` means neither the store nor Wisp's inherited environment holds a named key; `/mcp` says how to set it.
-Stored keys are bound to the server's name, command and arguments. Editing the command makes them unavailable; remove clears them by name.
+Stored keys are bound to the server's name, command and arguments. For a run
+server they are also bound to the MCP file and working directory. Editing the
+command makes them unavailable; removing a server clears its keys.
 A typed `/mcp add` cannot name keys. An older Wisp refuses a settings file containing `keys`.
 Servers at an address sign in instead and refuse `keys`.

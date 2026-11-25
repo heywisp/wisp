@@ -640,6 +640,10 @@ need the TUI. A tool can't ask someone to attach to a process, approve an action
 fill in a server form or sign in through this output. Stdout includes tool call
 inputs and results, so treat the stream as you would the conversation itself.
 
+Use `--tools search --mcp-config FILE` to add MCP servers for this run and let
+the model find their tools. The file uses the same `[mcp.servers.<name>]` tables
+as `config.toml`, which is not changed. See [MCP configuration](mcp.md#configuration).
+
 Pass `--session-id <ID>` with a random UUID to start a chat with that ID or
 continue the same chat in later runs. See [the session log](session-log.md)
 for how to choose an ID and what to do if the chat can't be opened.

@@ -488,6 +488,8 @@ pub(crate) fn sources_with(config: &str) -> crate::endpoints::Sources {
         config_shown: PathShown::Default,
         default_config: None,
         config: Ok(Some(config)),
+        run_servers: Default::default(),
+        run_config: None,
         secrets: Default::default(),
         choice: None,
         choice_reason: StartReason::Flag,

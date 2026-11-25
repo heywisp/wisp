@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -6,13 +7,13 @@ use std::time::Duration;
 
 use wisp_client::{Channels, QuitBound};
 use wisp_core::agent::{self, Agent, Connection};
-use wisp_core::agents::TreeSetup;
+use wisp_core::agents::{CheckedPresets, TreeSetup};
 use wisp_core::endpoints::EndpointName;
 use wisp_core::endpoints::catalog::LiveCatalog;
 use wisp_core::endpoints::host::EndpointHost;
 use wisp_core::endpoints::{EndpointBook, StartReason};
 use wisp_core::kit::{self, BuildTools, Kit};
-use wisp_core::plugin::{KernelHost, Prestarted};
+use wisp_core::plugin::{KernelHost, Prestarted, Problem, Tools};
 use wisp_core::session::JsonlStore;
 use wisp_core::settings::host::StartLayers;
 use wisp_core::settings::{Given, START_ORIGIN};
@@ -50,6 +51,7 @@ pub struct StartAt {
 
 pub struct Inputs<'a> {
     pub config: Option<&'a Path>,
+    pub mcp_config: Option<&'a Path>,
     pub env_file: Option<&'a Path>,
     pub keychain: &'a Arc<Keychain>,
     pub setup: &'a Setup,
@@ -91,7 +93,6 @@ pub struct Opened<'a> {
     pub presets: wisp_core::agents::CheckedPresets,
     pub preset: Option<Preset>,
     pub refused: bool,
-    pub flagged: Option<Vec<String>>,
     pub book: EndpointBook,
     pub models: context::Loaded,
     pub resumed: Option<resume::Resumed>,
@@ -214,6 +215,11 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
         home_dir(),
         at.is_some(),
     );
+    if let Some(path) = inputs.mcp_config {
+        sources
+            .add_servers(path)
+            .map_err(|err| format!("wisp: {err}"))?;
+    }
     let unpicked = inputs.picked.account.clone().filter(|name| {
         let entries = sources.entries().unwrap_or_default();
         let config = sources.config.as_mut().ok().and_then(Option::as_mut);
@@ -229,6 +235,27 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
         }
         false
     });
+    require_mcp_search(&sources, || {
+        let config = sources.config.as_ref().ok().and_then(Option::as_ref);
+        let resolved = Run::resolve_with(setup, config, None, None, None, None);
+        let name = resolved
+            .preset
+            .as_deref()
+            .filter(|_| inputs.resume.is_none());
+        let presets = config
+            .map(|c| c.presets.clone())
+            .unwrap_or_default()
+            .joined(inputs.presets.clone());
+        let preset = name.and_then(|name| {
+            presets
+                .usable()
+                .into_iter()
+                .find(|preset| preset.name == name)
+        });
+        selected_tools(&inputs, setup, &sources, &resolved, preset)
+            .tools
+            .is_enabled("search")
+    })?;
     let lists = models_folder();
     let (missing, listed) = match (lists.as_deref(), sources.entries()) {
         (Some(folder), Ok(entries)) => {
@@ -237,7 +264,12 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
         }
         _ => Default::default(),
     };
-    endpoints::fetch_due(missing, endpoints::LIST_WAIT).await;
+    let deferred_lists = if inputs.resume.is_some() && !sources.run_servers.is_empty() {
+        Some(missing)
+    } else {
+        endpoints::fetch_due(missing, endpoints::LIST_WAIT).await;
+        None
+    };
     let entries = sources.entries().unwrap_or_default();
     let (mut start_ready, start_unavailable) = endpoints::connections(&entries, lists.as_deref());
     let mut models = models::models(&start_ready);
@@ -379,7 +411,7 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
             on_accounts: Vec::new(),
         })));
     }
-    let presets = start_presets(
+    let mut presets = start_presets(
         &sources,
         &start_view,
         resolved.instructions.warn_tokens,
@@ -414,10 +446,6 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
     );
     require_pin_log(&inputs, resolved.log)?;
     let refused = !relaunch_logs(setup, &sources, start.as_deref());
-    let flagged = setup.value(names::TOOLS).and_then(|v| match v {
-        SettingValue::List(names) => Some(names.clone()),
-        _ => None,
-    });
     let mut book = sources.resolve().map_err(|e| {
         let error = sources.start_failure(&e);
         if sources.sign_in_helps(&e) {
@@ -453,6 +481,25 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
         }
         None => None,
     };
+    if let Some(missing) = deferred_lists {
+        require_mcp_search(&sources, || {
+            let preset = session_preset(resumed.as_ref(), &presets, None);
+            selected_tools(&inputs, setup, &sources, &resolved, preset)
+                .tools
+                .is_enabled("search")
+        })?;
+        if !missing.is_empty() {
+            endpoints::fetch_due(missing, endpoints::LIST_WAIT).await;
+            let (ready, unavailable) = endpoints::connections(&book.entries, lists.as_deref());
+            let view = endpoints::view(&book.entries, &ready, &unavailable);
+            presets = start_presets(
+                &sources,
+                &view,
+                resolved.instructions.warn_tokens,
+                inputs.presets.clone(),
+            );
+        }
+    }
     let mut moved_warning = None;
     if let Some(saved) = resumed.as_ref()
         && let Some(logged) = saved.logged.as_ref()
@@ -504,7 +551,6 @@ pub async fn open(inputs: Inputs<'_>) -> Result<Opened<'_>, Stop> {
         presets,
         preset,
         refused,
-        flagged,
         book,
         models,
         resumed,
@@ -587,30 +633,111 @@ fn picks(
     }
 }
 
+fn logged_preset(resumed: &resume::Resumed) -> Option<&str> {
+    resumed.logged.as_ref()?.started.preset.as_deref()
+}
+
+fn session_preset<'a>(
+    resumed: Option<&resume::Resumed>,
+    presets: &'a CheckedPresets,
+    fresh: Option<&'a Preset>,
+) -> Option<&'a Preset> {
+    match resumed {
+        Some(resumed) => presets.find(logged_preset(resumed)?),
+        None => fresh,
+    }
+}
+
+fn require_mcp_search(
+    sources: &endpoints::Sources,
+    search_enabled: impl FnOnce() -> bool,
+) -> Result<(), String> {
+    if !sources.run_servers.is_empty() && !search_enabled() {
+        return Err("wisp: --mcp-config needs the search tool, which finds a server's tools; add search to --tools".to_owned());
+    }
+    Ok(())
+}
+
+struct SelectedTools {
+    tools: Tools,
+    skipped_tools: Vec<String>,
+    plugin_problems: Vec<Problem>,
+    preset_off: BTreeSet<String>,
+}
+
+fn selected_tools(
+    inputs: &Inputs<'_>,
+    setup: &Setup,
+    sources: &endpoints::Sources,
+    resolved: &Run,
+    main_preset: Option<&Preset>,
+) -> SelectedTools {
+    let saved = sources
+        .config
+        .as_ref()
+        .ok()
+        .and_then(Option::as_ref)
+        .map(|config| config.settings.clone())
+        .unwrap_or_default();
+    let switches = wisp_core::settings::start_switches(&setup.flags, &saved);
+    let (registry, plugin_problems) = tools::registry_with(switches);
+    let preset_off = main_preset
+        .filter(|_| inputs.full_screen)
+        .map(tools::preset_off)
+        .unwrap_or_default();
+    let configured = if preset_off.is_empty() {
+        resolved.tools.clone()
+    } else {
+        Some(Vec::from_iter(
+            &tools::names(resolved.tools.as_deref(), &registry) - &preset_off,
+        ))
+    };
+    let flagged = match setup.value(names::TOOLS) {
+        Some(SettingValue::List(names)) => Some(names.as_slice()),
+        _ => None,
+    };
+    let listed = tools::Listed {
+        configured: configured.as_deref(),
+        flagged,
+    };
+    let (tools, skipped_tools) = tools::tools(listed, inputs.tool_rule, registry);
+    let tools = tools.without_tools(resolved.turned_off.iter().cloned().collect());
+    SelectedTools {
+        tools,
+        skipped_tools,
+        plugin_problems,
+        preset_off,
+    }
+}
+
 pub fn mcp_service(
     sources: &endpoints::Sources,
     cwd: PathBuf,
     keychain: &Keychain,
     user_input: bool,
-) -> wisp_core::mcp::Service {
-    let service = wisp_core::mcp::Service::new(
-        sources
-            .config
-            .as_ref()
-            .ok()
-            .and_then(Option::as_ref)
-            .map(|config| config.mcp_servers.clone())
-            .unwrap_or_default(),
-        cwd,
-        JsonlStore::default_dir(xdg_data_home(), home_dir()).map(|dir| dir.with_file_name("mcp")),
-    );
-    let service = service.with_forms(user_input);
-    match sources.config_path.clone() {
+) -> Result<wisp_core::mcp::Service, String> {
+    use wisp_core::mcp::Service;
+    let servers = sources.mcp_servers();
+    let folder =
+        JsonlStore::default_dir(xdg_data_home(), home_dir()).map(|dir| dir.with_file_name("mcp"));
+    let service = match sources.run_config.as_deref() {
+        Some(run) => Service::new_with_run_config(
+            servers,
+            cwd,
+            folder,
+            run,
+            &sources.run_servers,
+            sources.config_path.as_deref(),
+        )?,
+        None => Service::new(servers, cwd, folder),
+    }
+    .with_forms(user_input);
+    Ok(match sources.config_path.clone() {
         Some(path) => service
             .with_config(path, sources.config_shown)
             .with_store(keychain.detected().auto_store()),
         None => service,
-    }
+    })
 }
 
 pub async fn build(
@@ -631,7 +758,6 @@ pub async fn build(
         presets,
         preset,
         refused,
-        flagged,
         book,
         models,
         mut resumed,
@@ -642,51 +768,25 @@ pub async fn build(
     } = opened;
     let setup = &opened_setup;
     let on_tui = inputs.full_screen;
-    let saved = sources
-        .config
-        .as_ref()
-        .ok()
-        .and_then(Option::as_ref)
-        .map(|c| c.settings.clone())
-        .unwrap_or_default();
-    let switches = wisp_core::settings::start_switches(&setup.flags, &saved);
-    let (registry, plugin_problems) = tools::registry_with(switches);
-    let main_preset = match &resumed {
-        Some(resumed) => resumed
-            .logged
-            .as_ref()
-            .and_then(|l| presets.find(l.started.preset.as_deref()?))
-            .cloned(),
-        None => preset,
-    };
+    let main_preset = session_preset(resumed.as_ref(), &presets, preset.as_ref()).cloned();
     let own_preset = main_preset.as_ref().map(|p| p.name.clone());
-    let preset_off = main_preset
-        .as_ref()
-        .filter(|_| on_tui)
-        .map(tools::preset_off)
-        .unwrap_or_default();
-    let configured = if preset_off.is_empty() {
-        resolved.tools.clone()
-    } else {
-        Some(Vec::from_iter(
-            &tools::names(resolved.tools.as_deref(), &registry) - &preset_off,
-        ))
-    };
-    let listed = tools::Listed {
-        configured: configured.as_deref(),
-        flagged: flagged.as_deref(),
-    };
-    let (tools, skipped_tools) = tools::tools(listed, inputs.tool_rule, registry);
+    let SelectedTools {
+        tools,
+        skipped_tools,
+        plugin_problems,
+        preset_off,
+    } = selected_tools(&inputs, setup, &sources, &resolved, main_preset.as_ref());
     let preload = wisp_protocol::settings::resolve_preload(
         main_preset
             .as_ref()
             .and_then(|preset| preset.preload.as_deref()),
         Some(&resolved.preload),
     );
-    let tools = tools
-        .without_tools(resolved.turned_off.iter().cloned().collect())
-        .with_preload(preload);
+    let tools = tools.with_preload(preload);
     let workspace = tools::workspace();
+    let mut log_context = book.log_context();
+    log_context.redactions = log_context.redactions.union([&sources.redactions()]);
+    wisp_core::session::register(&log_context.redactions);
     let mcp = mcp_service(
         &sources,
         workspace
@@ -695,7 +795,9 @@ pub async fn build(
             .unwrap_or_default(),
         inputs.keychain,
         on_tui,
-    );
+    )
+    .map_err(|err| format!("wisp: {err}"))?;
+    mcp.refresh_keys().await;
     let kernel_host = Arc::new(KernelHost::new());
     kernel_host.set_mcp(mcp.clone());
     let started = tools.start(kit::ROOT, kernel_host).await;
@@ -713,6 +815,7 @@ pub async fn build(
             return Err(format!("wisp: {}", tools::tui_only(&refused)));
         }
     }
+    require_mcp_search(&sources, || toolbox.is_enabled("search"))?;
     let spawns = inputs.tool_rule == ToolRule::Configured || can_spawn;
     let refreshed = catalog.as_ref().map(LiveCatalog::view);
     let provider = match refreshed
@@ -875,8 +978,6 @@ pub async fn build(
     }
     let home = std::env::var("HOME").ok();
     mode_warnings.extend(client_warnings);
-    let mut log_context = book.log_context();
-    log_context.redactions = log_context.redactions.union([&sources.redactions()]);
     let lanes = wisp_core::lanes::Lanes::resolve(
         &saved_layers(setup, &sources),
         summaries
