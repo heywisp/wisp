@@ -15,6 +15,7 @@ pub mod pricing;
 pub mod project;
 pub mod prompt;
 pub mod questions;
+pub mod secret_check;
 pub mod slots;
 pub mod strategy;
 pub mod tools;

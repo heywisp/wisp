@@ -63,10 +63,11 @@ To resolve world 0.3.0, tools load its three folders into one `Resolve`, oldest 
 | `media.wit` | `interface media`: `media-types`, `media-slices`, `image-edge` and `count-tokens` with an optional `slice` |
 | `model.wit` | `interface model`: `prompt`, `source`, `reply`, `ask-error` and async `ask(req, ctx)`; one bounded model request on the chat's account |
 | `questions.wit` | `interface questions`: `post` and `withdraw` for question sets from running tool calls |
+| `secret-check.wit` | `interface secret-check`: synchronous `check(text) -> verdict`, either `safe` or `refused` |
 | `usage.wit` | `interface usage`: `usage-state`, `account-usage` and the synchronous read `accounts()`; windows are 0.2.0's `limit-window` |
 | `todos.wit` | `interface todos`: `todo` (`text`, `status`, optional `section`), reusing 0.1.0's `todo-status` and `call-context`, and `replace(items, ctx)` |
 | `tools.wit` | `interface types`: `slice-kind`, `page-slice`, `second-slice`, `file-slice`, `attachment` with optional `slice`, and `tool-run` using that attachment; `interface tools`: 0.3.0's tool functions with the new `tool-run` |
-| `world.wit` | `world plugin`: replaces the `media@0.1.0` import and the `tools@0.3.0` export with their 0.4.0 versions, retains the rest of the 0.3.0 world, and adds `chat`, `usage`, `mcp`, `manage`, `model`, `project`, `todos` and `questions`; both versions of `todos` remain imported |
+| `world.wit` | `world plugin`: replaces the `media@0.1.0` import and the `tools@0.3.0` export with their 0.4.0 versions, retains the rest of the 0.3.0 world, and adds `chat`, `usage`, `mcp`, `manage`, `model`, `project`, `todos`, `questions` and `secret-check`; both versions of `todos` remain imported |
 
 A bundled plugin from world 0.4.0 may describe a client tool whose manifest names `native = "web_search"`. Its runner exists whether search starts on or off, outside loaded and held tools. The kernel offers it only when search is on for a by-call pair or a Gemini pair; installed plugins cannot supply such a runner. It is neither discoverable nor deferred.
 
@@ -119,6 +120,7 @@ Tools load all four folders into one `Resolve`, oldest first; 0.4.0 alone doesn'
 | `pricing` | `pricing.wit` (world 0.2.0): `Usage`, `SpendTotals` and the `Pricing` trait |
 | `project` | world 0.4.0's `Project` trait; `Host::project()` returns it |
 | `questions` | world 0.4.0's `Posted` enum and `Questions` trait; `Host::questions()` returns it |
+| `secret_check` | world 0.4.0's `Verdict` enum and `SecretCheck` trait; `Host::secret_check()` returns it |
 | `http` | `http.wit` (world 0.2.0): `Request`, `Response`, `HttpError`, the `Body` trait for the `body` resource and the `Http` trait |
 | `tree` | `tree.wit` (world 0.2.0): `AgentNode`, `Identity`, `AgentState`, `Activity`, `TreeEvent` and the rest of `agent-types`, the `Agent` trait (`agent.current` as `current_agent`, since `Session` already has `current`), `is_main` (no parent, or outside a tree) and the `AgentTree` trait; `agent-hooks` is `Plugin::on_agent_hook`, a no-op by default |
 | `strategy` | `strategy.wit` (world 0.2.0): `SaidEntry`, `CallEntry`, `StrategyInfo` and the `View` trait for the `view` resource; `strategy` is `Plugin::instruction`, `Plugin::accept` and `Plugin::head` |
@@ -136,11 +138,11 @@ Tools load all four folders into one `Resolve`, oldest first; 0.4.0 alone doesn'
 
 ### The drift test
 
-`crates/wisp-plugin-api/tests/mirror.rs` resolves the newest world, the three folders oldest first, with `wit-parser` (a dev-dependency, 0.262.0, which reads `async func`) and compares names over every interface of the three packages:
+`crates/wisp-plugin-api/tests/mirror.rs` resolves the newest world, the four folders oldest first, with `wit-parser` (a dev-dependency, 0.262.0, which reads `async func`) and compares names over every interface of the four packages:
 
 - **Types:** a table lists every mirrored type with its interface and WIT name. Each row destructures the Rust type exhaustively (a struct pattern with no `..`, a `match` with no wildcard), so a Rust field or case the WIT lacks fails to build, and the names in the pattern are compared with the WIT's. A WIT type, field or case the Rust lacks fails the comparison, and so does a Rust type whose name isn't the WIT name in CamelCase.
 - **Functions:** a `Probe` type implements every trait through a macro that also records each method's name and return type. Each trait's methods are compared with the WIT functions of the interfaces and resources it mirrors, and a WIT `async func` must return `BoxFuture` while a plain `func` must not. The Rust-only methods are `Prepared::into_any` and `Plugin`'s host-side `lock_for_render` and `restarts_when_cut`; `commands.run` and `agent.current` are mirrored as `run_command` and `current_agent`.
-- **The worlds:** the newest world's imports and exports are compared with the interfaces the traits mirror, plus the type-only interfaces `types`, `hook-types`, `slot-types`, `prompt-types`, `agent-types`; 0.1.0's, resolved alone, are the same without 0.2.0's seventeen interfaces. 0.2.0's world holds every 0.1.0 import and export, the same items from the 0.1.0 package, and adds only `slot-types`, `prompt-types`, `agent-types`, `workspace-facts`, `instructions-report`, `job-news`, `pricing`, `http`, `agent`, `agent-tree`, `history`, `config` and `accounts` as imports and `slot-render`, `prompt-sections`, `agent-hooks` and `strategy` as exports. 0.3.0's world holds 0.2.0's items with its own `slot-render`, `tools` and `commands` in place of the older ones and adds only its own `slot-types`, `types`, `agent-states`, `screen-report`, `secrets`, `agent-rename`, `index` and `index-source`; its `slot-types` declares only `topology-node`, `flow`, `noun`, `topology`, `block` and `content`, whose `block` cases start with 0.2.0's; its `types` declares `hit`, `fact`, `tool-run`, `code-view`, `view` and `display`; `fact` keeps every 0.1.0 case then adds `hits`, and `tool-run` keeps every 0.1.0 field; whose `view` cases start with 0.1.0's and end in `code`, and `display` and every `tools` type keep 0.1.0's names. `agent` holds only `current` and `agent-tree` only `snapshot`, neither async, `agent-hooks` only the async `on-agent-hook`, and `tree.wit` uses only its own `agent-types`. 0.4.0 replaces `media@0.1.0` and `tools@0.3.0`, retains the other 0.3.0 items, and adds `chat`, `manage`, `mcp`, `model`, `project`, `questions`, `usage` and its own `todos` and `types`; 0.1.0's `todo` fields are the first of 0.4.0's, followed by `section`.
+- **The worlds:** the newest world's imports and exports are compared with the interfaces the traits mirror, plus the type-only interfaces `types`, `hook-types`, `slot-types`, `prompt-types`, `agent-types`; 0.1.0's, resolved alone, are the same without 0.2.0's seventeen interfaces. 0.2.0's world holds every 0.1.0 import and export, the same items from the 0.1.0 package, and adds only `slot-types`, `prompt-types`, `agent-types`, `workspace-facts`, `instructions-report`, `job-news`, `pricing`, `http`, `agent`, `agent-tree`, `history`, `config` and `accounts` as imports and `slot-render`, `prompt-sections`, `agent-hooks` and `strategy` as exports. 0.3.0's world holds 0.2.0's items with its own `slot-render`, `tools` and `commands` in place of the older ones and adds only its own `slot-types`, `types`, `agent-states`, `screen-report`, `secrets`, `agent-rename`, `index` and `index-source`; its `slot-types` declares only `topology-node`, `flow`, `noun`, `topology`, `block` and `content`, whose `block` cases start with 0.2.0's; its `types` declares `hit`, `fact`, `tool-run`, `code-view`, `view` and `display`; `fact` keeps every 0.1.0 case then adds `hits`, and `tool-run` keeps every 0.1.0 field; whose `view` cases start with 0.1.0's and end in `code`, and `display` and every `tools` type keep 0.1.0's names. `agent` holds only `current` and `agent-tree` only `snapshot`, neither async, `agent-hooks` only the async `on-agent-hook`, and `tree.wit` uses only its own `agent-types`. 0.4.0 replaces `media@0.1.0` and `tools@0.3.0`, retains the other 0.3.0 items, and adds `chat`, `manage`, `mcp`, `model`, `project`, `questions`, `secret-check`, `usage` and its own `todos` and `types`; 0.1.0's `todo` fields are the first of 0.4.0's, followed by `section`.
 - **The parser:** every `async func` written in the folder is parsed as async, so a parser that dropped async support would fail rather than pass quietly.
 
 ## The manifest: `wisp-plugin.toml`
@@ -472,7 +474,7 @@ An installed plugin cannot take a provider's reserved id.
   - `spend()` is this agent's own cost tally in micro-dollars, the figures behind `StepEnded` and the turn's `Cost`, as of the snapshot published before the call: `turn` is the open turn's cost so far (its priced steps, and any compaction within it), `none` between turns, and `session` the session's, resumed spend included. Child agents' spend (`Cost.agents_usd`) isn't included; each child's host reports its own. Both are `none` on an unpriced connection, or while nothing in the session or turn has been priced (a model with no price). `turn-at-least` and `session-at-least` are set when the figure is a lower bound, as the footer's trailing `+` is (an unpriced or possibly billed step, a damaged log on resume), so a plugin can set its `usd` span's `at-least`; they are false while the figure is `none`.
   - There is no rates call: a plugin prices a prefix by estimating a read and a write. Wisp writes the system and tools prefix at the 1-hour TTL and the conversation at the session's `cache_ttl`. Nothing it returns names the account, the key, the endpoint or its URL.
 - **The caller.** A task-local `Caller` (`plugin/caller.rs`) tells the host who is calling. The kernel sets it around each plugin tool run and each hook run, carrying the call's cancel token, kernel deadline and where the call runs (turn, step and call id, which a point it fires logs); a render carries which render it is (`Render::Slot` around each `render-slot` call and the future it returns, `Render::Start` for a start render). The scope covers the plugin call as well as its future, so what a plugin does before its first await (a Rust hook reading `snapshot()`) reads the same `Caller` as the rest.
-  - **The empty `Caller`.** Building or describing a plugin (`start_one`, `redescribe` and `describe_with`, covering both its constructor and `describe`) runs inside `Caller::describing()`, which has no cancel token, no deadline, is not rendering and marks `project.key` unavailable; `doctor`'s loop and `prepare` run inside `Caller::default().scope(..)`: no cancel token, no deadline and not rendering. So a child built inside its parent's `spawn_agent` call doesn't inherit that call's `Caller`. The cost: Esc during `spawn_agent` doesn't stop a slow `http` fetch in a third-party plugin's `describe`, which runs up to `http`'s 30 s.
+  - **The empty `Caller`.** Building or describing a plugin (`start_one`, `redescribe` and `describe_with`, covering both its constructor and `describe`) runs inside `Caller::describing()`, which has no cancel token, no deadline, is not rendering and marks `project.key` and `secret-check.check` unavailable; `doctor`'s loop and `prepare` run inside `Caller::default().scope(..)`: no cancel token, no deadline and not rendering. So a child built inside its parent's `spawn_agent` call doesn't inherit that call's `Caller`. The cost: Esc during `spawn_agent` doesn't stop a slow `http` fetch in a third-party plugin's `describe`, which runs up to `http`'s 30 s.
   - **`sees_agents()`** is `match render { Some(Slot) => true, Some(_) => false, None => cancel.is_some() }`: a hook, a tool call, a plugin command and a sidebar render see the agents; a start render never does, even with a cancel token, and neither does a `Caller` with neither (a build, `doctor`, `prepare`). A new `Render` kind sees nothing until it is added.
   - `http` reads the `Caller`, so a fetch stops when its caller stops and is refused inside a render, and so does the import table (`plugin/imports.rs`), through `Import::refused()`. `agent` and `agent-tree` read it too, through `sees_agents()`, so they answer in a sidebar render but not in a start render (below). A WASM plugin's imports read the same `Caller`: each runs under the `Caller` of the call that made it ("The `Kernel` seam").
 - **`http`** (world 0.2.0, `plugin/http.rs`) fetches a URL for the plugin, over `reqwest` as the provider uses it, with `Policy::none()` for redirects:
@@ -513,6 +515,52 @@ An installed plugin cannot take a provider's reserved id.
 - **`usage.accounts`**, from world 0.4.0, answers a bundled plugin requesting `usage`; every other plugin receives an empty list. It answers only inside a hook, tool call, command or sidebar render, never at start, build, describe or doctor. Each subscription account carries its name through `plain`, whether it is this chat's account, its state, whether it is limited, its retry time and its windows. The states, in priority order, are `off`, `signed-out`, `unavailable`, `checking`, `stale` and `ok`; `unknown` is reserved. Windows appear only in `ok` and `stale`; no token, account id, tier or provider error text is exposed. Basics come from the same summaries as `accounts.list`; each read consults the live cache and starts no lookup. While an eligible section or page is shown, the root holds the cache and refreshes every account once, on each step under its normal gates, and explicitly when a page opens; detaching releases the hold. A client with usage display disabled takes no hold. Installed plugins await capability acceptance and a bound world.
 
 - **`log.write`** goes nowhere: Wisp has no debug log yet, and a plugin's lines must never reach the session log unredacted. `points.fire` reaches the agent's hook engine ([Hooks](#hooks)), except inside a render.
+
+### Checking text for secrets
+
+`secret-check.check(text)` returns one bit: `Safe` or `Refused` in Rust. It
+never logs or returns the submitted text, a matched value or any reason. A
+native world 0.4.0 plugin can call it in an ordinary call or a slot render.
+An older world, the default `()` implementation, a start render and
+`Caller::describing()` all return `Refused`. The WASM host does not yet bind
+world 0.4.0.
+
+The check uses live held credentials (including configured endpoint and startup
+key variables), known key prefixes, URL passwords, email addresses (including
+Unicode and percent-escaped addresses), provider account ID shapes and home
+paths. It recognizes standard Unix, macOS, Windows and WSL paths and user-home
+shorthand. It uses the bound workspace home or falls back to the OS home or
+Windows profile. Paths under one-component homes such as `HOME=/root` or `/app`
+are refused too. Most version specifiers pass, but a multi-label dotted
+prerelease such as `1.2.3-preview.linux.1` after a package name and `@` may be
+refused: the alphabetic interior label before the numeric suffix can look like
+an email domain. In free text, a raw backslash ends a special-scheme URL's
+authority, matching the WHATWG URL parser. Punctuation across adjacent compact
+JSON fields, as in `{"url":"https://h.invalid:443","pkg":"@org/x"}`, can cause a
+conservative refusal.
+
+Held credentials of 3–19 characters match only whole tokens, bounded by a
+character outside `[A-Za-z0-9_-]` or the edge of the text. Thus `test` does not
+match `latest` or `tests`, and `ollama` does not match `_ollama_`. Credentials of
+20 or more characters can match anywhere, including supported escapes and
+Base64 alignments. This is the `Held` check, not the MCP saved-list `Masked`
+check, which covers credentials of 20 or more characters. Unknown unshaped
+credentials, personal data in general, text already sent, call-scoped MCP
+secret-box answers, per-call typed holds under 20 characters and log-only
+endpoint URL paths or queries are outside this verdict. Standalone `wisp doctor`
+registers held credentials from the same startup sources as chat before it
+runs plugin doctors, even when it cannot select an endpoint or read the keys
+file. Readable configured values count for refusal even if authentication
+rejects the file or an exported value overrides them.
+
+If a source calls the check during `entries()`, the index tracks that source,
+even if it returned nothing. A held-credential generation or home change makes
+the index dirty and hides its checked sources' cached entries until the next
+gather. This protects content the source checks but does not put in its index
+metadata. An open already in progress also refuses if that credential
+generation or home changes before it returns. `Caller::describing()` and
+`Caller::default()` clear `gather_checked`,
+so checks in separate calls do not mark an index source.
 
 ## Panic containment
 

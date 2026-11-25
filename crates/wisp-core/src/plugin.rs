@@ -33,7 +33,37 @@ pub async fn doctor_rows(
     registry: &Registry,
     on: &std::collections::BTreeSet<String>,
     mcp: crate::mcp::Service,
+    redactions: &crate::session::Redactions,
 ) -> Vec<wisp_protocol::DoctorRow> {
+    let rows = plugin_doctor_rows(registry, on, mcp, redactions, crate::workspace::home()).await;
+    #[cfg(unix)]
+    let rows = {
+        let mut rows = rows;
+        rows.extend(crate::jobs::doctor_rows());
+        rows
+    };
+    rows
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub async fn doctor_rows_with_home(
+    registry: &Registry,
+    on: &std::collections::BTreeSet<String>,
+    mcp: crate::mcp::Service,
+    redactions: &crate::session::Redactions,
+    home: Option<std::path::PathBuf>,
+) -> Vec<wisp_protocol::DoctorRow> {
+    plugin_doctor_rows(registry, on, mcp, redactions, home).await
+}
+
+async fn plugin_doctor_rows(
+    registry: &Registry,
+    on: &std::collections::BTreeSet<String>,
+    mcp: crate::mcp::Service,
+    redactions: &crate::session::Redactions,
+    home: Option<std::path::PathBuf>,
+) -> Vec<wisp_protocol::DoctorRow> {
+    crate::session::register(redactions);
     mcp.refresh_keys().await;
     let host = std::sync::Arc::new(KernelHost::new());
     host.set_mcp(mcp);
@@ -42,14 +72,11 @@ pub async fn doctor_rows(
         &crate::jobs::Processes::default(),
         &crate::workspace::Workspace {
             root: temp.clone(),
-            home: crate::workspace::home(),
+            home,
             temp,
         },
     );
-    let mut rows = registry.doctor(on, host).await;
-    #[cfg(unix)]
-    rows.extend(crate::jobs::doctor_rows());
-    rows
+    registry.doctor(on, host).await
 }
 
 #[derive(Debug, Clone, PartialEq)]

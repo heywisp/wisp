@@ -95,6 +95,7 @@ pub enum Import {
     ModelAsk,
     UsageAccounts,
     ProjectKey,
+    SecretCheckCheck,
     McpPrompts,
     McpGetPrompt,
     McpResources,
@@ -120,7 +121,7 @@ pub enum Inside {
     NeedsCall,
 }
 
-pub const ALL: [Import; 106] = [
+pub const ALL: [Import; 107] = [
     Import::SessionCurrent,
     Import::WorkspaceRoot,
     Import::WorkspaceHome,
@@ -212,6 +213,7 @@ pub const ALL: [Import; 106] = [
     Import::ModelAsk,
     Import::UsageAccounts,
     Import::ProjectKey,
+    Import::SecretCheckCheck,
     Import::McpPrompts,
     Import::McpGetPrompt,
     Import::McpResources,
@@ -323,6 +325,7 @@ impl Import {
             Self::ModelAsk => "model.ask",
             Self::UsageAccounts => "usage.accounts",
             Self::ProjectKey => "project.key",
+            Self::SecretCheckCheck => "secret-check.check",
             Self::McpPrompts => "mcp.prompts",
             Self::McpGetPrompt => "mcp.get-prompt",
             Self::McpResources => "mcp.resources",
@@ -380,7 +383,8 @@ impl Import {
             | Self::AgentCurrent
             | Self::AgentTreeSnapshot
             | Self::AgentStatesStates
-            | Self::UsageAccounts => (Allowed, Unavailable),
+            | Self::UsageAccounts
+            | Self::SecretCheckCheck => (Allowed, Unavailable),
             Self::JobInfo | Self::JobsAll => (Quiet, Unavailable),
             Self::LogWrite
             | Self::WorkspaceFactsConfigDir
@@ -463,6 +467,7 @@ impl Import {
             | Self::ModelAsk
             | Self::UsageAccounts
             | Self::ProjectKey
+            | Self::SecretCheckCheck
             | Self::McpPrompts
             | Self::McpGetPrompt
             | Self::McpResources
@@ -521,7 +526,11 @@ impl Import {
             None if caller.quiet_jobs && matches!(self, Self::JobsAll | Self::JobInfo) => {
                 Inside::Quiet
             }
-            None if caller.describing && self == Self::ProjectKey => Inside::Unavailable,
+            None if caller.describing
+                && matches!(self, Self::ProjectKey | Self::SecretCheckCheck) =>
+            {
+                Inside::Unavailable
+            }
             None => Inside::Allowed,
         }
     }

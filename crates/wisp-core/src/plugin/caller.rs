@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::sync::{Arc, atomic::AtomicBool};
 
 use futures::future::BoxFuture;
 use wisp_plugin_api::Scope;
@@ -27,6 +28,7 @@ pub struct Caller {
     pub at: At,
     pub quiet_jobs: bool,
     pub describing: bool,
+    pub(crate) gather_checked: Option<Arc<AtomicBool>>,
 }
 
 tokio::task_local! {

@@ -785,7 +785,7 @@ pub async fn build(
     let tools = tools.with_preload(preload);
     let workspace = tools::workspace();
     let mut log_context = book.log_context();
-    log_context.redactions = log_context.redactions.union([&sources.redactions()]);
+    log_context.redactions = sources.held_redactions(Some(&log_context.redactions));
     wisp_core::session::register(&log_context.redactions);
     let mcp = mcp_service(
         &sources,

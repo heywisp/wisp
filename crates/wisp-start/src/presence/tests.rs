@@ -228,11 +228,7 @@ fn redactions_cover_ambient_values_with_or_without_a_keychain() {
         Ok(wisp_core::endpoints::Keychain::Available(_))
     ));
     let off = KeychainInputs::load(false, Some(path), false, None).with_env(&fake_env);
-    let scrubbed = off.redactions(Some(&config), []).scrub(line);
-    assert!(!scrubbed.contains("CANARYEXPORTED"), "{scrubbed}");
-    assert!(!scrubbed.contains("CANARYPASS"), "{scrubbed}");
-    assert!(!scrubbed.contains("CANARYPATH"), "{scrubbed}");
-    assert!(scrubbed.contains("CANARYFILEKEY"), "{scrubbed}");
+    assert_eq!(off.redactions(Some(&config), []).scrub(line), scrubbed);
     let keychain = crate::keychain::keychain(&off).unwrap();
     let variables = keychain.variables().unwrap();
     assert_eq!(

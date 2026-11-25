@@ -44,4 +44,5 @@ world plugin {
   import manage;
   import todos;
   import questions;
+  import secret-check;
 }

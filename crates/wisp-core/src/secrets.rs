@@ -13,7 +13,8 @@ pub use wisp_protocol::{KeyProblem, Secret, check_key};
 
 use crate::config_file::link_count;
 pub use crate::endpoints::PathShown;
-use crate::endpoints::{ConfigFile, EndpointName, KeyFrom};
+use crate::endpoints::{ConfigFile, EndpointName, KeyFrom, url_redactions};
+use crate::session::Redactions;
 
 mod change;
 pub(crate) use change::apply_checked;
@@ -33,7 +34,8 @@ pub use change::{
     keychain_off_for_key, keychain_words,
 };
 pub use env_file::{
-    GIVEN_ENV_FILE, env_file_names, env_text_problem, missing_env_file, read_env_file,
+    EnvScan, EnvText, GIVEN_ENV_FILE, Unscanned, env_file_names, env_text_problem,
+    missing_env_file, read_env_file,
 };
 pub use keyring::{KeyringAccess, KeyringError, KeyringStore};
 pub use parse::RecordProblem;
@@ -100,6 +102,17 @@ impl From<StoreKind> for wisp_protocol::endpoint::StoreKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StoredRecord {
     Key { key: Secret, url: Option<Secret> },
+}
+
+impl StoredRecord {
+    pub(crate) fn redactions(&self) -> Redactions {
+        let Self::Key { key, url } = self;
+        let held = Redactions::new([key.expose().to_owned()]);
+        match url {
+            Some(url) => held.union([&url_redactions(url.expose())]),
+            None => held,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -339,6 +352,18 @@ impl Prefetched {
 
     pub fn records(&self) -> Result<&BTreeMap<EndpointName, Stored>, &StoreError> {
         self.file.as_ref()
+    }
+
+    pub fn redactions(&self) -> Redactions {
+        let file = self.file.iter().flat_map(|records| records.values());
+        let keyring = self
+            .keyring
+            .values()
+            .filter_map(|record| record.as_ref().ok()?.as_ref());
+        file.chain(keyring)
+            .fold(Redactions::default(), |held, stored| {
+                held.union([&stored.record.redactions()])
+            })
     }
 
     pub fn keyring_records(&self) -> &KeyringRecords {

@@ -1,7 +1,8 @@
-use std::ffi::OsString;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::LazyLock;
+#[cfg(any(test, not(feature = "test-support")))]
+use std::{ffi::OsString, path::PathBuf};
 
 use regex::Regex;
 
@@ -12,7 +13,6 @@ mod tests;
 #[cfg(test)]
 pub(crate) use tests::email_regression_cases;
 
-#[allow(dead_code, reason = "used by the plugin secret-check host in MR 2")]
 pub(crate) fn contains_secret_or_identity(text: &str, home: Option<&Path>) -> bool {
     session::held().has_secret_check_match(text)
         || any_token(text, |token| {
@@ -23,6 +23,7 @@ pub(crate) fn contains_secret_or_identity(text: &str, home: Option<&Path>) -> bo
         || has_home_path(text, home)
 }
 
+#[cfg(any(test, not(feature = "test-support")))]
 pub(crate) fn fallback_detection_home(
     home: Option<PathBuf>,
     userprofile: Option<OsString>,
@@ -34,7 +35,7 @@ pub(crate) fn fallback_detection_home(
     })
 }
 
-#[allow(dead_code, reason = "used by the plugin secret-check host in MR 2")]
+#[cfg(not(any(test, feature = "test-support")))]
 pub(crate) fn os_detection_home() -> Option<PathBuf> {
     fallback_detection_home(crate::workspace::home(), std::env::var_os("USERPROFILE"))
 }

@@ -13,6 +13,7 @@ use wisp_core::secrets::keyring::{
     Budget, HEADLESS_DEADLINE, KeyringAccess, KeyringError, KeyringStore, TERMINAL_DEADLINE,
     Unreachable,
 };
+pub use wisp_core::secrets::{EnvScan, EnvText, Unscanned};
 use wisp_core::secrets::{KeyringRecords, keyring_names};
 use wisp_core::session::Redactions;
 use wisp_protocol::CONFIG_FILE;
@@ -380,42 +381,10 @@ impl KeyringAccess for Budgeted<'_> {
     }
 }
 
-pub struct EnvText(String);
-
-impl EnvText {
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for EnvText {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "EnvText(<{} bytes>)", self.0.len())
-    }
-}
-
-#[derive(Debug)]
-pub enum Unscanned {
-    GivenMissing,
-    NotUtf8(EnvText),
-    Unreadable(std::io::ErrorKind),
-}
-
-#[derive(Debug)]
-pub enum EnvScan {
-    Missing,
-    Text(EnvText),
-    Failed(Unscanned),
-}
-
 #[derive(Debug)]
 enum Inputs {
-    Available {
-        scan: EnvScan,
-    },
-    Absent {
-        env_file: Result<Option<Arc<EnvFile>>, String>,
-    },
+    Available,
+    Absent(Result<Option<Arc<EnvFile>>, String>),
 }
 
 pub type Lookup = &'static (dyn Fn(&str) -> Option<String> + Sync);
@@ -426,8 +395,11 @@ pub struct KeychainInputs {
     pub explicit_env_file: bool,
     pub keys_file: String,
     inputs: Inputs,
+    scan: EnvScan,
     #[cfg(any(test, feature = "test-support"))]
     test_env: TestEnv,
+    #[cfg(any(test, feature = "test-support"))]
+    test_named: Redactions,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -452,30 +424,27 @@ impl KeychainInputs {
         explicit: bool,
         home: Option<&str>,
     ) -> Self {
+        let scan = env_path
+            .as_deref()
+            .map_or(EnvScan::Missing, |path| EnvScan::read(path, explicit));
         let inputs = if available {
-            Inputs::Available {
-                scan: match &env_path {
-                    Some(path) => scan(path, explicit),
-                    None => EnvScan::Missing,
-                },
-            }
+            Inputs::Available
         } else {
-            Inputs::Absent {
-                env_file: match &env_path {
-                    Some(path) => {
-                        wisp_core::secrets::read_env_file(path, explicit).map(|f| f.map(Arc::new))
-                    }
-                    None => Ok(None),
-                },
-            }
+            let env_file = env_path.as_deref().map_or(Ok(None), |path| {
+                scan.parse(path, explicit).map(|file| file.map(Arc::new))
+            });
+            Inputs::Absent(env_file)
         };
         let mut loaded = Self {
             env_path,
             explicit_env_file: explicit,
             keys_file: String::new(),
             inputs,
+            scan,
             #[cfg(any(test, feature = "test-support"))]
             test_env: TestEnv((!crate::paths::process_env_used()).then_some(&no_env)),
+            #[cfg(any(test, feature = "test-support"))]
+            test_named: Redactions::default(),
         };
         loaded.keys_file = match &loaded.env_path {
             Some(path) if loaded.shows_path() => crate::endpoints::short(path, home),
@@ -497,25 +466,28 @@ impl KeychainInputs {
         self
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_vars(mut self, vars: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.test_named = wisp_core::secrets::named_key_values(vars);
+        self
+    }
+
     pub fn available(&self) -> bool {
-        matches!(self.inputs, Inputs::Available { .. })
+        matches!(self.inputs, Inputs::Available)
     }
 
     pub fn env_file(&self) -> Result<Option<&EnvFile>, &str> {
         match &self.inputs {
-            Inputs::Absent { env_file } => env_file
+            Inputs::Absent(env_file) => env_file
                 .as_ref()
                 .map(|f| f.as_deref())
                 .map_err(String::as_str),
-            Inputs::Available { .. } => Ok(None),
+            Inputs::Available => Ok(None),
         }
     }
 
     pub fn scan(&self) -> Option<&EnvScan> {
-        match &self.inputs {
-            Inputs::Available { scan } => Some(scan),
-            Inputs::Absent { .. } => None,
-        }
+        self.available().then_some(&self.scan)
     }
 
     pub fn env_text(&self) -> Option<&EnvText> {
@@ -534,47 +506,19 @@ impl KeychainInputs {
         let env: Lookup = &crate::paths::real_env;
         #[cfg(any(test, feature = "test-support"))]
         let env: Lookup = self.test_env.0.unwrap_or(&crate::paths::real_env);
-        let text = match self.scan() {
-            Some(EnvScan::Text(text) | EnvScan::Failed(Unscanned::NotUtf8(text))) => Some(text),
-            _ => None,
-        };
+        let text = self.scan.readable_text().map(EnvText::as_str);
         #[cfg(not(any(test, feature = "test-support")))]
-        let vars = crate::paths::real_vars();
+        let named = &wisp_core::secrets::named_key_values(crate::paths::real_vars());
         #[cfg(any(test, feature = "test-support"))]
-        let vars = Vec::new();
-        wisp_core::secrets::variable_redactions(config, run_servers, env, text.map(EnvText::as_str))
-            .union([&wisp_core::secrets::named_key_values(vars)])
-    }
-}
-
-fn readable_lines(bytes: &[u8]) -> EnvText {
-    let lines: Vec<&str> = bytes
-        .split(|b| *b == b'\n')
-        .filter_map(|line| std::str::from_utf8(line).ok())
-        .collect();
-    EnvText(lines.join("\n"))
-}
-
-fn scan(path: &Path, explicit: bool) -> EnvScan {
-    match std::fs::read(path) {
-        Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(text) => EnvScan::Text(EnvText(text)),
-            Err(e) => EnvScan::Failed(Unscanned::NotUtf8(readable_lines(e.as_bytes()))),
-        },
-        Err(e) if crate::endpoints::missing(e.kind()) && explicit => {
-            EnvScan::Failed(Unscanned::GivenMissing)
-        }
-        Err(e) if crate::endpoints::missing(e.kind()) => EnvScan::Missing,
-        Err(e) => EnvScan::Failed(Unscanned::Unreadable(e.kind())),
+        let named = &self.test_named;
+        wisp_core::secrets::variable_redactions(config, run_servers, env, text).union([named])
     }
 }
 
 pub fn keychain(inputs: &KeychainInputs) -> Result<wisp_core::endpoints::Keychain<'_>, String> {
     match &inputs.inputs {
-        Inputs::Available { .. } => {
-            Ok(wisp_core::endpoints::Keychain::Available(&inputs.keys_file))
-        }
-        Inputs::Absent { env_file } => {
+        Inputs::Available => Ok(wisp_core::endpoints::Keychain::Available(&inputs.keys_file)),
+        Inputs::Absent(env_file) => {
             let file = env_file.as_ref().map_err(Clone::clone)?.as_deref();
             #[cfg(not(any(test, feature = "test-support")))]
             let env: Lookup = &crate::paths::real_env;

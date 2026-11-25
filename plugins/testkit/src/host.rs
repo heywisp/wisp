@@ -17,6 +17,7 @@ use wisp_plugin_api::http::{Http, HttpError, Request, Response};
 use wisp_plugin_api::instructions::{Change, Diagnostic, InstructionsReport, LoadReport};
 use wisp_plugin_api::pricing::{Pricing, SpendTotals, Usage};
 use wisp_plugin_api::prompt::{EnvironmentFacts, JobNews, News, WorkspaceFacts};
+use wisp_plugin_api::secret_check::{SecretCheck, Verdict};
 use wisp_plugin_api::tree::{
     Activity, Agent, AgentNode, AgentState, AgentStates, AgentTree, Identity, ShownState,
 };
@@ -50,6 +51,7 @@ pub type Messaged = Arc<Mutex<Vec<(String, String, String, bool)>>>;
 pub type Halted = Arc<Mutex<Vec<(String, String, bool)>>>;
 pub type Renames = Arc<Mutex<Vec<(String, String, String)>>>;
 pub type Instructed = Arc<Mutex<Vec<Report>>>;
+pub type SecretCheckFn = dyn Fn(&str) -> Verdict + Send + Sync;
 pub type SecretCalls = Arc<Mutex<Vec<(String, SecretAsk)>>>;
 pub type PostedCalls = Arc<Mutex<Vec<(String, Vec<Question>)>>>;
 
@@ -99,6 +101,7 @@ pub struct FakeHost {
     pub screen_report: Option<ScreenReport>,
     pub secret_end: Option<SecretEnd>,
     pub secret_asked: SecretCalls,
+    pub secret_check: Option<Arc<SecretCheckFn>>,
     pub environment: Option<EnvironmentFacts>,
     pub config_dir: Option<String>,
     pub data_dir: Option<String>,
@@ -725,6 +728,14 @@ impl wisp_plugin_api::questions::Questions for FakeHost {
     }
 }
 
+impl SecretCheck for FakeHost {
+    fn check(&self, text: &str) -> Verdict {
+        self.secret_check
+            .as_ref()
+            .map_or(Verdict::Refused, |check| check(text))
+    }
+}
+
 impl Host for FakeHost {
     fn chat(&self) -> &dyn wisp_plugin_api::chat::Chat {
         self
@@ -747,6 +758,10 @@ impl Host for FakeHost {
     }
 
     fn manage(&self) -> &dyn wisp_plugin_api::manage::Manage {
+        self
+    }
+
+    fn secret_check(&self) -> &dyn SecretCheck {
         self
     }
 

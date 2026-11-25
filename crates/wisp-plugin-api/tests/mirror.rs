@@ -36,6 +36,7 @@ use wisp_plugin_api::prompt::{
     self, At, EnvironmentFacts, JobNews, News, Prior, Rendered, WorkspaceFacts,
 };
 use wisp_plugin_api::questions::{self, Questions};
+use wisp_plugin_api::secret_check::{self, SecretCheck};
 use wisp_plugin_api::slots::{self, Content, SlotView};
 use wisp_plugin_api::strategy::{self, StrategyInfo, View};
 use wisp_plugin_api::tools::{self, BuildContext, DoctorRow, Prepared, ToolDef};
@@ -58,13 +59,14 @@ const WIT_0_3_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.3.0")
 
 const WIT_0_4_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.4.0");
 
-const ADDED_IN_0_4_0: [&str; 7] = [
+const ADDED_IN_0_4_0: [&str; 8] = [
     "chat",
     "manage",
     "mcp",
     "model",
     "project",
     "questions",
+    "secret-check",
     "usage",
 ];
 
@@ -152,6 +154,12 @@ macro_rules! cases {
 
 fn mirrors() -> Vec<Mirror> {
     vec![
+        cases!(
+            Enum,
+            "secret-check",
+            "verdict",
+            secret_check::Verdict { Safe, Refused }
+        ),
         cases!(
             Enum,
             "questions",
@@ -2600,6 +2608,10 @@ probe!(chat_methods, impl Chat {
     fn rename(&self, _name: String) -> Result<String, String> { Ok(String::new()) }
 });
 
+probe!(secret_check_methods, impl SecretCheck {
+    fn check(&self, _text: &str) -> secret_check::Verdict { secret_check::Verdict::Refused }
+});
+
 probe!(project_methods, impl Project {
     fn key(&self) -> Option<String> { None }
 });
@@ -2729,6 +2741,11 @@ fn traits() -> Vec<Trait> {
         import("Chat", &[("chat", None)], chat_methods),
         import("Project", &[("project", None)], project_methods),
         import("Questions", &[("questions", None)], questions_methods),
+        import(
+            "SecretCheck",
+            &[("secret-check", None)],
+            secret_check_methods,
+        ),
         import("Mcp", &[("mcp", None)], mcp_methods),
         import("Manage", &[("manage", None)], manage_methods),
         import("Model", &[("model", None)], model_methods),
@@ -3398,6 +3415,7 @@ fn each_folder_holds_one_package_and_each_later_one_only_its_delta() {
             "model.wit",
             "project.wit",
             "questions.wit",
+            "secret-check.wit",
             "todos.wit",
             "tools.wit",
             "usage.wit",
@@ -3702,6 +3720,7 @@ fn world_0_4_0_replaces_media_and_tools_and_retains_other_items() {
             "model",
             "project",
             "questions",
+            "secret-check",
             "todos",
             "types",
             "usage",

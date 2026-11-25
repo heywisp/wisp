@@ -2109,15 +2109,13 @@ fn stored_endpoint(
         }
         Err(e) => return Availability::Unavailable(unready(e.to_string())),
     };
+    let held = record.redactions();
     let StoredRecord::Key { key, url } = record;
     if config.auth.subscription().is_some() && url.is_some() {
-        return Availability::Unavailable(unready(
-            "subscription accounts do not accept a stored URL override".to_owned(),
-        ));
-    }
-    let mut held = Redactions::new([key.expose().to_owned()]);
-    if let Some(url) = &url {
-        held = held.union([&url_redactions(url.expose())]);
+        return Availability::Unavailable(
+            unready("subscription accounts do not accept a stored URL override".to_owned())
+                .holding(held),
+        );
     }
     let store_words = kind.words();
     let key = match check_key(key.expose()) {

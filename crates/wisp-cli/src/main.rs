@@ -1034,10 +1034,14 @@ fn doctor(
             return ExitCode::FAILURE;
         }
     };
+    let endpoints = book
+        .as_ref()
+        .map(|book| wisp_core::endpoints::entry_redactions(&book.entries));
+    let held = sources.held_redactions(endpoints.as_ref());
     let (hook_rows, hooks_broken) = hooks_report(&tools::registry().0);
     let loaded = context::load(sources.config_path.as_deref()).with_flags(&resolved.flags);
     let mut written = wisp_tui::term::doctor::run(&mut out, &display_of(setup, &sources))
-        .and_then(|()| tools_doctor(&mut out, mcp))
+        .and_then(|()| tools_doctor(&mut out, mcp, &held))
         .and_then(|()| {
             out.write_all(rows_text("hooks", &hook_rows).as_bytes())?;
             out.write_all(rows_text("plugins", &plugin_rows(home.as_deref())).as_bytes())?;
@@ -1367,11 +1371,16 @@ fn doctor_lines(rows: Vec<wisp_protocol::DoctorRow>, key: usize) -> String {
 }
 
 #[cfg(unix)]
-fn tools_rows(mcp: wisp_core::mcp::Service) -> std::io::Result<Vec<wisp_protocol::DoctorRow>> {
+fn tools_rows(
+    mcp: wisp_core::mcp::Service,
+    redactions: &wisp_core::session::Redactions,
+) -> std::io::Result<Vec<wisp_protocol::DoctorRow>> {
     let (registry, _) = tools::registry();
     let on = registry.default_on();
     let runtime = wisp_core::runtime::build(&mut tokio::runtime::Builder::new_multi_thread())?;
-    let rows = runtime.block_on(wisp_core::plugin::doctor_rows(&registry, &on, mcp));
+    let rows = runtime.block_on(wisp_core::plugin::doctor_rows(
+        &registry, &on, mcp, redactions,
+    ));
     runtime.shutdown_timeout(start::SHUTDOWN_WAIT);
     Ok(rows)
 }
@@ -1380,8 +1389,12 @@ fn tools_rows(mcp: wisp_core::mcp::Service) -> std::io::Result<Vec<wisp_protocol
 fn tools_doctor(
     out: &mut impl std::io::Write,
     mcp: wisp_core::mcp::Service,
+    redactions: &wisp_core::session::Redactions,
 ) -> std::io::Result<()> {
-    let text = format!("\ntools\n{}", doctor_lines(tools_rows(mcp)?, 18));
+    let text = format!(
+        "\ntools\n{}",
+        doctor_lines(tools_rows(mcp, redactions)?, 18)
+    );
     out.write_all(text.as_bytes())?;
     out.flush()
 }
@@ -1390,6 +1403,7 @@ fn tools_doctor(
 fn tools_doctor(
     _out: &mut impl std::io::Write,
     _mcp: wisp_core::mcp::Service,
+    _redactions: &wisp_core::session::Redactions,
 ) -> std::io::Result<()> {
     Ok(())
 }
@@ -3014,10 +3028,11 @@ mod tests {
     #[test]
     fn the_tools_section_keeps_its_one_cell_rows_as_they_were() {
         let mut out = Vec::new();
-        tools_doctor(&mut out, wisp_core::mcp::Service::default()).unwrap();
+        let redactions = wisp_core::session::Redactions::default();
+        tools_doctor(&mut out, wisp_core::mcp::Service::default(), &redactions).unwrap();
         let text = String::from_utf8(out).unwrap();
         let mut expected = String::from("\ntools\n");
-        for row in tools_rows(wisp_core::mcp::Service::default()).unwrap() {
+        for row in tools_rows(wisp_core::mcp::Service::default(), &redactions).unwrap() {
             let [wisp_protocol::DoctorCell::Text { text }] = row.cells.as_slice() else {
                 panic!("{} has more than one cell", row.key);
             };

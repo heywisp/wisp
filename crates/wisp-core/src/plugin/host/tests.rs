@@ -1051,6 +1051,9 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
                 Import::UsageAccounts => assert!(host.usage().accounts().is_empty()),
                 Import::ChatRename => assert_eq!(mcp.chat().rename("Strada".into()), Err(text::OUTSIDE.into())),
                 Import::ProjectKey => assert!(mcp.project().key().is_none()),
+                Import::SecretCheckCheck => {
+                    assert_eq!(mcp.secret_check().check("ordinary text"), Verdict::Refused);
+                }
                 Import::ManageManage => {
                     let search = PluginHost::new(manage::SEARCH_PLUGIN, "0.4.0", &[], kernel.clone());
                     let change = change(
@@ -1674,6 +1677,193 @@ fn entry_source(
     make(Arc::new(wisp_plugin_testkit::host::FakeHost::default()))
 }
 
+#[test]
+fn secret_check_refuses_older_worlds_and_default_fallback_and_allows_ordinary_calls() {
+    const SAFE: &str = "a portable note";
+    let kernel = Arc::new(KernelHost::new());
+    let older = PluginHost::new("probe", "0.3.0", &[], kernel.clone());
+    assert_eq!(older.secret_check().check(SAFE), Verdict::Refused);
+    assert_eq!(().check(SAFE), Verdict::Refused);
+
+    for origin in [Origin::Bundled, Origin::External] {
+        let host = PluginHost::new("probe", "0.4.0", &[], kernel.clone()).origin(origin);
+        for (caller, expected) in [
+            (Caller::describing(), Verdict::Refused),
+            (Caller::rendering(Render::Start), Verdict::Refused),
+            (Caller::rendering(Render::Slot), Verdict::Safe),
+            (Caller::default(), Verdict::Safe),
+            (Caller::call(CancellationToken::new(), None), Verdict::Safe),
+        ] {
+            assert_eq!(
+                caller.sync_scope(|| host.secret_check().check(SAFE)),
+                expected
+            );
+        }
+    }
+}
+
+#[test]
+fn secret_check_uses_live_held_credentials_and_bound_or_unbound_home() {
+    const FALLBACK: &str = "/srv/wisp-check-fallback";
+    const BOUND: &str = "/srv/wisp-check-bound";
+    const SHORT: &str = "CANARYpin";
+    const LONG: &str = "CANARY-long-live-check-credential";
+    let kernel = Arc::new(KernelHost::new());
+    let host = PluginHost::new("probe", "0.4.0", &[], kernel.clone());
+    let check = |text: &str| host.secret_check().check(text);
+    let bind = |home| {
+        kernel.bind(
+            &Processes::default(),
+            &KernelWorkspace {
+                root: "/workspace".into(),
+                home,
+                temp: "/tmp".into(),
+            },
+        );
+    };
+    let fallback_path = format!("{FALLBACK}/note");
+    let bound_path = format!("{BOUND}/note");
+    kernel.set_fallback_home(Some(FALLBACK.into()));
+    assert_eq!(check(&fallback_path), Verdict::Refused);
+    assert_eq!(check(&bound_path), Verdict::Safe);
+    bind(Some(BOUND.into()));
+    assert_eq!(check(&fallback_path), Verdict::Safe);
+    assert_eq!(check(&bound_path), Verdict::Refused);
+    bind(None);
+    assert_eq!(check(&fallback_path), Verdict::Refused);
+    kernel.set_fallback_home(None);
+    assert_eq!(check(&fallback_path), Verdict::Safe);
+
+    let short = format!("key={SHORT}");
+    let long = format!("prefix{LONG}suffix");
+    assert_eq!(check(&short), Verdict::Safe);
+    assert_eq!(check(&long), Verdict::Safe);
+    crate::session::register_secrets([SHORT.to_owned(), LONG.to_owned()]);
+    assert_eq!(check(&short), Verdict::Refused);
+    assert_eq!(check(&long), Verdict::Refused);
+    assert_eq!(check(&format!("_{SHORT}_")), Verdict::Safe);
+}
+
+#[tokio::test]
+async fn secret_checked_index_source_hides_stale_entries_and_dirties_on_late_credential_or_home_change()
+ {
+    use wisp_plugin_api::index::{Entry, Kind};
+    use wisp_plugin_api::tools::Prepared;
+    use wisp_plugin_api::types::ToolRun;
+    use wisp_plugin_testkit::{Call, fallback_display};
+
+    const BODY: &str = "CANARY-omitted-index-body-credential";
+    struct Source {
+        host: PluginHost,
+        entry: Option<(Kind, &'static str)>,
+        body: Option<&'static str>,
+    }
+    impl Plugin for Source {
+        fn entries(&self) -> BoxFuture<'_, Vec<Entry>> {
+            let check = || {
+                self.body
+                    .is_none_or(|body| self.host.secret_check().check(body) == Verdict::Safe)
+            };
+            let entry = self.entry.filter(|_| check());
+            async move {
+                if self.entry.is_none() {
+                    assert!(!check());
+                }
+                entry
+                    .into_iter()
+                    .map(|(kind, name)| index_entry(kind, name))
+                    .collect()
+            }
+            .boxed()
+        }
+
+        fn run<'a>(
+            &'a self,
+            _call: Box<dyn Prepared>,
+            _ctx: &'a dyn CallContext,
+        ) -> BoxFuture<'a, ToolRun> {
+            assert!(Caller::current().gather_checked.is_none());
+            assert_eq!(
+                self.host.secret_check().check("ordinary text"),
+                Verdict::Safe
+            );
+            futures::future::ready(ToolRun::completed()).boxed()
+        }
+    }
+
+    let kernel = Arc::new(KernelHost::new());
+    let index = index_host(&kernel);
+    let make = |id, entry, body| {
+        Arc::new(Source {
+            host: PluginHost::new(id, "0.4.0", &[], kernel.clone()),
+            entry,
+            body,
+        })
+    };
+    let all = crate::tool::test_toolbox();
+    let toolbox = crate::tool::Toolbox::default().with_held([all.get("echo").unwrap().clone()]);
+    let owner = toolbox.held_tool("echo").unwrap().tool().id();
+    let allowed = BTreeSet::from(["echo".to_owned()]);
+    let plain = make("plain", Some((Kind::Document, "plain")), None);
+    let sources = BTreeMap::from([
+        (
+            owner.to_owned(),
+            make(owner, Some((Kind::Tool, "echo")), Some(BODY)) as Arc<dyn Plugin>,
+        ),
+        ("plain".to_owned(), plain.clone() as Arc<dyn Plugin>),
+    ]);
+    assert!(
+        kernel
+            .gather_index(&toolbox, &allowed, sources)
+            .await
+            .is_empty()
+    );
+    assert!(!kernel.index_dirty());
+    assert!(kernel.index_parameters("echo").is_some());
+    assert_eq!(kernel.index_entries().len(), 2);
+    plain
+        .run(
+            Call::boxed(fallback_display("probe", "{}"), ()),
+            &FakeCall::default(),
+        )
+        .await;
+    crate::session::register_secrets([BODY.to_owned()]);
+    assert!(kernel.index_dirty());
+    assert_eq!(
+        kernel.index_entries(),
+        [index_entry(Kind::Document, "plain")]
+    );
+    assert_eq!(kernel.index_kind("echo"), None);
+    assert_eq!(kernel.index_parameters("echo"), None);
+    assert_eq!(
+        index.index().open("echo").await.unwrap_err(),
+        wisp_tool_text::index::STALE_SECRET_CHECK
+    );
+
+    let empty = make("empty", None, Some(BODY));
+    assert!(
+        kernel
+            .gather_index(
+                &crate::tool::Toolbox::default(),
+                &BTreeSet::new(),
+                BTreeMap::from([("empty".to_owned(), empty as Arc<dyn Plugin>)])
+            )
+            .await
+            .is_empty()
+    );
+    assert!(kernel.index_entries().is_empty());
+    assert!(!kernel.index_dirty());
+    kernel.bind(
+        &Processes::default(),
+        &KernelWorkspace {
+            root: "/workspace".into(),
+            home: Some("/srv/wisp-index-check".into()),
+            temp: "/tmp".into(),
+        },
+    );
+    assert!(kernel.index_dirty());
+}
+
 #[tokio::test]
 async fn index_entries_sort_by_kind_and_name_and_leave_out_an_off_tool() {
     use wisp_plugin_api::index::Kind;
@@ -1890,20 +2080,136 @@ async fn a_panicking_index_source_is_left_out_with_a_problem() {
 }
 
 #[tokio::test]
+async fn an_open_from_a_checked_source_rechecks_its_stamp_after_the_owner_replies() {
+    use tokio::sync::Notify;
+    use wisp_plugin_api::index::{Entry, Kind};
+
+    const NAME: &str = "checked note";
+    const HOME: &str = "/srv/wisp-new-home";
+    struct Source {
+        host: PluginHost,
+        started: Notify,
+        finish: Notify,
+        answer: Result<&'static str, &'static str>,
+    }
+    impl Plugin for Source {
+        fn entries(&self) -> BoxFuture<'_, Vec<Entry>> {
+            let text = match self.answer {
+                Ok(text) | Err(text) => text,
+            };
+            assert_eq!(self.host.secret_check().check(text), Verdict::Safe);
+            futures::future::ready(vec![index_entry(Kind::Document, NAME)]).boxed()
+        }
+
+        fn open_entry<'a>(&'a self, _name: &'a str) -> BoxFuture<'a, Result<String, String>> {
+            async move {
+                self.started.notify_one();
+                self.finish.notified().await;
+                self.answer.map(str::to_owned).map_err(str::to_owned)
+            }
+            .boxed()
+        }
+    }
+
+    let stale = Err(wisp_tool_text::index::STALE_SECRET_CHECK.to_owned());
+    for (answer, change_home, register) in [
+        (Ok("a checked note"), false, None),
+        (Ok("/srv/wisp-new-home/note"), true, None),
+        (Err("/srv/wisp-new-home/note"), true, None),
+        (
+            Ok("CANARYnewInFlightCredential"),
+            false,
+            Some("CANARYnewInFlightCredential"),
+        ),
+        (
+            Err("CANARYnewInFlightErrorCredential"),
+            false,
+            Some("CANARYnewInFlightErrorCredential"),
+        ),
+    ] {
+        let kernel = Arc::new(KernelHost::new());
+        let source = Arc::new(Source {
+            host: PluginHost::new("probe", "0.4.0", &[], kernel.clone()),
+            started: Notify::new(),
+            finish: Notify::new(),
+            answer,
+        });
+        let sources = BTreeMap::from([("probe".to_owned(), source.clone() as Arc<dyn Plugin>)]);
+        let toolbox = crate::tool::Toolbox::default();
+        let allowed = BTreeSet::new();
+        assert!(
+            kernel
+                .gather_index(&toolbox, &allowed, sources)
+                .await
+                .is_empty()
+        );
+        let host = index_host(&kernel);
+        let mut open = host.index().open(NAME);
+        tokio::select! {
+            () = source.started.notified() => {}
+            _ = &mut open => panic!("open did not reach its checked source"),
+        }
+        if change_home {
+            kernel.bind(
+                &Processes::default(),
+                &KernelWorkspace {
+                    root: "/workspace".into(),
+                    home: Some(HOME.into()),
+                    temp: "/tmp".into(),
+                },
+            );
+        }
+        if let Some(secret) = register {
+            crate::session::register_secrets([secret.to_owned()]);
+            assert!(
+                kernel
+                    .gather_index(&toolbox, &allowed, BTreeMap::new())
+                    .await
+                    .is_empty()
+            );
+            assert!(!kernel.index_dirty());
+        }
+        source.finish.notify_one();
+        let expected = if change_home || register.is_some() {
+            stale.clone()
+        } else {
+            answer.map(str::to_owned).map_err(str::to_owned)
+        };
+        assert_eq!(open.await, expected);
+    }
+}
+
+#[tokio::test]
 async fn duplicate_entry_names_keep_the_first_kind_then_the_first_source_with_a_problem() {
-    use wisp_plugin_api::index::Kind;
+    use wisp_plugin_api::index::{Entry, Kind};
+
+    struct Checked(PluginHost, Arc<dyn Plugin>);
+    impl Plugin for Checked {
+        fn entries(&self) -> BoxFuture<'_, Vec<Entry>> {
+            assert_eq!(self.0.secret_check().check("a note"), Verdict::Safe);
+            self.1.entries()
+        }
+
+        fn open_entry<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<String, String>> {
+            self.1.open_entry(name)
+        }
+    }
+
     let kernel = Arc::new(KernelHost::new());
     let sources: BTreeMap<_, _> = [
         (
             "aa".to_owned(),
-            entry_source(
-                "aa",
-                vec![
-                    index_entry(Kind::Document, "same"),
-                    index_entry(Kind::Skill, "shared"),
-                ],
-                false,
-            ),
+            Arc::new(Checked(
+                PluginHost::new("aa", "0.4.0", &[], kernel.clone()),
+                entry_source(
+                    "aa",
+                    vec![
+                        index_entry(Kind::Document, "same"),
+                        index_entry(Kind::Skill, "shared"),
+                    ],
+                    false,
+                ),
+            )) as Arc<dyn Plugin>,
         ),
         (
             "bb".to_owned(),
@@ -1936,6 +2242,19 @@ async fn duplicate_entry_names_keep_the_first_kind_then_the_first_source_with_a_
     assert_eq!(host.index().entries().len(), 2);
     assert_eq!(host.index().open("same").await.unwrap(), "bb: same");
     assert_eq!(host.index().open("shared").await.unwrap(), "aa: shared");
+    kernel.set_fallback_home(Some("/srv/wisp-new-home".into()));
+    assert!(kernel.index_dirty());
+    assert_eq!(host.index().entries(), [index_entry(Kind::Skill, "same")]);
+    assert_eq!(host.index().open("same").await.unwrap(), "bb: same");
+    assert_eq!(
+        host.index().open("shared").await.unwrap_err(),
+        wisp_tool_text::index::STALE_SECRET_CHECK
+    );
+    kernel.index_turned_off(BTreeSet::from(["shared".to_owned()]));
+    assert_eq!(
+        host.index().open("shared").await.unwrap_err(),
+        wisp_tool_text::manage::turned_off("shared")
+    );
 }
 
 #[tokio::test]

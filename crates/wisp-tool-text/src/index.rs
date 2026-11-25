@@ -5,6 +5,8 @@ use wisp_plugin_api::index::Entry;
 pub const SEARCH_OFF: &str =
     "search is off, so the model can't find these: turn it on in /config, Tools";
 
+pub const STALE_SECRET_CHECK: &str = "This entry is unavailable until its source is checked again.";
+
 pub const SAVED_LIST: &str = "(saved list; may be out of date)";
 
 pub fn from_saved_list(summary: &str) -> String {
