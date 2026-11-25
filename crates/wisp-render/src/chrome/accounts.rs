@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use wisp_protocol::plan_usage::{Percent, PlanUsage, UsageWindow};
+use wisp_protocol::plan_usage::{Percent, PlanUsage, UsageWindow, WINDOWS};
 
 use super::account::{
     AccountKind, AccountState, MARK_WIDTH, billing_token, billing_word, mark, mark_gap,
@@ -8,12 +8,11 @@ use super::account::{
 use super::chats::{bottom, framed, inner_room, rule, top};
 use super::row::clip;
 use crate::markdown::Layout;
-use crate::plan_usage::{gauge, percent, severity, window_names};
+use crate::plan_usage::{UNKNOWN_USAGE, gauge, percent, severity, window_names};
 use crate::styled::{StyledLine, StyledSpan};
 use crate::text::{WidthMode, fit_end, spans_padded, spans_width, width, wrap, wrap_plain};
 use crate::theme::Token;
 use crate::theme::glyphs::{GlyphSet, Glyphs};
-use wisp_protocol::plan_usage::WINDOWS;
 
 const STARTS_NEW_CHATS: &str = "starts new chats";
 const SUBSCRIPTIONS: &str = "Subscriptions";
@@ -61,15 +60,19 @@ impl Grid {
     fn of(rows: &[AccountRow<'_>], room: usize, mode: WidthMode, lead: usize) -> Self {
         let reset = rows
             .iter()
-            .flat_map(|row| {
+            .filter_map(|row| {
                 let shown = windows(row);
-                let model_only = is_model_only(row);
-                row.resets.iter().filter_map(move |(key, reset)| {
-                    let measured = matches!(row.cells, Cells::Usage(found) if found.windows.iter().any(|window| window.key == *key && window.used_percent.is_some()));
-                    (measured && (!model_only || shown.iter().any(|(_, window)| window.key == *key))).then_some(reset)
-                })
+                let reset = |window: &UsageWindow| {
+                    row.resets
+                        .get(window.key.as_str())
+                        .map(|(label, time)| width(label, mode) + width(time, mode))
+                };
+                shown
+                    .iter()
+                    .filter_map(|(_, window)| reset(window))
+                    .chain(supplementary_windows(row, &shown).filter_map(|window| reset(&window)))
+                    .max()
             })
-            .map(|(label, time)| width(label, mode) + width(time, mode))
             .max()
             .unwrap_or(0);
         let starts = if rows.iter().any(|row| row.starts) {
@@ -164,32 +167,35 @@ fn at(spans: &mut Vec<StyledSpan>, x: usize, more: Vec<StyledSpan>, mode: WidthM
 }
 
 fn whole(window: &UsageWindow) -> Option<UsageWindow> {
-    let used = Percent::try_from(window.used_percent?.value().floor()).ok()?;
-    Some(UsageWindow {
-        used_percent: Some(used),
+    let used_percent = window
+        .used_percent
+        .and_then(|used| Percent::try_from(used.value().floor()).ok());
+    (used_percent.is_some() || window.resets_at.is_some()).then(|| UsageWindow {
+        used_percent,
         ..window.clone()
     })
 }
 
 fn is_model_only(row: &AccountRow<'_>) -> bool {
-    row.kind == AccountKind::Antigravity
-        || matches!(
-            row.cells,
-            Cells::Usage(found)
-                if !found.windows.is_empty()
-                    && !found.windows.iter().any(|w| window_names(w).is_some())
-        )
+    matches!(
+        row.cells,
+        Cells::Usage(found)
+            if !found.windows.is_empty()
+                && !found.windows.iter().any(|w| window_names(w).is_some())
+    )
 }
 
 fn peak_model_window(found: &PlanUsage) -> Option<UsageWindow> {
     found
         .windows
         .iter()
-        .filter(|w| w.used_percent.is_some())
+        .filter(|w| w.used_percent.is_some() || w.resets_at.is_some())
         .max_by(|a, b| {
-            let a_pct = a.used_percent.map_or(0.0, Percent::value);
-            let b_pct = b.used_percent.map_or(0.0, Percent::value);
-            a_pct.total_cmp(&b_pct).then_with(|| b.key.cmp(&a.key))
+            a.used_percent
+                .map(Percent::value)
+                .partial_cmp(&b.used_percent.map(Percent::value))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| b.key.cmp(&a.key))
         })
         .and_then(whole)
 }
@@ -228,6 +234,11 @@ fn window_cells(
     let mut cells = gauge(window, grid.bar, look, layout).unwrap_or_default();
     if let Some(used) = window.used_percent {
         cells.push(StyledSpan::new(format!(" {:>4}", percent(used)), look));
+    } else {
+        cells.push(StyledSpan::new(
+            format!("{UNKNOWN_USAGE:>width$}", width = grid.bar + SHARE),
+            Token::TextMuted,
+        ));
     }
     if let Some((label, time)) = row.resets.get(window.key.as_str()) {
         let width = grid.reset.saturating_sub(width(label, layout.width_mode));
@@ -290,26 +301,32 @@ fn usage(row: &AccountRow<'_>, grid: &Grid, layout: Layout) -> Vec<Vec<StyledSpa
     lines
 }
 
-fn supplementary(row: &AccountRow<'_>, grid: &Grid, layout: Layout) -> Vec<Vec<StyledSpan>> {
-    let Cells::Usage(found) = row.cells else {
-        return Vec::new();
+fn supplementary_windows<'a>(
+    row: &'a AccountRow<'_>,
+    shown: &'a [(usize, UsageWindow)],
+) -> impl Iterator<Item = UsageWindow> + 'a {
+    let windows = match row.cells {
+        Cells::Usage(found) => found.windows.as_slice(),
+        _ => &[],
     };
-    if is_model_only(row) {
-        return Vec::new();
-    }
+    let model_only = is_model_only(row);
+    windows
+        .iter()
+        .filter(move |window| !model_only || window.used_percent.is_none())
+        .filter(move |window| !shown.iter().any(|(_, shown)| shown.key == window.key))
+        .filter_map(whole)
+}
+
+fn supplementary(row: &AccountRow<'_>, grid: &Grid, layout: Layout) -> Vec<Vec<StyledSpan>> {
+    let model_only = is_model_only(row);
     let shown = windows(row);
     let mut lines = Vec::new();
-    for window in found
-        .windows
-        .iter()
-        .filter(|window| !shown.iter().any(|(_, shown)| shown.key == window.key))
-        .filter_map(whole)
-    {
+    for window in supplementary_windows(row, &shown) {
         let column = WINDOWS
             .iter()
             .position(|(seconds, ..)| window.duration_seconds == Some(*seconds));
         let stacked = grid.stacked || column.is_none();
-        let x = if stacked {
+        let x = if grid.stacked || (column.is_none() && !model_only) {
             grid.lead + WINDOW_LABEL
         } else {
             grid.cells_x() + column.unwrap_or(0) * (grid.slot() + GAP)
@@ -357,7 +374,12 @@ fn model_heading(with_title: bool, grid: &Grid, mode: WidthMode) -> Vec<StyledSp
     spans
 }
 
-fn heading(billing: AccountState, grid: &Grid, mode: WidthMode) -> Vec<Vec<StyledSpan>> {
+fn heading(
+    billing: AccountState,
+    grid: &Grid,
+    mode: WidthMode,
+    has_limits: bool,
+) -> Vec<Vec<StyledSpan>> {
     if billing != AccountState::Subscription {
         return vec![vec![StyledSpan::new(
             billing_word(billing),
@@ -365,7 +387,7 @@ fn heading(billing: AccountState, grid: &Grid, mode: WidthMode) -> Vec<Vec<Style
         )]];
     }
     let mut spans = vec![StyledSpan::new(SUBSCRIPTIONS, billing_token(billing))];
-    if grid.stacked {
+    if grid.stacked || !has_limits {
         return vec![spans];
     }
     let mut lines = Vec::new();
@@ -525,8 +547,9 @@ pub fn accounts_panel(
             let (standard, model_only): (Vec<_>, Vec<_>) =
                 group.into_iter().partition(|row| !is_model_only(row));
             if !standard.is_empty() {
+                let has_limits = standard.iter().any(|row| !windows(row).is_empty());
                 out.extend(
-                    heading(billing, &grid, mode)
+                    heading(billing, &grid, mode, has_limits)
                         .into_iter()
                         .map(|line| framed(line, false, layout)),
                 );
@@ -536,43 +559,26 @@ pub fn accounts_panel(
                 {
                     out.push(framed(line, false, layout));
                 }
-                if !model_only.is_empty() {
-                    if model_only
-                        .iter()
-                        .any(|row| matches!(row.cells, Cells::Usage(_)))
-                    {
-                        out.push(framed(model_heading(false, &grid, mode), false, layout));
-                    }
-                    for line in model_only
-                        .iter()
-                        .flat_map(|row| row_lines(row, &grid, layout))
-                    {
-                        out.push(framed(line, false, layout));
-                    }
-                }
-            } else {
-                let label = grid.model_label();
-                let end = grid.used_end();
-                if !model_only
-                    .iter()
-                    .any(|row| matches!(row.cells, Cells::Usage(_)))
-                {
+            }
+            if !model_only.is_empty() {
+                let only_models = standard.is_empty();
+                let inline_title = only_models
+                    && grid
+                        .used_end()
+                        .saturating_sub(width(grid.model_label(), mode))
+                        >= width(SUBSCRIPTIONS, mode) + GAP;
+                if only_models && !inline_title {
                     out.push(framed(
                         vec![StyledSpan::new(SUBSCRIPTIONS, billing_token(billing))],
                         false,
                         layout,
                     ));
-                } else if end.saturating_sub(width(label, mode)) >= width(SUBSCRIPTIONS, mode) + GAP
-                {
-                    out.push(framed(model_heading(true, &grid, mode), false, layout));
-                } else {
-                    out.push(framed(
-                        vec![StyledSpan::new(SUBSCRIPTIONS, billing_token(billing))],
-                        false,
-                        layout,
-                    ));
-                    out.push(framed(model_heading(false, &grid, mode), false, layout));
                 }
+                out.push(framed(
+                    model_heading(inline_title, &grid, mode),
+                    false,
+                    layout,
+                ));
                 for line in model_only
                     .iter()
                     .flat_map(|row| row_lines(row, &grid, layout))
@@ -583,7 +589,7 @@ pub fn accounts_panel(
             continue;
         }
         out.extend(
-            heading(billing, &grid, mode)
+            heading(billing, &grid, mode, false)
                 .into_iter()
                 .map(|line| framed(line, false, layout)),
         );
@@ -990,6 +996,160 @@ mod tests {
             ));
             assert_eq!(shown.matches("resets in").count(), 1, "{shown}");
             assert!(shown.contains("Gemini 3.1 Pro"), "{shown}");
+        }
+    }
+
+    fn quota_row<'a>(
+        name: &'a str,
+        kind: AccountKind,
+        found: &'a PlanUsage,
+        times: &[Option<&str>],
+    ) -> AccountRow<'a> {
+        AccountRow {
+            name,
+            kind,
+            host: None,
+            cells: Cells::Usage(found),
+            resets: resets(found, times),
+            starts: false,
+            mark: Some(1),
+        }
+    }
+
+    #[test]
+    fn gemini_summary_and_fallback_use_their_own_slots_at_every_width() {
+        let standard = |first, weekly| {
+            PlanUsage::new(
+                None,
+                vec![
+                    std_window(WINDOWS[0].2, first, WINDOWS[0].0),
+                    std_window(WINDOWS[1].2, weekly, WINDOWS[1].0),
+                ],
+            )
+            .unwrap()
+        };
+        let chatgpt = standard(7.0, 5.0);
+        let claude = standard(42.0, 18.0);
+        let summary = standard(16.0, 38.0);
+        let mut partial = summary.clone();
+        partial.windows[0].used_percent = None;
+        partial.windows[0].resets_at = Some(1_893_509_000);
+        let model = model_window("gemini-3.1-pro", "Gemini 3.1 Pro", 13.0);
+        let reset_only = UsageWindow {
+            used_percent: None,
+            resets_at: Some(1_893_509_000),
+            ..model_window("gemini-3-flash", "Gemini 3 Flash", 0.0)
+        };
+        let mut with_unknown = summary.clone();
+        with_unknown.windows.push(reset_only.clone());
+        let fallback = PlanUsage::new(None, vec![model.clone()]).unwrap();
+        let unmeasured = PlanUsage::new(None, vec![reset_only.clone()]).unwrap();
+        let mixed_fallback = PlanUsage::new(None, vec![model, reset_only]).unwrap();
+        let claude = AccountRow {
+            starts: true,
+            ..quota_row(
+                "claude-test",
+                AccountKind::ClaudeSubscription,
+                &claude,
+                &[Some("2h10m"), Some("4d06h")],
+            )
+        };
+        let chatgpt = quota_row(
+            "chatgpt-test",
+            AccountKind::ChatGpt,
+            &chatgpt,
+            &[Some("12m05s"), Some("2d07h")],
+        );
+        for columns in [40, 80, 120] {
+            for glyphs in [GlyphSet::Unicode, GlyphSet::Ascii] {
+                let panel = |rows: &[_]| text(&accounts_panel(rows, columns, glyphs, true));
+                let column = |panel: &str, word: &str| {
+                    let line = panel.lines().find(|line| line.contains(word)).unwrap();
+                    width(line.split_once(word).unwrap().0, WidthMode::from(glyphs)) + word.len()
+                };
+                let gemini = quota_row(
+                    "gemini-test",
+                    AccountKind::Antigravity,
+                    &summary,
+                    &[Some("1h45m"), Some("4d03h")],
+                );
+                let primary = panel(&[claude.clone(), gemini, chatgpt.clone()]);
+                assert!(
+                    primary.find("chatgpt-test").unwrap() < primary.find("claude-test").unwrap()
+                );
+                assert_eq!(column(&primary, "16%"), column(&primary, "42%"));
+                assert_eq!(column(&primary, "38%"), column(&primary, "18%"));
+                assert!(!primary.to_ascii_lowercase().contains("model used"));
+                let gemini = quota_row(
+                    "gemini-test",
+                    AccountKind::Antigravity,
+                    &with_unknown,
+                    &[Some("1h45m"), Some("4d03h"), Some("40m00s")],
+                );
+                let standard_extra = panel(&[claude.clone(), gemini]);
+                assert!(
+                    standard_extra
+                        .lines()
+                        .any(|line| line.contains("unknown, resets in 40m00s")),
+                    "{standard_extra}"
+                );
+                assert!(!standard_extra.to_ascii_lowercase().contains("model used"));
+                let standard_value = column(&standard_extra, "16%");
+                let unknown_value = column(&standard_extra, "unknown");
+                if columns == 40 {
+                    assert_eq!(unknown_value, standard_value, "{standard_extra}");
+                } else {
+                    assert!(unknown_value < standard_value, "{standard_extra}");
+                }
+                let mut aligned = Vec::new();
+                for (usage, times, needle, model_only, supplementary) in [
+                    (
+                        &partial,
+                        &[Some("40m00s"), Some("4d03h")][..],
+                        "unknown",
+                        false,
+                        false,
+                    ),
+                    (&fallback, &[Some("40m00s")][..], "13%", true, false),
+                    (&unmeasured, &[Some("40m00s")][..], "unknown", true, false),
+                    (
+                        &mixed_fallback,
+                        &[Some("2h10m"), Some("40m00s")][..],
+                        "13%",
+                        true,
+                        true,
+                    ),
+                ] {
+                    let gemini = quota_row("gemini-test", AccountKind::Antigravity, usage, times);
+                    let shown = panel(&[gemini, claude.clone()]);
+                    assert_eq!(
+                        shown.to_ascii_lowercase().contains("model used"),
+                        model_only,
+                        "{shown}"
+                    );
+                    assert!(
+                        shown
+                            .lines()
+                            .all(|line| width(line, WidthMode::from(glyphs)) <= columns)
+                    );
+                    let reset_line = shown.lines().find(|line| line.contains("40m00s")).unwrap();
+                    assert!(
+                        reset_line.contains(&format!("{needle}, resets in")),
+                        "{shown}"
+                    );
+                    if supplementary {
+                        assert!(shown.contains("Gemini 3 Flash"), "{shown}");
+                        assert!(
+                            shown.lines().any(|line| line.contains("unknown, resets in")
+                                && line.contains("2h10m")),
+                            "{shown}"
+                        );
+                        assert_eq!(column(&shown, "unknown"), column(&shown, "13%"), "{shown}");
+                    }
+                    aligned.push(column(&shown, needle));
+                }
+                assert!(aligned.windows(2).all(|pair| pair[0] == pair[1]));
+            }
         }
     }
 

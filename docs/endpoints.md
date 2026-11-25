@@ -240,9 +240,9 @@ another name for `wisp account`.
 `wisp status [NAME]`, `wisp account list [NAME]` and `wisp setup` print the
 same panel, `Accounts`, in the resume picker's frame: subscriptions, then API
 accounts, each sorted by name. A subscription row names its provider and
-shows its 5-hour and weekly limits with `/usage`'s bars (or, for Antigravity,
-its highest-used model window under `Model used`), each percentage
-rounded to a whole number with its time to reset when available; a gateway
+shows its 5-hour and weekly limits with `/usage`'s bars. If Antigravity reports
+only model readings, it shows the highest used under `Model used` with its scope
+and reset instead. Used percentages are whole numbers; a gateway
 shows its host. The account new chats
 start on reads `starts new chats`. An account that needs you reads
 `sign-in expired` or `key missing` in the error colour with its fix, such as

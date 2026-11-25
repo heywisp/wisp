@@ -18,6 +18,8 @@ use crate::theme::Token;
 use crate::theme::glyphs::Glyphs;
 use crate::transcript::copy;
 
+use super::UNKNOWN_USAGE;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Spend {
     pub amount: AccountSpend,
@@ -334,7 +336,7 @@ fn amount_label(part: &Part) -> &'static str {
 fn measured(window: &UsageWindow) -> String {
     window
         .used_percent
-        .map_or_else(|| "unknown".into(), percent)
+        .map_or_else(|| UNKNOWN_USAGE.to_owned(), percent)
 }
 
 fn window_name(window: &UsageWindow) -> String {

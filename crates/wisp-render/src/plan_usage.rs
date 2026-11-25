@@ -8,6 +8,8 @@ pub use mini::{UsageCandidate, UsageHint, fit_mini, mini_candidates, warning_row
 
 use wisp_protocol::plan_usage::{UsageScope, UsageWindow, WINDOWS};
 
+pub(crate) const UNKNOWN_USAGE: &str = "unknown";
+
 pub(crate) fn window_names(window: &UsageWindow) -> Option<(&'static str, &'static str)> {
     let (_, short, long) = WINDOWS.into_iter().find(|(seconds, ..)| {
         window.scope == UsageScope::All && window.duration_seconds == Some(*seconds)

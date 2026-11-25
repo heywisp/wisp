@@ -14,6 +14,7 @@ pub const REACHED_USAGE_LIMIT: &str = "reached its usage limit";
 pub const REFUSED_THE_REQUEST: &str = "refused the request";
 pub const RETRY_IN: &str = ", retry in ";
 pub const RESET_IN: &str = ", resets in ";
+pub const UNKNOWN_USAGE: &str = "unknown";
 
 pub fn listed(rows: &[SettingRow], filter: Option<&str>) -> String {
     if let (Some(filter), true) = (filter, rows.is_empty()) {
@@ -114,7 +115,7 @@ fn limits_line(limits: &Limits, now: i64) -> String {
     for window in &limits.windows {
         let used = window
             .used_percent
-            .map_or_else(|| "unknown".to_owned(), percent);
+            .map_or_else(|| UNKNOWN_USAGE.to_owned(), percent);
         let mut item = format!("{} {used}", window.label);
         if let Some(reset) = reset_time(window.resets_at, now) {
             let _ = write!(item, "{RESET_IN}{reset}");
@@ -127,7 +128,7 @@ fn limits_line(limits: &Limits, now: i64) -> String {
     }
     let lead = match limits.windows.iter().map(|w| w.observed_at).min() {
         Some(oldest) => format!(
-            "limits, read {} ago",
+            "limits used, read {} ago",
             ran(u64::try_from(now.saturating_sub(oldest))
                 .unwrap_or(0)
                 .saturating_mul(1000))
