@@ -698,24 +698,42 @@ fn cli_malformed_gemini_tool_call_retries_with_folded_note_and_stable_prefix() {
 fn cli_gemini_views_audio_and_a_refused_file_is_withdrawn_with_a_stable_prefix() {
     const MODEL: &str = "gemini-4-carbon";
     const WAV: &[u8] = b"RIFF\x00\x00\x00\x00WAVEfmt ";
+    const PDF: &[u8] = b"%PDF-1.4\n%%EOF\n";
     let home = Home::new("gemini-attachment-withdrawal");
     std::fs::write(home.0.join("beep.wav"), WAV).unwrap();
-    let call = sse_chunk(
+    std::fs::write(home.0.join("manual.pdf"), PDF).unwrap();
+    let call = |args, signature| {
+        json!({
+            "functionCall": {"name": "view_file", "args": args},
+            "thoughtSignature": signature
+        })
+    };
+    let accepted = sse_chunk(
         MODEL,
-        vec![json!({
-            "functionCall": {"name": "view_file", "args": {"path": "beep.wav"}},
-            "thoughtSignature": "sig_view"
-        })],
+        vec![
+            call(json!({"path": "beep.wav"}), "sig_wav"),
+            call(json!({"path": "manual.pdf", "pages": "1-2"}), "sig_pdf"),
+        ],
+        Some("STOP"),
+    );
+    let rejected = sse_chunk(
+        MODEL,
+        vec![call(
+            json!({"path": "manual.pdf", "pages": "99"}),
+            "sig_bad_range",
+        )],
         Some("STOP"),
     );
     let refusal = json!({"error": {
-        "code": 400, "status": "INVALID_ARGUMENT", "message": "Unsupported mime type: audio/wav"
+        "code": 400, "status": "INVALID_ARGUMENT",
+        "message": "Could not process file: Invalid page range: endPage exceeds document length"
     }});
     let reply = |text| sse_chunk(MODEL, vec![json!({"text": text})], Some("STOP"));
     let (url, seen, server) = serve_model(
         MODEL,
         vec![
-            ("200 OK", call),
+            ("200 OK", accepted),
+            ("200 OK", rejected),
             ("400 Bad Request", refusal.to_string()),
             ("200 OK", reply("GEMINI-FILE-RECOVERED")),
             ("200 OK", reply("GEMINI-FILE-RESUMED")),
@@ -744,32 +762,54 @@ fn cli_gemini_views_audio_and_a_refused_file_is_withdrawn_with_a_stable_prefix()
         .iter()
         .map(|body| serde_json::from_str(body).unwrap())
         .collect();
-    let [initial, refused, retry, resumed] = requests.as_slice() else {
-        panic!("expected four requests, got {}", requests.len());
+    let [initial, committed, refused, retry, resumed] = requests.as_slice() else {
+        panic!("expected five requests, got {}", requests.len());
     };
-    assert_gemini_prefix_stable(&[initial.clone(), retry.clone(), resumed.clone()]);
+    assert_gemini_prefix_stable(&[
+        initial.clone(),
+        committed.clone(),
+        retry.clone(),
+        resumed.clone(),
+    ]);
     for key in ["tools", "systemInstruction", "generationConfig"] {
         assert_eq!(refused[key], retry[key], "{key}");
     }
+    let pdf = |start, end| {
+        json!({
+            "inlineData": {"mimeType": "application/pdf", "data": "JVBERi0xLjQKJSVFT0YK"},
+            "documentMetadata": {"startPage": start, "endPage": end}
+        })
+    };
+    for request in [committed, refused, retry, resumed] {
+        let parts = request["contents"][2]["parts"].as_array().unwrap();
+        assert!(
+            parts
+                .iter()
+                .any(|part| part["functionResponse"]["parts"] == json!([pdf(1, 2)])),
+            "{parts:#?}"
+        );
+        assert!(
+            parts.contains(&json!({"inlineData": {
+                "mimeType": "audio/wav", "data": "UklGRgAAAABXQVZFZm10IA=="
+            }})),
+            "{parts:#?}"
+        );
+    }
     let refused = refused["contents"].as_array().unwrap();
     let retry = retry["contents"].as_array().unwrap();
-    assert_eq!(&refused[..2], &retry[..2]);
-    let before = refused[2]["parts"].as_array().unwrap();
-    assert_eq!(before.len(), 2);
+    assert_eq!(&refused[..4], &retry[..4]);
+    let before = refused[4]["parts"].as_array().unwrap();
+    assert_eq!(before.len(), 1);
     assert_eq!(before[0]["functionResponse"]["name"], "view_file");
-    assert_eq!(
-        before[1],
-        json!({"inlineData": {
-            "mimeType": "audio/wav", "data": "UklGRgAAAABXQVZFZm10IA=="
-        }})
-    );
-    let after = retry[2]["parts"].as_array().unwrap();
+    assert_eq!(before[0]["functionResponse"]["parts"], json!([pdf(99, 99)]));
+    let after = retry[4]["parts"].as_array().unwrap();
     assert_eq!(after.len(), 1);
+    assert!(after[0]["functionResponse"].get("parts").is_none());
     let output = after[0]["functionResponse"]["response"]["output"]
         .as_str()
         .unwrap();
     assert!(
-        output.contains("beep.wav (audio/wav) couldn't be processed"),
+        output.contains("manual.pdf (application/pdf, page 99) couldn't be processed"),
         "{output}"
     );
 }

@@ -6,6 +6,7 @@ pub(crate) mod testkit;
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::io::{self, Write};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,7 +32,7 @@ pub use crate::jobs::Processes;
 use crate::plugin::caller::Caller;
 use crate::plugin::{KernelHost, convert, panicked};
 use crate::provider::{ServerToolSpec, TokenCount};
-use crate::session::sha256_hex;
+use crate::session::{sha256_hex, sha256_json_hex};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolSpec {
@@ -874,6 +875,33 @@ impl Entry<'_> {
     }
 }
 
+impl Serialize for Entry<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Deferred<'a> {
+            defer_loading: bool,
+            #[serde(flatten)]
+            spec: &'a ToolSpec,
+        }
+
+        match self {
+            Self::Client {
+                spec,
+                deferred: false,
+            } => spec.serialize(serializer),
+            Self::Client {
+                spec,
+                deferred: true,
+            } => Deferred {
+                defer_loading: true,
+                spec,
+            }
+            .serialize(serializer),
+            Self::Server(spec) => spec.serialize(serializer),
+        }
+    }
+}
+
 pub fn ordered<'a>(
     specs: &'a [ToolSpec],
     deferred: &'a [ToolSpec],
@@ -895,21 +923,37 @@ pub fn tools_json(specs: &[ToolSpec], server: &[ServerToolSpec]) -> String {
 }
 
 pub fn array_json(specs: &[ToolSpec], deferred: &[ToolSpec], server: &[ServerToolSpec]) -> String {
-    let value = |entry| match entry {
-        Entry::Client { spec, deferred } => {
-            let mut value = serde_json::to_value(spec).unwrap_or(Value::Null);
-            if let (true, Value::Object(map)) = (deferred, &mut value) {
-                map.insert("defer_loading".to_owned(), Value::Bool(true));
-            }
-            value
-        }
-        Entry::Server(spec) => serde_json::to_value(spec).unwrap_or(Value::Null),
-    };
-    let values: Vec<Value> = ordered(specs, deferred, server)
-        .into_iter()
-        .map(value)
-        .collect();
-    serde_json::to_string(&values).unwrap_or_default()
+    serde_json::to_string(&ordered(specs, deferred, server)).unwrap_or_default()
+}
+
+struct ByteCount(usize);
+
+impl Write for ByteCount {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0 = self.0.saturating_add(bytes.len());
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub fn array_json_len(
+    specs: &[ToolSpec],
+    deferred: &[ToolSpec],
+    server: &[ServerToolSpec],
+) -> usize {
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, &ordered(specs, deferred, server)).map_or(0, |()| count.0)
+}
+
+pub fn array_json_sha256(
+    specs: &[ToolSpec],
+    deferred: &[ToolSpec],
+    server: &[ServerToolSpec],
+) -> String {
+    sha256_json_hex(&ordered(specs, deferred, server)).unwrap_or_else(|| sha256_hex(""))
 }
 
 pub fn tool_names(specs: &[ToolSpec], server: &[ServerToolSpec]) -> Vec<String> {
@@ -922,8 +966,7 @@ pub fn tools_sha256(
     deferred: &[ToolSpec],
     server: &[ServerToolSpec],
 ) -> Option<String> {
-    (!specs.is_empty() || !server.is_empty())
-        .then(|| sha256_hex(&array_json(specs, deferred, server)))
+    (!specs.is_empty() || !server.is_empty()).then(|| array_json_sha256(specs, deferred, server))
 }
 
 pub use wisp_plugin_api::index::SEARCH_CAPABILITY;

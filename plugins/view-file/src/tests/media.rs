@@ -1,3 +1,5 @@
+use wisp_plugin_api::types::{PageSlice, SecondSlice};
+
 use super::*;
 
 fn attached(viewed: &Viewed) -> (&str, Vec<u8>) {
@@ -20,7 +22,7 @@ fn zipped(first_entry: &[u8]) -> Vec<u8> {
 
 #[tokio::test]
 async fn carried_types_are_attached_unchanged_with_their_facts() {
-    let rig = Rig::new();
+    let mut rig = Rig::new();
     let files = [
         ("a.png", png(3, 2), "image/png"),
         ("a.gif", encoded(3, 2, image::ImageFormat::Gif), "image/gif"),
@@ -77,6 +79,41 @@ async fn carried_types_are_attached_unchanged_with_their_facts() {
         );
         assert_eq!(viewed.captured.bytes, 0, "{name}");
     }
+    rig.media_slices = SliceKind::ALL.to_vec();
+    let (count, asked) = counting(TokenCount::Counted(1_680));
+    rig.count = count;
+    for (name, media_type, args, slice, read) in [
+        (
+            "doc.pdf",
+            "application/pdf",
+            json!({"path": "doc.pdf", "pages": "14-16"}),
+            FileSlice::Pages(PageSlice { start: 14, end: 16 }),
+            "pages 14-16",
+        ),
+        (
+            "sheet.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            json!({"path": "sheet.xlsx", "sheet": 2}),
+            FileSlice::Sheet(2),
+            "sheet 2",
+        ),
+    ] {
+        let bytes = fs::read(rig.cwd.join(name)).unwrap();
+        let viewed = rig.view_with(&rig.cwd, args).await;
+        assert_eq!(attached(&viewed), (media_type, bytes.clone()));
+        assert_eq!(viewed.run.attachments[0].slice, Some(slice));
+        assert_eq!(
+            viewed.completed(),
+            format!(
+                "~/work/{name}: {media_type}, {}, attached whole (read only {read}; about 1,680 tokens, the server's estimate).",
+                words::size(bytes.len() as u64)
+            )
+        );
+        assert_eq!(
+            asked.lock().unwrap().pop(),
+            Some((media_type.to_owned(), bytes, Some(slice)))
+        );
+    }
 }
 
 #[tokio::test]
@@ -101,6 +138,10 @@ const MP4: &[u8] = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00";
 async fn carried_audio_and_video_families_attach_under_normalized_names() {
     let mut rig = Rig::new();
     rig.media_types = &["audio/*", "video/*"];
+    rig.media_slices = vec![SliceKind::Seconds];
+    let (count, asked) = counting(TokenCount::Unsupported);
+    rig.count = count;
+    let slice = FileSlice::Seconds(SecondSlice { start: 30, end: 90 });
     for (name, bytes, media_type) in [
         (
             "beep.wav",
@@ -118,6 +159,26 @@ async fn carried_audio_and_video_families_attach_under_normalized_names() {
                 Fact::Media(media_type.to_owned()),
                 Fact::Bytes(bytes.len() as u64)
             ]
+        );
+        assert_eq!(
+            asked.lock().unwrap().pop(),
+            Some((media_type.to_owned(), bytes.to_vec(), None))
+        );
+        let viewed = rig
+            .view_with(&rig.cwd, json!({"path": name, "seconds": "30-90"}))
+            .await;
+        assert_eq!(attached(&viewed), (media_type, bytes.to_vec()));
+        assert_eq!(viewed.run.attachments[0].slice, Some(slice));
+        assert_eq!(
+            viewed.completed(),
+            format!(
+                "~/work/{name}: {media_type}, {}, attached whole (read only seconds 30-90).",
+                words::size(bytes.len() as u64)
+            )
+        );
+        assert_eq!(
+            asked.lock().unwrap().pop(),
+            Some((media_type.to_owned(), bytes.to_vec(), Some(slice)))
         );
     }
 }
@@ -143,6 +204,113 @@ async fn text_wins_over_sniffed_types_but_ole_is_never_attached() {
         viewed
             .refused()
             .starts_with(&format!("legacy.xls is {}", look::OLE_FILE))
+    );
+}
+
+#[tokio::test]
+async fn slices_are_refused_before_reading_or_counting_and_bad_inputs_fail_parse() {
+    let mut rig = Rig::new();
+    let (count, asked) = counting(TokenCount::Counted(1));
+    rig.count = count;
+    rig.sized(
+        "large.pdf",
+        &pdf(),
+        wisp_media::MAX_ATTACHMENT_BYTES as u64 + 1,
+    );
+    rig.file("plain.txt", b"ID3 tags describe audio");
+    rig.file("image.png", &png(3, 2));
+    rig.file("legacy.xls", b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1");
+    for bash in [true, false] {
+        rig.bash = bash;
+        let big = rig
+            .view_with(&rig.cwd, json!({"path":"large.pdf", "pages":"1-2"}))
+            .await;
+        let refusal = big.refused();
+        assert!(refusal.starts_with("No file was sent: large.pdf can't be sliced with `pages` on this model (this model does not slice files)."), "{refusal}");
+        assert_eq!(refusal.contains("with bash"), bash, "{refusal}");
+        assert!(
+            refusal.contains("send") && refusal.contains("store"),
+            "{refusal}"
+        );
+        let text = rig
+            .view_with(&rig.cwd, json!({"path":"plain.txt", "seconds":"0-10"}))
+            .await;
+        assert!(text.refused().starts_with(
+            "No file was sent: plain.txt is a text file, so `seconds` does not apply."
+        ));
+        assert_eq!(text.refused().contains("with bash (sed -n)"), bash);
+        assert_eq!(text.captured.bytes, 0);
+    }
+    for (args, prefix) in [
+        (
+            json!({"path":"image.png", "pages":"1"}),
+            "No file was sent: image.png is image/png, which can't be sliced with `pages`.",
+        ),
+        (
+            json!({"path":"large.pdf", "sheet":1}),
+            "No file was sent: large.pdf is application/pdf, which takes `pages`, not `sheet`.",
+        ),
+        (
+            json!({"path":"legacy.xls", "sheet":1}),
+            "legacy.xls is an OLE compound file",
+        ),
+    ] {
+        let viewed = rig.view_with(&rig.cwd, args).await;
+        assert!(viewed.refused().starts_with(prefix), "{}", viewed.result());
+    }
+    assert!(asked.lock().unwrap().is_empty());
+
+    for (key, values, error) in [
+        (
+            "pages",
+            vec![json!("1,3"), json!(0)],
+            "`pages` must be a 1-based page or range like `5` or `14-16`",
+        ),
+        (
+            "seconds",
+            vec![json!("90-30"), json!(true)],
+            "`seconds` must be a range in whole seconds like `0-30` or `120-210` with end greater than start",
+        ),
+        (
+            "sheet",
+            vec![
+                json!("2"),
+                json!(2.0),
+                json!(1.5),
+                json!(0),
+                json!(-1),
+                json!(false),
+                json!(u64::MAX),
+            ],
+            "`sheet` must be a 1-based worksheet number (1 or greater)",
+        ),
+    ] {
+        for value in values {
+            let input = json!({"path": "file", (key): value}).to_string();
+            assert_eq!(parse(&input).err().as_deref(), Some(error), "{input}");
+        }
+    }
+    assert_eq!(
+        parse(r#"{"path":"file","pages":"1","sheet":1}"#)
+            .err()
+            .as_deref(),
+        Some("give at most one of `pages`, `seconds` or `sheet`")
+    );
+    assert_eq!(
+        parse(r#"{"path":"file","unknown":null}"#).err().as_deref(),
+        Some("unknown field `unknown`")
+    );
+    assert_eq!(
+        parse(r#"{"path":"file","pages":null,"seconds":null,"sheet":null}"#)
+            .unwrap()
+            .slice,
+        None
+    );
+    assert_eq!(
+        parse(r#"{"path":"file","pages":null,"seconds":null,"sheet":2}"#)
+            .unwrap()
+            .slice,
+        Some(FileSlice::Sheet(2))
     );
 }
 
@@ -274,7 +442,7 @@ estimate).",
     );
     assert_eq!(viewed.run.facts.last(), Some(&Fact::Tokens(2_960)));
     let asked = asked.lock().unwrap().clone();
-    assert_eq!(asked, [("image/png".to_owned(), bytes)]);
+    assert_eq!(asked, [("image/png".to_owned(), bytes, None)]);
 }
 
 #[tokio::test]

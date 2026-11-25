@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use wisp_plugin_api::types::FileSlice;
+use wisp_tool_text::files::read_only;
 use wisp_tool_text::output::{INLINE_LIMIT, count, group, line_range};
 
 use super::look::{MAX_LINE_CHARS, MAX_LINES, MAX_TEXT_BYTES, TextView, Total};
@@ -196,14 +198,15 @@ pub(crate) fn media_result(
     media_type: &str,
     bytes: u64,
     tokens: Option<u64>,
+    slice: Option<FileSlice>,
 ) -> String {
-    match tokens {
-        Some(n) => format!(
-            "{shown}: {media_type}, {}, attached as is (about {} tokens, the server's estimate).",
-            size(bytes),
-            group(n)
-        ),
-        None => format!("{shown}: {media_type}, {}, attached as is.", size(bytes)),
+    let prefix = format!("{shown}: {media_type}, {}", size(bytes));
+    let estimate = tokens.map(|n| format!("about {} tokens, the server's estimate", group(n)));
+    match (slice.as_ref().map(read_only), estimate) {
+        (Some(read), Some(estimate)) => format!("{prefix}, attached whole ({read}; {estimate})."),
+        (Some(read), None) => format!("{prefix}, attached whole ({read})."),
+        (None, Some(estimate)) => format!("{prefix}, attached as is ({estimate})."),
+        (None, None) => format!("{prefix}, attached as is."),
     }
 }
 

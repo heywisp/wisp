@@ -1,7 +1,9 @@
-use wisp_protocol::{AttachmentKind, AttachmentRef, Mime, WithdrawnAttachment};
+use wisp_protocol::{AttachmentKind, AttachmentRef, FileSlice, Mime, WithdrawnAttachment};
 
 use super::*;
 use crate::events::{Finished, Requested, tool_finished, tool_requested};
+use crate::styled::Look;
+use crate::theme::Token;
 
 const SAVED: &str = "/data/wisp/attachments/3f2a9c.png";
 const CANT_CARRY: &str = "song.mp3 is audio/mpeg, which this server can't carry (it takes \
@@ -409,6 +411,211 @@ fn file_rows_in_every_glyph_set_at_80_and_120_columns() {
     insta::assert_snapshot!("file_rows", out);
     let r = Renderer::new(Layout::new(80, GlyphSet::Unicode));
     insta::assert_snapshot!("file_rows_full", text(&files_turn().rows(&r, Detail::Full)));
+}
+
+fn sliced_files() -> Transcript {
+    let mut t = transcript();
+    apply(
+        &mut t,
+        &[
+            AgentEvent::turn_started(1),
+            AgentEvent::StepStarted { step: 1 },
+        ],
+    );
+    const PDF: &str = "application/pdf";
+    const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    let pages = FileSlice::pages(14, 16).unwrap();
+    let sheet = FileSlice::sheet(2).unwrap();
+    let clip = FileSlice::seconds(30, 90).unwrap();
+    for (block, (path, media_type, n, size, slice, tokens)) in [
+        ("docs/manual.pdf", PDF, 912_000, "912 KB", pages, false),
+        ("docs/manual.pdf", PDF, 912_000, "912 KB", pages, true),
+        ("budget.xlsx", XLSX, 48_000, "48 KB", sheet, false),
+        ("clip.wav", "audio/wav", 1_400_000, "1.4 MB", clip, false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = block.to_string();
+        let mut facts = vec![
+            Fact::Media {
+                media_type: mime(media_type),
+            },
+            Fact::Bytes { n },
+        ];
+        let estimate = if tokens {
+            facts.push(Fact::Tokens { n: 1680 });
+            "; about 1,680 tokens, the server's estimate"
+        } else {
+            ""
+        };
+        let result = format!(
+            "~/p/{path}: {media_type}, {size}, attached whole (read only {slice}{estimate})."
+        );
+        let attachment = AttachmentRef {
+            slice: Some(slice),
+            ..attached(media_type, n, None)
+        };
+        apply(
+            &mut t,
+            &[
+                read(1, block, &id, path),
+                AgentEvent::call_started(&id, "~/p"),
+                viewed(&id, facts, &result, vec![attachment]),
+            ],
+        );
+    }
+    t
+}
+
+#[test]
+fn file_slice_survives_count_facts_at_all_mockup_widths() {
+    let t = &mut sliced_files();
+    for (width, unicode, ascii) in [
+        (
+            40,
+            r#" ✓ Read docs/ma…  read only pages 14–16
+ ✓ Read docs/ma…  read only pages 14–16
+ ✓ Read budget.xlsx   read only sheet 2
+ ✓ Read clip.…  read only seconds 30–90"#,
+            r#" + Read docs/...  read only pages 14-16
+ + Read docs/...  read only pages 14-16
+ + Read budget.xlsx   read only sheet 2
+ + Read cli...  read only seconds 30-90"#,
+        ),
+        (
+            80,
+            r#" ✓ Read docs/manual.pdf        application/pdf · read only pages 14–16 · 912 KB
+ ✓ Read docs/manual.pdf                                   read only pages 14–16
+ ✓ Read budget.xlsx                                           read only sheet 2
+ ✓ Read clip.wav                   audio/wav · read only seconds 30–90 · 1.4 MB"#,
+            r#" + Read docs/manual.pdf        application/pdf - read only pages 14-16 - 912 KB
+ + Read docs/manual.pdf                                   read only pages 14-16
+ + Read budget.xlsx                                           read only sheet 2
+ + Read clip.wav                   audio/wav - read only seconds 30-90 - 1.4 MB"#,
+        ),
+        (
+            120,
+            r#" ✓ Read docs/manual.pdf                                                application/pdf · read only pages 14–16 · 912 KB
+ ✓ Read docs/manual.pdf                                   application/pdf · read only pages 14–16 · 912 KB · ≈2k tokens
+ ✓ Read budget.xlsx       application/vnd.openxmlformats-officedocument.spreadsheetml.sheet · read only sheet 2 · 48 KB
+ ✓ Read clip.wav                                                           audio/wav · read only seconds 30–90 · 1.4 MB"#,
+            r#" + Read docs/manual.pdf                                                application/pdf - read only pages 14-16 - 912 KB
+ + Read docs/manual.pdf                                   application/pdf - read only pages 14-16 - 912 KB - ~2k tokens
+ + Read budget.xlsx       application/vnd.openxmlformats-officedocument.spreadsheetml.sheet - read only sheet 2 - 48 KB
+ + Read clip.wav                                                           audio/wav - read only seconds 30-90 - 1.4 MB"#,
+        ),
+    ] {
+        let wide = ascii.replace(" + Read ", " ✓ Read ").replace(" - ", " ∙ ");
+        for (set, expected) in [
+            (GlyphSet::Unicode, unicode),
+            (GlyphSet::AmbiguousWide, wide.as_str()),
+            (GlyphSet::Ascii, ascii),
+        ] {
+            let r = Renderer::new(Layout::new(width, set));
+            let rows = t.rows(&r, Detail::Scrollback);
+            let all = text(&rows);
+            let read = all
+                .lines()
+                .filter(|line| line.contains(" Read "))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(read, expected, "{set:?} {width}");
+            let slices: Vec<_> = rows
+                .iter()
+                .flat_map(|row| &row.spans)
+                .filter(|span| span.text.starts_with("read only "))
+                .collect();
+            assert_eq!(slices.len(), 4, "{set:?} {width}");
+            assert!(
+                slices
+                    .iter()
+                    .all(|span| span.look == Look::fg(Token::TextMuted))
+            );
+            let full = text(&t.rows(&r, Detail::Full));
+            let words = full.split_whitespace().collect::<Vec<_>>().join(" ");
+            for result in [
+                "attached whole (read only pages 14-16).",
+                "attached whole (read only pages 14-16; about 1,680 tokens, the server's estimate).",
+            ] {
+                assert!(words.contains(result), "{result}:\n{full}");
+            }
+        }
+    }
+}
+
+#[test]
+fn only_one_attachment_and_one_media_fact_describe_a_slice() {
+    let mut t = sliced_files();
+    let pdf = Fact::Media {
+        media_type: mime("application/pdf"),
+    };
+    let sliced = AttachmentRef {
+        slice: Some(FileSlice::pages(14, 16).unwrap()),
+        ..attached("application/pdf", 912_000, None)
+    };
+    let plain = attached("application/pdf", 912_000, None);
+    for (block, path, facts, attachments) in [
+        (4, "one.pdf", vec![pdf.clone()], vec![plain.clone()]),
+        (5, "two.pdf", vec![pdf.clone()], vec![sliced.clone(), plain]),
+        (6, "two-facts.pdf", vec![pdf.clone(), pdf], vec![sliced]),
+    ] {
+        apply(
+            &mut t,
+            &[
+                read(1, block, path, path),
+                AgentEvent::call_started(path, "~/p"),
+                viewed(path, facts, "attached as is.", attachments),
+            ],
+        );
+    }
+    let all = text(&t.rows(&r(120), Detail::Scrollback));
+    for path in ["one.pdf", "two.pdf", "two-facts.pdf"] {
+        assert!(!line_of(&all, path).contains("read only"), "{all}");
+    }
+}
+
+#[test]
+fn expanded_slice_refusals_keep_the_reason_and_withdrawals_keep_the_requested_slice() {
+    let mut t = sliced_files();
+    let reason = "No file was sent: call.mp3 can't be sliced with `seconds` on this model (it takes pages, sheet).";
+    apply(
+        &mut t,
+        &[
+            read(1, 4, "d", "call.mp3"),
+            AgentEvent::call_started("d", "~/p"),
+            with_result(
+                "d",
+                ToolOutcome::Completed {
+                    is_error: true,
+                    exit: None,
+                },
+                reason,
+                Vec::new(),
+            ),
+            withdrawal(2, &[("0", "docs/manual.pdf")]),
+        ],
+    );
+    let collapsed = text(&t.rows(&r(120), Detail::Scrollback));
+    assert!(
+        line_of(&collapsed, "docs/manual.pdf").ends_with("couldn't attach"),
+        "{collapsed}"
+    );
+    assert!(
+        line_of(&collapsed, "call.mp3").ends_with("couldn't read"),
+        "{collapsed}"
+    );
+    assert!(!collapsed.contains(reason), "{collapsed}");
+    let full = text(&t.rows(&r(120), Detail::Full));
+    assert!(full.contains(reason), "{full}");
+    assert!(
+        full.contains("attached whole (read only pages 14-16)."),
+        "{full}"
+    );
+    assert!(
+        full.contains(&format!("Couldn't attach: {REASON}")),
+        "{full}"
+    );
 }
 
 fn with_result(

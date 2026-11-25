@@ -1504,6 +1504,7 @@ async fn a_break_under_a_leading_native_head_misses_once_then_hits() {
         let bench = Bench::new("binding-native-head", stage).await;
         let banded = Build {
             band: true,
+            models: Some("[models.\"claude-opus-5-5\"]\ncompact_at = 15548\n"),
             ..Build::default()
         };
         let mut live = bench.start(banded);

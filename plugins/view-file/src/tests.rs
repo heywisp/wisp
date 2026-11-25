@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::Cursor;
 use std::os::unix::fs::FileTypeExt;
@@ -39,6 +40,7 @@ struct Rig {
     cancel: Flag,
     bash: bool,
     media_types: &'static [&'static str],
+    media_slices: Vec<SliceKind>,
 }
 
 struct Captured {
@@ -122,6 +124,7 @@ impl Rig {
             cancel: Flag::default(),
             bash: true,
             media_types: &MEDIA_TYPES,
+            media_slices: Vec::new(),
         }
     }
 
@@ -139,6 +142,7 @@ impl Rig {
                 .iter()
                 .map(|name| (*name).to_owned())
                 .collect(),
+            media_slices: self.media_slices.clone(),
             image_edge: self.edge,
             count: self.count.clone(),
             sleep: Some(Arc::new(tokio_sleep)),
@@ -186,11 +190,12 @@ impl Rig {
     }
 
     async fn view_from(&self, cwd: &Path, path: &str) -> Viewed {
+        self.view_with(cwd, json!({"path": path})).await
+    }
+
+    async fn view_with(&self, cwd: &Path, input: Value) -> Viewed {
         let tool = self.tool();
-        let prepared = tool
-            .prepare(NAME, &json!({ "path": path }).to_string())
-            .await
-            .unwrap();
+        let prepared = tool.prepare(NAME, &input.to_string()).await.unwrap();
         let call = FakeCall {
             id: "v".to_owned(),
             cwd: cwd.display().to_string(),
@@ -211,14 +216,13 @@ impl Rig {
     }
 }
 
-type Asked = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
+type Asked = Arc<Mutex<Vec<(String, Vec<u8>, Option<FileSlice>)>>>;
 
 fn counting(answer: TokenCount) -> (Option<Arc<CountFn>>, Asked) {
     let asked: Asked = Arc::default();
     let seen = asked.clone();
     let count: Arc<CountFn> = Arc::new(move |media_type, bytes, slice| {
-        assert_eq!(slice, None);
-        seen.lock().unwrap().push((media_type, bytes));
+        seen.lock().unwrap().push((media_type, bytes, slice));
         Box::pin(std::future::ready(answer.clone()))
     });
     (Some(count), asked)
@@ -238,31 +242,33 @@ fn encoded(width: u32, height: u32, format: image::ImageFormat) -> Vec<u8> {
 }
 
 #[test]
-fn the_spec_is_the_definition_with_one_path_field() {
-    let def = def(true);
+fn the_spec_requires_only_path_and_describes_optional_slices() {
+    let def = def(false);
     assert_eq!(def.name, "view_file");
     let ToolKind::Client(client) = def.kind else {
         panic!("view_file is a client tool");
     };
+    let schema: Value = serde_json::from_str(&client.input_schema).unwrap();
+    assert_eq!(schema["required"], json!(["path"]));
+    assert_eq!(schema["additionalProperties"], false);
+    let properties = schema["properties"].as_object().unwrap();
+    assert_eq!(properties["path"]["type"], "string");
     assert_eq!(
-        serde_json::from_str::<Value>(&client.input_schema).unwrap(),
-        json!({
-            "type": "object",
-            "properties": {"path": {"type": "string", "description": "The file to look at."}},
-            "required": ["path"],
-            "additionalProperties": false
-        })
+        properties
+            .keys()
+            .map(String::as_str)
+            .filter(|&key| key != "path")
+            .collect::<BTreeSet<_>>(),
+        SliceKind::ALL.iter().map(SliceKind::name).collect()
     );
-    let sentences: Vec<&str> = client.description.split(". ").collect();
-    assert!(
-        sentences[3].starts_with("If it can't, or the file is too large")
-            && sentences[4]
-                .starts_with("Keep images you attach at most 2,000 px on their long edge"),
-        "{sentences:#?}"
-    );
-    for absent in ["/home", "claude", "image/png", "2026"] {
-        assert!(!client.description.contains(absent), "{absent}");
+    for kind in [SliceKind::Pages, SliceKind::Seconds] {
+        assert_eq!(properties[kind.name()]["type"], "string", "{kind:?}");
     }
+    let sheet = &properties[SliceKind::Sheet.name()];
+    assert_eq!(sheet["type"], "integer");
+    assert_eq!(sheet["minimum"], 1);
+    assert!(!client.description.contains("bash"));
+    assert!(!client.input_schema.contains("bash"));
 }
 
 #[test]
@@ -277,7 +283,7 @@ fn the_meta_saves_output_and_reads_in_parallel() {
 }
 
 #[test]
-fn input_is_one_path_and_it_shows_as_written() {
+fn input_requires_a_path_and_shows_it_as_written() {
     let tool = ViewFile::new(Arc::new(FakeHost::default()));
     let error = |input: Value| {
         block_on(tool.prepare(NAME, &input.to_string()))
@@ -290,10 +296,6 @@ fn input_is_one_path_and_it_shows_as_written() {
     assert_eq!(
         error(json!({"path": "a\u{0}b"})),
         "`path` contains a NUL byte"
-    );
-    assert_eq!(
-        error(json!({"path": "a", "pages": "1"})),
-        "unknown field `pages`"
     );
     assert_eq!(
         error(json!({"path": "x".repeat(MAX_PATH_BYTES + 1)})),

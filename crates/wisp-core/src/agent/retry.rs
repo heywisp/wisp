@@ -219,7 +219,7 @@ pub fn request_tokens(
 ) -> u64 {
     let system = system.map_or(0, |s| s.len() as u64);
     let system = system.saturating_add(instructions.map_or(0, |s| s.len() as u64));
-    let tools = crate::tool::array_json(tools, deferred, server_tools).len() as u64;
+    let tools = crate::tool::array_json_len(tools, deferred, server_tools) as u64;
     messages
         .iter()
         .flat_map(|m| m.content.iter())

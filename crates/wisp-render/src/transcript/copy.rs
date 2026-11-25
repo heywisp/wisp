@@ -6,7 +6,7 @@ use wisp_protocol::plugin::{CommandWait, PluginNote, PluginRecord, PluginSource}
 use wisp_protocol::settings::{CACHE_KEPT, CACHE_KEPT_TOOLS, thousands};
 use wisp_protocol::{
     AccountSpend, BackgroundReason, BusyWait, CacheEffect, CompactionFailure, Cost, ErrorDetail,
-    ErrorKind, ExitStatus, Fact as ToolFact, FailurePhase, FailureSource, GaveUp,
+    ErrorKind, ExitStatus, Fact as ToolFact, FailurePhase, FailureSource, FileSlice, GaveUp,
     MIXED_BILLING_NOTE, Marked, NotRunReason, ProcessEnd, RebuildReason, SearchAction, SignalKind,
     StopReason, StoppedBy, TermSize, ToolAction, ToolChangeVia, ToolOutcome, TurnOutcome,
     TurnStats, UnfinishedReason, Usage, marked_amount,
@@ -2353,11 +2353,18 @@ pub fn copy_key() -> KeyHint {
 }
 
 pub fn card_pick(rows: usize, set: GlyphSet) -> KeyHint {
-    let dash = match set {
+    KeyHint::new(format!("1{}{rows}", range_dash(set)), CHOOSE_WORD)
+}
+
+fn range_dash(set: GlyphSet) -> &'static str {
+    match set {
         GlyphSet::Unicode => "\u{2013}",
         GlyphSet::AmbiguousWide | GlyphSet::Ascii => "-",
-    };
-    KeyHint::new(format!("1{dash}{rows}"), CHOOSE_WORD)
+    }
+}
+
+pub(super) fn file_slice(slice: &FileSlice, g: Glyphs) -> String {
+    slice.read_only(range_dash(g.set))
 }
 
 pub fn question_of(n: usize, total: usize) -> String {

@@ -1,6 +1,6 @@
 # Model pricing
 
-A text model's prices live in its row of the shipped model file, `crates/wisp-core/data/models.toml`: `price_input`, `price_output`, `price_cache_read` and optional `price_input_audio` in USD per million tokens, and `long_prompt`, an optional second tier for models priced by prompt length. Rows with `bill_tool_use_prompt = true` also count Gemini's `toolUsePromptTokenCount` as input, including it in the prompt length used for that tier; the flag defaults to false. Each row's `provider` names a `[providers.NAME]` table, which holds the cache-write multipliers of the input price (`write_5m`, `write_1h`, `write_30m`, `write_12h`) and the price of a web search (`web_search_price`). `wisp-core`'s `pricing` module is the only code that turns them into rates: `model_info` gives each priced ID and alias a `ModelInfo`. A row's `min_cacheable`, the minimum cacheable prompt length, is read by the cache-miss check. An `effort_variant` row inherits its family row's price fields as a whole when it sets none of `price_input`, `price_output`, `price_cache_read`, `price_input_audio` or `long_prompt`, and inherits `bill_tool_use_prompt`, `min_cacheable`, `reply_cap` and `turn_form` individually when unset.
+A text model's prices live in its row of the shipped model file, `crates/wisp-core/data/models.toml`: `price_input`, `price_output`, `price_cache_read` and optional `price_input_audio` in USD per million tokens, and `long_prompt`, an optional second tier for models priced by prompt length. Rows with `bill_tool_use_prompt = true` also count Gemini's `toolUsePromptTokenCount` as input, including it in the prompt length used for that tier; the flag defaults to false. Each row's `provider` names a `[providers.NAME]` table, which holds the cache-write multipliers of the input price (`write_5m`, `write_1h`, `write_30m`, `write_12h`) and the price of a web search (`web_search_price`). `wisp-core`'s `pricing` module is the only code that turns them into rates: `model_info` gives each priced ID and alias a `ModelInfo`. A row's `min_cacheable`, the minimum cacheable prompt length, is read by the cache-miss check. An `effort_variant` row inherits its family row's price fields as a whole when it sets none of `price_input`, `price_output`, `price_cache_read`, `price_input_audio` or `long_prompt`, and inherits `bill_tool_use_prompt`, `min_cacheable`, `reply_cap`, `turn_form` and `slices` individually when unset.
 
 A cache write costs the tier's input price times its TTL's multiplier from the provider's table; 5-minute and 1-hour writes are priced separately. When a response does not split its writes by TTL, they are priced at the session's TTL.
 
@@ -34,9 +34,9 @@ credentials to collect them. Local serialized client-tool arrays, without native
 
 | Provider | core tools | none tools | core bytes | none bytes |
 |---|---:|---:|---:|---:|
-| Claude | 17 | 2 | 27,500 | 990 |
-| OpenAI | 17 | 2 | 28,027 | 1,052 |
-| Gemini | 17 | 2 | 27,663 | 1,033 |
+| Claude | 17 | 2 | 28,886 | 990 |
+| OpenAI | 17 | 2 | 29,413 | 1,052 |
+| Gemini | 17 | 2 | 29,049 | 1,033 |
 
 These are bytes, not token estimates (`ask_user`'s definition is 2,695 bytes after adding `withdraw` and non-blocking wording, +566 bytes over its earlier 2,129 bytes). Preload-held tools are not declared deferred:
 the earlier single-tool measurement below found 93 extra prefix tokens for one

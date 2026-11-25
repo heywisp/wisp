@@ -4,9 +4,9 @@ use std::time::Duration;
 use serde_json::Value;
 use unicode_segmentation::UnicodeSegmentation;
 use wisp_protocol::{
-    Answer, AttachRequestEnd, AttachmentRef, BackgroundReason, ExitStatus, Fact, NotRunReason,
-    ProcessEnd, Question, QuestionEnd, StopReason, TodoItem, TodoStatus, ToolAction, ToolDisplay,
-    ToolOutcome, ToolOutputView, ToolPurpose, ToolView, Typed, Verbs,
+    Answer, AttachRequestEnd, AttachmentRef, BackgroundReason, ExitStatus, Fact, FileSlice,
+    NotRunReason, ProcessEnd, Question, QuestionEnd, StopReason, TodoItem, TodoStatus, ToolAction,
+    ToolDisplay, ToolOutcome, ToolOutputView, ToolPurpose, ToolView, Typed, Verbs,
 };
 
 use super::{Detail, Pen, Show, copy, one_line};
@@ -172,6 +172,7 @@ struct Finish {
     duration_ms: u64,
     result: Option<String>,
     saved: Vec<String>,
+    slice: Option<FileSlice>,
 }
 
 impl Finish {
@@ -850,12 +851,25 @@ impl ToolCell {
             file_problem: output.file_problem.as_deref().map(one_line),
             ..output.clone()
         };
+        let slice = match attachments {
+            [only]
+                if facts
+                    .iter()
+                    .filter(|f| matches!(f, Fact::Media { .. }))
+                    .count()
+                    == 1 =>
+            {
+                only.slice
+            }
+            _ => None,
+        };
         self.finish = Some(Finish {
             outcome: clean_outcome(outcome),
             output: clean,
             path: output.file.clone(),
             facts: facts.to_vec(),
             duration_ms,
+            slice,
             result: result.and_then(|text| kept_result(outcome, facts, attachments, text)),
             saved: attachments
                 .iter()
@@ -1342,7 +1356,13 @@ impl ToolCell {
                     if summary_only {
                         vec![Said::state(copy::fact(fact, g))]
                     } else {
-                        said_of(fact, g)
+                        let mut said = said_of(fact, g);
+                        if matches!(fact, Fact::Media { .. })
+                            && let Some(slice) = &finish.slice
+                        {
+                            said.push(Said::state(copy::file_slice(slice, *g)));
+                        }
+                        said
                     }
                 })
                 .collect(),

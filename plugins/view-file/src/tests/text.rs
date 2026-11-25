@@ -197,6 +197,8 @@ fn the_line_count_stops_at_its_time_limit() {
         resolved: path.clone(),
         shown: "slow.txt".to_owned(),
         media_types: MEDIA_TYPES.map(str::to_owned).to_vec(),
+        media_slices: Vec::new(),
+        slice: None,
         host: &host,
         ctx: &call,
         count_until_ms,
