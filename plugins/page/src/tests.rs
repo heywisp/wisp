@@ -20,7 +20,11 @@ fn board(report: Option<Value>) -> ShowPage {
 
 fn picture() -> Attachment {
     let (media_type, bytes) = ("image/jpeg".to_owned(), vec![0xFF, 0xD8, 0xFF]);
-    Attachment { media_type, bytes }
+    Attachment {
+        media_type,
+        bytes,
+        slice: None,
+    }
 }
 
 fn shown_with(report: Option<Value>, input: Value) -> (Display, ToolRun) {

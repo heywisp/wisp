@@ -216,7 +216,8 @@ type Asked = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 fn counting(answer: TokenCount) -> (Option<Arc<CountFn>>, Asked) {
     let asked: Asked = Arc::default();
     let seen = asked.clone();
-    let count: Arc<CountFn> = Arc::new(move |media_type, bytes| {
+    let count: Arc<CountFn> = Arc::new(move |media_type, bytes, slice| {
+        assert_eq!(slice, None);
         seen.lock().unwrap().push((media_type, bytes));
         Box::pin(std::future::ready(answer.clone()))
     });

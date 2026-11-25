@@ -82,6 +82,7 @@ fn copy_media(from: &MemoryStore, writer: &mut MemoryStore, blocks: &[LoggedBloc
         match block {
             LoggedBlock::Media {
                 source: StoredSource::Blob(blob),
+                ..
             } => copy_blob(from, writer, blob),
             LoggedBlock::ToolResult { content, .. } => copy_media(from, writer, content),
             LoggedBlock::Inline(_) => {}

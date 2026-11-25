@@ -587,11 +587,47 @@ fn mirrors() -> Vec<Mirror> {
                 Backgrounded,
             }
         ),
+        cases!(
+            Enum,
+            "types",
+            "slice-kind",
+            types::SliceKind {
+                Pages,
+                Seconds,
+                Sheet
+            }
+        ),
+        fields!(
+            Record,
+            "types",
+            "page-slice",
+            types::PageSlice { start, end }
+        ),
+        fields!(
+            Record,
+            "types",
+            "second-slice",
+            types::SecondSlice { start, end }
+        ),
+        cases!(
+            Variant,
+            "types",
+            "file-slice",
+            types::FileSlice {
+                Pages,
+                Seconds,
+                Sheet
+            }
+        ),
         fields!(
             Record,
             "types",
             "attachment",
-            types::Attachment { media_type, bytes }
+            types::Attachment {
+                media_type,
+                bytes,
+                slice
+            }
         ),
         fields!(
             Record,
@@ -2408,8 +2444,9 @@ probe!(context_methods, impl Context {
 
 probe!(media_methods, impl Media {
     fn media_types(&self) -> Vec<String> { Vec::new() }
+    fn media_slices(&self) -> Vec<types::SliceKind> { Vec::new() }
     fn image_edge(&self) -> Option<u32> { None }
-    fn count_tokens(&self, _media_type: String, _bytes: Vec<u8>) -> BoxFuture<'_, TokenCount> {
+    fn count_tokens(&self, _media_type: String, _bytes: Vec<u8>, _slice: Option<types::FileSlice>) -> BoxFuture<'_, TokenCount> {
         ready(TokenCount::Unsupported)
     }
 });
@@ -3222,15 +3259,6 @@ fn world_0_3_0_replaces_slot_render_tools_and_commands_and_extends_their_types()
     assert_eq!(more[..views.len()], views[..]);
     assert_eq!(more[views.len()..], ["Code"]);
     assert_eq!(older[&type_key("display")], newer[&type_key("display")]);
-    let declared = |w: &World, interface: &str| -> Vec<String> {
-        let own = w.resolve.packages[w.package].interfaces[interface];
-        w.resolve.interfaces[own]
-            .types
-            .iter()
-            .filter(|(_, id)| !matches!(w.resolve.types[**id].kind, TypeDefKind::Type(_)))
-            .map(|(name, _)| name.clone())
-            .collect()
-    };
     let tools = declared(&world_0_1_0(), "tools");
     assert_eq!(declared(&all, "tools"), tools);
     for name in &tools {
@@ -3273,6 +3301,16 @@ fn world_0_3_0_replaces_slot_render_tools_and_commands_and_extends_their_types()
     assert_eq!(older[&type_key("tool-run")], newer[&type_key("tool-run")]);
     let mut alone = Resolve::new();
     assert!(alone.push_dir(Path::new(WIT_0_3_0)).is_err());
+}
+
+fn declared(w: &World, interface: &str) -> Vec<String> {
+    let own = w.resolve.packages[w.package].interfaces[interface];
+    w.resolve.interfaces[own]
+        .types
+        .iter()
+        .filter(|(_, id)| !matches!(w.resolve.types[**id].kind, TypeDefKind::Type(_)))
+        .map(|(name, _)| name.clone())
+        .collect()
 }
 
 fn wit_files(folder: &str) -> Vec<String> {
@@ -3356,10 +3394,12 @@ fn each_folder_holds_one_package_and_each_later_one_only_its_delta() {
             "chat.wit",
             "manage.wit",
             "mcp.wit",
+            "media.wit",
             "model.wit",
             "project.wit",
             "questions.wit",
             "todos.wit",
+            "tools.wit",
             "usage.wit",
             "world.wit"
         ]
@@ -3623,46 +3663,87 @@ fn every_wit_read_kind_round_trips_through_its_name() {
 }
 
 #[test]
-fn world_0_4_0_includes_every_item_of_0_3_0_from_its_folder() {
+fn every_wit_slice_kind_round_trips_through_its_name() {
+    let cases = wit_cases("types", "slice-kind");
+    let names: Vec<_> = types::SliceKind::ALL
+        .iter()
+        .map(|kind| camel(kind.name()))
+        .collect();
+    assert_eq!(names, cases);
+    for kind in types::SliceKind::ALL {
+        assert_eq!(types::SliceKind::named(kind.name()), Some(*kind));
+    }
+}
+
+#[test]
+fn world_0_4_0_replaces_media_and_tools_and_retains_other_items() {
     let old = world_0_3_0();
     let new = world();
-    for side in [Side::Import, Side::Export] {
-        let names = |w: &World| {
-            let id = w.resolve.packages[w.package].worlds["plugin"];
-            let world = &w.resolve.worlds[id];
-            let items = match side {
-                Side::Import => &world.imports,
-                Side::Export => &world.exports,
-            };
-            items
-                .keys()
-                .map(|k| w.resolve.name_world_key(k))
-                .collect::<BTreeSet<_>>()
+    let names = |w: &World, side| {
+        let id = w.resolve.packages[w.package].worlds["plugin"];
+        let world = &w.resolve.worlds[id];
+        let items = match side {
+            Side::Import => &world.imports,
+            Side::Export => &world.exports,
         };
-        let prior = names(&old);
-        let current = names(&new);
-        assert!(prior.is_subset(&current));
-        if side == Side::Import {
-            assert_eq!(
-                current.difference(&prior).cloned().collect::<Vec<_>>(),
-                [
-                    "wisp:plugin/chat@0.4.0",
-                    "wisp:plugin/manage@0.4.0",
-                    "wisp:plugin/mcp@0.4.0",
-                    "wisp:plugin/model@0.4.0",
-                    "wisp:plugin/project@0.4.0",
-                    "wisp:plugin/questions@0.4.0",
-                    "wisp:plugin/todos@0.4.0",
-                    "wisp:plugin/usage@0.4.0"
-                ]
-            );
-        } else {
-            assert_eq!(current, prior);
-        }
-    }
-    let key = ("todos".to_owned(), "todo".to_owned());
-    let older = world_0_1_0().shapes();
+        items
+            .keys()
+            .map(|k| w.resolve.name_world_key(k))
+            .collect::<BTreeSet<_>>()
+    };
+    let mut imports = names(&old, Side::Import);
+    assert!(imports.remove("wisp:plugin/media@0.1.0"));
+    imports.extend(
+        [
+            "chat",
+            "manage",
+            "mcp",
+            "media",
+            "model",
+            "project",
+            "questions",
+            "todos",
+            "types",
+            "usage",
+        ]
+        .map(|name| format!("wisp:plugin/{name}@0.4.0")),
+    );
+    assert_eq!(names(&new, Side::Import), imports);
+    let mut exports = names(&old, Side::Export);
+    assert!(exports.remove("wisp:plugin/tools@0.3.0"));
+    exports.insert("wisp:plugin/tools@0.4.0".to_owned());
+    assert_eq!(names(&new, Side::Export), exports);
+
+    let token_count = |wit: &'static str| {
+        wit.lines()
+            .find(|line| line.trim_start().starts_with("variant token-count "))
+            .unwrap()
+    };
+    assert_eq!(
+        token_count(include_str!("../../../wit/v0.4.0/media.wit")),
+        token_count(include_str!("../../../wit/v0.1.0/host.wit")),
+    );
+    let tools_body = |wit: &'static str| wit.split_once("\n  enum effect ").unwrap().1;
+    assert_eq!(
+        tools_body(include_str!("../../../wit/v0.4.0/tools.wit")),
+        tools_body(include_str!("../../../wit/v0.3.0/tools.wit")),
+    );
     let newer = new.shapes();
+    let type_key = |name: &str| ("types".to_owned(), name.to_owned());
+    assert_eq!(
+        newer[&type_key("tool-run")],
+        old.shapes()[&type_key("tool-run")]
+    );
+    let older = world_0_1_0().shapes();
+    let (before, after) = (
+        &older[&type_key("attachment")].1,
+        &newer[&type_key("attachment")].1,
+    );
+    assert_eq!(
+        after.split_last(),
+        Some((&"slice".to_owned(), before.as_slice()))
+    );
+    let key = ("todos".to_owned(), "todo".to_owned());
     let (fields, more) = (&older[&key].1, &newer[&key].1);
     assert_eq!(more[..fields.len()], fields[..]);
     assert_eq!(more[fields.len()..], ["section"]);

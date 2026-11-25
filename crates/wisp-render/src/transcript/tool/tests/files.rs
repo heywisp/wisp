@@ -33,6 +33,7 @@ fn attached(media_type: &str, bytes: u64, saved: Option<&str>) -> AttachmentRef 
         sha256: "3f2a9c".to_owned(),
         bytes,
         saved: saved.map(str::to_owned),
+        slice: None,
     }
 }
 

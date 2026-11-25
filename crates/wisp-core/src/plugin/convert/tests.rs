@@ -149,6 +149,7 @@ fn a_run_maps_its_facts_cwd_and_attachments() {
         attachments: vec![api::Attachment {
             media_type: "image/png".into(),
             bytes: vec![1, 2],
+            slice: None,
         }],
         typed: None,
     };
@@ -176,6 +177,94 @@ fn a_run_maps_its_facts_cwd_and_attachments() {
         })
     );
     assert_eq!(converted.attachments[0].bytes, [1, 2]);
+}
+
+#[test]
+fn file_slice_conversion_matches_parser_bounds_and_display_and_kind_names() {
+    use wisp_tool_text::files::{parse_pages, parse_seconds, parse_sheet, read_only};
+
+    for (parsed, expected, line) in [
+        (parse_pages("5"), FileSlice::pages(5, 5), "read only page 5"),
+        (
+            parse_pages("14-16"),
+            FileSlice::pages(14, 16),
+            "read only pages 14-16",
+        ),
+        (
+            parse_seconds("30-90"),
+            FileSlice::seconds(30, 90),
+            "read only seconds 30-90",
+        ),
+        (parse_sheet("2"), FileSlice::sheet(2), "read only sheet 2"),
+        (
+            parse_pages("4294967295"),
+            FileSlice::pages(u32::MAX, u32::MAX),
+            "read only page 4294967295",
+        ),
+        (
+            parse_seconds("0-4294967295"),
+            FileSlice::seconds(0, u32::MAX),
+            "read only seconds 0-4294967295",
+        ),
+        (
+            parse_sheet("4294967295"),
+            FileSlice::sheet(u32::MAX),
+            "read only sheet 4294967295",
+        ),
+    ] {
+        let parsed = parsed.unwrap();
+        let proto = file_slice(parsed).unwrap();
+        assert_eq!(proto, expected.unwrap());
+        assert_eq!(read_only(&parsed), proto.read_only("-"));
+        assert_eq!(proto.read_only("-"), line);
+        assert_eq!(proto.kind_name(), parsed.kind().name());
+        assert_eq!(slice_kind(&proto), parsed.kind());
+    }
+    for (parsed, invalid) in [
+        (
+            parse_pages("0"),
+            api::FileSlice::Pages(api::PageSlice { start: 0, end: 0 }),
+        ),
+        (
+            parse_pages("1-0"),
+            api::FileSlice::Pages(api::PageSlice { start: 1, end: 0 }),
+        ),
+        (
+            parse_seconds("1-1"),
+            api::FileSlice::Seconds(api::SecondSlice { start: 1, end: 1 }),
+        ),
+        (
+            parse_seconds("1-0"),
+            api::FileSlice::Seconds(api::SecondSlice { start: 1, end: 0 }),
+        ),
+        (parse_sheet("0"), api::FileSlice::Sheet(0)),
+    ] {
+        assert!(parsed.is_err(), "{invalid:?}");
+        let error = file_slice(invalid).unwrap_err();
+        let mut run = api::ToolRun::completed();
+        run.attachments.push(api::Attachment {
+            media_type: "application/pdf".into(),
+            bytes: vec![1],
+            slice: Some(invalid),
+        });
+        assert_eq!(super::run(run).unwrap_err(), error);
+    }
+    for parsed in [
+        parse_pages("4294967296"),
+        parse_seconds("0-4294967296"),
+        parse_sheet("4294967296"),
+        parse_pages("14-"),
+        parse_seconds("0-"),
+    ] {
+        assert!(parsed.is_err());
+    }
+    assert_eq!(
+        api::SliceKind::ALL
+            .iter()
+            .map(api::SliceKind::name)
+            .collect::<Vec<_>>(),
+        ["pages", "seconds", "sheet"]
+    );
 }
 
 #[test]

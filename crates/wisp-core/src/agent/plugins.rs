@@ -42,6 +42,7 @@ impl Agent {
                 .iter()
                 .map(|t| (*t).to_owned())
                 .collect(),
+            media_slices: Vec::new(),
             image_edge: self
                 .provider()
                 .capabilities(&self.session.model)

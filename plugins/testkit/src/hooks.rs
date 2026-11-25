@@ -404,7 +404,9 @@ pub fn refused_imports(seen: Seen, call_id: &str) -> Render {
             let mut out = Vec::new();
             let answers = host.fire("x".to_owned(), String::new()).await;
             out.push(format!("fire {}", answers.len()));
-            let count = host.count_tokens("image/png".to_owned(), Vec::new()).await;
+            let count = host
+                .count_tokens("image/png".to_owned(), Vec::new(), None)
+                .await;
             out.push(format!("count {count:?}"));
             host.sleep(10_000).await;
             out.push("slept".to_owned());
@@ -461,7 +463,7 @@ pub fn eager(seen: Seen) -> Render {
         let seen = seen.clone();
         let host: &'static Arc<dyn Host> = Box::leak(Box::new(host));
         let slept = host.sleep(10_000);
-        let counted = host.count_tokens("image/png".to_owned(), Vec::new());
+        let counted = host.count_tokens("image/png".to_owned(), Vec::new(), None);
         let fired = host.fire("x".to_owned(), String::new());
         Box::pin(async move {
             slept.await;

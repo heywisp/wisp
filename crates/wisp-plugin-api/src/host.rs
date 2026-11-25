@@ -8,7 +8,9 @@ use crate::instructions::InstructionsReport;
 use crate::pricing::Pricing;
 use crate::prompt::{JobNews, WorkspaceFacts};
 use crate::tree::{Agent, AgentStates, AgentTree};
-use crate::types::{AskReply, Attachment, ExitStatus, Key, Level, Question, SignalKind, Typed};
+use crate::types::{
+    AskReply, Attachment, ExitStatus, FileSlice, Key, Level, Question, SignalKind, SliceKind, Typed,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Facts {
@@ -98,8 +100,14 @@ pub enum TokenCount {
 
 pub trait Media {
     fn media_types(&self) -> Vec<String>;
+    fn media_slices(&self) -> Vec<SliceKind>;
     fn image_edge(&self) -> Option<u32>;
-    fn count_tokens(&self, media_type: String, bytes: Vec<u8>) -> BoxFuture<'_, TokenCount>;
+    fn count_tokens(
+        &self,
+        media_type: String,
+        bytes: Vec<u8>,
+        slice: Option<FileSlice>,
+    ) -> BoxFuture<'_, TokenCount>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

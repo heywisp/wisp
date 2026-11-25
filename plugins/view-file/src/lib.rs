@@ -333,7 +333,7 @@ async fn media_run(
     }
     let counted = CountRace {
         cancelled: ctx.wait_cancelled(),
-        count: host.count_tokens(media_type.clone(), bytes.clone()),
+        count: host.count_tokens(media_type.clone(), bytes.clone(), None),
         limit: host.sleep(TOKEN_COUNT_LIMIT_MS),
     }
     .await;
@@ -353,7 +353,11 @@ async fn media_run(
         ToolRun::completed().with_result(words::media_result(shown, &media_type, n, tokens));
     run.facts = vec![Fact::Media(media_type.clone()), Fact::Bytes(n)];
     run.facts.extend(tokens.map(Fact::Tokens));
-    run.attachments.push(Attachment { media_type, bytes });
+    run.attachments.push(Attachment {
+        media_type,
+        bytes,
+        slice: None,
+    });
     run
 }
 

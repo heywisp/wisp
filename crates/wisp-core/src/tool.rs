@@ -17,8 +17,8 @@ use wisp_contain::{Contained, contain};
 use wisp_plugin_api::Plugin;
 use wisp_plugin_api::tools::Prepared as PluginPrepared;
 use wisp_protocol::{
-    ContentBlock, Fact, Mime, OutputKind, PluginRecord, ToolAction, ToolDisplay, ToolOutcome,
-    Typed, WorkspaceChange,
+    ContentBlock, Fact, FileSlice, Mime, OutputKind, PluginRecord, ToolAction, ToolDisplay,
+    ToolOutcome, Typed, WorkspaceChange,
 };
 
 pub use wisp_protocol::ToolPurpose;
@@ -170,6 +170,7 @@ impl fmt::Debug for MediaCount {
 pub struct Attachment {
     pub media_type: Mime,
     pub bytes: Vec<u8>,
+    pub slice: Option<FileSlice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -155,6 +155,7 @@ impl Mcp for PluginHost {
                 .map(|attachment| Attachment {
                     media_type: attachment.media_type.to_string(),
                     bytes: attachment.bytes,
+                    slice: None,
                 })
                 .collect();
             Ok(result)

@@ -68,7 +68,7 @@ pub use instructions::{
     SourceChange, SourceInfo,
 };
 
-pub use media::{AttachmentRef, BlobRef, MAX_MIME_LEN, MediaSource, Mime};
+pub use media::{AttachmentRef, BlobRef, FileSlice, MAX_MIME_LEN, MediaSource, Mime};
 
 pub use names::{
     ACCOUNT_FLAG, ACCOUNT_NAME_LABEL, ACCOUNT_NAME_RULE, CLAUDE_API, CONFIG_FILE, CREDENTIALS,
@@ -332,6 +332,8 @@ pub enum ContentBlock {
     },
     Media {
         source: MediaSource,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slice: Option<FileSlice>,
     },
     ToolAddition {
         tool: ToolRef,
@@ -502,20 +504,26 @@ pub fn process_refusal(kind: &RejectKind, id: impl std::fmt::Display) -> String 
 pub struct InlineMedia<'a> {
     pub media_type: &'a str,
     pub data: &'a str,
+    pub slice: Option<FileSlice>,
 }
 
 impl ContentBlock {
     pub fn inline_media(&self) -> Option<InlineMedia<'_>> {
-        let (media_type, data) = match self {
+        let (media_type, data, slice) = match self {
             Self::Image {
                 source: ImageSource::Base64 { media_type, data },
-            } => (media_type.as_str(), data),
+            } => (media_type.as_str(), data, None),
             Self::Media {
                 source: MediaSource::Base64 { media_type, data },
-            } => (media_type.as_str(), data),
+                slice,
+            } => (media_type.as_str(), data, *slice),
             _ => return None,
         };
-        Some(InlineMedia { media_type, data })
+        Some(InlineMedia {
+            media_type,
+            data,
+            slice,
+        })
     }
 
     pub fn image(media_type: ImageType, data: impl Into<Arc<str>>) -> Self {
@@ -528,11 +536,20 @@ impl ContentBlock {
     }
 
     pub fn media(media_type: Mime, data: impl Into<Arc<str>>) -> Self {
+        Self::media_sliced(media_type, data, None)
+    }
+
+    pub fn media_sliced(
+        media_type: Mime,
+        data: impl Into<Arc<str>>,
+        slice: Option<FileSlice>,
+    ) -> Self {
         Self::Media {
             source: MediaSource::Base64 {
                 media_type,
                 data: data.into(),
             },
+            slice,
         }
     }
 
@@ -2438,9 +2455,20 @@ mod tests {
         let inline = InlineMedia {
             media_type: "image/png",
             data,
+            slice: None,
         };
         assert_eq!(image.inline_media(), Some(inline));
         assert_eq!(file.inline_media(), Some(inline));
+        let slice = Some(FileSlice::pages(5, 5).unwrap());
+        let sliced = ContentBlock::media_sliced("application/pdf".parse().unwrap(), data, slice);
+        assert_eq!(
+            sliced.inline_media(),
+            Some(InlineMedia {
+                media_type: "application/pdf",
+                data,
+                slice
+            })
+        );
         assert_eq!(
             ContentBlock::Text {
                 text: data.to_owned()

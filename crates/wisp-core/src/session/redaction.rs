@@ -373,7 +373,7 @@ content!(wisp_protocol::log::WithdrawnBlock, redactions, {
 });
 
 content!(wisp_protocol::AttachmentRef, redactions, {
-    Self { media_type: _, sha256: _, bytes: _, saved } => [saved],
+    Self { media_type: _, sha256: _, bytes: _, saved, slice: _ } => [saved],
 });
 
 content!(wisp_protocol::PluginRecord, _redactions, {

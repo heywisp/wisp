@@ -528,13 +528,47 @@ fn counting_snapshot() -> Snapshot {
     }
 }
 
+#[tokio::test]
+async fn count_tokens_refuses_slices_locally() {
+    use wisp_plugin_api::types::PageSlice;
+
+    let kernel = Arc::new(KernelHost::new());
+    kernel.publish(Snapshot {
+        media_types: vec!["application/pdf".to_owned()],
+        media_slices: vec![SliceKind::Pages],
+        ..counting_snapshot()
+    });
+    for world in ["0.1.0", "0.3.0"] {
+        let host = PluginHost::new("probe", world, &[], kernel.clone());
+        assert!(host.media_slices().is_empty(), "world {world}");
+    }
+    let host = PluginHost::new("probe", "0.4.0", &[], kernel);
+    assert_eq!(host.media_slices(), vec![SliceKind::Pages]);
+    for start in [0, 1] {
+        let slice = Some(FileSlice::Pages(PageSlice { start, end: 1 }));
+        assert_eq!(
+            host.count_tokens("application/pdf".into(), vec![1], slice)
+                .await,
+            TokenCount::Unsupported,
+            "start={start}"
+        );
+    }
+    assert_eq!(
+        host.count_tokens("application/pdf".into(), vec![1], None)
+            .await,
+        TokenCount::Counted(9)
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn inside_a_render_waiting_and_provider_imports_answer_at_once_and_outside_they_work() {
     let kernel = Arc::new(KernelHost::new());
     kernel.publish(counting_snapshot());
     let host = plugin_host(&[], &kernel);
     let (counted, slept, captured) = rendering(async {
-        let counted = host.count_tokens("image/png".to_owned(), vec![1]).await;
+        let counted = host
+            .count_tokens("image/png".to_owned(), vec![1], None)
+            .await;
         let before = host.elapsed_ms();
         host.sleep(10_000).await;
         let captured = host.capture("true".to_owned(), Vec::new(), 10_000).await;
@@ -545,7 +579,8 @@ async fn inside_a_render_waiting_and_provider_imports_answer_at_once_and_outside
     assert_eq!(slept, 0);
     assert_eq!(captured, Captured::Failed(IN_RENDER.to_owned()));
     assert_eq!(
-        host.count_tokens("image/png".to_owned(), vec![1]).await,
+        host.count_tokens("image/png".to_owned(), vec![1], None)
+            .await,
         TokenCount::Counted(9)
     );
     let before = host.elapsed_ms();
@@ -720,6 +755,7 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
         },
         settings: vec![("time".to_owned(), "utc".to_owned())],
         media_types: vec!["image/png".to_owned()],
+        media_slices: vec![SliceKind::Pages],
         image_edge: Some(8),
         fill: Fill {
             estimate: 5,
@@ -830,9 +866,10 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
                 }
                 Import::ContextEstimateText => assert!(host.estimate_text("some words") > 0),
                 Import::MediaTypes => assert!(host.media_types().is_empty()),
+                Import::MediaSlices => assert!(mcp.media_slices().is_empty()),
                 Import::MediaImageEdge => assert_eq!(host.image_edge(), None),
                 Import::MediaCountTokens => assert_eq!(
-                    host.count_tokens("image/png".to_owned(), vec![1]).await,
+                    host.count_tokens("image/png".to_owned(), vec![1], None).await,
                     TokenCount::Unsupported
                 ),
                 Import::CallId

@@ -50,11 +50,15 @@ impl TestTool for Gated {
     ) -> BoxFuture<'a, ToolRun> {
         async move {
             let host = self.host.get().unwrap().clone();
-            let first = host.count_tokens("image/png".into(), vec![1, 2, 3]).await;
+            let first = host
+                .count_tokens("image/png".into(), vec![1, 2, 3], None)
+                .await;
             self.log.lock().unwrap().push("start");
             self.started.notify_one();
             self.gate.notified().await;
-            let second = host.count_tokens("image/png".into(), vec![1, 2, 3]).await;
+            let second = host
+                .count_tokens("image/png".into(), vec![1, 2, 3], None)
+                .await;
             self.log.lock().unwrap().push("end");
             self.counts.lock().unwrap().extend([first, second]);
             ToolRun::completed()
