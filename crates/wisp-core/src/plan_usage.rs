@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::{mpsc, watch};
 use wisp_protocol::plan_usage::{
-    Availability, PlanUsage, PlanUsageError, USAGE_MAX_AGE, UsageScope, UsageSource, UsageState,
-    UsageWindow, WINDOWS,
+    Availability, MAX_USAGE_WINDOWS, PlanUsage, PlanUsageError, USAGE_MAX_AGE, UsageScope,
+    UsageSource, UsageState, UsageWindow, WINDOWS,
 };
 use wisp_protocol::{AgentEvent, RequestId};
 use wisp_tool_text::agents::Cause;
@@ -564,7 +564,7 @@ impl PlanUsageCache {
                         old.resets_at = reset;
                         old.duration_seconds = duration;
                         entry.passive_windows.insert(key, entry.revision);
-                    } else if full.windows.len() < 64 {
+                    } else if full.windows.len() < MAX_USAGE_WINDOWS {
                         full.windows.push(window);
                         entry.passive_windows.insert(key, entry.revision);
                     }
@@ -853,7 +853,7 @@ fn merge_full(
                         .get(&window.key)
                         .is_some_and(|revision| *revision > started_revision))
                 && window.source != UsageSource::UsageEndpoint
-                && snapshot.windows.len() < 64
+                && snapshot.windows.len() < MAX_USAGE_WINDOWS
             {
                 snapshot.windows.push(window);
             }

@@ -121,7 +121,7 @@ fn the_accounts_read_as_account_shows_them_with_models_and_limits() {
         "You run on claude-work, model opus-5-5, effort high. New chats start on claude-work.\n\
          4 accounts:\n\
          - claude-work · Claude subscription · signed in\n  models: opus-5-5, sonnet-5-5\n  \
-         limits, read 2m00s ago: 5-hour 43%, resets in 2h10m · Weekly 12.5%, resets in 4d06h · Fable weekly 100%, resets in 4d06h\n\
+         limits used, read 2m00s ago: 5-hour 43%, resets in 2h10m · Weekly 12.5%, resets in 4d06h · Fable weekly 100%, resets in 4d06h\n\
          - claude-api · Claude API\n  models: opus-5-5\n\
          - chatgpt · ChatGPT subscription · sign-in expired\n  models: gpt-6.1-sol\n  \
          limits: sign in again to read subscription usage\n\
@@ -175,7 +175,7 @@ fn a_limits_line_says_what_the_cache_holds_and_nothing_it_does_not() {
                 Some("subscription usage lookup is throttled"),
             ),
             Some(
-                "limits, read 25h00m ago: limit reached · 5-hour unknown, resets in 30s · Weekly 100% · subscription usage lookup is throttled",
+                "limits used, read 25h00m ago: limit reached · 5-hour unknown, resets in 30s · Weekly 100% · subscription usage lookup is throttled",
             ),
         ),
     ] {

@@ -37,7 +37,7 @@ expression: all
 |   * claude1   Claude  ####......  42%  #.........  18%  starts new chats |
 +--------------------------------------------------------------------------+
 +- Accounts ---------------------------------------------+
-|   Subscriptions           5-hour used      Weekly used |
+|   Subscriptions                                        |
 |   * claude2   Claude  sign-in expired                  |
 |     wisp login claude2                                 |
 +--------------------------------------------------------+

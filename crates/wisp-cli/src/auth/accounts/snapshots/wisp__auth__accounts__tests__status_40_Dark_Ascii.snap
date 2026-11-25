@@ -40,7 +40,7 @@ expression: all
 |     starts new chats                 |
 +--------------------------------------+
 +- Accounts ---------------------------+
-|   Subscriptions  5h used   week used |
+|   Subscriptions                      |
 |   * claude2   sign-in expired        |
 |     wisp login claude2               |
 +--------------------------------------+

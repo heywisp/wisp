@@ -1334,6 +1334,7 @@ fn the_model_reads_the_percent_and_the_words_usage_and_account_show() {
         assert_eq!(wisp_tool_text::config::percent(value), shown, "{value}");
     }
     assert_eq!(LIMIT_REACHED, wisp_tool_text::config::LIMIT_REACHED);
+    assert_eq!(UNKNOWN_USAGE, wisp_tool_text::config::UNKNOWN_USAGE);
     assert_eq!(crate::transcript::copy::SEP, wisp_tool_text::SEP);
     assert_eq!(
         crate::chrome::account::billing_word(crate::chrome::account::AccountState::Expired),

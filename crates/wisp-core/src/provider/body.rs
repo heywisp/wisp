@@ -16,10 +16,13 @@ pub(super) enum Unread {
 }
 
 pub(super) async fn read(response: reqwest::Response) -> Option<Vec<u8>> {
+    read_bounded(response).await.ok()
+}
+
+async fn read_bounded(response: reqwest::Response) -> Result<Vec<u8>, Unread> {
     tokio::time::timeout(Duration::from_secs(5), read_capped(response, LIMIT))
         .await
-        .ok()?
-        .ok()
+        .map_err(|_| Unread::TimedOut)?
 }
 
 pub(super) async fn read_text(response: reqwest::Response) -> String {
@@ -79,9 +82,10 @@ pub(super) async fn fetch_json(
         }
         _ => return Err(PlanUsageError::InvalidResponse),
     }
-    let bytes = read(response)
-        .await
-        .ok_or(PlanUsageError::InvalidResponse)?;
+    let bytes = read_bounded(response).await.map_err(|error| match error {
+        Unread::TooLarge => PlanUsageError::InvalidResponse,
+        Unread::TimedOut | Unread::Unreadable => PlanUsageError::Network,
+    })?;
     let raw = serde_json::from_slice(&bytes).map_err(|_| PlanUsageError::InvalidResponse)?;
     Ok((raw, now))
 }

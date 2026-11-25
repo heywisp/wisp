@@ -218,7 +218,11 @@ async fn list_accounts_reads_the_summaries_models_and_cached_limits_and_never_a_
         "{:?}",
         listed[2]
     );
-    assert!(listed[0][2].contains("5-hour 43%"), "{:?}", listed[0]);
+    assert!(
+        listed[0][2].starts_with("limits used, read ") && listed[0][2].contains("5-hour 43%"),
+        "{:?}",
+        listed[0]
+    );
     assert_eq!(listed[1].len(), 2, "an API account has no limits line");
     assert_eq!(
         listed[2][2], "limits: limit reached",
