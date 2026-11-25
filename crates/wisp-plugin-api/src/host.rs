@@ -718,6 +718,10 @@ pub trait Host:
         &()
     }
 
+    fn secret_check(&self) -> &dyn crate::secret_check::SecretCheck {
+        &()
+    }
+
     fn index(&self) -> &dyn crate::index::Index {
         &()
     }

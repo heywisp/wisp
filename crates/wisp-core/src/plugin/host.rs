@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, atomic::Ordering};
 use std::time::Duration;
 
 use futures::FutureExt;
@@ -19,6 +19,7 @@ use wisp_plugin_api::host::{
 use wisp_plugin_api::http::{Http, HttpError, Request, Response};
 use wisp_plugin_api::instructions::{Change, Diagnostic, InstructionsReport, LoadReport};
 use wisp_plugin_api::manifest::{Capability, Origin};
+use wisp_plugin_api::secret_check::{SecretCheck, Verdict};
 use wisp_plugin_api::usage::{AccountUsage, Usage};
 
 pub use accounts::UsageAccount;
@@ -33,6 +34,7 @@ use wisp_protocol::{CacheTtl, ContentBlock};
 use wisp_tool_text::chat as text;
 use wisp_tool_text::files::{NO_DATA_FOLDER, carries, slice_supported};
 
+use super::caller::Caller;
 use super::convert;
 use super::imports::{Import, Inside};
 use crate::agents::{AgentsHandle, Reach, endpoints, still_working};
@@ -165,6 +167,8 @@ pub struct KernelHost {
     news: Mutex<Option<NewsSlot>>,
     #[cfg(test)]
     captured: Mutex<Option<Captured>>,
+    #[cfg(any(test, feature = "test-support"))]
+    fallback_home: Mutex<Option<PathBuf>>,
 }
 
 struct NewsSlot {
@@ -216,6 +220,8 @@ impl KernelHost {
             news: Mutex::new(None),
             #[cfg(test)]
             captured: Mutex::default(),
+            #[cfg(any(test, feature = "test-support"))]
+            fallback_home: Mutex::new(None),
         }
     }
 
@@ -338,6 +344,22 @@ impl KernelHost {
 
     fn workspace(&self) -> Option<KernelWorkspace> {
         locked(&self.bound).workspace.clone()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_fallback_home(&self, home: Option<PathBuf>) {
+        *locked(&self.fallback_home) = home;
+    }
+
+    pub(super) fn secret_check_home(&self) -> Option<PathBuf> {
+        if let Some(home) = self.workspace().and_then(|workspace| workspace.home) {
+            return Some(home);
+        }
+        #[cfg(any(test, feature = "test-support"))]
+        let fallback = locked(&self.fallback_home).clone();
+        #[cfg(not(any(test, feature = "test-support")))]
+        let fallback = crate::secrets::scan::os_detection_home();
+        fallback
     }
 
     #[cfg(unix)]
@@ -1419,6 +1441,23 @@ impl wisp_plugin_api::project::Project for PluginHost {
     }
 }
 
+impl SecretCheck for PluginHost {
+    fn check(&self, text: &str) -> Verdict {
+        if self.refuses(Import::SecretCheckCheck) {
+            return Verdict::Refused;
+        }
+        if let Some(checked) = Caller::current().gather_checked {
+            checked.store(true, Ordering::Release);
+        }
+        let home = self.kernel.secret_check_home();
+        if crate::secrets::scan::contains_secret_or_identity(text, home.as_deref()) {
+            Verdict::Refused
+        } else {
+            Verdict::Safe
+        }
+    }
+}
+
 impl Log for PluginHost {
     fn write(&self, _level: Level, _line: &str) {}
 }
@@ -1802,6 +1841,10 @@ impl Host for PluginHost {
     }
 
     fn mcp(&self) -> &dyn wisp_plugin_api::mcp::Mcp {
+        self
+    }
+
+    fn secret_check(&self) -> &dyn SecretCheck {
         self
     }
 

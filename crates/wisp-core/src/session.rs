@@ -1475,7 +1475,6 @@ struct Redaction {
 
 static SECRETS_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-#[allow(dead_code, reason = "used by the plugin secret-check host in MR 2")]
 pub(crate) fn held_generation() -> u64 {
     SECRETS_GENERATION.load(Ordering::Acquire)
 }

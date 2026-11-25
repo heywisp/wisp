@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use futures::FutureExt;
@@ -9,6 +11,7 @@ use wisp_plugin_api::manifest::Origin;
 
 use super::{KernelHost, PluginHost, locked};
 use crate::mcp::{PLUGIN as MCP_PLUGIN, Service};
+use crate::plugin::caller::Caller;
 use crate::plugin::imports::Import;
 use crate::plugin::{Problem, panicked};
 use crate::tool::{ToolSpec, Toolbox};
@@ -25,6 +28,10 @@ pub(super) struct State {
     described: u64,
     mcp_scope: Option<BTreeSet<String>>,
     mcp_entries: BTreeSet<String>,
+    checked_sources: BTreeSet<String>,
+    checked_entries: BTreeSet<String>,
+    gathered_generation: u64,
+    gathered_home: Option<PathBuf>,
     pub(super) switching: Option<super::manage::Switching>,
     pub(super) pending: Vec<super::manage::Switch>,
     pub(super) managing: super::manage::Managing,
@@ -33,21 +40,35 @@ pub(super) struct State {
 }
 
 impl State {
-    fn entry_has_secret(&self, mcp: &Service, name: &str, entry: Option<&Entry>) -> bool {
-        self.mcp_entries.contains(name)
-            && mcp.index_has_secret(
-                name,
-                entry.map_or("", |entry| &entry.summary),
-                entry.map_or("", |entry| &entry.text),
-                self.parameters.get(name).map(String::as_str),
-            )
+    fn stale_secret_check(&self, home: &Option<PathBuf>) -> bool {
+        !self.checked_sources.is_empty()
+            && (self.gathered_generation != crate::session::held_generation()
+                || self.gathered_home != *home)
     }
 
-    fn named_entry_has_secret(&self, mcp: &Service, name: &str) -> bool {
+    fn entry_has_secret(
+        &self,
+        mcp: &Service,
+        name: &str,
+        entry: Option<&Entry>,
+        stale: bool,
+    ) -> bool {
+        (stale && self.checked_entries.contains(name))
+            || (self.mcp_entries.contains(name)
+                && mcp.index_has_secret(
+                    name,
+                    entry.map_or("", |entry| &entry.summary),
+                    entry.map_or("", |entry| &entry.text),
+                    self.parameters.get(name).map(String::as_str),
+                ))
+    }
+
+    fn named_entry_has_secret(&self, mcp: &Service, name: &str, stale: bool) -> bool {
         self.entry_has_secret(
             mcp,
             name,
             self.entries.iter().find(|entry| entry.name == name),
+            stale,
         )
     }
 }
@@ -76,13 +97,15 @@ impl KernelHost {
     pub(crate) fn index_entries(&self) -> Vec<Entry> {
         let mcp = self.mcp();
         let off = mcp.disabled_entries();
+        let home = self.secret_check_home();
         let state = locked(&self.index);
+        let stale = state.stale_secret_check(&home);
         state
             .entries
             .iter()
             .filter(|entry| {
                 !off.contains_key(&entry.name)
-                    && !state.entry_has_secret(&mcp, &entry.name, Some(entry))
+                    && !state.entry_has_secret(&mcp, &entry.name, Some(entry), stale)
             })
             .cloned()
             .collect()
@@ -99,7 +122,9 @@ impl KernelHost {
     }
 
     pub(crate) fn index_dirty(&self) -> bool {
-        locked(&self.index).dirty
+        let home = self.secret_check_home();
+        let state = locked(&self.index);
+        state.dirty || state.stale_secret_check(&home)
     }
 
     pub(crate) fn index_turned_off(&self, off: BTreeSet<String>) {
@@ -112,12 +137,14 @@ impl KernelHost {
 
     pub(crate) fn index_kind(&self, name: &str) -> Option<Kind> {
         let mcp = self.mcp();
+        let home = self.secret_check_home();
         let state = locked(&self.index);
+        let stale = state.stale_secret_check(&home);
         state
             .entries
             .iter()
             .find(|entry| {
-                entry.name == name && !state.entry_has_secret(&mcp, &entry.name, Some(entry))
+                entry.name == name && !state.entry_has_secret(&mcp, &entry.name, Some(entry), stale)
             })
             .map(|entry| entry.kind)
     }
@@ -127,8 +154,10 @@ impl KernelHost {
         if mcp.disabled_entries().contains_key(name) {
             return None;
         }
+        let home = self.secret_check_home();
         let state = locked(&self.index);
-        if state.named_entry_has_secret(&mcp, name) {
+        let stale = state.stale_secret_check(&home);
+        if state.named_entry_has_secret(&mcp, name, stale) {
             return None;
         }
         state.parameters.get(name).cloned()
@@ -169,11 +198,24 @@ impl KernelHost {
             })
             .collect();
         let mut problems = Vec::new();
+        let gathered_generation = crate::session::held_generation();
+        let gathered_home = self.secret_check_home();
+        let mut checked_sources = BTreeSet::new();
         for (id, plugin) in sources {
-            let entries = match contain(|| plugin.entries()) {
-                Ok(future) => Contained::new(future).await.ok(),
-                Err(_) => None,
+            let checked = Arc::new(AtomicBool::new(false));
+            let caller = Caller {
+                gather_checked: Some(checked.clone()),
+                ..Caller::current()
             };
+            let entries = caller
+                .scope(async {
+                    let future = contain(|| plugin.entries()).ok()?;
+                    Contained::new(future).await.ok()
+                })
+                .await;
+            if checked.load(Ordering::Acquire) {
+                checked_sources.insert(id.clone());
+            }
             match entries {
                 Some(entries) => candidates.extend(
                     entries
@@ -204,6 +246,7 @@ impl KernelHost {
                 .then(a.name.cmp(&b.name))
                 .then_with(|| owns(b, y).cmp(&owns(a, x)))
         });
+        let mut checked_entries = BTreeSet::new();
         let mut names = BTreeSet::new();
         let mut owners = BTreeMap::new();
         let mut entries = Vec::new();
@@ -244,7 +287,10 @@ impl KernelHost {
             if mcp_entry {
                 mcp_entries.insert(entry.name.clone());
             }
-            if let Some((_, owner)) = owner {
+            if let Some((id, owner)) = owner {
+                if checked_sources.contains(&id) {
+                    checked_entries.insert(entry.name.clone());
+                }
                 owners.insert(entry.name.clone(), Arc::downgrade(&owner));
             }
             entries.push(entry);
@@ -254,6 +300,10 @@ impl KernelHost {
         state.owners = owners;
         state.parameters = parameters;
         state.mcp_entries = mcp_entries;
+        state.checked_sources = checked_sources;
+        state.checked_entries = checked_entries;
+        state.gathered_generation = gathered_generation;
+        state.gathered_home = gathered_home;
         problems
     }
 }
@@ -277,28 +327,48 @@ impl Index for PluginHost {
             if let Some(server) = self.kernel.mcp().disabled_entries().get(name) {
                 return Err(wisp_tool_text::manage::turned_off(server));
             }
-            if locked(&self.kernel.index).off.contains(name) {
-                return Err(wisp_tool_text::manage::turned_off(name));
-            }
-            let owner = {
+            let (owner, checked_stamp) = {
                 let mcp = self.kernel.mcp();
+                let home = self.kernel.secret_check_home();
                 let state = locked(&self.kernel.index);
-                if mcp.entry_name_hidden(name) || state.named_entry_has_secret(&mcp, name) {
-                    return Err(crate::mcp::HELD_CREDENTIAL.into());
+                if state.off.contains(name) {
+                    return Err(wisp_tool_text::manage::turned_off(name));
+                }
+                let stale = state.stale_secret_check(&home);
+                let mcp_name_hidden = mcp.entry_name_hidden(name);
+                if mcp_name_hidden || state.named_entry_has_secret(&mcp, name, stale) {
+                    return Err(if mcp_name_hidden || state.mcp_entries.contains(name) {
+                        crate::mcp::HELD_CREDENTIAL.into()
+                    } else {
+                        wisp_tool_text::index::STALE_SECRET_CHECK.into()
+                    });
                 }
                 if let Some(parameters) = state.parameters.get(name) {
                     return Ok(parameters.clone());
                 }
-                state.owners.get(name).and_then(Weak::upgrade)
+                let checked_stamp = state
+                    .checked_entries
+                    .contains(name)
+                    .then(|| (state.gathered_generation, state.gathered_home.clone()));
+                (
+                    state.owners.get(name).and_then(Weak::upgrade),
+                    checked_stamp,
+                )
             };
             let Some(owner) = owner else {
                 return Index::open(&(), name).await;
             };
-            let future = contain(|| owner.open_entry(name))
-                .map_err(|_| "the entry's source panicked".to_owned())?;
-            Contained::new(future)
-                .await
-                .map_err(|_| "the entry's source panicked".to_owned())?
+            let opened = match contain(|| owner.open_entry(name)) {
+                Ok(future) => Contained::new(future).await.ok(),
+                Err(_) => None,
+            };
+            if checked_stamp.is_some_and(|(generation, home)| {
+                crate::session::held_generation() != generation
+                    || self.kernel.secret_check_home() != home
+            }) {
+                return Err(wisp_tool_text::index::STALE_SECRET_CHECK.to_owned());
+            }
+            opened.unwrap_or_else(|| Err("the entry's source panicked".to_owned()))
         }
         .boxed()
     }

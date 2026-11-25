@@ -95,6 +95,7 @@ fn a_slot_render_may_call_only_the_reads_that_answer_at_once() {
         "agent-tree.snapshot",
         "agent-states.states",
         "usage.accounts",
+        "secret-check.check",
     ]
     .into_iter()
     .collect();
@@ -252,7 +253,7 @@ fn a_quiet_jobs_call_lists_jobs_quietly_and_leaves_every_other_import_allowed() 
             .collect::<Vec<_>>()
     });
     for (import, inside) in describing {
-        let expected = if import == Import::ProjectKey {
+        let expected = if matches!(import, Import::ProjectKey | Import::SecretCheckCheck) {
             Inside::Unavailable
         } else {
             Inside::Allowed

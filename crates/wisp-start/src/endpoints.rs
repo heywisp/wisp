@@ -337,6 +337,21 @@ impl Sources {
         self.inputs.redactions(config, self.run_servers.values())
     }
 
+    pub fn held_redactions(&self, endpoints: Option<&Redactions>) -> Redactions {
+        let held = self.redactions().union([&self.secrets.redactions()]);
+        if let Some(endpoints) = endpoints {
+            return held.union([endpoints]);
+        }
+        let entries = self.entries().unwrap_or_else(|_| {
+            EndpointBook::entries(
+                self.config.as_ref().ok().and_then(Option::as_ref),
+                &self.secrets,
+                &wisp_core::endpoints::Keychain::Available(&self.inputs.keys_file),
+            )
+        });
+        held.union([&wisp_core::endpoints::entry_redactions(&entries)])
+    }
+
     pub fn file_words(&self) -> String {
         self.inputs.keys_file.clone()
     }
@@ -785,4 +800,218 @@ pub fn credential_warnings(sources: &Sources, home: Option<&str>) -> Vec<String>
 
 pub fn startup_recovery(error: impl std::fmt::Display) -> String {
     format!("{error}; sign in outside chat with wisp login, then start Wisp again")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wisp_core::plugin::{PluginConfig, Registry};
+    use wisp_core::secrets::{Stored, StoredRecord};
+    use wisp_plugin_api::host::Host;
+    use wisp_plugin_api::secret_check::Verdict;
+    use wisp_plugin_api::tools::{BuildContext, DoctorRow};
+    use wisp_plugin_api::{BoxFuture, Plugin};
+
+    const HOME: &str = "/u/CANARY-doctor";
+
+    fn doctor_sources(env_file: Option<&Path>) -> Sources {
+        Sources::load(
+            &Flags {
+                env_file,
+                config: None,
+                endpoint: Some("missing"),
+                keychain: &crate::keychain::Keychain::off(),
+                set: &[],
+            },
+            None,
+            None,
+        )
+    }
+
+    fn stored_key(key: &str, url: Option<&str>) -> Stored {
+        Stored {
+            record: StoredRecord::Key {
+                key: wisp_protocol::Secret::new(key),
+                url: url.map(wisp_protocol::Secret::new),
+            },
+            owner: None,
+        }
+    }
+
+    async fn assert_doctor_checks(
+        sources: &Sources,
+        endpoints: Option<&Redactions>,
+        refused: &[&'static str],
+    ) {
+        struct Probe(Arc<dyn Host>, Arc<[&'static str]>);
+        impl Plugin for Probe {
+            fn doctor<'a>(&'a self, _ctx: &'a BuildContext) -> BoxFuture<'a, Vec<DoctorRow>> {
+                let check = self.0.secret_check();
+                for text in self.1.iter() {
+                    assert_eq!(check.check(text), Verdict::Refused);
+                }
+                assert_eq!(check.check(&format!("{HOME}/note")), Verdict::Refused);
+                assert_eq!(check.check("a portable note"), Verdict::Safe);
+                Box::pin(std::future::ready(vec![DoctorRow {
+                    key: "probe ran".into(),
+                    cells: vec![],
+                }]))
+            }
+        }
+
+        let held = sources.held_redactions(endpoints);
+        let refused: Arc<[_]> = Arc::from(refused);
+        let manifest = "id = \"probe\"\nversion = \"0.1.0\"\nworld = \"0.4.0\"\nsummary = \"Checks the doctor host\"\nindex = true\n";
+        let (registry, problems) = Registry::from_sources(
+            vec![(
+                manifest.into(),
+                Arc::new(move |host| Arc::new(Probe(host, refused.clone()))),
+            )],
+            &PluginConfig::default(),
+        );
+        assert!(problems.is_empty(), "{problems:?}");
+        let rows = wisp_core::plugin::doctor_rows_with_home(
+            &registry,
+            &registry.default_on(),
+            wisp_core::mcp::Service::default(),
+            &held,
+            Some(HOME.into()),
+        )
+        .await;
+        assert!(rows.iter().any(|row| row.key == "probe ran"));
+    }
+
+    #[tokio::test]
+    async fn doctor_refuses_named_unprefixed_secret_from_sources_like_chat() {
+        const NAMED: &str = "CANARYunprefixedStandaloneDoctorFixture";
+        const SHORT: &str = "CANARYdoc";
+        let mut sources = doctor_sources(None);
+        sources.inputs = sources
+            .inputs
+            .with_vars([("UNUSED_TEST_SECRET".into(), NAMED.into())]);
+        assert!(!format!("{:?}", sources.inputs).contains(NAMED));
+        sources.config = Ok(Some(ConfigFile::parse(Path::new("config.toml"), PathShown::Given,
+            "store_id = \"0123456789abcdef\"\n[endpoints.main]\nauth = \"api_key\"\nkey_store = \"file\"\n",
+        ).unwrap()));
+        sources.secrets = Prefetched::from_records(BTreeMap::from([(
+            EndpointName::parse("main").unwrap(),
+            stored_key(SHORT, None),
+        )]));
+        assert!(sources.entries().is_ok());
+        assert!(sources.book().is_err());
+        assert_doctor_checks(&sources, None, &[NAMED, SHORT]).await;
+    }
+
+    fn sources_with_keys_file(path: &Path, bytes: &[u8]) -> Sources {
+        std::fs::write(path, bytes).unwrap();
+        let mut sources = doctor_sources(Some(path));
+        sources.choice = Some("main".into());
+        sources.config = Ok(Some(
+            ConfigFile::parse(
+                Path::new("config.toml"),
+                PathShown::Given,
+                "[endpoints.main]\nauth = \"api_key\"\nkey_env = \"NOTE_KEY\"\n",
+            )
+            .unwrap(),
+        ));
+        sources
+    }
+
+    #[tokio::test]
+    async fn doctor_refuses_both_exported_and_shadowed_configured_keys_without_a_keychain() {
+        const EXPORTED: &str = "CANARYexportedEndpointCredential";
+        const FILE: &str = "CANARYshadowedEndpointCredential";
+        let scratch = tempfile::tempdir().unwrap();
+        let mut sources = sources_with_keys_file(
+            &scratch.path().join("keys"),
+            format!("NOTE_KEY={FILE}\n").as_bytes(),
+        );
+        sources.inputs = sources
+            .inputs
+            .with_env(&|name| (name == "NOTE_KEY").then(|| EXPORTED.into()));
+        assert!(sources.inputs.shows_path());
+        let shown = format!("{:?}", sources.inputs);
+        assert!(!shown.contains(FILE) && !shown.contains(EXPORTED));
+        let book = sources.book().unwrap();
+        assert_eq!(book.active.credential, Credential::ApiKey(EXPORTED.into()));
+        let endpoints = wisp_core::endpoints::entry_redactions(&book.entries);
+        assert_doctor_checks(&sources, Some(&endpoints), &[EXPORTED, FILE]).await;
+    }
+
+    #[tokio::test]
+    async fn doctor_refuses_readable_keys_from_rejected_keys_files_without_a_keychain() {
+        let scratch = tempfile::tempdir().unwrap();
+        for (file_key, stored, invalid, error) in [
+            (
+                "CANARYpartiallyMalformedKey",
+                "CANARYstoreDespiteBadLine",
+                &b"not an assignment"[..],
+                "line 2 is not KEY=VALUE; nothing was loaded",
+            ),
+            (
+                "CANARYreadableUtf8Key",
+                "CANARYstoreDespiteBadByte",
+                &b"\xff"[..],
+                "is not valid UTF-8",
+            ),
+        ] {
+            let mut bytes = format!("NOTE_KEY={file_key}\n").into_bytes();
+            bytes.extend_from_slice(invalid);
+            let mut sources = sources_with_keys_file(&scratch.path().join("keys"), &bytes);
+            sources.secrets = Prefetched::from_records(BTreeMap::from([(
+                EndpointName::parse("independent").unwrap(),
+                stored_key(stored, None),
+            )]));
+            assert_eq!(
+                sources.entries().unwrap_err(),
+                format!("{} {error}", wisp_core::secrets::GIVEN_ENV_FILE)
+            );
+            assert!(!sources.inputs.shows_path());
+            assert!(!format!("{:?}", sources.inputs).contains(file_key));
+            assert_doctor_checks(&sources, None, &[file_key, stored]).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn doctor_keeps_independent_credentials_when_the_keys_file_is_missing() {
+        const FILE: &str = "CANARYunprefixedStoredAccount";
+        const RING: &str = "CANARYunreferencedKeyringRecord";
+        const PASS: &str = "CANARYstoredUrlPassword";
+        const HANDLE: &str = "oauth:00000000000000000000000000000001";
+        const ACCESS: &str = "CANARYsubscriptionAccessToken";
+        const REFRESH: &str = "CANARYsubscriptionRefreshToken";
+        const PROJECT: &str = "CANARYproj";
+        let scratch = tempfile::tempdir().unwrap();
+        let config = scratch.path().join("config.toml");
+        let mut sources = doctor_sources(Some(&scratch.path().join("missing-keys")));
+        sources.config = Ok(Some(ConfigFile::parse(&config, PathShown::Given,
+            "store_id = \"0123456789abcdef\"\n[endpoints.main]\nauth = \"api_key\"\nkey_store = \"file\"\n[endpoints.profile]\nprovider = \"gemini\"\nauth = \"antigravity_subscription\"\nkey_store = \"file\"\n",
+        ).unwrap()));
+        wisp_core::oauth::prepare(&config).unwrap();
+        let profile = wisp_core::oauth::profile_path(&config, HANDLE).unwrap();
+        let tokens = serde_json::json!({
+            "version": 1, "kind": "antigravity", "access_token": ACCESS,
+            "refresh_token": REFRESH, "expires_at": 4102444800_u64, "project_id": PROJECT,
+        });
+        wisp_core::secrets::write_atomic(&profile, tokens.to_string().as_bytes(), 0o600).unwrap();
+        let url = format!("https://user:{PASS}{}host.invalid", '@');
+        sources.secrets = Prefetched::from_records(BTreeMap::from([
+            (EndpointName::parse("main").unwrap(), stored_key(FILE, None)),
+            (
+                EndpointName::parse("profile").unwrap(),
+                stored_key(HANDLE, None),
+            ),
+        ]))
+        .with_keyring(BTreeMap::from([(
+            EndpointName::parse("orphan").unwrap(),
+            Ok(Some(stored_key(RING, Some(&url)))),
+        )]));
+        assert!(sources.entries().is_err());
+        assert_doctor_checks(
+            &sources,
+            None,
+            &[FILE, RING, PASS, ACCESS, REFRESH, PROJECT],
+        )
+        .await;
+    }
 }

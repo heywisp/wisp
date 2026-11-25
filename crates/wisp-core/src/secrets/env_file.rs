@@ -19,26 +19,96 @@ fn missing(kind: std::io::ErrorKind) -> bool {
     )
 }
 
-pub fn read_env_file(path: &Path, explicit: bool) -> Result<Option<EnvFile>, String> {
-    let shown = if explicit {
-        GIVEN_ENV_FILE.to_owned()
-    } else {
-        crate::workspace::home_shown(path)
-    };
-    let text = match std::fs::read(path) {
-        Ok(bytes) => String::from_utf8(bytes).map_err(|_| format!("{shown} is not valid UTF-8"))?,
-        Err(e) if missing(e.kind()) && !explicit => return Ok(None),
-        Err(e) if missing(e.kind()) => {
-            return Err(missing_env_file());
+pub struct EnvText(String);
+
+impl EnvText {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for EnvText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "EnvText(<{} bytes>)", self.0.len())
+    }
+}
+
+#[derive(Debug)]
+pub enum Unscanned {
+    GivenMissing,
+    NotUtf8(EnvText),
+    Unreadable(std::io::ErrorKind),
+}
+
+#[derive(Debug)]
+pub enum EnvScan {
+    Missing,
+    Text(EnvText),
+    Failed(Unscanned),
+}
+
+impl EnvScan {
+    pub fn read(path: &Path, explicit: bool) -> Self {
+        match std::fs::read(path) {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(text) => Self::Text(EnvText(text)),
+                Err(e) => Self::Failed(Unscanned::NotUtf8(readable_lines(e.as_bytes()))),
+            },
+            Err(e) if missing(e.kind()) && explicit => Self::Failed(Unscanned::GivenMissing),
+            Err(e) if missing(e.kind()) => Self::Missing,
+            Err(e) => Self::Failed(Unscanned::Unreadable(e.kind())),
         }
-        Err(e) => return Err(format!("could not read {shown}: {}", e.kind())),
-    };
-    let vars = parse_env(&text)
-        .map_err(|line| format!("{shown} line {line} is not KEY=VALUE; nothing was loaded"))?;
-    Ok(Some(EnvFile {
-        path: path.to_owned(),
-        vars,
-    }))
+    }
+
+    pub fn readable_text(&self) -> Option<&EnvText> {
+        match self {
+            Self::Text(text) | Self::Failed(Unscanned::NotUtf8(text)) => Some(text),
+            _ => None,
+        }
+    }
+
+    pub fn parse(&self, path: &Path, explicit: bool) -> Result<Option<EnvFile>, String> {
+        let shown = || {
+            if explicit {
+                GIVEN_ENV_FILE.to_owned()
+            } else {
+                crate::workspace::home_shown(path)
+            }
+        };
+        let text = match self {
+            Self::Text(text) => text,
+            Self::Missing => return Ok(None),
+            Self::Failed(Unscanned::GivenMissing) => return Err(missing_env_file()),
+            Self::Failed(Unscanned::NotUtf8(_)) => {
+                return Err(format!("{} is not valid UTF-8", shown()));
+            }
+            Self::Failed(Unscanned::Unreadable(kind)) => {
+                return Err(format!("could not read {}: {kind}", shown()));
+            }
+        };
+        let vars = parse_env(text.as_str()).map_err(|line| {
+            format!(
+                "{} line {line} is not KEY=VALUE; nothing was loaded",
+                shown()
+            )
+        })?;
+        Ok(Some(EnvFile {
+            path: path.to_owned(),
+            vars,
+        }))
+    }
+}
+
+fn readable_lines(bytes: &[u8]) -> EnvText {
+    let lines: Vec<&str> = bytes
+        .split(|b| *b == b'\n')
+        .filter_map(|line| std::str::from_utf8(line).ok())
+        .collect();
+    EnvText(lines.join("\n"))
+}
+
+pub fn read_env_file(path: &Path, explicit: bool) -> Result<Option<EnvFile>, String> {
+    EnvScan::read(path, explicit).parse(path, explicit)
 }
 
 pub fn env_file_names(text: &str, asked: &BTreeSet<VariableName>) -> BTreeSet<VariableName> {

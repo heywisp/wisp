@@ -717,8 +717,11 @@ async fn the_tools_doctor_rows_name_bash_first_then_setsid_and_the_output_direct
         .iter()
         .map(|name| (*name).to_owned())
         .collect();
-    let rows =
-        one_cell(crate::plugin::doctor_rows(&registry, &on, crate::mcp::Service::default()).await);
+    let redactions = crate::session::Redactions::default();
+    let rows = one_cell(
+        crate::plugin::doctor_rows(&registry, &on, crate::mcp::Service::default(), &redactions)
+            .await,
+    );
     let keys: Vec<&str> = rows.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(keys, ["bash", "setsid", "setsid --ctty", "tool output"]);
     let bash = &rows[0].1;
@@ -734,8 +737,13 @@ async fn the_tools_doctor_rows_name_bash_first_then_setsid_and_the_output_direct
         None => assert_eq!(bash, "not found on PATH"),
     }
     let off = one_cell(
-        crate::plugin::doctor_rows(&registry, &BTreeSet::new(), crate::mcp::Service::default())
-            .await,
+        crate::plugin::doctor_rows(
+            &registry,
+            &BTreeSet::new(),
+            crate::mcp::Service::default(),
+            &redactions,
+        )
+        .await,
     );
     let keys: Vec<&str> = off.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(keys, ["setsid", "setsid --ctty", "tool output"]);
