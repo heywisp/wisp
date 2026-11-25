@@ -596,6 +596,7 @@ fn blob_in(blocks: &[LoggedBlock], sha256: &str) -> Option<(String, u64)> {
     blocks.iter().find_map(|block| match block {
         LoggedBlock::Media {
             source: StoredSource::Blob(blob),
+            ..
         } if blob.sha256 == sha256 => Some((blob.media_type.as_str().to_owned(), blob.bytes)),
         LoggedBlock::ToolResult { content, .. } => blob_in(content, sha256),
         _ => None,

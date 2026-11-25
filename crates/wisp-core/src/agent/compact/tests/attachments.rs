@@ -140,6 +140,7 @@ fn the_ledger_names_attached_and_withdrawn_files() {
                     sha256: "0".repeat(64),
                     bytes: 1,
                     saved: None,
+                    slice: None,
                 })
                 .collect();
         }

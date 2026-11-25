@@ -10,9 +10,9 @@ use wisp_plugin_api::tools::{Effect, Purpose, Tags, ToolMeta as ApiMeta};
 use wisp_plugin_api::tree;
 use wisp_plugin_api::types as api;
 use wisp_protocol::{
-    Answer, BackgroundReason, ExitStatus, Fact, Mime, OutputKind, Question, QuestionOption,
-    SignalKind, TodoItem, TodoStatus, ToolAction, ToolDisplay, ToolOutcome, ToolPurpose, ToolView,
-    Typed, Usage, Verbs, WorkspaceChange,
+    Answer, BackgroundReason, ExitStatus, Fact, FileSlice, Mime, OutputKind, Question,
+    QuestionOption, SignalKind, TodoItem, TodoStatus, ToolAction, ToolDisplay, ToolOutcome,
+    ToolPurpose, ToolView, Typed, Usage, Verbs, WorkspaceChange,
 };
 
 use crate::agents::news::{StopNews, TreeNews};
@@ -315,6 +315,23 @@ fn typed(typed: api::Typed) -> Typed {
     }
 }
 
+pub fn file_slice(slice: api::FileSlice) -> Result<FileSlice, String> {
+    match slice {
+        api::FileSlice::Pages(api::PageSlice { start, end }) => FileSlice::pages(start, end),
+        api::FileSlice::Seconds(api::SecondSlice { start, end }) => FileSlice::seconds(start, end),
+        api::FileSlice::Sheet(index) => FileSlice::sheet(index),
+    }
+    .map_err(|error| error.to_string())
+}
+
+pub fn slice_kind(slice: &FileSlice) -> api::SliceKind {
+    match slice {
+        FileSlice::Pages { .. } => api::SliceKind::Pages,
+        FileSlice::Seconds { .. } => api::SliceKind::Seconds,
+        FileSlice::Sheet { .. } => api::SliceKind::Sheet,
+    }
+}
+
 pub fn run(run: api::ToolRun) -> Result<ToolRun, String> {
     let hits = run
         .facts
@@ -338,6 +355,7 @@ pub fn run(run: api::ToolRun) -> Result<ToolRun, String> {
             Ok(Attachment {
                 media_type: mime(&a.media_type)?,
                 bytes: a.bytes,
+                slice: a.slice.map(file_slice).transpose()?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -883,7 +901,11 @@ pub fn screen_report(
             _ => return None,
         };
         let media_type = media_type.as_str().to_owned();
-        Some(api::Attachment { media_type, bytes })
+        Some(api::Attachment {
+            media_type,
+            bytes,
+            slice: None,
+        })
     });
     wisp_plugin_api::host::ScreenReport {
         report: screen.report.to_string(),

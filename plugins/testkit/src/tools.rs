@@ -289,6 +289,7 @@ struct SnapInput {
     stubborn: bool,
     media_type: Option<String>,
     size: Option<usize>,
+    slice: Option<wisp_plugin_api::types::FileSlice>,
 }
 
 impl SnapInput {
@@ -375,7 +376,10 @@ fn prepare_fetch(input: &str) -> Result<Box<dyn Prepared>, String> {
 
 fn prepare_snap(input: &str) -> Result<Box<dyn Prepared>, String> {
     let map = object(input)?;
-    only(&map, &["name", "pdf", "wait", "stubborn", "type", "size"])?;
+    only(
+        &map,
+        &["name", "pdf", "wait", "stubborn", "type", "size", "slice"],
+    )?;
     let flag = |key: &str| map.get(key).and_then(Value::as_bool).unwrap_or(false);
     let parsed = SnapInput {
         name: map.get("name").and_then(Value::as_str).map(str::to_owned),
@@ -387,6 +391,15 @@ fn prepare_snap(input: &str) -> Result<Box<dyn Prepared>, String> {
             .get("size")
             .and_then(Value::as_u64)
             .and_then(|n| usize::try_from(n).ok()),
+        slice: map
+            .get("slice")
+            .map(|value| {
+                let pages = value
+                    .as_str()
+                    .ok_or("slice must be a page or page range string")?;
+                wisp_tool_text::files::parse_pages(pages)
+            })
+            .transpose()?,
     };
     let shown = display(Action::Read, parsed.target(), OutputKind::None);
     Ok(Call::boxed(shown, parsed))
@@ -649,6 +662,7 @@ async fn snap(input: SnapInput, ctx: &dyn CallContext) -> ToolRun {
     let attachment = Attachment {
         media_type: media_type.clone(),
         bytes,
+        slice: input.slice,
     };
     if input.wait {
         ctx.wait_cancelled().await;

@@ -122,7 +122,7 @@ impl<T> w1::media::HostWithStore<T> for Imports {
         bytes: Vec<u8>,
     ) -> wasmtime::Result<w1::media::TokenCount> {
         forward(accessor, State::host, |host| async move {
-            host.count_tokens(media_type, bytes).await
+            host.count_tokens(media_type, bytes, None).await
         })
         .await
     }

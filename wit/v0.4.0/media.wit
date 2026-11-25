@@ -1,0 +1,10 @@
+package wisp:plugin@0.4.0;
+
+interface media {
+  use types.{slice-kind, file-slice};
+  variant token-count { counted(u64), unsupported, failed(string) }
+  media-types: func() -> list<string>;
+  media-slices: func() -> list<slice-kind>;
+  image-edge: func() -> option<u32>;
+  count-tokens: async func(media-type: string, bytes: list<u8>, slice: option<file-slice>) -> token-count;
+}

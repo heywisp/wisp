@@ -59,6 +59,33 @@ impl Mirror<w2::agent_types::AgentNode> for Box<api::tree::AgentNode> {
     }
 }
 
+impl Mirror<api::types::Attachment> for w1::types::Attachment {
+    fn mirror(self) -> api::types::Attachment {
+        api::types::Attachment {
+            media_type: self.media_type,
+            bytes: self.bytes,
+            slice: None,
+        }
+    }
+}
+
+impl Mirror<w3::screen_report::ScreenReport> for api::host::ScreenReport {
+    fn mirror(self) -> w3::screen_report::ScreenReport {
+        w3::screen_report::ScreenReport {
+            report: self.report,
+            images: self
+                .images
+                .into_iter()
+                .filter(|a| a.slice.is_none())
+                .map(|a| w1::types::Attachment {
+                    media_type: a.media_type,
+                    bytes: a.bytes,
+                })
+                .collect(),
+        }
+    }
+}
+
 macro_rules! mirror {
     ($($kind:ident $($g:ident)::+ = $($a:ident)::+ { $($body:tt)* };)*) => {
         $(mirror!(@$kind ($($g)::+) ($($a)::+) { $($body)* });)*
@@ -277,7 +304,6 @@ mirror! {
     variant w1::types::Outcome = api::types::Outcome {
         Completed(a), TimedOut(a), Cancelled, InvalidInput(a), Failed(a), Backgrounded(a)
     };
-    record w1::types::Attachment = api::types::Attachment { media_type, bytes };
     record w1::types::Typed = api::types::Typed { echoed, unsent, signalled };
     record_one w1::types::ToolRun = api::types::ToolRun {
         outcome, facts, cwd, trailer, result, attachments, typed
@@ -461,7 +487,6 @@ mirror! {
         outcome, facts, cwd, trailer, result, attachments, typed
     };
     record w3::agent_states::ShownState = api::tree::ShownState { path, state, keep_warm };
-    record w3::screen_report::ScreenReport = api::host::ScreenReport { report, images };
     record w3::secrets::SecretAsk = api::host::SecretAsk {
         process, name, reason, end_input, show_start, show_end
     };

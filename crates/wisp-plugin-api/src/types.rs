@@ -297,10 +297,63 @@ pub enum Outcome {
     Backgrounded(BackgroundReason),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SliceKind {
+    Pages,
+    Seconds,
+    Sheet,
+}
+
+impl SliceKind {
+    pub const ALL: &'static [Self] = &[Self::Pages, Self::Seconds, Self::Sheet];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Pages => "pages",
+            Self::Seconds => "seconds",
+            Self::Sheet => "sheet",
+        }
+    }
+
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|kind| kind.name() == name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageSlice {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SecondSlice {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileSlice {
+    Pages(PageSlice),
+    Seconds(SecondSlice),
+    Sheet(u32),
+}
+
+impl FileSlice {
+    pub fn kind(&self) -> SliceKind {
+        match self {
+            Self::Pages(_) => SliceKind::Pages,
+            Self::Seconds(_) => SliceKind::Seconds,
+            Self::Sheet(_) => SliceKind::Sheet,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attachment {
     pub media_type: String,
     pub bytes: Vec<u8>,
+    pub slice: Option<FileSlice>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

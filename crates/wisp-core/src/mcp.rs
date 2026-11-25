@@ -2073,6 +2073,7 @@ fn content(
             bytes: base64::engine::general_purpose::STANDARD
                 .decode(data)
                 .map_err(|_| "the MCP result has invalid attachment data")?,
+            slice: None,
         });
         Ok(())
     };

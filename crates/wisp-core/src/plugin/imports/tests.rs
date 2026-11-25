@@ -86,6 +86,7 @@ fn a_slot_render_may_call_only_the_reads_that_answer_at_once() {
         "context.current-fill",
         "context.estimate-text",
         "media.media-types",
+        "media.media-slices",
         "media.image-edge",
         "jobs.which",
         "pricing.estimate",

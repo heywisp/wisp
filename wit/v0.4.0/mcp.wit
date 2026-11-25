@@ -2,7 +2,7 @@ package wisp:plugin@0.4.0;
 
 interface mcp {
   use wisp:plugin/call@0.1.0.{call-context};
-  use wisp:plugin/types@0.3.0.{tool-run};
+  use types.{tool-run};
   variant state { stopped, starting, ready, needs-sign-in, needs-key(list<string>), failed(string) }
   record server { name: string, state: state, tools: u32, listed: bool, fresh: bool, off: bool }
   record tool {

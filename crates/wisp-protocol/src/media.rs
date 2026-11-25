@@ -105,6 +105,92 @@ pub struct BlobRef {
     pub bytes: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FileSlice {
+    Pages { start: u32, end: u32 },
+    Seconds { start: u32, end: u32 },
+    Sheet { index: u32 },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum RawFileSlice {
+    Pages { start: u32, end: u32 },
+    Seconds { start: u32, end: u32 },
+    Sheet { index: u32 },
+}
+
+impl TryFrom<RawFileSlice> for FileSlice {
+    type Error = ParseError;
+
+    fn try_from(raw: RawFileSlice) -> Result<Self, Self::Error> {
+        match raw {
+            RawFileSlice::Pages { start, end } => Self::pages(start, end),
+            RawFileSlice::Seconds { start, end } => Self::seconds(start, end),
+            RawFileSlice::Sheet { index } => Self::sheet(index),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for FileSlice {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        RawFileSlice::deserialize(deserializer)?
+            .try_into()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+impl FileSlice {
+    pub fn pages(start: u32, end: u32) -> Result<Self, ParseError> {
+        if start == 0 || end < start {
+            return Err(ParseError("pages require 1 <= start <= end".to_owned()));
+        }
+        Ok(Self::Pages { start, end })
+    }
+
+    pub fn seconds(start: u32, end: u32) -> Result<Self, ParseError> {
+        if end <= start {
+            return Err(ParseError("seconds require start < end".to_owned()));
+        }
+        Ok(Self::Seconds { start, end })
+    }
+
+    pub fn sheet(index: u32) -> Result<Self, ParseError> {
+        if index == 0 {
+            return Err(ParseError("sheet requires index >= 1".to_owned()));
+        }
+        Ok(Self::Sheet { index })
+    }
+
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Pages { .. } => "pages",
+            Self::Seconds { .. } => "seconds",
+            Self::Sheet { .. } => "sheet",
+        }
+    }
+
+    pub fn format_with(&self, dash: &str) -> String {
+        match self {
+            Self::Pages { start, end } if start == end => format!("page {start}"),
+            Self::Pages { start, end } => format!("pages {start}{dash}{end}"),
+            Self::Seconds { start, end } => format!("seconds {start}{dash}{end}"),
+            Self::Sheet { index } => format!("sheet {index}"),
+        }
+    }
+
+    pub fn read_only(&self, dash: &str) -> String {
+        format!("read only {}", self.format_with(dash))
+    }
+}
+
+impl fmt::Display for FileSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.format_with("-"))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttachmentRef {
     pub media_type: Mime,
@@ -112,6 +198,8 @@ pub struct AttachmentRef {
     pub bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saved: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slice: Option<FileSlice>,
 }
 
 impl AttachmentRef {

@@ -9,6 +9,7 @@ use wisp_protocol::{
 
 use super::images::media_budget_sentence;
 use super::{Agent, Finished, emit, tool_call};
+use crate::plugin::convert;
 use crate::session::sha256_bytes_hex;
 use crate::tool::{Attachment, SHELL, fallback_display};
 use wisp_tool_text::files as sentences;
@@ -81,6 +82,18 @@ fn refusal(
             carried,
             shell,
         ));
+    }
+    if let Some(message) = attachments.iter().find_map(|file| {
+        let slice = file.slice?;
+        sentences::slice_refusal(
+            target,
+            file.media_type.as_str(),
+            convert::slice_kind(&slice),
+            &[],
+            shell,
+        )
+    }) {
+        return Some(message);
     }
     attachments
         .iter()
@@ -186,6 +199,7 @@ impl Agent {
                 sha256,
                 bytes: u64::try_from(attachment.bytes.len()).unwrap_or(u64::MAX),
                 saved,
+                slice: None,
             });
             attached
                 .blocks

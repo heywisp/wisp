@@ -14,7 +14,7 @@ use wisp_protocol::log::{
     rebuild_history_with,
 };
 use wisp_protocol::{
-    AgentEvent, AttachmentKind, AttachmentRef, BlobRef, ContentBlock, Fact, ImageType,
+    AgentEvent, AttachmentKind, AttachmentRef, BlobRef, ContentBlock, Fact, FileSlice, ImageType,
     MAX_MIME_LEN, MediaSource, Message, Mime, Role, ToolOutcome, ToolOutputView,
     WithdrawnAttachment,
 };
@@ -31,6 +31,7 @@ fn pdf_ref() -> AttachmentRef {
         sha256: sha(7),
         bytes: 912_004,
         saved: Some("~/.local/share/wisp/attachments/0707.pdf".into()),
+        slice: None,
     }
 }
 
@@ -281,6 +282,7 @@ fn a_tool_call_finished_without_attachments_writes_no_field() {
     })
     .unwrap();
     assert!(unsaved.get("saved").is_none(), "{unsaved}");
+    assert!(unsaved.get("slice").is_none(), "{unsaved}");
 }
 
 #[test]
@@ -304,7 +306,8 @@ fn a_logged_message_keeps_references_and_resolves_back_to_base64() {
     assert!(matches!(
         content[1],
         LoggedBlock::Media {
-            source: StoredSource::Blob(_)
+            source: StoredSource::Blob(_),
+            slice: None
         }
     ));
     assert_eq!(back.inline(), None, "a reference needs the store");
@@ -320,6 +323,105 @@ fn a_logged_message_keeps_references_and_resolves_back_to_base64() {
     assert_eq!(text, serde_json::to_string(&message).unwrap());
     let back: LoggedMessage = serde_json::from_str(&text).unwrap();
     assert_eq!(back.inline(), Some(message));
+}
+
+#[test]
+fn file_slice_validates_bounds_and_pins_json_shape() {
+    for (slice, wire) in [
+        (
+            FileSlice::pages(5, 5),
+            r#"{"type":"pages","start":5,"end":5}"#,
+        ),
+        (
+            FileSlice::pages(14, 16),
+            r#"{"type":"pages","start":14,"end":16}"#,
+        ),
+        (
+            FileSlice::seconds(30, 90),
+            r#"{"type":"seconds","start":30,"end":90}"#,
+        ),
+        (FileSlice::sheet(2), r#"{"type":"sheet","index":2}"#),
+    ] {
+        let slice = slice.unwrap();
+        assert_eq!(serde_json::to_string(&slice).unwrap(), wire);
+        assert_eq!(serde_json::from_str::<FileSlice>(wire).unwrap(), slice);
+    }
+    for wire in [
+        r#"{"type":"pages","start":0,"end":2}"#,
+        r#"{"type":"pages","start":2,"end":1}"#,
+        r#"{"type":"pages","start":1}"#,
+        r#"{"type":"pages","start":1,"end":4294967296}"#,
+        r#"{"type":"seconds","start":2,"end":2}"#,
+        r#"{"type":"seconds","start":2,"end":1}"#,
+        r#"{"type":"seconds","start":-1,"end":1}"#,
+        r#"{"type":"sheet","index":0}"#,
+        r#"{"type":"sheet","index":4294967296}"#,
+    ] {
+        assert!(serde_json::from_str::<FileSlice>(wire).is_err(), "{wire}");
+    }
+    let slice = FileSlice::pages(14, 16).unwrap();
+    let attachment = AttachmentRef {
+        slice: Some(slice),
+        ..pdf_ref()
+    };
+    let wire = serde_json::to_value(&attachment).unwrap();
+    assert_eq!(
+        wire["slice"],
+        json!({"type": "pages", "start": 14, "end": 16})
+    );
+    assert_eq!(
+        serde_json::from_value::<AttachmentRef>(wire).unwrap(),
+        attachment
+    );
+    assert_eq!(slice.read_only("–"), "read only pages 14–16");
+    assert_eq!(slice.to_string(), "pages 14-16");
+}
+
+#[test]
+fn same_blob_with_two_slices_rebuilds_distinct_slices() {
+    let slices = [
+        FileSlice::pages(5, 5).unwrap(),
+        FileSlice::pages(14, 16).unwrap(),
+    ];
+    let message = Message {
+        role: Role::User,
+        content: vec![ContentBlock::ToolResult {
+            tool_use_id: "toolu_sliced".into(),
+            content: slices
+                .iter()
+                .map(|slice| ContentBlock::media_sliced(mime("application/pdf"), PDF, Some(*slice)))
+                .collect(),
+            is_error: false,
+        }],
+    };
+    let stored = LoggedMessage::stored(&message, |source| Some(blob_of(source)));
+    let LoggedBlock::ToolResult { content, .. } = &stored.content[0] else {
+        panic!("{stored:?}")
+    };
+    for (block, slice) in content.iter().zip(slices) {
+        assert!(
+            matches!(block, LoggedBlock::Media { source: StoredSource::Blob(blob), slice: Some(found) } if blob.sha256 == sha(7) && *found == slice)
+        );
+    }
+    assert_eq!(content.len(), 2);
+    assert_eq!(
+        serde_json::to_value(&content[0]).unwrap(),
+        json!({
+            "type": "media",
+            "source": {"type": "blob", "media_type": "application/pdf", "sha256": sha(7), "bytes": 9},
+            "slice": {"type": "pages", "start": 5, "end": 5},
+        })
+    );
+    let events = [LogEvent::MessageCommitted {
+        turn: 4,
+        message: stored,
+        model: None,
+        stop_reason: None,
+    }];
+    let events: [LogEvent; 1] =
+        serde_json::from_slice(&serde_json::to_vec(&events).unwrap()).unwrap();
+    let rebuilt = rebuild_history_with(events.iter(), Blobs(Some(PDF.into()))).unwrap();
+    assert_eq!(rebuilt.messages, [message]);
 }
 
 #[test]

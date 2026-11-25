@@ -17,6 +17,7 @@ pub enum Import {
     ContextCurrentFill,
     ContextEstimateText,
     MediaTypes,
+    MediaSlices,
     MediaImageEdge,
     MediaCountTokens,
     CallId,
@@ -119,7 +120,7 @@ pub enum Inside {
     NeedsCall,
 }
 
-pub const ALL: [Import; 105] = [
+pub const ALL: [Import; 106] = [
     Import::SessionCurrent,
     Import::WorkspaceRoot,
     Import::WorkspaceHome,
@@ -133,6 +134,7 @@ pub const ALL: [Import; 105] = [
     Import::ContextCurrentFill,
     Import::ContextEstimateText,
     Import::MediaTypes,
+    Import::MediaSlices,
     Import::MediaImageEdge,
     Import::MediaCountTokens,
     Import::CallId,
@@ -243,6 +245,7 @@ impl Import {
             Self::ContextCurrentFill => "context.current-fill",
             Self::ContextEstimateText => "context.estimate-text",
             Self::MediaTypes => "media.media-types",
+            Self::MediaSlices => "media.media-slices",
             Self::MediaImageEdge => "media.image-edge",
             Self::MediaCountTokens => "media.count-tokens",
             Self::CallId => "call.call-context.id",
@@ -369,6 +372,7 @@ impl Import {
             | Self::ClockElapsedMs
             | Self::ContextCurrentFill
             | Self::MediaTypes
+            | Self::MediaSlices
             | Self::MediaImageEdge
             | Self::JobsWhich
             | Self::PricingEstimate
@@ -473,7 +477,8 @@ impl Import {
             | Self::McpSignInFinish
             | Self::McpRemove
             | Self::QuestionsPost
-            | Self::QuestionsWithdraw => "0.4.0",
+            | Self::QuestionsWithdraw
+            | Self::MediaSlices => "0.4.0",
             Self::IndexEntries
             | Self::IndexOpen
             | Self::IndexChanged

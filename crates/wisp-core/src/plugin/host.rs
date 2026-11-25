@@ -25,7 +25,7 @@ pub use accounts::UsageAccount;
 use wisp_plugin_api::pricing::{Pricing, SpendTotals, Usage as ApiUsage};
 use wisp_plugin_api::prompt::{EnvironmentFacts, JobNews, News, WorkspaceFacts};
 use wisp_plugin_api::tree::{Agent, AgentNode, AgentStates, AgentTree, Identity, ShownState};
-use wisp_plugin_api::types::{AskReply, Level, Question};
+use wisp_plugin_api::types::{AskReply, FileSlice, Level, Question, SliceKind};
 use wisp_plugin_api::{Kernel, Scope};
 use wisp_protocol::filter::Query;
 use wisp_protocol::settings::{Form, ResolvedSetting};
@@ -78,6 +78,7 @@ fn in_render() -> String {
 pub struct Snapshot {
     pub facts: Facts,
     pub media_types: Vec<String>,
+    pub media_slices: Vec<SliceKind>,
     pub image_edge: Option<u32>,
     pub count: MediaCount,
     pub clock: Arc<dyn KernelClock>,
@@ -109,6 +110,7 @@ impl Default for Snapshot {
                 capabilities: Vec::new(),
             },
             media_types: Vec::new(),
+            media_slices: Vec::new(),
             image_edge: None,
             count: MediaCount::default(),
             clock: Arc::new(SystemClock),
@@ -680,6 +682,13 @@ impl Media for PluginHost {
         self.kernel.snapshot().media_types
     }
 
+    fn media_slices(&self) -> Vec<SliceKind> {
+        if self.refuses(Import::MediaSlices) {
+            return Vec::new();
+        }
+        self.kernel.snapshot().media_slices
+    }
+
     fn image_edge(&self) -> Option<u32> {
         if Import::MediaImageEdge.refused() {
             return None;
@@ -687,8 +696,20 @@ impl Media for PluginHost {
         self.kernel.snapshot().image_edge
     }
 
-    fn count_tokens(&self, media_type: String, bytes: Vec<u8>) -> BoxFuture<'_, TokenCount> {
+    fn count_tokens(
+        &self,
+        media_type: String,
+        bytes: Vec<u8>,
+        slice: Option<FileSlice>,
+    ) -> BoxFuture<'_, TokenCount> {
         if Import::MediaCountTokens.refused() {
+            return futures::future::ready(TokenCount::Unsupported).boxed();
+        }
+        let Ok(slice) = slice.map(convert::file_slice).transpose() else {
+            return futures::future::ready(TokenCount::Unsupported).boxed();
+        };
+        let supported: &[SliceKind] = &[];
+        if slice.is_some_and(|slice| !supported.contains(&convert::slice_kind(&slice))) {
             return futures::future::ready(TokenCount::Unsupported).boxed();
         }
         let Ok(mime) = media_type.parse() else {

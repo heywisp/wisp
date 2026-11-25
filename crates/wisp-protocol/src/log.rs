@@ -8,12 +8,12 @@ use crate::{
     AttachmentRef, BackgroundReason, BlobRef, BusyWait, CacheEffect, CacheTtl, CandidateInfo,
     CitedSource, CompactionEngine, CompactionFailure, CompactionTrigger, ContentBlock, Covers,
     DeliveryMode, DetachReason, Diagnostic, Effort, EffortMarker, ErrorDetail, ErrorKind, Fact,
-    HookChange, HookOutcome, ImageType, InputId, InputTransformation, InstructionsSource,
-    MediaSource, Message, MessageTime, NeedsInputKind, Placement, ProcessEnd, Question,
-    QuestionEnd, RejectKind, RenderingForm, ReportedEnd, Resend, Role, SearchAction, SearchEnd,
-    SourceInfo, StopReason, SwitchCompaction, TermSize, ToolDisplay, ToolOutcome, ToolOutputView,
-    TurnOrigin, TurnOutcome, TurnStats, Typed, UnfinishedReason, Usage, WithdrawnBy,
-    WorkspaceChange,
+    FileSlice, HookChange, HookOutcome, ImageType, InputId, InputTransformation,
+    InstructionsSource, MediaSource, Message, MessageTime, NeedsInputKind, Placement, ProcessEnd,
+    Question, QuestionEnd, RejectKind, RenderingForm, ReportedEnd, Resend, Role, SearchAction,
+    SearchEnd, SourceInfo, StopReason, SwitchCompaction, TermSize, ToolDisplay, ToolOutcome,
+    ToolOutputView, TurnOrigin, TurnOutcome, TurnStats, Typed, UnfinishedReason, Usage,
+    WithdrawnBy, WorkspaceChange,
 };
 use crate::{Dropped, MissCause, RewindPoint, RewindReason, SourceChange};
 
@@ -163,6 +163,8 @@ pub enum StoredSource {
 pub enum LoggedBlock {
     Media {
         source: StoredSource,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        slice: Option<FileSlice>,
     },
     ToolResult {
         tool_use_id: String,
@@ -190,9 +192,10 @@ fn stored_blocks(
     blocks
         .iter()
         .map(|block| match block {
-            ContentBlock::Media { source } => match store(source) {
+            ContentBlock::Media { source, slice } => match store(source) {
                 Some(blob) => LoggedBlock::Media {
                     source: StoredSource::Blob(blob),
+                    slice: *slice,
                 },
                 None => LoggedBlock::Inline(block.clone()),
             },
@@ -219,9 +222,10 @@ fn resolved_blocks(
         .map(|block| match block {
             LoggedBlock::Media {
                 source: StoredSource::Blob(blob),
+                slice,
             } => blobs
                 .media(blob)
-                .map(|data| ContentBlock::media(blob.media_type.clone(), data))
+                .map(|data| ContentBlock::media_sliced(blob.media_type.clone(), data, *slice))
                 .map_err(|reason| (blob.sha256.clone(), reason)),
             LoggedBlock::ToolResult {
                 tool_use_id,
@@ -1872,6 +1876,7 @@ fn noted_blocks(blocks: &[LoggedBlock], turn: u64, lost: &LostImages<'_>) -> Vec
         .map(|block| match block {
             LoggedBlock::Media {
                 source: StoredSource::Blob(blob),
+                ..
             } => match lost.get(&(turn, blob.sha256.as_str())) {
                 Some(note) => LoggedBlock::Inline(ContentBlock::Text {
                     text: (*note).to_owned(),

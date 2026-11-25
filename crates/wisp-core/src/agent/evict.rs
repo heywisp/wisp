@@ -27,6 +27,7 @@ fn data(block: &mut ContentBlock) -> Option<(&mut Arc<str>, Mime)> {
         } => Some((data, Mime::from(*media_type))),
         ContentBlock::Media {
             source: MediaSource::Base64 { media_type, data },
+            ..
         } => Some((data, media_type.clone())),
         _ => None,
     }

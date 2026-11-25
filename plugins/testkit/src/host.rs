@@ -20,7 +20,7 @@ use wisp_plugin_api::prompt::{EnvironmentFacts, JobNews, News, WorkspaceFacts};
 use wisp_plugin_api::tree::{
     Activity, Agent, AgentNode, AgentState, AgentStates, AgentTree, Identity, ShownState,
 };
-use wisp_plugin_api::types::{AskReply, Level, Question};
+use wisp_plugin_api::types::{AskReply, FileSlice, Level, Question, SliceKind};
 use wisp_tool_text::files::NO_DATA_FOLDER;
 use wisp_tool_text::paths::shorten_path;
 
@@ -32,7 +32,8 @@ pub type ModelReplies = Arc<
     >,
 >;
 
-pub type CountFn = dyn Fn(String, Vec<u8>) -> BoxFuture<'static, TokenCount> + Send + Sync;
+pub type CountFn =
+    dyn Fn(String, Vec<u8>, Option<FileSlice>) -> BoxFuture<'static, TokenCount> + Send + Sync;
 pub type SleepFn = dyn Fn(u64) -> BoxFuture<'static, ()> + Send + Sync;
 pub type FireFn = dyn Fn(String, String) -> BoxFuture<'static, Vec<PointAnswer>> + Send + Sync;
 pub type KindFn = dyn Fn(&str) -> Option<FileKind> + Send + Sync;
@@ -65,6 +66,7 @@ pub struct FakeHost {
     pub home: Option<String>,
     pub capabilities: Vec<String>,
     pub media_types: Vec<String>,
+    pub media_slices: Vec<SliceKind>,
     pub image_edge: Option<u32>,
     pub count: Option<Arc<CountFn>>,
     pub sleep: Option<Arc<SleepFn>>,
@@ -273,13 +275,22 @@ impl Media for FakeHost {
         self.media_types.clone()
     }
 
+    fn media_slices(&self) -> Vec<SliceKind> {
+        self.media_slices.clone()
+    }
+
     fn image_edge(&self) -> Option<u32> {
         self.image_edge
     }
 
-    fn count_tokens(&self, media_type: String, bytes: Vec<u8>) -> BoxFuture<'_, TokenCount> {
+    fn count_tokens(
+        &self,
+        media_type: String,
+        bytes: Vec<u8>,
+        slice: Option<FileSlice>,
+    ) -> BoxFuture<'_, TokenCount> {
         match &self.count {
-            Some(count) => count(media_type, bytes),
+            Some(count) => count(media_type, bytes, slice),
             None => Box::pin(std::future::ready(TokenCount::Unsupported)),
         }
     }

@@ -120,6 +120,7 @@ fn png_ref(saved: Option<String>) -> AttachmentRef {
         sha256: sha256_bytes_hex(&bytes),
         bytes: u64::try_from(bytes.len()).unwrap(),
         saved,
+        slice: None,
     }
 }
 
@@ -589,10 +590,13 @@ async fn a_type_the_endpoint_cant_carry_is_refused_in_the_kernel_with_a_bash_hin
     let env = Env::new("attach-type");
     let store = MemoryStore::default();
     let scripted = scripted(vec![
-        uses(&[snap(
-            "a",
-            json!({"name": format!("{KEY}.mp3"), "type": "audio/mpeg"}),
-        )]),
+        uses(&[
+            snap(
+                "a",
+                json!({"name": format!("{KEY}.mp3"), "type": "audio/mpeg"}),
+            ),
+            snap("b", json!({"pdf": true, "slice": "1"})),
+        ]),
         done("ok"),
     ]);
     let mut agent = snap_agent(scripted.clone(), &env, Some(Box::new(store.clone())));
@@ -604,9 +608,15 @@ async fn a_type_the_endpoint_cant_carry_is_refused_in_the_kernel_with_a_bash_hin
     let sentence = "[redacted].mp3 is audio/mpeg, which this server can't carry (it takes \
 application/pdf, image/gif, image/jpeg, image/png, image/webp). Convert it with bash to one of \
 those or to text, or inspect it another way (file, xxd, strings).";
-    refused_alone(&calls_done(&events)[0], sentence);
+    let calls = calls_done(&events);
+    refused_alone(&calls[0], sentence);
+    let sliced = "No file was sent: snap.pdf can't be sliced with `pages` on this model (this model does not slice files). Cut out only the part you need with bash and view that copy, or omit `pages` to send and store the whole file.";
+    refused_alone(&calls[1], sliced);
     let requests = scripted.sent();
     assert_eq!(requests.len(), 2, "the next request goes out");
+    assert_eq!(media_count(&requests[1].messages), 0);
+    let sent = results(requests[1].messages.last().unwrap());
+    assert_eq!(sent[1].1, sliced);
     assert_eq!(
         results(requests[1].messages.last().unwrap())[0].1,
         wisp_tool_text::output::with_held_key_note(sentence)
@@ -649,9 +659,15 @@ impl crate::plugin::testing::TestTool for Sh {
 async fn a_shell_tool_of_another_name_is_named_in_the_notes_until_it_is_turned_off() {
     let env = Env::new("attach-sh");
     let scripted = scripted(vec![
-        uses(&[snap("a", json!({"name": "song.mp3", "type": "audio/mpeg"}))]),
+        uses(&[
+            snap("a", json!({"name": "song.mp3", "type": "audio/mpeg"})),
+            snap("b", json!({"pdf": true, "slice": "1"})),
+        ]),
         done("ok"),
-        uses(&[snap("b", json!({"name": "song.mp3", "type": "audio/mpeg"}))]),
+        uses(&[
+            snap("c", json!({"name": "song.mp3", "type": "audio/mpeg"})),
+            snap("d", json!({"pdf": true, "slice": "1"})),
+        ]),
         done("ok"),
     ]);
     let sh = crate::plugin::testing::providing(Arc::new(Sh), crate::tool::SHELL);
@@ -667,12 +683,20 @@ async fn a_shell_tool_of_another_name_is_named_in_the_notes_until_it_is_turned_o
 image/gif, image/jpeg, image/png, image/webp). Convert it with sh to one of those or to text, or \
 inspect it another way (file, xxd, strings).",
     );
+    refused_alone(
+        &calls_done(&events)[1],
+        "No file was sent: snap.pdf can't be sliced with `pages` on this model (this model does not slice files). Cut out only the part you need with sh and view that copy, or omit `pages` to send and store the whole file.",
+    );
     agent.toolbox.set_enabled("sh", false);
     let (_, events) = turn(&mut agent, "again").await;
     refused_alone(
         &calls_done(&events)[0],
         "song.mp3 is audio/mpeg, which this server can't carry (it takes application/pdf, \
 image/gif, image/jpeg, image/png, image/webp), so it can't be read in this session.",
+    );
+    refused_alone(
+        &calls_done(&events)[1],
+        "No file was sent: snap.pdf can't be sliced with `pages` on this model (this model does not slice files). Omit `pages` to read the whole file, or switch to a model that supports `pages`; either retry sends and stores the whole file.",
     );
 }
 

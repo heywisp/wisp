@@ -310,7 +310,7 @@ async fn a_stop_during_the_count_attaches_nothing() {
     let mut rig = Rig::new();
     rig.file("a.png", &png(2, 2));
     let cancel = rig.cancel.clone();
-    rig.count = Some(Arc::new(move |_, _| {
+    rig.count = Some(Arc::new(move |_, _, _| {
         cancel.set();
         Box::pin(std::future::pending())
     }));
@@ -324,7 +324,7 @@ async fn a_stop_during_the_count_attaches_nothing() {
 async fn a_count_that_never_answers_attaches_with_the_size_only_before_the_view_s_limit() {
     let mut rig = Rig::new();
     rig.file("a.png", &png(2, 2));
-    rig.count = Some(Arc::new(|_, _| Box::pin(std::future::pending())));
+    rig.count = Some(Arc::new(|_, _, _| Box::pin(std::future::pending())));
     let started = tokio::time::Instant::now();
     let viewed = rig.view("a.png").await;
     let waited = started.elapsed();

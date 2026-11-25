@@ -151,7 +151,7 @@ fn found(
         ContentBlock::Image {
             source: ImageSource::Base64 { data, .. },
         } => (AttachmentKind::Image, number, None, &**data),
-        ContentBlock::Media { source } => {
+        ContentBlock::Media { source, .. } => {
             let label = slot
                 .call_id
                 .and_then(|id| targets.get(id))
