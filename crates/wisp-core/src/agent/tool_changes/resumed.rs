@@ -13,7 +13,7 @@ use crate::provider::Feature;
 use crate::provider::ServerToolSpec;
 use crate::resume::LoggedSession;
 use crate::session::sha256_hex;
-use crate::tool::{InvalidInput, Prepared, ToolSpec, array_json, tools_json};
+use crate::tool::{InvalidInput, Prepared, ToolSpec, array_json_sha256};
 
 impl Agent {
     pub(in crate::agent) fn base_sha256(&self) -> Option<String> {
@@ -84,12 +84,12 @@ impl Agent {
         let deferred = std::mem::replace(&mut self.deferred, deferred);
         let digest = logged.tools.digest();
         let sent_now = self.deferred_on(&name, &model);
-        let held = if sha256_hex(&array_json(&wire_tools, sent_now, server)) == digest {
+        let held = if array_json_sha256(&wire_tools, sent_now, server) == digest {
             None
-        } else if !sent_now.is_empty() && sha256_hex(&tools_json(&wire_tools, server)) == digest {
+        } else if !sent_now.is_empty() && array_json_sha256(&wire_tools, &[], server) == digest {
             Some((name, model))
         } else if self.deferral_held(&name, &model)
-            && sha256_hex(&array_json(&wire_tools, &self.deferred, server)) == digest
+            && array_json_sha256(&wire_tools, &self.deferred, server) == digest
         {
             None
         } else {

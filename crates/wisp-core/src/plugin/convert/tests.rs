@@ -258,12 +258,20 @@ fn file_slice_conversion_matches_parser_bounds_and_display_and_kind_names() {
     ] {
         assert!(parsed.is_err());
     }
+    let toolbox = crate::tool::testkit::bundled(&["view_file"]);
+    let properties = toolbox.specs()[0].input_schema["properties"]
+        .as_object()
+        .unwrap();
     assert_eq!(
         api::SliceKind::ALL
             .iter()
             .map(api::SliceKind::name)
-            .collect::<Vec<_>>(),
-        ["pages", "seconds", "sheet"]
+            .collect::<BTreeSet<_>>(),
+        properties
+            .keys()
+            .map(String::as_str)
+            .filter(|&key| key != "path")
+            .collect()
     );
 }
 

@@ -13,8 +13,7 @@ use crate::endpoints::ProviderKind;
 use crate::provider::forms::{Layout, is_thinking, native, renders, server_call, server_result};
 use crate::provider::{Rendering, ServerToolSpec};
 use crate::search::{NoSearch, SearchFacts, SearchForm};
-use crate::session::sha256_hex;
-use crate::tool::{ToolSpec, array_json, tool_names, tools_sha256};
+use crate::tool::{ToolSpec, array_json_sha256, tool_names, tools_sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ToolSet {
@@ -155,7 +154,7 @@ impl Agent {
         let (specs, server) = self.wire(&self.sent, server);
         ToolSet {
             names: tool_names(&specs, server),
-            digest: sha256_hex(&array_json(&specs, deferred, server)),
+            digest: array_json_sha256(&specs, deferred, server),
             sha256: tools_sha256(&specs, deferred, server),
         }
     }

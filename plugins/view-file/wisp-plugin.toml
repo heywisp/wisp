@@ -1,6 +1,6 @@
 id = "view-file"
 version = "0.1.0"
-world = "0.1.0"
+world = "0.4.0"
 summary = "Attaches a file from the user's computer"
 
 [[tools]]

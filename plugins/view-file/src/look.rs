@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use wisp_media::MAX_ATTACHMENT_BYTES;
 use wisp_plugin_api::host::{CallContext, FileKind, Host};
+use wisp_plugin_api::types::{FileSlice, SliceKind};
 use wisp_plugin_api::yield_now;
 use wisp_tool_text::files as sentences;
 
@@ -35,6 +36,8 @@ pub(crate) struct Job<'a> {
     pub(crate) resolved: PathBuf,
     pub(crate) shown: String,
     pub(crate) media_types: Vec<String>,
+    pub(crate) media_slices: Vec<SliceKind>,
+    pub(crate) slice: Option<FileSlice>,
     pub(crate) host: &'a dyn Host,
     pub(crate) ctx: &'a dyn CallContext,
     pub(crate) count_until_ms: u64,
@@ -143,8 +146,30 @@ pub(crate) async fn look(job: &Job<'_>) -> Looked {
             &carried,
             job.shell(),
         )),
-        Sniffed::Media(media_type) => read_media(job, file, size, media_type).await,
-        Sniffed::Text => read_text(job, file, size, head.starts_with(BOM)).await,
+        Sniffed::Media(media_type) => {
+            if let Some(slice) = job.slice
+                && let Some(reason) = sentences::slice_refusal(
+                    &job.written,
+                    &media_type,
+                    slice.kind(),
+                    &job.media_slices,
+                    job.shell(),
+                )
+            {
+                return Looked::Refused(reason);
+            }
+            read_media(job, file, size, media_type).await
+        }
+        Sniffed::Text => {
+            if let Some(slice) = job.slice {
+                return Looked::Refused(sentences::text_with_slice(
+                    &job.written,
+                    slice.kind(),
+                    job.shell(),
+                ));
+            }
+            read_text(job, file, size, head.starts_with(BOM)).await
+        }
     }
 }
 

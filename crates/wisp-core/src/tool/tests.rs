@@ -75,6 +75,54 @@ fn tools_registered_out_of_order_serialise_sorted_and_canonical() {
 }
 
 #[test]
+fn streaming_tool_arrays_match_canonical_values() {
+    let toolbox = testkit::bundled(&["bash", "view_file"]);
+    let view = toolbox.get("view_file").unwrap().spec().clone();
+    let tools = [
+        ToolSpec {
+            name: "zeta".into(),
+            description: "Café \"quoted\" \\path\nnext".into(),
+            input_schema: json!({"z": [{"b": "é", "a": "\\"}], "a": {"y": 1, "b": null}}),
+        },
+        view.clone(),
+    ];
+    let server = [ServerToolSpec {
+        name: "middle".into(),
+        kind: "server_type".into(),
+    }];
+    for (specs, deferred, server) in [
+        (&[][..], &[][..], &[][..]),
+        (tools.as_slice(), &[], &[]),
+        (&[], &tools, &[]),
+        (&[], &[], &server),
+        (&tools, std::slice::from_ref(&view), &server),
+    ] {
+        let values: Vec<Value> = ordered(specs, deferred, server)
+            .into_iter()
+            .map(|entry| match entry {
+                Entry::Client { spec, deferred } => {
+                    let mut value = serde_json::to_value(spec).unwrap();
+                    if deferred {
+                        value["defer_loading"] = Value::Bool(true);
+                    }
+                    value
+                }
+                Entry::Server(spec) => serde_json::to_value(spec).unwrap(),
+            })
+            .collect();
+        let canonical = serde_json::to_string(&values).unwrap();
+        let digest = sha256_hex(&canonical);
+        assert_eq!(array_json(specs, deferred, server), canonical);
+        assert_eq!(array_json_len(specs, deferred, server), canonical.len());
+        assert_eq!(array_json_sha256(specs, deferred, server), digest);
+        assert_eq!(
+            tools_sha256(specs, deferred, server),
+            (!specs.is_empty() || !server.is_empty()).then_some(digest)
+        );
+    }
+}
+
+#[test]
 fn prepare_answers_unknown_and_turned_off_tools() {
     let mut toolbox = Toolbox::new([Dummy::tool("alpha", json!({}))]);
     assert_eq!(
