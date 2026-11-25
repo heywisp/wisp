@@ -25,6 +25,7 @@ pub mod import;
 pub mod keyring;
 mod parse;
 mod redaction;
+pub(crate) mod scan;
 
 pub use change::{
     Applied, Change, ChangeError, Edit, Failed, Left, Outcome, apply, apply_noting,
