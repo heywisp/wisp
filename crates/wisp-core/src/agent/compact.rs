@@ -927,7 +927,10 @@ impl Agent {
                         .map(|file| shorten_path(Path::new(file), home.as_deref()));
                     call.attached = attachments
                         .iter()
-                        .map(|a| a.media_type.to_string())
+                        .map(|a| match a.slice {
+                            Some(slice) => format!("{} ({})", a.media_type, slice.read_only("-")),
+                            None => a.media_type.to_string(),
+                        })
                         .collect();
                 }
             }
@@ -2680,11 +2683,7 @@ impl Agent {
         let print = self.prefix_print(&request);
         let sent = self.sent(&request, print.clone());
         let watch = self.watch();
-        self.sent_sound = super::images::sent_sound(
-            request.messages,
-            request.rendering,
-            self.provider().media_types(),
-        );
+        self.sent_sound = self.sent_sound(request.messages, request.rendering);
         let mut stream = self.provider().stream(&request);
         self.sending = Some(sent);
         let (mut warming, mut stagger) = self.hold_for_warmth(print, events).await;

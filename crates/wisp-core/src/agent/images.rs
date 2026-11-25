@@ -1,11 +1,16 @@
 use tokio::sync::mpsc;
 use wisp_media::{MAX_IMAGES_PER_MESSAGE, MAX_SESSION_MEDIA_BASE64, MediaError, MediaType};
+use wisp_plugin_api::types::SliceKind;
 use wisp_protocol::log::ImageRef;
-use wisp_protocol::{AgentEvent, ContentBlock, ImageData, ImageType, InputId, Message, Mime};
+use wisp_protocol::{
+    AgentEvent, ContentBlock, ImageData, ImageType, InlineMedia, InputId, Message, Mime,
+};
 
 use super::{Agent, emit};
+use crate::plugin::convert;
 use crate::provider::{ImageCaps, Rendering};
 use crate::session::sha256_bytes_hex;
+use wisp_tool_text::files::{carries, slice_supported};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PreparedImage {
@@ -94,14 +99,14 @@ pub(super) fn history_media<'a>(blocks: impl Iterator<Item = &'a ContentBlock>) 
 
 fn media_counts<'a>(
     blocks: impl Iterator<Item = &'a ContentBlock>,
-    carries_sound: &impl Fn(&str) -> bool,
+    carries_sound: &impl Fn(InlineMedia<'_>) -> bool,
 ) -> Media {
     blocks.fold(Media::default(), |media, block| {
         if let Some(inline) = block.inline_media() {
             let image = usize::from(inline.media_type.starts_with("image/"));
             let sound = (inline.media_type.starts_with("audio/")
                 || inline.media_type.starts_with("video/"))
-                && carries_sound(inline.media_type);
+                && carries_sound(inline);
             media
                 + Media {
                     images: image,
@@ -117,11 +122,25 @@ fn media_counts<'a>(
     })
 }
 
-pub(super) fn sent_sound(messages: &[Message], rendering: &Rendering, carried: &[&str]) -> bool {
+pub(super) fn sent_sound(
+    messages: &[Message],
+    rendering: &Rendering,
+    carried: &[&str],
+    slices: &[SliceKind],
+) -> bool {
     !rendering.attachments_as_notes
-        && media_counts(messages.iter().flat_map(|m| &m.content), &|media_type| {
-            wisp_tool_text::files::carries(carried, media_type)
-        })
+        && media_counts(
+            messages.iter().flat_map(|m| &m.content),
+            &|media| match media.slice {
+                Some(slice) => slice_supported(
+                    media.media_type,
+                    convert::slice_kind(&slice),
+                    carried,
+                    slices,
+                ),
+                None => carries(carried, media.media_type),
+            },
+        )
         .sound
             > 0
 }

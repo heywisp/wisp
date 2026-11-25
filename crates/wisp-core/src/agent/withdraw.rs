@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
 use tokio::sync::mpsc;
+use wisp_plugin_api::types::SliceKind;
 use wisp_protocol::log::{BlockPosition, LogEvent, MediaSlot, WithdrawnBlock, media_slots};
 use wisp_protocol::{
-    AgentEvent, AttachmentKind, ContentBlock, HistoryChange, ImageSource, Message, Mime, Role,
-    WithdrawnAttachment,
+    AgentEvent, AttachmentKind, ContentBlock, FileSlice, HistoryChange, ImageSource, Message, Mime,
+    Role, WithdrawnAttachment,
 };
 
 use super::epoch::MarkReason;
-use super::images::{Media, history_media};
+use super::images::{self, Media, history_media};
 use super::{Agent, Pending};
 use crate::provider::Rendering;
 use crate::session::base64_sha256;
@@ -100,6 +101,7 @@ pub(crate) fn withdrawal_note(kind: AttachmentKind, label: &str, reason: &str) -
 pub(crate) fn file_note(
     label: &str,
     media_type: &Mime,
+    slice: Option<FileSlice>,
     reason: &str,
     others: usize,
     shell: Option<&str>,
@@ -110,21 +112,34 @@ pub(crate) fn file_note(
     } else {
         "attachments"
     };
+    let file = match slice {
+        Some(slice) => format!("{label} ({media_type}, {slice})"),
+        None => format!("{label} ({media_type})"),
+    };
+    if others == 0 && slice.is_some() {
+        let advice = match shell {
+            Some(shell) => format!("convert or cut it with {shell} and view that"),
+            None => "omit the slice to read the whole file".to_owned(),
+        };
+        return format!(
+            "[{file} couldn't be processed: {reason}. Check the requested range and try again, or {advice}.]"
+        );
+    }
     match (others, shell) {
         (0, None) => format!(
-            "[{label} ({media_type}) couldn't be processed: {reason}. It can't be read in this \
+            "[{file} couldn't be processed: {reason}. It can't be read in this \
 session.]"
         ),
         (0, Some(shell)) => format!(
-            "[{label} ({media_type}) couldn't be processed: {reason}. Convert or cut it with \
+            "[{file} couldn't be processed: {reason}. Convert or cut it with \
 {shell} into something you can read, then view or read that.]"
         ),
         (_, None) => format!(
-            "[{label} ({media_type}) was withdrawn with {others} other {noun} when the API \
+            "[{file} was withdrawn with {others} other {noun} when the API \
 refused this step: {reason}. It may be fine: view it again on its own.]"
         ),
         (_, Some(shell)) => format!(
-            "[{label} ({media_type}) was withdrawn with {others} other {noun} when the API refused \
+            "[{file} was withdrawn with {others} other {noun} when the API refused \
 this step: {reason}. It may be fine: view it again on its own, and convert it with {shell} only \
 if that is refused too.]"
         ),
@@ -137,6 +152,7 @@ struct Found {
     kind: AttachmentKind,
     label: String,
     media_type: Option<Mime>,
+    slice: Option<FileSlice>,
     sha256: String,
 }
 
@@ -147,18 +163,24 @@ fn found(
 ) -> Option<Found> {
     let call_id = slot.call_id.map(str::to_owned);
     let number = format!("#{}", slot.number);
-    let (kind, label, media_type, data) = match &*slot.block {
+    let (kind, label, media_type, slice, data) = match &*slot.block {
         ContentBlock::Image {
             source: ImageSource::Base64 { data, .. },
-        } => (AttachmentKind::Image, number, None, &**data),
-        ContentBlock::Media { source, .. } => {
+        } => (AttachmentKind::Image, number, None, None, &**data),
+        ContentBlock::Media { source, slice } => {
             let label = slot
                 .call_id
                 .and_then(|id| targets.get(id))
                 .cloned()
                 .unwrap_or(number);
             let media_type = Some(source.media_type().clone());
-            (AttachmentKind::File, label, media_type, source.data())
+            (
+                AttachmentKind::File,
+                label,
+                media_type,
+                *slice,
+                source.data(),
+            )
         }
         _ => return None,
     };
@@ -168,6 +190,7 @@ fn found(
         kind,
         label,
         media_type,
+        slice,
         sha256: base64_sha256(data),
     })
 }
@@ -246,6 +269,24 @@ impl Agent {
         } else {
             self.provider().media_types()
         }
+    }
+
+    pub(super) fn carried_slices(&self) -> &'static [SliceKind] {
+        if self.sends_notes() {
+            return &[];
+        }
+        self.provider()
+            .capabilities(&self.session.model)
+            .map_or(&[], |caps| caps.slices)
+    }
+
+    pub(super) fn sent_sound(&self, messages: &[Message], rendering: &Rendering) -> bool {
+        images::sent_sound(
+            messages,
+            rendering,
+            self.carried_media(),
+            self.carried_slices(),
+        )
     }
 
     fn notes_pair(&self) -> (String, String) {
@@ -343,7 +384,14 @@ impl Agent {
         let shell = self.toolbox.provider_of(SHELL);
         for (slot, index, found) in found {
             let note = match &found.media_type {
-                Some(media_type) => file_note(&found.label, media_type, &reason, others, shell),
+                Some(media_type) => file_note(
+                    &found.label,
+                    media_type,
+                    found.slice,
+                    &reason,
+                    others,
+                    shell,
+                ),
                 None => withdrawal_note(found.kind, &found.label, &reason),
             };
             let item = WithdrawnAttachment {

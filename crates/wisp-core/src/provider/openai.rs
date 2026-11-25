@@ -17,8 +17,8 @@ use sha2::{Digest, Sha256};
 use wisp_protocol::plan_usage::{PlanUsage, PlanUsageError};
 use wisp_protocol::settings::ClientVersion;
 use wisp_protocol::{
-    CitedSource, ContentBlock, Effort, ErrorKind, FailurePhase, Message, Role, Secret, StopReason,
-    ToolRef, Usage, VariableName,
+    CitedSource, ContentBlock, Effort, ErrorKind, FailurePhase, InlineMedia, Message, Role, Secret,
+    StopReason, ToolRef, Usage, VariableName,
 };
 
 use super::anthropic::{status_outcome, unexpected, unreachable};
@@ -67,6 +67,7 @@ pub(crate) const FIRST_BYTE: Duration = Duration::from_secs(300);
 pub const DEFAULT_MODEL: &str = "gpt-6.1-sol";
 const LIST_LIMIT: usize = 8 * 1024 * 1024;
 pub(crate) const GPT: ModelCapabilities = ModelCapabilities {
+    slices: &[],
     efforts: &Effort::ALL,
     default_effort: Some(Effort::Medium),
     per_message_effort: false,
@@ -688,7 +689,7 @@ fn append_block(
             for block in content {
                 match block {
                     ContentBlock::Text {text} => output.push(text_part(role, text)),
-                    ContentBlock::Image { .. } | ContentBlock::Media { .. } => if let Some(media) = block.inline_media() { output.push(media_part(role, carried, why, media.media_type, media.data)); },
+                    ContentBlock::Image { .. } | ContentBlock::Media { .. } => if let Some(media) = block.inline_media() { output.push(media_part(role, carried, why, media)); },
                     ContentBlock::Opaque { .. } => { if let Some(text) = super::foreign::text(block, PROVIDER) { output.push(text_part(role, &text)); } },
                     _ => return Err(ProviderError::new(ErrorKind::InvalidRequest,"this OpenAI connection cannot represent this block inside a tool result")),
                 }
@@ -698,7 +699,7 @@ fn append_block(
             } else { Value::Array(output) };
             input.push(json!({"type":"function_call_output","call_id":tool_use_id,"output":output}));
         }
-        ContentBlock::Image { .. } | ContentBlock::Media { .. } => if let Some(media) = block.inline_media() { input.push(message_item(role, media_part(role, carried, why, media.media_type, media.data))); },
+        ContentBlock::Image { .. } | ContentBlock::Media { .. } => if let Some(media) = block.inline_media() { input.push(message_item(role, media_part(role, carried, why, media))); },
         ContentBlock::ToolAddition { .. } | ContentBlock::ToolRemoval { .. } | ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } | ContentBlock::Effort { .. } => {},
         ContentBlock::Opaque { .. } => {
             if let Some(text) = super::foreign::text(block, PROVIDER) { input.push(message_item(role, text_part(role, &text))); }
@@ -720,7 +721,15 @@ fn message_item(role: &str, part: Value) -> Value {
     json!({"role":role,"content":[part]})
 }
 
-fn media_part(role: &str, carried: &[&str], why: NotSent, media_type: &str, data: &str) -> Value {
+fn media_part(role: &str, carried: &[&str], why: NotSent, media: InlineMedia<'_>) -> Value {
+    let media_type = media.media_type;
+    if media.slice.is_some() {
+        return text_part(
+            role,
+            &super::not_sent_note(media_type, media.slice, NotSent::Slice),
+        );
+    }
+    let data = media.data;
     if wisp_tool_text::files::carries(carried, media_type) {
         let url = format!("data:{media_type};base64,{data}");
         return match FILES.iter().find(|(listed, ..)| *listed == media_type) {
@@ -730,7 +739,7 @@ fn media_part(role: &str, carried: &[&str], why: NotSent, media_type: &str, data
             None => json!({"type":"input_image","image_url":url}),
         };
     }
-    text_part(role, &super::not_sent_note(media_type, why))
+    text_part(role, &super::not_sent_note(media_type, None, why))
 }
 
 pub(crate) fn native_item(block: &ContentBlock) -> Option<(&Value, usize, &str)> {

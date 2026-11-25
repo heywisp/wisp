@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use wisp_media::{MAX_ATTACHMENT_BYTES, MAX_SESSION_MEDIA_BASE64};
+use wisp_plugin_api::types::SliceKind;
 use wisp_protocol::{
     AgentEvent, AttachmentRef, ContentBlock, Fact, Role, ToolDisplay, ToolOutcome,
 };
@@ -70,6 +71,7 @@ fn refusal(
     target: &str,
     attachments: &[Attachment],
     carried: &[&str],
+    slices: &[SliceKind],
     shell: Option<&str>,
 ) -> Option<String> {
     if let Some(file) = attachments
@@ -89,7 +91,7 @@ fn refusal(
             target,
             file.media_type.as_str(),
             convert::slice_kind(&slice),
-            &[],
+            slices,
             shell,
         )
     }) {
@@ -167,6 +169,7 @@ impl Agent {
             &self.target_of(call_id, name, input),
             &attachments,
             carried,
+            self.carried_slices(),
             shell,
         ) {
             refuse(finished, sentence);
@@ -202,11 +205,13 @@ impl Agent {
                 sha256,
                 bytes: u64::try_from(attachment.bytes.len()).unwrap_or(u64::MAX),
                 saved,
-                slice: None,
+                slice: attachment.slice,
             });
-            attached
-                .blocks
-                .push(ContentBlock::media(attachment.media_type, base64));
+            attached.blocks.push(ContentBlock::media_sliced(
+                attachment.media_type,
+                base64,
+                attachment.slice,
+            ));
         }
         attached
     }

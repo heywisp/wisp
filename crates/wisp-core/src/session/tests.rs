@@ -304,6 +304,67 @@ fn renumbered(lines: &[String]) -> String {
 }
 
 #[test]
+fn v42_log_opens_appends_v43_slice_and_rebuilds() {
+    use wisp_protocol::FileSlice;
+    use wisp_protocol::log::{LoggedBlock, LoggedMessage};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = JsonlStore::open(dir.path()).unwrap();
+    let id = new_session_id();
+    let path = store.path(&id);
+    let pdf = mime("application/pdf");
+    let sha = sha256_bytes_hex(b"a");
+    store.put_blob(&sha, &pdf, b"a").unwrap();
+    let commit = |slice| LogEvent::MessageCommitted {
+        model: None,
+        stop_reason: None,
+        turn: 1,
+        message: LoggedMessage::stored(
+            &Message {
+                role: Role::User,
+                content: vec![ContentBlock::media_sliced(pdf.clone(), "YQ==", slice)],
+            },
+            blob_ref,
+        ),
+    };
+    let mut old = sample_records();
+    old.truncate(2);
+    old.push(record(2, commit(None)));
+    for line in &mut old {
+        line.schema_version = 42;
+        store.append(&id, line).unwrap();
+    }
+    let prefix = fs::read(&path).unwrap();
+    drop(store);
+    let mut store = JsonlStore::open(dir.path()).unwrap();
+    let reopened = store.reopen(&id, ResumeLock::Optional).unwrap();
+    assert_eq!(reopened.next_seq, 3);
+    let slice = FileSlice::pages(14, 16).unwrap();
+    let mut log = SessionLog::continuing(Box::new(store), &id, reopened.next_seq);
+    assert_eq!(log.record(commit(Some(slice))), None);
+    assert_eq!(log.sync(), None);
+    let text = fs::read_to_string(path).unwrap();
+    assert!(text.as_bytes().starts_with(&prefix));
+    let parsed = parse_jsonl(&text).unwrap();
+    assert_eq!(parsed[..3], old);
+    assert_eq!(parsed[3].schema_version, 43);
+    assert!(
+        matches!(&parsed[2].event, LogEvent::MessageCommitted {message, ..} if matches!(message.content.as_slice(), [LoggedBlock::Media {slice: None, ..}]))
+    );
+    let rebuilt = rebuild_checked(log.store(), &parsed, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        rebuilt.messages[1].content[0].inline_media().unwrap().slice,
+        None
+    );
+    assert_eq!(
+        rebuilt.messages[2].content[0],
+        ContentBlock::media_sliced(pdf, "YQ==", Some(slice))
+    );
+}
+
+#[test]
 fn unknown_record_types_and_newer_versions_are_skipped() {
     let full = lines();
     let future = r#"{"schema_version":1,"seq":0,"at":"x","type":"hologram_recorded","x":1}"#;

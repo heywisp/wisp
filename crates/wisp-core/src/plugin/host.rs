@@ -31,7 +31,7 @@ use wisp_protocol::filter::Query;
 use wisp_protocol::settings::{Form, ResolvedSetting};
 use wisp_protocol::{CacheTtl, ContentBlock};
 use wisp_tool_text::chat as text;
-use wisp_tool_text::files::NO_DATA_FOLDER;
+use wisp_tool_text::files::{NO_DATA_FOLDER, carries, slice_supported};
 
 use super::convert;
 use super::imports::{Import, Inside};
@@ -702,21 +702,33 @@ impl Media for PluginHost {
         bytes: Vec<u8>,
         slice: Option<FileSlice>,
     ) -> BoxFuture<'_, TokenCount> {
-        if Import::MediaCountTokens.refused() {
-            return futures::future::ready(TokenCount::Unsupported).boxed();
+        if self.refuses(Import::MediaCountTokens)
+            || (slice.is_some() && !Import::MediaSlices.spoken_in(&self.world))
+        {
+            return ready(TokenCount::Unsupported);
         }
         let Ok(slice) = slice.map(convert::file_slice).transpose() else {
-            return futures::future::ready(TokenCount::Unsupported).boxed();
+            return ready(TokenCount::Unsupported);
         };
-        let supported: &[SliceKind] = &[];
-        if slice.is_some_and(|slice| !supported.contains(&convert::slice_kind(&slice))) {
-            return futures::future::ready(TokenCount::Unsupported).boxed();
-        }
+        let snapshot = self.kernel.snapshot();
+        let carried: Vec<_> = snapshot.media_types.iter().map(String::as_str).collect();
+        let supported = match slice {
+            Some(slice) => slice_supported(
+                &media_type,
+                convert::slice_kind(&slice),
+                &carried,
+                &snapshot.media_slices,
+            ),
+            None => carries(&carried, &media_type),
+        };
         let Ok(mime) = media_type.parse() else {
-            return futures::future::ready(TokenCount::Unsupported).boxed();
+            return ready(TokenCount::Unsupported);
         };
-        let block = ContentBlock::media(mime, wisp_media::encode_base64(&bytes));
-        let count = self.kernel.snapshot().count;
+        if !supported {
+            return ready(TokenCount::Unsupported);
+        }
+        let block = ContentBlock::media_sliced(mime, wisp_media::encode_base64(&bytes), slice);
+        let count = snapshot.count;
         async move { convert::token_count(count.count(block).await) }.boxed()
     }
 }

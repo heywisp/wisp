@@ -1,5 +1,5 @@
 use wisp_protocol::log::BlockPosition;
-use wisp_protocol::{AttachmentKind, ContentBlock, ImageType, Message, Role};
+use wisp_protocol::{AttachmentKind, ContentBlock, FileSlice, ImageType, Message, Role};
 
 use super::{
     MAX_REASON_CHARS, end_of, file_note, one_line_reason, provisional_media, withdrawal_note,
@@ -99,6 +99,7 @@ fn a_file_note_hints_at_bash_alone_and_names_the_others_withdrawn_with_it() {
         file_note(
             "docs/spec.pdf",
             &pdf,
+            None,
             "The PDF is password protected.",
             0,
             Some("bash")
@@ -107,20 +108,36 @@ fn a_file_note_hints_at_bash_alone_and_names_the_others_withdrawn_with_it() {
 Convert or cut it with bash into something you can read, then view or read that.]"
     );
     assert_eq!(
-        file_note("a.pdf", &pdf, "Bad request", 1, Some("bash")),
+        file_note("a.pdf", &pdf, None, "Bad request", 1, Some("bash")),
         "[a.pdf (application/pdf) was withdrawn with 1 other attachment when the API refused this \
 step: Bad request. It may be fine: view it again on its own, and convert it with bash only if \
 that is refused too.]"
     );
-    assert!(file_note("a.pdf", &pdf, "Bad request..", 3, Some("bash")).contains(
+    let slice = Some(FileSlice::pages(99, 99).unwrap());
+    for (shell, advice) in [
+        (Some("bash"), "convert or cut it with bash and view that"),
+        (None, "omit the slice to read the whole file"),
+    ] {
+        assert_eq!(
+            file_note("docs/manual.pdf", &pdf, slice, "Bad request.", 0, shell),
+            format!(
+                "[docs/manual.pdf (application/pdf, page 99) couldn't be processed: Bad request. Check the requested range and try again, or {advice}.]"
+            )
+        );
+    }
+    assert_eq!(
+        file_note("a.pdf", &pdf, slice, "Bad request", 1, None),
+        "[a.pdf (application/pdf, page 99) was withdrawn with 1 other attachment when the API refused this step: Bad request. It may be fine: view it again on its own.]"
+    );
+    assert!(file_note("a.pdf", &pdf, None, "Bad request..", 3, Some("bash")).contains(
         "was withdrawn with 3 other attachments when the API refused this step: Bad request.. It"
     ));
     assert!(
-        file_note("a.pdf", &pdf, "Bad request", 0, Some("sh"))
+        file_note("a.pdf", &pdf, None, "Bad request", 0, Some("sh"))
             .contains("Convert or cut it with sh into")
     );
     assert!(
-        file_note("a.pdf", &pdf, "Bad request", 2, Some("sh"))
+        file_note("a.pdf", &pdf, None, "Bad request", 2, Some("sh"))
             .contains("convert it with sh only if")
     );
 }
@@ -132,6 +149,7 @@ fn without_bash_a_file_note_never_names_bash() {
         file_note(
             "docs/spec.pdf",
             &pdf,
+            None,
             "The PDF is password protected.",
             0,
             None
@@ -140,7 +158,7 @@ fn without_bash_a_file_note_never_names_bash() {
 It can't be read in this session.]"
     );
     assert_eq!(
-        file_note("a.pdf", &pdf, "Bad request", 1, None),
+        file_note("a.pdf", &pdf, None, "Bad request", 1, None),
         "[a.pdf (application/pdf) was withdrawn with 1 other attachment when the API refused this \
 step: Bad request. It may be fine: view it again on its own.]"
     );

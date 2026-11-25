@@ -195,7 +195,7 @@ fn the_shipped_file_parses() {
     }
 }
 
-const INHERITED_FIELDS: [&str; 8] = [
+const INHERITED_FIELDS: [&str; 9] = [
     "price_input",
     "price_output",
     "price_cache_read",
@@ -204,6 +204,7 @@ const INHERITED_FIELDS: [&str; 8] = [
     "min_cacheable",
     "reply_cap",
     "turn_form",
+    "slices",
 ];
 
 type Inherited = (
@@ -215,6 +216,7 @@ type Inherited = (
     Option<u64>,
     Option<u32>,
     Option<TurnForm>,
+    &'static [SliceKind],
 );
 
 fn inherited_fields(table: &ModelTable, id: &str) -> Inherited {
@@ -228,24 +230,29 @@ fn inherited_fields(table: &ModelTable, id: &str) -> Inherited {
         row.min_cacheable,
         table.reply_cap(id),
         table.turn_form(id).cloned(),
+        row.capabilities.map_or(&[], |caps| caps.slices),
     )
 }
 
 #[test]
 fn an_effort_variants_own_fields_win_over_its_family() {
     let table = ModelTable::parse_shipped(concat!(
-        "[providers.gemini.sources]\nprice = \"p\"\nmin_cacheable = \"c\"\nantigravity = \"a\"\n",
+        "[providers.gemini.sources]\nprice = \"p\"\nmin_cacheable = \"c\"\nantigravity = \"a\"\nslices = \"s\"\n",
         "[models]\n",
         "\"m-high\" = { provider = \"gemini\", effort_variant = { family = \"m\", effort = \"high\" }, ",
         "price_input = 9.0, price_output = 19.0, price_cache_read = 0.9, ",
-        "bill_tool_use_prompt = false, min_cacheable = 2048, reply_cap = 8192, ",
+        "bill_tool_use_prompt = false, min_cacheable = 2048, reply_cap = 8192, slices = [], ",
         "source = \"s\", sources = { reply_cap = \"r\" } }\n",
         "\"m\" = { provider = \"gemini\", price_input = 3.0, price_output = 15.0, price_cache_read = 0.15, ",
         "long_prompt = { over = 200000, price_input = 6.0, price_output = 30.0, price_cache_read = 0.30 }, ",
-        "bill_tool_use_prompt = true, min_cacheable = 4096, reply_cap = 32768, ",
-        "source = \"s\", sources = { reply_cap = \"r\" } }\n",
+        "bill_tool_use_prompt = true, min_cacheable = 4096, reply_cap = 32768, efforts = [], slices = [\"pages\"], ",
+        "source = \"s\", sources = { reply_cap = \"r\", efforts = \"e\" } }\n",
     ))
     .unwrap();
+    assert_eq!(
+        table.find("m").unwrap().capabilities.unwrap().slices,
+        &[SliceKind::Pages]
+    );
     assert_eq!(
         inherited_fields(&table, "m-high"),
         (
@@ -256,8 +263,65 @@ fn an_effort_variants_own_fields_win_over_its_family() {
             false,
             Some(2048),
             Some(8192),
-            None
+            None,
+            &[][..]
         )
+    );
+}
+
+#[test]
+fn shipped_gemini_slices_matrix_and_non_gemini_rejection() {
+    let table = ModelTable::shared();
+    let pages_and_sheet = &[SliceKind::Pages, SliceKind::Sheet];
+    for row in table.rows() {
+        let default_id = row
+            .effort_variant
+            .as_ref()
+            .map_or(row.id.as_str(), |v| v.family.as_str());
+        let expected = match default_id {
+            "gemini-4-neon" | "gemini-4-carbon" | "gemini-4-argon" | "gemini-4-hydrogen" => {
+                SliceKind::ALL
+            }
+            "gemini-3.8-flash"
+            | "gemini-3.8-flash-tiered"
+            | "gemini-3.6-flash"
+            | "gemini-3.5-flash-lite"
+            | "gemini-3.1-flash-lite"
+            | "gemini-3.1-pro-preview"
+            | "gemini-3-flash-preview" => pages_and_sheet,
+            _ => &[],
+        };
+        assert_eq!(
+            row.capabilities.map_or(&[][..], |caps| caps.slices),
+            expected,
+            "{}",
+            row.id
+        );
+    }
+    assert!(
+        table
+            .capabilities(ProviderKind::Gemini, "gemini-unlisted")
+            .is_none()
+    );
+    assert!(crate::provider::gemini::LISTED_ONLY.slices.is_empty());
+    for provider in ["provider = \"anthropic\"", "provider = \"openai\"", ""] {
+        let row = format!("[models.m]\nslices = [\"pages\"]\n{provider}\nsource = \"s\"\n");
+        let error = ModelTable::parse_shipped(&row).unwrap_err();
+        assert!(error.to_string().contains("slices"), "{error}");
+        assert!(error.to_string().contains("outside Gemini"), "{error}");
+    }
+    let loaded = ModelTable::parse_shipped(concat!(
+        "[providers.gemini.sources]\nslices = \"s\"\n",
+        "[models.m]\nprovider = \"gemini\"\nslices = [\"sheet\", \"pages\", \"sheet\"]\n",
+        "efforts = []\nsource = \"s\"\nsources = { efforts = \"e\" }\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        loaded
+            .capabilities(ProviderKind::Gemini, "m")
+            .unwrap()
+            .slices,
+        pages_and_sheet
     );
 }
 
@@ -456,7 +520,7 @@ fn the_shipped_file_refuses_unknown_keys() {
     assert_eq!(error.line, Some(4));
     assert_eq!(
         error.to_string(),
-        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_input_audio, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, reply_cap, turn_form, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, source, sources"
+        "the shipped model file, line 4: unknown field in a model table; allowed: context_window, native_compaction, web_search, aliases, listed, provider, price_input, price_input_audio, price_output, price_cache_read, long_prompt, bill_tool_use_prompt, min_cacheable, max_output, reply_cap, turn_form, efforts, effort_variant, default_effort, per_message_effort, inline_tools, tools_after_results, deferred_tools, adaptive_thinking, thinking_budgets, images, slices, source, sources"
     );
     let error = ModelTable::parse_shipped("store_id = \"x\"\n").unwrap_err();
     assert_eq!(error.problem, RowProblem::UnknownTop);

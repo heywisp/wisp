@@ -4522,11 +4522,7 @@ impl Agent {
             .sending(self.provider().cache_prefix(&request), betas, key);
         let watch = self.watch();
         let sent_model = session.model.as_str();
-        self.sent_sound = images::sent_sound(
-            request.messages,
-            request.rendering,
-            self.provider().media_types(),
-        );
+        self.sent_sound = self.sent_sound(request.messages, request.rendering);
         let mut stream = self.provider().stream(&request);
         self.sending = Some(sent);
         let (mut warming, mut stagger) = self.hold_for_warmth(print, events).await;

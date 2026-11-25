@@ -21,7 +21,6 @@ use super::gate::{Gated, Hooked, Instruction, gated};
 use super::strategy::{HeadAsk, Run};
 use super::{Head, block_raw, block_text, closing_flags, is_native_block};
 use crate::agent::epoch::PrefixKey;
-use crate::agent::images;
 use crate::agent::retry::{Decision, RetryPolicy, RetryState, decide};
 use crate::agent::side::{Landed, Replies, Watch};
 use crate::agent::{Agent, Pending, check_layout, emit};
@@ -412,7 +411,7 @@ impl Agent {
         };
         let (tools, server_tools) = self.wire(&self.sent, self.step_server_tools());
         let provider = self.provider().clone();
-        let sound = images::sent_sound(&covered, &rendering, provider.media_types());
+        let sound = self.sent_sound(&covered, &rendering);
         let order = Order {
             watch: self.watch(),
             provider,

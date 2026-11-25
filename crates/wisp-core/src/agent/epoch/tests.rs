@@ -27,6 +27,7 @@ mod log;
 const OTHER_MODEL: &str = "claude-sonnet-4-6";
 
 static PER_MESSAGE: ModelCapabilities = ModelCapabilities {
+    slices: &[],
     efforts: &[Effort::Low, Effort::Medium, Effort::High],
     default_effort: None,
     per_message_effort: true,

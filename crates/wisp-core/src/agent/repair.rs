@@ -6,8 +6,8 @@ use jiff::Timestamp;
 use tokio::sync::mpsc;
 use wisp_protocol::log::{ImageRef, LeadEntry, LogEvent, LogRecord, LoggedInput};
 use wisp_protocol::{
-    AgentEvent, BlobRef, ContentBlock, DeliveryMode, ErrorKind, ImageData, InputId, Message,
-    QuestionEnd, ReportedEnd, Role, TurnOutcome, TurnStats, UnfinishedReason, Usage, WithdrawnBy,
+    AgentEvent, ContentBlock, DeliveryMode, ErrorKind, ImageData, InputId, Message, QuestionEnd,
+    ReportedEnd, Role, TurnOutcome, TurnStats, UnfinishedReason, Usage, WithdrawnBy,
 };
 use wisp_tool_text::output::with_held_key_note;
 
@@ -505,17 +505,16 @@ impl Agent {
     fn repaired_content(&self, call: &RepairedCall, text: String) -> Vec<ContentBlock> {
         let mut content = vec![ContentBlock::Text { text }];
         for attachment in &call.attachments {
-            let blob = BlobRef {
-                media_type: attachment.media_type.clone(),
-                sha256: attachment.sha256.clone(),
-                bytes: attachment.bytes,
-            };
             let loaded = match &self.log {
-                Some((log, _)) => log.media(&blob),
+                Some((log, _)) => log.media(&attachment.blob()),
                 None => Err(NO_LOG.to_owned()),
             };
             content.push(match loaded {
-                Ok(data) => ContentBlock::media(attachment.media_type.clone(), data),
+                Ok(data) => ContentBlock::media_sliced(
+                    attachment.media_type.clone(),
+                    data,
+                    attachment.slice,
+                ),
                 Err(_) => {
                     let label = self
                         .call_target(&call.call_id)
@@ -524,6 +523,7 @@ impl Agent {
                         text: file_note(
                             &label,
                             &attachment.media_type,
+                            attachment.slice,
                             BLOB_GONE,
                             0,
                             self.toolbox.provider_of(SHELL),

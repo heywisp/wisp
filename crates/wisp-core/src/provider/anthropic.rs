@@ -1364,8 +1364,8 @@ fn wire_block_unfiltered(block: &ContentBlock) -> Option<WireBlock<'_>> {
             return Some(WireBlock::Raw(raw));
         }
         ContentBlock::Image { source } => KnownBlock::Image { source },
-        ContentBlock::Media { source, .. } => {
-            return Some(WireBlock::Media(media::WireMedia(source)));
+        ContentBlock::Media { source, slice } => {
+            return Some(WireBlock::Media(media::WireMedia(source, *slice)));
         }
         ContentBlock::ToolAddition { tool } => KnownBlock::ToolAddition { tool },
         ContentBlock::ToolRemoval { tool } => KnownBlock::ToolRemoval { tool },

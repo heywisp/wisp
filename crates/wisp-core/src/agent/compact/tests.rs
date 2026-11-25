@@ -89,6 +89,7 @@ mod withdrawals;
 const NARROW_MODEL: &str = "claude-narrow-test";
 
 const NARROW: crate::provider::ModelCapabilities = crate::provider::ModelCapabilities {
+    slices: &[],
     efforts: &[
         Effort::Low,
         Effort::Medium,

@@ -169,6 +169,8 @@ fn a_tool_result_sends_its_text_then_each_file_in_order() {
 
 #[test]
 fn a_type_with_no_block_goes_as_the_not_sent_note() {
+    use wisp_protocol::FileSlice;
+
     let zip = ContentBlock::media(mime("application/zip"), "UEsDBA==");
     let mut messages = snap_exchange(vec![result("toolu_1", "a.zip", zip.clone())]);
     messages.push(Message {
@@ -179,4 +181,29 @@ fn a_type_with_no_block_goes_as_the_not_sent_note() {
     let note = json!({"type": "text", "text": "[application/zip file not sent: this server can't carry it]"});
     assert_eq!(wire["messages"][2]["content"][0]["content"][1], note);
     assert_eq!(wire["messages"][3]["content"][0], note);
+    for (kind, slice, label) in [
+        (
+            "application/pdf",
+            FileSlice::pages(14, 16).unwrap(),
+            "pages 14-16",
+        ),
+        (
+            "audio/wav",
+            FileSlice::seconds(30, 90).unwrap(),
+            "seconds 30-90",
+        ),
+    ] {
+        let block = ContentBlock::media_sliced(mime(kind), "YQ==", Some(slice));
+        let mut messages = snap_exchange(vec![result("toolu_1", "attached", block.clone())]);
+        messages.push(Message {
+            role: Role::User,
+            content: vec![block],
+        });
+        let body = encoded(&messages).unwrap();
+        let wire: Value = serde_json::from_str(&body).unwrap();
+        let note = json!({"type":"text","text":format!("[{kind} file ({label}) not sent: this model can't read the selected part]")});
+        assert_eq!(wire["messages"][2]["content"][0]["content"][1], note);
+        assert_eq!(wire["messages"][3]["content"][0], note);
+        assert!(!body.contains("YQ=="));
+    }
 }

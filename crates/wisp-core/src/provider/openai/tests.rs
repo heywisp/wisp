@@ -508,6 +508,34 @@ fn tool_result_images_are_preserved_and_foreign_nested_blocks_become_text() {
                 json!([part])
             );
         }
+        use wisp_protocol::FileSlice;
+        for (kind, slice) in [
+            ("application/pdf", FileSlice::pages(14, 16).unwrap()),
+            (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                FileSlice::pages(2, 2).unwrap(),
+            ),
+            (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                FileSlice::sheet(2).unwrap(),
+            ),
+            ("audio/mpeg", FileSlice::seconds(30, 90).unwrap()),
+        ] {
+            let block =
+                ContentBlock::media_sliced(kind.parse().unwrap(), "synthetic-data", Some(slice));
+            let part = json!({"type":"input_text","text":format!("[{kind} file ({slice}) not sent: this model can't read the selected part]")});
+            assert_eq!(
+                input(&[result(vec![block.clone()])])[0]["output"],
+                json!([part])
+            );
+            assert_eq!(
+                input(&[Message {
+                    role: Role::User,
+                    content: vec![block]
+                }])[0]["content"],
+                json!([part])
+            );
+        }
     }
     let foreign = ContentBlock::opaque("other", json!({"type":"unsupported_media"}));
     let input = input(&[result(vec![screenshot, foreign])]);

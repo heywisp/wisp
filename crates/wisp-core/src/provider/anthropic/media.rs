@@ -1,7 +1,9 @@
 use std::sync::LazyLock;
 
 use serde::{Serialize, Serializer};
-use wisp_protocol::MediaSource;
+use wisp_protocol::{FileSlice, MediaSource};
+
+use super::super::{NotSent, not_sent_note};
 
 pub static MEDIA_TYPES: LazyLock<Vec<&str>> =
     LazyLock::new(|| BLOCKS.iter().map(|(media_type, _)| *media_type).collect());
@@ -43,11 +45,17 @@ enum Block<'a> {
     Text { text: String },
 }
 
-pub(super) struct WireMedia<'a>(pub(super) &'a MediaSource);
+pub(super) struct WireMedia<'a>(pub(super) &'a MediaSource, pub(super) Option<FileSlice>);
 
 impl Serialize for WireMedia<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let media_type = self.0.media_type().as_str();
+        if self.1.is_some() {
+            return Block::Text {
+                text: not_sent_note(media_type, self.1, NotSent::Slice),
+            }
+            .serialize(serializer);
+        }
         let source = Base64 {
             kind: "base64",
             media_type,
@@ -57,7 +65,7 @@ impl Serialize for WireMedia<'_> {
             Some(Carried::Image) => Block::Image { source }.serialize(serializer),
             Some(Carried::Document) => Block::Document { source }.serialize(serializer),
             None => Block::Text {
-                text: super::super::not_sent_note(media_type, super::super::NotSent::Server),
+                text: not_sent_note(media_type, None, NotSent::Server),
             }
             .serialize(serializer),
         }
