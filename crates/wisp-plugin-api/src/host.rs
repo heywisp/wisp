@@ -706,6 +706,10 @@ pub trait Host:
         &()
     }
 
+    fn private_files(&self) -> &dyn crate::private_files::PrivateFiles {
+        &()
+    }
+
     fn project(&self) -> &dyn crate::project::Project {
         &()
     }

@@ -30,6 +30,8 @@ pub fn bundled() -> Vec<Bundled> {
     all.push(wisp_plugin_instructions::bundled());
     #[cfg(feature = "mcp")]
     all.push(wisp_plugin_mcp::bundled());
+    #[cfg(feature = "memory")]
+    all.push(wisp_plugin_memory::bundled());
     #[cfg(feature = "menus")]
     all.push(wisp_plugin_menus::bundled());
     #[cfg(feature = "page")]

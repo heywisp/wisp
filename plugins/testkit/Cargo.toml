@@ -14,5 +14,6 @@ workspace = true
 futures.workspace = true
 image.workspace = true
 serde_json.workspace = true
+hmac-sha256.workspace = true
 wisp-plugin-api.workspace = true
 wisp-tool-text.workspace = true

@@ -205,7 +205,7 @@ impl KernelHost {
             let checked = Arc::new(AtomicBool::new(false));
             let caller = Caller {
                 gather_checked: Some(checked.clone()),
-                ..Caller::current()
+                ..Caller::current().read_only_private_files()
             };
             let entries = caller
                 .scope(async {
@@ -358,10 +358,13 @@ impl Index for PluginHost {
             let Some(owner) = owner else {
                 return Index::open(&(), name).await;
             };
-            let opened = match contain(|| owner.open_entry(name)) {
-                Ok(future) => Contained::new(future).await.ok(),
-                Err(_) => None,
-            };
+            let opened = Caller::current()
+                .read_only_private_files()
+                .scope(async {
+                    let future = contain(|| owner.open_entry(name)).ok()?;
+                    Contained::new(future).await.ok()
+                })
+                .await;
             if checked_stamp.is_some_and(|(generation, home)| {
                 crate::session::held_generation() != generation
                     || self.kernel.secret_check_home() != home

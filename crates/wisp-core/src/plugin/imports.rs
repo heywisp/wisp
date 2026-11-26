@@ -96,6 +96,9 @@ pub enum Import {
     UsageAccounts,
     ProjectKey,
     SecretCheckCheck,
+    PrivateFilesList,
+    PrivateFilesRead,
+    PrivateFilesChange,
     McpPrompts,
     McpGetPrompt,
     McpResources,
@@ -121,7 +124,7 @@ pub enum Inside {
     NeedsCall,
 }
 
-pub const ALL: [Import; 107] = [
+pub const ALL: [Import; 110] = [
     Import::SessionCurrent,
     Import::WorkspaceRoot,
     Import::WorkspaceHome,
@@ -214,6 +217,9 @@ pub const ALL: [Import; 107] = [
     Import::UsageAccounts,
     Import::ProjectKey,
     Import::SecretCheckCheck,
+    Import::PrivateFilesList,
+    Import::PrivateFilesRead,
+    Import::PrivateFilesChange,
     Import::McpPrompts,
     Import::McpGetPrompt,
     Import::McpResources,
@@ -326,6 +332,9 @@ impl Import {
             Self::UsageAccounts => "usage.accounts",
             Self::ProjectKey => "project.key",
             Self::SecretCheckCheck => "secret-check.check",
+            Self::PrivateFilesList => "private-files.list",
+            Self::PrivateFilesRead => "private-files.read",
+            Self::PrivateFilesChange => "private-files.change",
             Self::McpPrompts => "mcp.prompts",
             Self::McpGetPrompt => "mcp.get-prompt",
             Self::McpResources => "mcp.resources",
@@ -413,6 +422,9 @@ impl Import {
             | Self::JobsCapture
             | Self::WorkspaceFactsEnvironment
             | Self::WorkspaceFactsDataDir
+            | Self::PrivateFilesList
+            | Self::PrivateFilesRead
+            | Self::PrivateFilesChange
             | Self::ProjectKey
             | Self::WorkspaceFactsTerminal
             | Self::JobNewsOpening
@@ -468,6 +480,9 @@ impl Import {
             | Self::UsageAccounts
             | Self::ProjectKey
             | Self::SecretCheckCheck
+            | Self::PrivateFilesList
+            | Self::PrivateFilesRead
+            | Self::PrivateFilesChange
             | Self::McpPrompts
             | Self::McpGetPrompt
             | Self::McpResources

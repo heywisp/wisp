@@ -39,7 +39,7 @@ pub const DYNAMIC_TOOLS_WORLD: &str = "0.4.0";
 
 pub const USAGE_CHANGED: &str = "usage-changed";
 
-pub const BUNDLED_IDS: [&str; 25] = [
+pub const BUNDLED_IDS: [&str; 26] = [
     "anthropic",
     "gemini",
     "openai",
@@ -60,6 +60,7 @@ pub const BUNDLED_IDS: [&str; 25] = [
     "compaction",
     "menus",
     "mcp",
+    "memory",
     "page",
     "idle",
     "agent-viz",

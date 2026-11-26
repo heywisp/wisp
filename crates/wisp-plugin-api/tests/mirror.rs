@@ -31,6 +31,7 @@ use wisp_plugin_api::manifest::CORE_POINTS;
 use wisp_plugin_api::mcp::{self, Mcp};
 use wisp_plugin_api::model::{self, Model};
 use wisp_plugin_api::pricing::{self, Pricing, SpendTotals};
+use wisp_plugin_api::private_files::{self, PrivateFiles};
 use wisp_plugin_api::project::Project;
 use wisp_plugin_api::prompt::{
     self, At, EnvironmentFacts, JobNews, News, Prior, Rendered, WorkspaceFacts,
@@ -59,11 +60,12 @@ const WIT_0_3_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.3.0")
 
 const WIT_0_4_0: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../wit/v0.4.0");
 
-const ADDED_IN_0_4_0: [&str; 8] = [
+const ADDED_IN_0_4_0: [&str; 9] = [
     "chat",
     "manage",
     "mcp",
     "model",
+    "private-files",
     "project",
     "questions",
     "secret-check",
@@ -153,7 +155,62 @@ macro_rules! cases {
 }
 
 fn mirrors() -> Vec<Mirror> {
+    use private_files::{ChangeAction as Action, PrivateFileError as Error};
+
     vec![
+        cases!(
+            Enum,
+            "private-files",
+            "status",
+            private_files::Status {
+                Regular,
+                Directory,
+                Refused
+            }
+        ),
+        fields!(
+            Record,
+            "private-files",
+            "entry",
+            private_files::Entry { name, status }
+        ),
+        cases!(
+            Enum,
+            "private-files",
+            "error",
+            Error {
+                Unavailable,
+                InvalidPath,
+                NotFound,
+                Refused,
+                OverLimit,
+                Changed,
+                CapReached,
+                Io
+            }
+        ),
+        fields!(
+            Record,
+            "private-files",
+            "hash-check",
+            private_files::HashCheck { sha256, max_bytes }
+        ),
+        cases!(
+            Variant,
+            "private-files",
+            "expected",
+            private_files::Expected { Absent, Hash }
+        ),
+        cases!(Variant, "private-files", "action", Action { Write, Delete }),
+        fields!(
+            Record,
+            "private-files",
+            "create-cap",
+            private_files::CreateCap {
+                suffix,
+                max_regular
+            }
+        ),
         cases!(
             Enum,
             "secret-check",
@@ -2612,6 +2669,12 @@ probe!(secret_check_methods, impl SecretCheck {
     fn check(&self, _text: &str) -> secret_check::Verdict { secret_check::Verdict::Refused }
 });
 
+probe!(private_files_methods, impl PrivateFiles {
+    fn list(&self, _path: &str, _max_entries: u32) -> Result<Vec<private_files::Entry>, private_files::PrivateFileError> { Err(private_files::PrivateFileError::Unavailable) }
+    fn read(&self, _path: &str, _max_bytes: u32) -> Result<Vec<u8>, private_files::PrivateFileError> { Err(private_files::PrivateFileError::Unavailable) }
+    fn change(&self, _path: &str, _before: private_files::Expected, _action: private_files::ChangeAction, _create_cap: Option<private_files::CreateCap>) -> Result<(), private_files::PrivateFileError> { Err(private_files::PrivateFileError::Unavailable) }
+});
+
 probe!(project_methods, impl Project {
     fn key(&self) -> Option<String> { None }
 });
@@ -2739,6 +2802,11 @@ fn traits() -> Vec<Trait> {
     };
     vec![
         import("Chat", &[("chat", None)], chat_methods),
+        import(
+            "PrivateFiles",
+            &[("private-files", None)],
+            private_files_methods,
+        ),
         import("Project", &[("project", None)], project_methods),
         import("Questions", &[("questions", None)], questions_methods),
         import(
@@ -3413,6 +3481,7 @@ fn each_folder_holds_one_package_and_each_later_one_only_its_delta() {
             "mcp.wit",
             "media.wit",
             "model.wit",
+            "private-files.wit",
             "project.wit",
             "questions.wit",
             "secret-check.wit",
@@ -3718,6 +3787,7 @@ fn world_0_4_0_replaces_media_and_tools_and_retains_other_items() {
             "mcp",
             "media",
             "model",
+            "private-files",
             "project",
             "questions",
             "secret-check",

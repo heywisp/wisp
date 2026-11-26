@@ -32,6 +32,8 @@ pub(crate) mod stack_alarm;
 pub mod subscription_login;
 #[cfg(test)]
 pub(crate) mod test_guard;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 pub mod tool;
 pub mod version;
 pub mod voice;

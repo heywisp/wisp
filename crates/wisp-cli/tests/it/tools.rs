@@ -22,7 +22,7 @@ use support::{
 };
 
 const DONE: &str = "ALL-CHECKS-DONE";
-const DEFAULT_TOOLS: [&str; 18] = [
+const DEFAULT_TOOLS: [&str; 19] = [
     "ask_secret",
     "ask_user",
     "bash",
@@ -30,6 +30,7 @@ const DEFAULT_TOOLS: [&str; 18] = [
     "list_agents",
     "list_settings",
     "process",
+    "remember",
     "rename_agent",
     "search",
     "send_message",

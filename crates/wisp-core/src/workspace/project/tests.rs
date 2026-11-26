@@ -1,4 +1,5 @@
 use std::fs;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::sync::Barrier;
 
 use super::*;
@@ -81,6 +82,7 @@ fn linked_worktrees_and_submodules_find_their_common_dir_and_broken_pointers_non
     }
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn worktrees_share_one_keyed_key_and_a_reused_path_keeps_it() {
     let scratch = ScratchDir::new("wisp-project-key-", "location");
@@ -122,15 +124,16 @@ fn worktrees_share_one_keyed_key_and_a_reused_path_keeps_it() {
     assert!(project_key(&repo, &data).as_ref() == Some(&key));
 }
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn a_linked_core_folder_or_a_bad_secret_gives_none_and_is_left_alone() {
-    use std::os::unix::fs::{FileTypeExt, PermissionsExt, symlink};
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     let scratch = ScratchDir::new("wisp-project-key-", "bad-entries");
     let repo = scratch.dir("repo");
     make_repository(&repo).unwrap();
-    let data = scratch.dir("plugin-data");
+    let data = scratch.root.join("plugin-data");
+    crate::secrets::create_folder(&data).unwrap();
     let core = data.join(CORE_ID);
     let target = scratch.dir("target");
     let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
@@ -140,7 +143,7 @@ fn a_linked_core_folder_or_a_bad_secret_gives_none_and_is_left_alone() {
     assert_eq!(mode(&target), 0o755);
     assert!(fs::read_dir(&target).unwrap().next().is_none());
     fs::remove_file(&core).unwrap();
-    fs::create_dir(&core).unwrap();
+    crate::secrets::create_folder(&core).unwrap();
 
     let path = core.join(SECRET_FILE);
     let file = target.join("file");
@@ -161,21 +164,25 @@ fn a_linked_core_folder_or_a_bad_secret_gives_none_and_is_left_alone() {
         assert_eq!(mode(&path), 0o644);
     }
     fs::remove_file(&path).unwrap();
-    rustix::fs::mkfifoat(
-        rustix::fs::CWD,
-        &path,
-        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
-    )
-    .unwrap();
-    assert!(project_key(&repo, &data).is_none());
-    assert!(fs::symlink_metadata(&path).unwrap().file_type().is_fifo());
-    fs::remove_file(&path).unwrap();
-
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        rustix::fs::mkfifoat(
+            rustix::fs::CWD,
+            &path,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        )
+        .unwrap();
+        assert!(project_key(&repo, &data).is_none());
+        assert!(fs::symlink_metadata(&path).unwrap().file_type().is_fifo());
+        fs::remove_file(&path).unwrap();
+    }
     fs::rename(file, &path).unwrap();
     assert!(project_key(&repo, &data).is_some());
     assert_eq!(mode(&path), 0o600);
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 #[test]
 fn first_uses_at_once_agree_on_one_secret() {
     let scratch = ScratchDir::new("wisp-project-key-", "first-use");
@@ -199,4 +206,15 @@ fn first_uses_at_once_agree_on_one_secret() {
             assert!(thread.join().unwrap() == first);
         }
     });
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[test]
+fn without_safe_private_file_opens_project_keys_create_nothing() {
+    let scratch = ScratchDir::new("wisp-project-key-", "unsupported");
+    let repo = scratch.dir("repo");
+    make_repository(&repo).unwrap();
+    let data = scratch.root.join("plugin-data");
+    assert!(project_key(&repo, &data).is_none());
+    assert!(!data.join(CORE_ID).exists());
 }

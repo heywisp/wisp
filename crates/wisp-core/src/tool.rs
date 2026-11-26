@@ -290,7 +290,12 @@ impl ToolEntry {
     async fn ask_unboxed<T>(&self, input: &Value, ask: Ask<T>) -> std::thread::Result<T> {
         let tool = &self.0;
         let text = PluginTool::text(input);
-        Contained::new(async { ask(tool.plugin.as_ref(), &tool.spec.name, &text).await }).await
+        Caller::current()
+            .read_only_private_files()
+            .scope(Contained::new(async {
+                ask(tool.plugin.as_ref(), &tool.spec.name, &text).await
+            }))
+            .await
     }
 
     pub fn prepare<'a>(
@@ -383,7 +388,6 @@ pub struct Toolbox {
     natives: Vec<Native>,
     runners: Vec<(String, ToolEntry)>,
     plugins: Vec<PluginRecord>,
-    capabilities: Vec<String>,
 }
 
 impl fmt::Debug for Toolbox {
@@ -403,12 +407,6 @@ impl Toolbox {
         tools.dedup_by(|a, b| a.spec().name == b.spec().name);
         let specs = tools.iter().map(|t| t.spec().clone()).collect();
         let enabled = tools.iter().map(|t| t.spec().name.clone()).collect();
-        let mut capabilities: Vec<String> = tools
-            .iter()
-            .flat_map(|tool| tool.0.provides.iter().cloned())
-            .collect();
-        capabilities.sort();
-        capabilities.dedup();
         Self {
             tools,
             held: Vec::new(),
@@ -417,7 +415,6 @@ impl Toolbox {
             natives: Vec::new(),
             runners: Vec::new(),
             plugins: Vec::new(),
-            capabilities,
         }
     }
 
@@ -625,8 +622,15 @@ impl Toolbox {
         &self.plugins
     }
 
-    pub fn capabilities(&self) -> &[String] {
-        &self.capabilities
+    pub fn capabilities(&self) -> Vec<String> {
+        self.tools
+            .iter()
+            .chain(&self.held)
+            .filter(|t| self.is_enabled(&t.spec().name))
+            .flat_map(|t| t.0.provides.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     pub fn hosts(&self) -> Vec<Arc<KernelHost>> {
@@ -800,7 +804,7 @@ impl Toolbox {
     }
 
     async fn rejected_display_unboxed(&self, name: &str, input: &Value) -> ToolDisplay {
-        let shown = match self.get(name) {
+        let shown = match self.get(name).or_else(|| self.held_tool(name)) {
             Some(tool) => tool.rejected_display(input).await,
             None => None,
         };

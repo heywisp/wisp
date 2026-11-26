@@ -1863,7 +1863,7 @@ fn a_set_alias_that_another_row_already_uses_is_refused() {
     assert!(replaced.status.success(), "{}", both(&replaced));
 }
 
-const CATALOG_TOOLS: &str = "ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, spawn_agent, view_file, web_search, write_todos, or none";
+const CATALOG_TOOLS: &str = "ask_secret, ask_user, bash, list_accounts, list_settings, manage, remember, rename_chat, search, show_code, show_diff, spawn_agent, view_file, web_search, write_todos, or none";
 
 #[test]
 fn tool_names_are_checked_against_the_catalog_where_they_are_written() {
@@ -1960,7 +1960,7 @@ fn tool_names_are_checked_against_the_catalog_where_they_are_written() {
     let todos = home.run(&["config", "set", "tools", "write_todos"]);
     assert!(todos.status.success(), "{}", both(&todos));
     assert_eq!(home.read(CONFIG), "tools = [\"write_todos\"]\n");
-    let defaults = "ask_secret,ask_user,bash,list_accounts,list_settings,manage,rename_chat,search,show_code,show_diff,spawn_agent,view_file,web_search,write_todos";
+    let defaults = "ask_secret,ask_user,bash,list_accounts,list_settings,manage,remember,rename_chat,search,show_code,show_diff,spawn_agent,view_file,web_search,write_todos";
     let applies = "applies to new sessions; a running Wisp keeps its settings (use /config there)";
     for (given, was) in [
         (
@@ -2058,7 +2058,7 @@ fn a_hook_switch_names_a_known_hook_and_a_saved_one_reads_back() {
     home.write(CONFIG, "[plugins.aa.hooks]\nx = false\n");
     let list = home.run(&["config", "list"]);
     assert!(list.status.success(), "{}", both(&list));
-    assert!(!out(&list).contains("plugins."), "{}", out(&list));
+    assert!(!out(&list).contains("plugins.aa."), "{}", out(&list));
     let notice = home.run(&["config", "set", "plugins.shell.hooks.processes", "off"]);
     assert!(notice.status.success(), "{}", both(&notice));
     assert!(
@@ -2158,6 +2158,10 @@ const PLUGIN_LIST: &[&str] = &[
     "  settings: instructions.source, instructions.warn_tokens\n",
     "mcp 0.1.0 on\n",
     "  Tools, prompts and resources from your MCP servers\n",
+    "memory 0.1.0 on\n",
+    "  Saves and restores notes requested by the user\n",
+    "  tools: remember\n",
+    "  settings: plugins.memory.list_limit\n",
     "menus 0.1.0 on\n",
     "  Lets the model read what /config, /account and /usage show\n",
     "  tools: list_accounts, list_settings\n",
@@ -2299,6 +2303,7 @@ const PLUGIN_HOOKS: &[&str] = &[
     "  skills/scan \u{b7} in core/state \u{b7} on\n",
     "  workspace/environment \u{b7} prompt section\n",
     "  instructions/instructions \u{b7} prompt section\n",
+    "  memory/list \u{b7} prompt section\n",
     "  workspace/terminal \u{b7} prompt section\n",
     "  core/tools\n",
     "  skills/nudge \u{b7} in core/notes \u{b7} on\n",

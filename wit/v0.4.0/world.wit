@@ -39,6 +39,7 @@ world plugin {
   import chat;
   import model;
   import project;
+  import private-files;
   import usage;
   import mcp;
   import manage;

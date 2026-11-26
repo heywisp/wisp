@@ -6004,7 +6004,9 @@ fn run_plugin(
     call: Arc<KernelCall>,
     at: crate::plugin::caller::At,
 ) -> futures::future::BoxFuture<'static, ToolRun> {
-    let caller = Caller::call(call.cancel.clone(), call.deadline).hook(0, at);
+    let caller = Caller::call(call.cancel.clone(), call.deadline)
+        .hook(0, at)
+        .allow_private_write();
     caller
         .scope(async move {
             let input = prepared.into_plugin();

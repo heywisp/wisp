@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
+use wisp_plugin_api::private_files::TEMP_PREFIX;
 use wisp_protocol::endpoint::StoreChoice;
 use wisp_protocol::settings::{KEY_STORE_FILE, KEY_STORE_KEYRING};
 pub use wisp_protocol::{KeyProblem, Secret, check_key};
@@ -50,7 +51,6 @@ pub const OAUTH: &str = "oauth";
 pub const FILE_VERSION: u64 = 1;
 pub const LOCK_WAIT: Duration = Duration::from_secs(10);
 pub const OWNER_MAX: u64 = 1024 * 1024;
-const TEMP_PREFIX: &str = ".wisp-tmp-";
 
 pub type Every = BTreeMap<StoreId, BTreeMap<EndpointName, Stored>>;
 
@@ -681,20 +681,24 @@ pub fn lock_noting(
     };
     let deadline = Instant::now() + wait;
     for (_, file) in &locks.held {
-        loop {
-            let error = match crate::file_lock::try_lock(file) {
-                Ok(()) => break,
-                Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(25));
-                    continue;
-                }
-                Err(std::fs::TryLockError::WouldBlock) => StoreError::Busy,
-                Err(std::fs::TryLockError::Error(e)) => StoreError::Lock(e.kind()),
-            };
+        if let Err(error) = lock_file(file, deadline) {
             return Err((error, std::mem::take(&mut locks.notes)));
         }
     }
     Ok(locks)
+}
+
+pub(crate) fn lock_file(file: &File, deadline: Instant) -> Result<(), StoreError> {
+    loop {
+        match crate::file_lock::try_lock(file) {
+            Ok(()) => return Ok(()),
+            Err(std::fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(std::fs::TryLockError::WouldBlock) => return Err(StoreError::Busy),
+            Err(std::fs::TryLockError::Error(e)) => return Err(StoreError::Lock(e.kind())),
+        }
+    }
 }
 
 pub fn work_tree(folder: &Path) -> Option<(PathBuf, PathBuf)> {
@@ -743,27 +747,24 @@ pub(crate) fn replace_atomic(
     synced(target)
 }
 
-pub(crate) fn create_atomic(target: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
-    let temp = staged(target, bytes, mode)?;
-    temp.persist_noclobber(target).map_err(|e| e.error)?;
-    synced(target)
-}
-
 fn staged(target: &Path, bytes: &[u8], mode: u32) -> io::Result<tempfile::NamedTempFile> {
     let mut temp = tempfile::Builder::new()
         .prefix(TEMP_PREFIX)
         .tempfile_in(folder_of(target))?;
-    temp.write_all(bytes)?;
+    sync_staged(temp.as_file_mut(), bytes, mode)?;
+    Ok(temp)
+}
+
+pub(crate) fn sync_staged(file: &mut File, bytes: &[u8], mode: u32) -> io::Result<()> {
+    file.write_all(bytes)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        temp.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(mode))?;
+        file.set_permissions(std::fs::Permissions::from_mode(mode))?;
     }
     #[cfg(not(unix))]
     let _ = mode;
-    temp.as_file().sync_all()?;
-    Ok(temp)
+    file.sync_all()
 }
 
 fn synced(target: &Path) -> io::Result<()> {

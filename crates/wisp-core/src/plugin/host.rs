@@ -590,6 +590,12 @@ impl PluginHost {
         &self.id
     }
 
+    fn private_data_root(&self) -> Option<PathBuf> {
+        locked(&self.kernel.data_dir)
+            .as_ref()
+            .map(|base| base.join(&self.id))
+    }
+
     fn refuses(&self, import: Import) -> bool {
         import.refused() || !import.spoken_in(&self.world)
     }
@@ -1495,10 +1501,9 @@ impl WorkspaceFacts for PluginHost {
         if Import::WorkspaceFactsDataDir.refused() {
             return Err(in_render());
         }
-        let dir = locked(&self.kernel.data_dir)
-            .as_ref()
+        let dir = self
+            .private_data_root()
             .filter(|_| Import::WorkspaceFactsDataDir.spoken_in(&self.world))
-            .map(|base| base.join(&self.id))
             .ok_or_else(|| NO_DATA_FOLDER.to_owned())?;
         crate::session::create_private_dir(&dir).map_err(|e| e.kind().to_string())?;
         Ok(dir.display().to_string())
@@ -1844,6 +1849,10 @@ impl Host for PluginHost {
         self
     }
 
+    fn private_files(&self) -> &dyn wisp_plugin_api::private_files::PrivateFiles {
+        self
+    }
+
     fn secret_check(&self) -> &dyn SecretCheck {
         self
     }
@@ -1862,7 +1871,7 @@ impl Host for PluginHost {
 
 impl Kernel for PluginHost {
     fn caller(&self) -> Arc<dyn Scope> {
-        Arc::new(super::caller::Caller::current())
+        Arc::new(Caller::current().read_only_private_files())
     }
 
     fn restarted(&self) -> BoxFuture<'_, ()> {
@@ -1877,6 +1886,8 @@ pub(crate) mod accounts;
 mod index;
 pub(crate) mod manage;
 mod mcp;
+
+pub(crate) mod private_files;
 
 #[cfg(test)]
 mod tests;

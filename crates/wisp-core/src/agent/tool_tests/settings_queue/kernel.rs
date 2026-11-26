@@ -421,7 +421,7 @@ async fn a_tools_change_is_checked_against_the_catalog_and_offers_its_leaders() 
         (
             1,
             "nope",
-            "tools: nope is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, show_page, spawn_agent, view_file, web_search, write_todos, or none",
+            "tools: nope is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, remember, rename_chat, search, show_code, show_diff, show_page, spawn_agent, view_file, web_search, write_todos, or none",
         ),
         (
             2,
@@ -502,6 +502,7 @@ async fn a_tools_change_is_checked_against_the_catalog_and_offers_its_leaders() 
             "list_accounts",
             "list_settings",
             "manage",
+            "remember",
             "rename_chat",
             "search",
             "show_code",
@@ -1631,6 +1632,7 @@ async fn a_tools_save_keeps_unknown_names_refuses_new_ones_and_resets_to_the_def
         "list_accounts",
         "list_settings",
         "manage",
+        "remember",
         "rename_chat",
         "search",
         "show_code",

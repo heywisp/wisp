@@ -11,7 +11,7 @@ publish.workspace = true
 workspace = true
 
 [features]
-default = ["openai", "gemini", "anthropic", "agent-viz", "agents", "ask-user", "chat", "compaction", "context", "idle", "instructions", "mcp", "menus", "page", "search", "secret", "self-check", "shell", "show-diff", "skills", "time", "todos", "view-file", "web-search", "workspace"]
+default = ["openai", "gemini", "anthropic", "agent-viz", "agents", "ask-user", "chat", "compaction", "context", "idle", "instructions", "mcp", "memory", "menus", "page", "search", "secret", "self-check", "shell", "show-diff", "skills", "time", "todos", "view-file", "web-search", "workspace"]
 anthropic = ["dep:wisp-plugin-anthropic"]
 gemini = ["dep:wisp-plugin-gemini"]
 openai = ["dep:wisp-plugin-openai"]
@@ -24,6 +24,7 @@ context = ["dep:wisp-plugin-context"]
 idle = ["dep:wisp-plugin-idle"]
 instructions = ["dep:wisp-plugin-instructions"]
 mcp = ["dep:wisp-plugin-mcp"]
+memory = ["dep:wisp-plugin-memory"]
 menus = ["dep:wisp-plugin-menus"]
 page = ["dep:wisp-plugin-page"]
 search = ["dep:wisp-plugin-search"]
@@ -53,6 +54,7 @@ wisp-plugin-context = { workspace = true, optional = true }
 wisp-plugin-idle = { workspace = true, optional = true }
 wisp-plugin-instructions = { workspace = true, optional = true }
 wisp-plugin-mcp = { workspace = true, optional = true }
+wisp-plugin-memory = { workspace = true, optional = true }
 wisp-plugin-menus = { workspace = true, optional = true }
 wisp-plugin-page = { workspace = true, optional = true }
 wisp-plugin-search = { workspace = true, optional = true }
