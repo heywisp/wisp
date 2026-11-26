@@ -398,7 +398,7 @@ fn a_change_after_the_last_ordinary_turn_is_pending_until_undone() {
         vec![entry("endpoint", setting_text("other"), false)],
     ));
     assert_eq!(pending(&events), ["endpoint other"]);
-    events.push(change(
+    let mut move_to_other = change(
         "claude-sonnet-5",
         "medium",
         "other",
@@ -406,7 +406,15 @@ fn a_change_after_the_last_ordinary_turn_is_pending_until_undone() {
             entry("model", setting_text("claude-sonnet-5"), false),
             entry("context.auto_compact", SettingValue::Bool(false), false),
         ],
-    ));
+    );
+    move_to_other["provider"] = json!("anthropic");
+    events.push(move_to_other);
+    let logged = LoggedSession::read(&log(&events)).unwrap();
+    assert_eq!(logged.endpoint(), Some("env"));
+    assert_eq!(
+        logged.pending.unwrap().destination(),
+        Some(("other", "anthropic"))
+    );
     assert_eq!(
         pending(&events),
         [

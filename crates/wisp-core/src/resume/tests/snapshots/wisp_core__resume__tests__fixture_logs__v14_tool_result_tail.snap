@@ -61,6 +61,7 @@ Ok(
             names: [],
             from_change: false,
         },
+        committed_tools: None,
         inline_search: None,
         copy: LoggedCopy {
             system_prompt: None,
@@ -93,6 +94,8 @@ Ok(
                 started_at: "2026-10-24T10:00:01Z",
                 last_at: "2026-10-24T10:00:04Z",
                 endpoint: None,
+                model: "claude-opus-5-5",
+                effort: High,
                 opening: [
                     LoggedInput {
                         id: InputId(

@@ -68,7 +68,7 @@ impl Agent {
         let offered = self.offered.as_ref().filter(|_| self.offer_stands())?;
         if !self.queue.is_empty()
             || self.queue.retry.is_some()
-            || self.next_endpoint() != offered.endpoint
+            || self.next_endpoint() != offered.failed.endpoint
             || self.agents.restarting()
         {
             return None;

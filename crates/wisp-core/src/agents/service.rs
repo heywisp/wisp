@@ -67,7 +67,14 @@ pub struct Caller {
     pub message_time: MessageTime,
     pub context_note: bool,
     pub endpoint: String,
+    pub(crate) can_inherit_endpoint: bool,
     pub plugins: crate::plugin::PluginSwitches,
+}
+
+impl Caller {
+    fn inherited_endpoint(&self) -> Option<&str> {
+        self.can_inherit_endpoint.then_some(self.endpoint.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -175,7 +182,7 @@ impl Place {
 pub(crate) struct Settled {
     pub(crate) model: String,
     pub(crate) effort: Effort,
-    pub(crate) endpoint: String,
+    pub(crate) endpoint: Option<String>,
     pub(crate) provider: &'static str,
     pub(crate) kind: &'static str,
     pub(crate) priced: bool,
@@ -908,9 +915,14 @@ impl AgentsService {
         ) {
             (Some(name), _) => (name.as_str(), Fixed::Spawn),
             (None, Some((name, preset))) => (name.as_str(), Fixed::Preset(preset.as_str())),
-            (None, None) => (caller.endpoint.as_str(), Fixed::Inherited),
+            (None, None) => (
+                caller
+                    .inherited_endpoint()
+                    .ok_or("name an account for the new agent; this agent has no active account")?,
+                Fixed::Inherited,
+            ),
         };
-        let mut choices = choices(request, preset.as_ref(), caller);
+        let mut choices = choices(request, preset.as_ref(), name);
         let cascading = choices.len() > 1;
         let adopted = match fixed {
             Fixed::Preset(_) if !cascading => fallback(tree, view, name, caller),
@@ -1110,7 +1122,9 @@ impl AgentsService {
             wisp_protocol::settings::lands_on(
                 &wisp_protocol::settings::offers(&entries),
                 listing.landing(target.kind().as_str()),
-                view.ready(&caller.endpoint)
+                caller
+                    .inherited_endpoint()
+                    .and_then(|name| view.ready(name))
                     .is_some_and(|own| own.name == target.name),
                 (agent::chat(&caller.model), Some(caller.effort)),
                 None,
@@ -1944,14 +1958,10 @@ struct Plan {
 fn choices(
     request: &SpawnRequest,
     preset: Option<&wisp_protocol::agents::Preset>,
-    caller: &Caller,
+    endpoint: &str,
 ) -> Vec<Choice> {
     let first = Choice {
-        endpoint: request
-            .endpoint
-            .clone()
-            .or_else(|| preset.and_then(|preset| preset.endpoint.clone()))
-            .unwrap_or_else(|| caller.endpoint.clone()),
+        endpoint: endpoint.to_owned(),
         model: request
             .model
             .clone()
@@ -1977,8 +1987,10 @@ fn fallback<'v>(
 ) -> Option<&'v Ready> {
     let missing = tree.gone.contains_key(name)
         || (view.ready(name).is_none() && view.unavailable(name).is_none());
-    let parent = view.ready(&caller.endpoint);
-    let parent = parent.filter(|_| missing && !tree.gone.contains_key(&caller.endpoint))?;
+    let inherited = caller.inherited_endpoint()?;
+    let parent = view
+        .ready(inherited)
+        .filter(|_| missing && !tree.gone.contains_key(inherited))?;
     let from = tree.gone.get(name).copied().flatten();
     (!wisp_protocol::starts_charging(from, parent.billing())).then_some(parent)
 }
@@ -2652,7 +2664,7 @@ impl AgentsHandle {
                 e.model = settled.model;
                 e.effort = settled.effort;
                 e.place = Place {
-                    endpoint: Some(settled.endpoint),
+                    endpoint: settled.endpoint,
                     provider: Some(settled.provider.to_owned()),
                     priced: settled.priced,
                 };

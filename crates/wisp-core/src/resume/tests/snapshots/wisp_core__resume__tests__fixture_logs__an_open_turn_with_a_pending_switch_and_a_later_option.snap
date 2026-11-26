@@ -49,8 +49,10 @@ Ok(
                 endpoint: Some(
                     "other",
                 ),
+                provider: None,
                 model: "claude-sonnet-5",
                 effort: Medium,
+                billing: None,
             },
         ),
         later: LaterOptions {
@@ -114,6 +116,7 @@ Ok(
             names: [],
             from_change: false,
         },
+        committed_tools: None,
         inline_search: None,
         copy: LoggedCopy {
             system_prompt: None,
@@ -150,6 +153,8 @@ Ok(
                 endpoint: Some(
                     "env",
                 ),
+                model: "claude-opus-5-5",
+                effort: Medium,
                 opening: [
                     LoggedInput {
                         id: InputId(

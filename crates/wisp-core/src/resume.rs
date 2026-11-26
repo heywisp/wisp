@@ -70,11 +70,21 @@ pub struct Started {
     pub cwd: Option<String>,
 }
 
+pub(crate) const RESUMED_COMPACTION_ACCOUNT: &str = "resumed_binding";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingPair {
     pub endpoint: Option<String>,
+    pub provider: Option<String>,
     pub model: String,
     pub effort: Effort,
+    pub(crate) billing: Option<wisp_protocol::Billing>,
+}
+
+impl PendingPair {
+    pub(crate) fn destination(&self) -> Option<(&str, &str)> {
+        self.endpoint.as_deref().zip(self.provider.as_deref())
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -214,6 +224,8 @@ pub struct LastTurn {
     pub started_at: String,
     pub last_at: String,
     pub endpoint: Option<String>,
+    pub model: String,
+    pub effort: Effort,
     pub opening: Vec<LoggedInput>,
     pub lead: TurnLead,
     pub ends: Vec<ReportedEnd>,
@@ -332,6 +344,7 @@ pub struct LoggedSession {
     pub instructions_source: Option<InstructionsSource>,
     pub instructions_extra: Option<String>,
     pub tools: LoggedTools,
+    committed_tools: Option<(LoggedTools, Option<bool>)>,
     pub inline_search: Option<bool>,
     pub copy: LoggedCopy,
     pub origins: BTreeMap<String, String>,
@@ -422,6 +435,7 @@ impl LoggedSession {
             system_prompt,
             system_base_sha256,
             whole,
+            parent,
             ..
         } = &first.event
         else {
@@ -452,6 +466,7 @@ impl LoggedSession {
                 .iter()
                 .map(|name| (name.clone(), endpoint.clone())),
         );
+        fold.child = parent.is_some();
         fold.out.copy = LoggedCopy::started(
             system_prompt.clone(),
             system_base_sha256.clone(),
@@ -580,6 +595,19 @@ impl LoggedSession {
         })
     }
 
+    pub(crate) fn last_tools(&self) -> &LoggedTools {
+        self.committed_tools
+            .as_ref()
+            .map_or(&self.tools, |(tools, _)| tools)
+    }
+
+    pub(crate) fn restore_committed_tools(&mut self) {
+        if let Some((tools, inline_search)) = self.committed_tools.take() {
+            self.tools = tools;
+            self.inline_search = inline_search;
+        }
+    }
+
     pub fn tools_pair(&self) -> (Option<&str>, &str) {
         match &self.pending {
             Some(pending) => (
@@ -603,9 +631,11 @@ impl LoggedSession {
 
 struct Fold {
     out: LoggedSession,
+    child: bool,
     undelivered: BTreeSet<InputId>,
     turn_in_run: bool,
-    change: Option<(Option<String>, String, Effort, Option<String>)>,
+    change: Option<PendingPair>,
+    compaction_account: Option<PendingPair>,
     options: LaterOptions,
     logged_tools: ToolsHash,
     turn_tools: ToolsHash,
@@ -761,6 +791,7 @@ impl Fold {
                     names,
                     from_change: false,
                 },
+                committed_tools: None,
                 inline_search: None,
                 copy: LoggedCopy::default(),
                 origins: origins.collect(),
@@ -810,7 +841,9 @@ impl Fold {
             },
             undelivered: BTreeSet::new(),
             turn_in_run: false,
+            child: false,
             change: None,
+            compaction_account: None,
             options: LaterOptions::default(),
             logged_tools: ToolsHash::Started(tools_sha256.clone()),
             turn_tools: ToolsHash::Started(tools_sha256),
@@ -858,6 +891,12 @@ impl Fold {
         }
         if let Some(last) = self.out.last_turn.as_mut().filter(|t| t.outcome.is_none()) {
             last.last_at.clone_from(&record.at);
+        }
+        if matches!(
+            record.event,
+            LogEvent::TurnStarted { .. } | LogEvent::ToolsChanged { .. }
+        ) {
+            self.out.committed_tools = None;
         }
         match &record.event {
             LogEvent::ToolsChanged { copy, .. } if copy.system_prompt.is_some() => {
@@ -923,36 +962,51 @@ impl Fold {
                 self.out.turns = self.out.turns.max(*turn);
                 self.out.open_turn = Some(*turn);
                 self.turn_tools = self.logged_tools.clone();
+                self.compaction_account = None;
+                let unbound = endpoint_name.is_none() && self.pending_child();
                 let current = &self.out.current;
                 let (mut message_time, mut context_note, mut auto_compact) = (
                     current.message_time,
                     current.context_note,
                     current.auto_compact,
                 );
-                let endpoint = endpoint_name
-                    .clone()
-                    .or_else(|| self.out.started.endpoint_name.clone());
+                let endpoint = endpoint_name.clone().or_else(|| {
+                    if unbound {
+                        current.endpoint_name.clone()
+                    } else {
+                        self.out.started.endpoint_name.clone()
+                    }
+                });
                 let provider = self
                     .change
                     .as_ref()
-                    .filter(|(name, _, _, _)| *name == endpoint)
-                    .and_then(|(_, _, _, provider)| provider.clone())
+                    .filter(|change| change.endpoint == endpoint)
+                    .and_then(|change| change.provider.clone())
                     .or_else(|| {
                         current
                             .provider
                             .clone()
                             .filter(|_| current.endpoint_name == endpoint)
                     });
-                if retry_of.is_none() {
+                if retry_of.is_none() && !unbound {
                     let options = std::mem::take(&mut self.options);
                     message_time = options.time.unwrap_or(message_time);
                     context_note = options.context_note.unwrap_or(context_note);
                     auto_compact = options.auto_compact.or(auto_compact);
                     self.change = None;
                 }
-                let next_model = model
-                    .clone()
-                    .unwrap_or_else(|| self.out.started.model.clone());
+                let next_model = if unbound {
+                    current.model.clone()
+                } else {
+                    model
+                        .clone()
+                        .unwrap_or_else(|| self.out.started.model.clone())
+                };
+                let next_effort = if unbound {
+                    current.effort
+                } else {
+                    effort.unwrap_or(self.out.started.effort)
+                };
                 if endpoint != self.out.current.endpoint_name
                     || next_model != self.out.current.model
                 {
@@ -963,7 +1017,7 @@ impl Fold {
                     endpoint_name: endpoint,
                     provider,
                     model: next_model,
-                    effort: effort.unwrap_or(self.out.started.effort),
+                    effort: next_effort,
                     cache_ttl: cache_ttl.unwrap_or(self.out.started.cache_ttl),
                     debug_cache: debug_cache.unwrap_or(self.out.started.debug_cache),
                     refusal_fallback: refusal_fallback.unwrap_or(self.out.started.refusal_fallback),
@@ -995,7 +1049,11 @@ impl Fold {
                     turn: *turn,
                     started_at: record.at.clone(),
                     last_at: record.at.clone(),
-                    endpoint: self.out.current.endpoint_name.clone(),
+                    endpoint: (!unbound)
+                        .then(|| self.out.current.endpoint_name.clone())
+                        .flatten(),
+                    model: self.out.current.model.clone(),
+                    effort: self.out.current.effort,
                     opening: opening_of(&record.event),
                     lead: lead.clone(),
                     ends: ends.clone(),
@@ -1213,6 +1271,9 @@ impl Fold {
                     }
                 }
             }
+            LogEvent::RebuildMarked { reason, .. } if reason == RESUMED_COMPACTION_ACCOUNT => {
+                self.compaction_account = self.change.clone();
+            }
             LogEvent::ContextCompacted {
                 plan_usd,
                 turn,
@@ -1246,6 +1307,9 @@ impl Fold {
                     (*usage, *cost_usd, *plan_usd),
                     *lower_bound,
                 );
+                if !masked && turn.is_none() {
+                    self.settle_manual_compaction();
+                }
             }
             LogEvent::CompactionPrepared {
                 turn,
@@ -1338,6 +1402,9 @@ impl Fold {
                     (*usage, *cost_usd, *plan_usd),
                     *lower_bound,
                 );
+                if !masked && turn.is_none() {
+                    self.settle_manual_compaction();
+                }
             }
             LogEvent::Retrying {
                 turn: None,
@@ -1352,6 +1419,7 @@ impl Fold {
                 endpoint_name,
                 provider,
                 endpoint,
+                credential_source,
                 tools,
                 tools_sha256,
                 changes,
@@ -1360,20 +1428,27 @@ impl Fold {
                 let prev_endpoint = self
                     .change
                     .as_ref()
-                    .map_or(&self.out.current.endpoint_name, |(e, ..)| e);
+                    .map_or(&self.out.current.endpoint_name, |p| &p.endpoint);
                 let prev_model = self
                     .change
                     .as_ref()
-                    .map_or(self.out.current.model.as_str(), |(_, m, ..)| m.as_str());
+                    .map_or(self.out.current.model.as_str(), |p| p.model.as_str());
                 let pair_moved = (endpoint_name.is_some()
                     && endpoint_name.as_deref() != prev_endpoint.as_deref())
                     || model.as_str() != prev_model;
-                self.change = Some((
-                    endpoint_name.clone(),
-                    model.clone(),
-                    *effort,
-                    provider.clone(),
-                ));
+                self.change = Some(PendingPair {
+                    endpoint: endpoint_name.clone(),
+                    model: model.clone(),
+                    effort: *effort,
+                    provider: provider.clone(),
+                    billing: match credential_source {
+                        Some(wisp_protocol::log::CredentialSource::Mode { billing, .. }) => {
+                            Some(*billing)
+                        }
+                        _ => None,
+                    },
+                });
+                self.keep_committed_tools();
                 for change in changes {
                     if let Some(SettingTarget::Name(name)) = change.target.known() {
                         self.options.set(name.as_str(), change.value.as_ref());
@@ -1414,6 +1489,7 @@ impl Fold {
             } => {
                 self.undelivered.clear();
                 self.turn_in_run = false;
+                self.compaction_account = None;
                 self.out.ended_inputs.clone_from(returned);
                 if system_prompt.is_some() {
                     self.out.copy = LoggedCopy {
@@ -1423,11 +1499,21 @@ impl Fold {
                         on: tools_on.as_ref().map(|on| on.iter().cloned().collect()),
                     };
                 }
+                let name = Some(endpoint_name.clone());
+                let pending_child = self.pending_child();
+                let on_origin = name == self.out.current.endpoint_name;
+                let on_pending =
+                    pending_child && self.change.as_ref().is_some_and(|p| p.endpoint == name);
+                self.keep_committed_tools();
                 let block_changed = *instructions_sha256 != self.out.instructions_sha256;
                 let rebuilt = *system_prompt_sha256 != self.out.system_prompt_sha256
                     || block_changed
                     || ToolsHash::Started(tools_sha256.clone()).digest()
-                        != self.logged_tools.digest();
+                        != if pending_child && on_origin {
+                            self.out.last_tools().digest()
+                        } else {
+                            self.logged_tools.digest()
+                        };
                 if system_prompt.is_some()
                     || rebuilt
                     || Some(endpoint_name.as_str()) != self.out.current.endpoint_name.as_deref()
@@ -1447,26 +1533,29 @@ impl Fold {
                 if let Some(extra) = instructions_extra {
                     self.out.instructions_extra = Some(extra.clone());
                 }
-                let name = Some(endpoint_name.clone());
                 self.out.session_usd += std::mem::take(&mut self.unclosed_usd);
                 self.out.plan_usd += std::mem::take(&mut self.unclosed_plan_usd);
-                if name != self.out.current.endpoint_name {
+                if !on_pending && !on_origin {
                     self.out.switched = true;
                     self.out.current.binding_controls = Some(true);
                 }
                 self.out
                     .origins
                     .insert(endpoint_name.clone(), endpoint.clone());
-                self.out.current.endpoint_name = name;
+                if !on_pending {
+                    self.out.current.endpoint_name = name;
+                }
                 if rebuilt {
                     self.kept_break();
                 }
-                self.logged_tools = ToolsHash::Started(tools_sha256.clone());
-                self.out.tools = LoggedTools {
-                    sha256: tools_sha256.clone(),
-                    names: tools.clone(),
-                    from_change: false,
-                };
+                if !pending_child || !on_origin {
+                    self.logged_tools = ToolsHash::Started(tools_sha256.clone());
+                    self.out.tools = LoggedTools {
+                        sha256: tools_sha256.clone(),
+                        names: tools.clone(),
+                        from_change: false,
+                    };
+                }
             }
             event if let Some(fact) = feature_state(event) => self.feature(fact),
             LogEvent::SearchHistoryRendered { endpoint_name } => {
@@ -1772,16 +1861,31 @@ impl Fold {
         });
     }
 
+    fn pending_child(&self) -> bool {
+        self.child
+            && self.change.as_ref().is_some_and(|p| {
+                p.destination().is_some() && p.endpoint != self.out.current.endpoint_name
+            })
+    }
+
+    fn keep_committed_tools(&mut self) {
+        if self.pending_child() && self.out.committed_tools.is_none() {
+            self.out.committed_tools = Some((self.out.tools.clone(), self.out.inline_search));
+        }
+    }
+
     fn pending(&self) -> Option<PendingPair> {
-        let (endpoint, model, effort, _) = self.change.clone()?;
+        let mut pending = self.change.clone()?;
         let current = &self.out.current;
-        let endpoint = endpoint.filter(|name| Some(name) != current.endpoint_name.as_ref());
-        let same = endpoint.is_none() && model == current.model && effort == current.effort;
-        (!same).then_some(PendingPair {
-            endpoint,
-            model,
-            effort,
-        })
+        if pending.endpoint == current.endpoint_name {
+            pending.endpoint = None;
+        }
+        pending.provider = pending.endpoint.as_ref().and(pending.provider);
+        pending.billing = pending.endpoint.as_ref().and(pending.billing);
+        let same = pending.endpoint.is_none()
+            && pending.model == current.model
+            && pending.effort == current.effort;
+        (!same).then_some(pending)
     }
 
     fn now(&self) -> LaterOptions {
@@ -1862,6 +1966,24 @@ impl Fold {
         });
     }
 
+    fn settle_manual_compaction(&mut self) {
+        let Some(pair) = self.compaction_account.take() else {
+            return;
+        };
+        if pair.endpoint.is_none() {
+            return;
+        }
+        if self.change.as_ref() == Some(&pair) {
+            self.change = None;
+        }
+        self.out.switched |= self.out.current.endpoint_name != pair.endpoint;
+        self.out.current.endpoint_name = pair.endpoint;
+        self.out.current.provider = pair.provider;
+        self.out.current.model = pair.model;
+        self.out.current.effort = pair.effort;
+        self.out.committed_tools = None;
+    }
+
     fn charge(
         &mut self,
         usage: Option<&Usage>,
@@ -1920,7 +2042,12 @@ impl Fold {
     }
 
     fn account(&mut self, spent: AccountSpend) {
-        if let Some(name) = &self.out.current.endpoint_name {
+        let name = self
+            .compaction_account
+            .as_ref()
+            .and_then(|p| p.endpoint.as_ref())
+            .or(self.out.current.endpoint_name.as_ref());
+        if let Some(name) = name {
             charge_account(&mut self.out.accounts, name, spent);
         }
     }

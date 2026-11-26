@@ -323,6 +323,78 @@ pub struct Resume<'a> {
     pub rebuilt: Option<Box<Rebuilt>>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum ChildResume {
+    Legacy,
+    Rejected,
+    Pending {
+        source: crate::agents::endpoints::ExactAccount,
+        destination: crate::agents::endpoints::ExactAccount,
+    },
+    Unbound {
+        source: Option<crate::agents::endpoints::ExactAccount>,
+        destination: crate::agents::endpoints::ExactAccount,
+    },
+}
+
+impl ChildResume {
+    pub(crate) fn unbound(&self) -> bool {
+        matches!(self, Self::Unbound { .. })
+    }
+
+    pub(crate) fn detach(&mut self) -> bool {
+        if let Self::Pending {
+            source,
+            destination,
+        } = self
+        {
+            *self = Self::Unbound {
+                source: Some(source.clone()),
+                destination: destination.clone(),
+            };
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn reselect(&mut self, choice: crate::agents::endpoints::ExactAccount) {
+        match self {
+            Self::Pending { destination, .. } => *destination = choice,
+            Self::Unbound {
+                source,
+                destination,
+            } => {
+                if source.is_none() && destination.name != choice.name {
+                    *source = Some(destination.clone());
+                }
+                *destination = choice;
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn account(&self, name: &str) -> Option<&crate::agents::endpoints::ExactAccount> {
+        self.destination().filter(|c| c.name == name).or_else(|| {
+            let source = match self {
+                Self::Pending { source, .. } => Some(source),
+                Self::Unbound { source, .. } => source.as_ref(),
+                _ => None,
+            };
+            source.filter(|c| c.name == name)
+        })
+    }
+
+    pub(crate) fn destination(&self) -> Option<&crate::agents::endpoints::ExactAccount> {
+        match self {
+            Self::Pending { destination, .. } | Self::Unbound { destination, .. } => {
+                Some(destination)
+            }
+            _ => None,
+        }
+    }
+}
+
 type ChildBuilt = Result<(Agent, Vec<String>), KitError>;
 
 type ChildAgent = Result<(Agent, Vec<wisp_protocol::TodoItem>, Vec<String>), KitError>;
@@ -702,7 +774,11 @@ impl Kit {
         &self,
         spec: ChildSpec,
     ) -> Pin<Box<impl Future<Output = Result<Agent, KitError>> + '_>> {
-        Box::pin(async move { self.child(spec, Start::Fresh).await.map(|(agent, _)| agent) })
+        Box::pin(async move {
+            self.child(spec, Start::Fresh, None)
+                .await
+                .map(|(agent, _)| agent)
+        })
     }
 
     pub async fn resume_child(
@@ -710,18 +786,30 @@ impl Kit {
         spec: ChildSpec,
         resume: Resume<'_>,
     ) -> Result<(Agent, Vec<String>), KitError> {
-        self.child(spec, Start::Resume(resume)).await
+        self.child(spec, Start::Resume(resume), None).await
+    }
+
+    pub(crate) async fn resume_connected_child(
+        &self,
+        spec: ChildSpec,
+        resume: Resume<'_>,
+        connected: Connected,
+        placement: ChildResume,
+    ) -> ChildBuilt {
+        self.child(spec, Start::Resume(resume), Some((connected, placement)))
+            .await
     }
 
     fn child<'a>(
         &'a self,
         spec: ChildSpec,
         start: Start<'a>,
+        connected: Option<(Connected, ChildResume)>,
     ) -> Pin<Box<impl Future<Output = ChildBuilt> + 'a>> {
         Box::pin(async move {
             let path = spec.path.as_str().to_owned();
             let (agent, checklist, missing) = self
-                .child_agent(spec, matches!(start, Start::Fresh))
+                .child_agent(spec, matches!(start, Start::Fresh), connected)
                 .await?;
             self.child_start(agent, start, checklist, &path, missing)
                 .await
@@ -732,13 +820,25 @@ impl Kit {
         &self,
         spec: ChildSpec,
         fresh: bool,
+        connected: Option<(Connected, ChildResume)>,
     ) -> Pin<Box<impl Future<Output = ChildAgent> + '_>> {
-        Box::pin(self.child_agent_unboxed(spec, fresh))
+        Box::pin(self.child_agent_unboxed(spec, fresh, connected))
     }
 
-    async fn child_agent_unboxed(&self, spec: ChildSpec, fresh: bool) -> ChildAgent {
+    async fn child_agent_unboxed(
+        &self,
+        spec: ChildSpec,
+        fresh: bool,
+        connected: Option<(Connected, ChildResume)>,
+    ) -> ChildAgent {
         let path = spec.path.as_str();
-        let mut connected = self.connect.connect(path).map_err(KitError::Connect)?;
+        let (mut connected, placement) = match connected {
+            Some(checked) => checked,
+            None => (
+                self.connect.connect(path).map_err(KitError::Connect)?,
+                ChildResume::Legacy,
+            ),
+        };
         if !connected.ready.is_empty() {
             if !connected.ready.iter().any(|c| c.name == spec.endpoint) {
                 return Err(KitError::Connect(format!(
@@ -814,7 +914,7 @@ impl Kit {
             extra: None,
             preset,
         };
-        let agent = Agent::new(provider, session);
+        let agent = Agent::new_for_child_resume(provider, session, placement);
         let connected = move |agent: Agent| {
             agent
                 .with_clock(self.clock.clone())

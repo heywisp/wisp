@@ -789,10 +789,12 @@ impl Agent {
         if removal_waits {
             sent.mode = DeliveryMode::Queue;
         }
-        if let Some(reason) = self.binding_fault.clone()
-            && self.next_endpoint() == self.endpoint
-            && !removal_waits
-        {
+        let next = self.next_endpoint();
+        let fault = self
+            .check_resume_destination(next)
+            .err()
+            .or_else(|| self.binding_fault.clone().filter(|_| next == self.endpoint));
+        if let Some(reason) = fault.filter(|_| !removal_waits) {
             self.refuse(
                 Some(sent.id),
                 RejectKind::Other("endpoint_unavailable".to_owned()),

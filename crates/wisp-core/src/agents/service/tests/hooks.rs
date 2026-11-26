@@ -266,7 +266,7 @@ async fn spawn_mid_request(name: &str, held: &'static str) {
 const WISP_ONLY: &str = "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n";
 const BAND: &str = "[models.\"claude-opus-5-5\"]\ncompact_at = 80000\n";
 
-pub(super) fn native_summary() -> Step {
+pub(super) fn native_summary(summary: &str) -> Step {
     let usage = Usage {
         input_tokens: 1_200,
         ..Usage::default()
@@ -275,10 +275,7 @@ pub(super) fn native_summary() -> Step {
         Ok(ProviderEvent::Sending),
         Ok(started(Some("msg"), MODEL, usage)),
     ];
-    script.extend(opaque(
-        0,
-        json!({"type": "compaction", "content": "So far: one turn."}),
-    ));
+    script.extend(opaque(0, json!({"type": "compaction", "content": summary})));
     let summed = Usage {
         output_tokens: 300,
         ..usage
@@ -322,7 +319,7 @@ async fn spawn_mid_compaction(name: &str, point: &str, swap: bool) {
     let root = if swap {
         vec![
             priced(done("one"), 79_500, 10),
-            super::gated(native_summary(), &precompute),
+            super::gated(native_summary("So far: one turn."), &precompute),
             priced(uses(&[call("c1", "nothing", json!({}))]), 79_600, 10),
             super::gated(plain_overflow(), &overflow),
             done("noted"),

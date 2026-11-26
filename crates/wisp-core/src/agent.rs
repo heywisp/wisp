@@ -839,6 +839,7 @@ pub struct Agent {
     connected: bool,
     catalog_revision: u64,
     endpoint_catalog: Option<crate::endpoints::catalog::CatalogReader>,
+    child_resume: crate::kit::ChildResume,
     endpoint_binding: Option<crate::endpoints::generation::Binding>,
     pending_endpoint_binding: Option<crate::endpoints::generation::Binding>,
     binding_fault: Option<String>,
@@ -948,15 +949,24 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub fn new(provider: Arc<dyn Provider>, mut session: SessionConfig) -> Self {
+    pub fn new(provider: Arc<dyn Provider>, session: SessionConfig) -> Self {
+        Self::new_for_child_resume(provider, session, crate::kit::ChildResume::Legacy)
+    }
+
+    pub(crate) fn new_for_child_resume(
+        provider: Arc<dyn Provider>,
+        mut session: SessionConfig,
+        child_resume: crate::kit::ChildResume,
+    ) -> Self {
         let prompt = Prompt {
             base: session.system.clone(),
             ..Prompt::default()
         };
         session.system = prompt.build();
         let settings = Box::new(SettingsState::new(&session));
-        let (endpoint_binding, binding_fault) = match provider
-            .generation()
+        let (endpoint_binding, binding_fault) = match (!child_resume.unbound())
+            .then(|| provider.generation())
+            .flatten()
             .map(|generation| generation.bind("/"))
             .transpose()
         {
@@ -985,6 +995,7 @@ impl Agent {
             connected: false,
             catalog_revision: 0,
             endpoint_catalog: None,
+            child_resume,
             endpoint_binding,
             pending_endpoint_binding: None,
             binding_fault,
@@ -1331,16 +1342,44 @@ impl Agent {
     }
 
     fn binding_ready(&self, index: usize) -> bool {
-        self.provider_at(index)
-            .generation()
-            .is_none_or(|generation| generation.available().is_ok())
+        self.check_resume_destination(index).is_ok()
+            && self
+                .provider_at(index)
+                .generation()
+                .is_none_or(|generation| generation.available().is_ok())
     }
 
     pub(crate) fn binding_problem(&self) -> Option<&str> {
         self.binding_fault.as_deref()
     }
 
+    fn resumed_selection_is(&self, index: usize) -> bool {
+        self.child_resume
+            .destination()
+            .is_some_and(|choice| choice.name == self.connection_name(index))
+    }
+
+    fn check_resumed_connection(&self, connection: &Connection) -> Result<(), String> {
+        self.child_resume
+            .account(&connection.name)
+            .map_or(Ok(()), |choice| choice.check(Some(connection)))
+    }
+
+    fn check_resume_destination(&self, index: usize) -> Result<(), String> {
+        self.connections
+            .get(index)
+            .map_or(Ok(()), |c| self.check_resumed_connection(c))
+    }
+
     fn reserve_binding(
+        &self,
+        index: usize,
+    ) -> Result<Option<crate::endpoints::generation::Binding>, String> {
+        self.check_resume_destination(index)?;
+        self.reserve_generation(index)
+    }
+
+    fn reserve_generation(
         &self,
         index: usize,
     ) -> Result<Option<crate::endpoints::generation::Binding>, String> {
@@ -1361,7 +1400,15 @@ impl Agent {
             })
     }
 
+    pub(crate) fn bound_endpoint(&self) -> Option<&str> {
+        (!self.child_resume.unbound()).then(|| self.endpoint_name())
+    }
+
     fn refresh_binding(&mut self) -> Result<(), String> {
+        self.check_resume_destination(self.endpoint)?;
+        if self.bound_endpoint().is_none() {
+            return Ok(());
+        }
         let Some(generation) = self.provider().generation() else {
             self.endpoint_binding = None;
             return Ok(());
@@ -1382,6 +1429,9 @@ impl Agent {
 
     fn use_connection(&mut self, index: usize) -> Result<(), String> {
         let binding = self.reserve_binding(index)?;
+        if self.child_resume.unbound() || self.resumed_selection_is(index) {
+            self.child_resume = crate::kit::ChildResume::Legacy;
+        }
         self.endpoint = index;
         self.endpoint_binding = binding;
         self.binding_fault = None;
@@ -1397,7 +1447,7 @@ impl Agent {
         self.agents.settle(crate::agents::Settled {
             model: self.session.model.clone(),
             effort: self.session.effort,
-            endpoint: self.endpoint_name().to_owned(),
+            endpoint: self.bound_endpoint().map(str::to_owned),
             provider: self.provider().kind().as_str(),
             kind: self.account_kind(),
             priced: self.is_priced(),
@@ -2130,14 +2180,17 @@ impl Agent {
         let target = retry
             .as_ref()
             .map_or_else(|| self.next_endpoint(), |retry| retry.endpoint);
-        let provider = self.provider_at(target);
-        let _admission = match crate::endpoints::generation::admit(provider.generation()) {
-            Ok(admission) => admission,
-            Err(
+        let admission = self
+            .check_resume_destination(target)
+            .map(|()| crate::endpoints::generation::admit(self.provider_at(target).generation()));
+        let _admission = match admission {
+            Ok(Ok(admission)) => admission,
+            Err(_)
+            | Ok(Err(
                 crate::endpoints::generation::Unavailable::Changing
                 | crate::endpoints::generation::Unavailable::Closing
                 | crate::endpoints::generation::Unavailable::Retired,
-            ) if retry.is_none() => {
+            )) if retry.is_none() => {
                 for input in inputs {
                     if input.is_mail() {
                         self.inbox.restore_mail(vec![input]);
@@ -2150,7 +2203,12 @@ impl Agent {
                 }
                 return None;
             }
-            Err(error) => {
+            Err(reason) => {
+                let request = retry.as_ref().and_then(|retry| retry.request);
+                self.refuse_retry(request, reason, events).await;
+                return None;
+            }
+            Ok(Err(error)) => {
                 super::agent::emit(events, AgentEvent::rejected(error.to_string())).await;
                 return None;
             }
@@ -2210,6 +2268,15 @@ impl Agent {
                     .await
             }
         };
+        let pair = (self.endpoint_name().to_owned(), self.session.model.clone());
+        let ready = if retry.is_none() && matches!(ready, compact::PreTurn::Ready) {
+            match self.bind_unbound(events).await {
+                Ok(()) => ready,
+                Err(message) => compact::PreTurn::Ended(ErrorKind::Auth, message),
+            }
+        } else {
+            ready
+        };
         let (cancelled, ended) = match ready {
             compact::PreTurn::Ready => (false, None),
             compact::PreTurn::Cancelled => (true, None),
@@ -2222,7 +2289,7 @@ impl Agent {
                 self.background_before_retry(turn, events).await;
                 ended
             }
-            None if cancelled => None,
+            None if cancelled || self.child_resume.unbound() => ended,
             None => {
                 self.background_before_turn(turn, pending_tokens, commands, events)
                     .await;
@@ -2237,7 +2304,6 @@ impl Agent {
         };
         let before = self.meter_figures();
         let opens = retry.as_ref().is_none_or(choice::Continuation::opens) || !inputs.is_empty();
-        let pair = (self.endpoint_name().to_owned(), self.session.model.clone());
         let selected = match &retry {
             _ if cancelled => {
                 self.track().stopped = true;
@@ -2381,7 +2447,7 @@ impl Agent {
                 effort_marker: marker,
                 tool_message: tool_part.blocks.clone(),
                 images,
-                endpoint_name: Some(self.endpoint_name().to_owned()),
+                endpoint_name: self.bound_endpoint().map(str::to_owned),
                 input_id,
                 inputs: logged,
                 cache_ttl: Some(self.session.cache_ttl),

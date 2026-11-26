@@ -87,7 +87,7 @@ impl Agent {
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
     ) -> PreTurn {
-        if !retry.same_pair {
+        if !retry.same_pair || self.child_resume.unbound() {
             let endpoint = retry.endpoint;
             let model = retry.model.clone();
             let mut compacted = false;
@@ -97,17 +97,27 @@ impl Agent {
                     .switch_compaction(turn, (SwitchFrom::Failing, due.cause()), commands, events)
                     .await
                 {
+                    SwitchRun::Cancelled
+                        if self.bound_endpoint().is_none() && !self.track().stopped => {}
                     SwitchRun::Cancelled => return PreTurn::Cancelled,
                     SwitchRun::Compacted => compacted = true,
                     SwitchRun::Failed => {}
                 }
             }
             self.hold_settings_after_retry();
+            let reopened = self.child_resume.unbound();
+            let selected = self.resumed_selection_is(endpoint);
             if let Err(message) = self.use_connection(endpoint) {
                 return PreTurn::Ended(ErrorKind::Auth, message);
             }
             self.session.model.clone_from(&model);
             self.session.effort = retry.effort;
+            if reopened {
+                self.settle_entry();
+                if selected {
+                    self.log_compaction_account(events).await;
+                }
+            }
             self.check_prefix();
             self.log_mark(events).await;
             if self.head_holds_block() && !self.takes_block(endpoint, &model) {

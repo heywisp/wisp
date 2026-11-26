@@ -73,6 +73,7 @@ Ok(
             names: [],
             from_change: false,
         },
+        committed_tools: None,
         inline_search: None,
         copy: LoggedCopy {
             system_prompt: Some(
@@ -112,6 +113,8 @@ Ok(
                 endpoint: Some(
                     "gateway",
                 ),
+                model: "claude-opus-5-5",
+                effort: Low,
                 opening: [
                     LoggedInput {
                         id: InputId(

@@ -16,17 +16,17 @@ use super::{
     AgentsService, CHILD_COMMANDS, Entry, Place, TreeSetup, brief, checklist_of, inherited_tools,
 };
 use crate::agent::{Agent, MailSender};
-use crate::agents::endpoints::{EndpointView, LoggedKind};
+use crate::agents::endpoints::{EndpointView, ExactAccount, LoggedKind};
 use crate::agents::fold::{
     EndedRow, Folded, Links, LoggedEnd, SpawnedRecord, ended_above, ended_row, fold, links,
 };
 use crate::endpoints::goes::{shown, starts_charging};
 use crate::kit::{
-    ChildSpec, InstructionsChoice, Kit, OpenLog, PresetSource, ReopenedLog, Resume, ended_lines,
-    logged_root,
+    ChildResume, ChildSpec, InstructionsChoice, Kit, OpenLog, PresetSource, ReopenedLog, Resume,
+    ended_lines, logged_root,
 };
 use crate::provider::Provider;
-use crate::resume::{LoggedSession, carried, recover};
+use crate::resume::{LoggedSession, billing_mode, carried, recover};
 use crate::runtime::in_parallel;
 use crate::session::{ResumeLock, Stamp, sha256_bytes_hex};
 use wisp_protocol::subscription_auth::{CANT_BE_READ, Followed, Stayed, Unusable};
@@ -431,21 +431,67 @@ impl Walk<'_> {
         let agent_name = path.as_str().trim_start_matches('/').to_owned();
         let consented = self.follow.contains(&agent_name);
         let start = self.setup.start.as_deref().unwrap_or(&caller.endpoint);
-        let placed = placed(
-            &view,
-            Logged {
-                name: logged.endpoint(),
-                model: &logged.current.model,
+        let saved_billing = logged
+            .endpoint()
+            .and_then(|name| billing_mode(records, name));
+        let mut placement = ChildResume::Legacy;
+        let mut pair = (logged.current.model.as_str(), logged.current.effort);
+        let selected = logged
+            .pending
+            .as_ref()
+            .and_then(|p| p.destination().map(|to| (p, to)));
+        let exact = selected.and_then(|(pending, (name, provider))| {
+            let mut selected = ExactAccount {
+                name: name.to_owned(),
+                kind: LoggedKind::read(Some(provider)),
+                billing: pending.billing,
+            };
+            let Some(ready) = view.exact(&selected) else {
+                self.tree.warnings.push(format!(
+                    "{path}'s selected {} is no longer available as chosen",
+                    named(name)
+                ));
+                placement = ChildResume::Rejected;
+                return None;
+            };
+            selected.billing = Some(ready.billing());
+            let origin = logged.endpoint().map(|origin| ExactAccount {
+                name: origin.to_owned(),
                 kind,
-                unpriced: logged.lower_bound,
-                billing: logged
-                    .endpoint()
-                    .and_then(|name| crate::resume::billing_mode(records, name))
-                    .unwrap_or_default(),
-            },
-            (&caller.endpoint, start),
-            (consented, &self.setup.unusable),
-        );
+                billing: Some(saved_billing.unwrap_or_default()),
+            });
+            if let Some(source) = origin
+                && view.exact(&source).is_some()
+            {
+                let name = source.name.clone();
+                placement = ChildResume::Pending {
+                    source,
+                    destination: selected,
+                };
+                return Some(Placed::There(name));
+            }
+            placement = ChildResume::Unbound {
+                source: None,
+                destination: selected,
+            };
+            pair = (&pending.model, pending.effort);
+            Some(Placed::There(name.to_owned()))
+        });
+        let (model, effort) = pair;
+        let placed = exact.unwrap_or_else(|| {
+            placed(
+                &view,
+                Logged {
+                    name: logged.endpoint(),
+                    model,
+                    kind,
+                    unpriced: logged.lower_bound,
+                    billing: saved_billing.unwrap_or_default(),
+                },
+                (&caller.endpoint, start),
+                (consented, &self.setup.unusable),
+            )
+        });
         let (endpoint, followed) = match placed {
             Placed::There(name) => (name, None),
             Placed::Fallback(name, said, from) => {
@@ -520,8 +566,11 @@ impl Walk<'_> {
             parent.toolbox().provider_of(crate::tool::SEARCH_CAPABILITY),
         );
         let held: BTreeSet<String> = allowed.difference(&selected).cloned().collect();
-        let tools = logged
-            .tools
+        let logged_tools = match placement {
+            ChildResume::Pending { .. } | ChildResume::Rejected => logged.last_tools(),
+            _ => &logged.tools,
+        };
+        let tools = logged_tools
             .names
             .iter()
             .cloned()
@@ -531,8 +580,8 @@ impl Walk<'_> {
             .collect();
         let spec = ChildSpec {
             path: path.clone(),
-            model: logged.current.model.clone(),
-            effort: logged.current.effort,
+            model: model.to_owned(),
+            effort,
             cache_ttl: logged.current.cache_ttl,
             message_time: logged.started.message_time,
             context_note: logged.started.context_note,
@@ -564,7 +613,11 @@ impl Walk<'_> {
             logged: Some(&logged),
             rebuilt,
         };
-        let (agent, missing) = match self.kit.resume_child(spec, resume).await {
+        let (agent, missing) = match self
+            .kit
+            .resume_connected_child(spec, resume, connected, placement)
+            .await
+        {
             Ok(built) => built,
             Err(e) => {
                 return self.not_loaded(
@@ -591,8 +644,8 @@ impl Walk<'_> {
         if let Some((from, to)) = followed {
             self.tree.moved.push(Followed {
                 agent: agent_name,
-                model: logged.current.model.clone(),
-                effort: logged.current.effort,
+                model: model.to_owned(),
+                effort,
                 rebuild_usd: agent.cache_rebuild().and_then(|r| r.usd),
                 from,
                 to,
@@ -895,7 +948,7 @@ impl AgentsService {
             entry.model = session.model.clone();
             entry.effort = session.effort;
             entry.place = Place {
-                endpoint: Some(child.endpoint_name().to_owned()),
+                endpoint: child.bound_endpoint().map(str::to_owned),
                 provider: Some(child.provider_kind().as_str().to_owned()),
                 priced: child.is_priced(),
             };

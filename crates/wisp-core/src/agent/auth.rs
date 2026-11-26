@@ -112,6 +112,14 @@ impl Agent {
             .map(|connection| connection.name.clone())
             .collect();
         let active = self.endpoint_name().to_owned();
+        if !view.ready.iter().any(|connection| {
+            connection.name == active && self.check_resumed_connection(connection).is_ok()
+        }) && self.child_resume.detach()
+        {
+            self.endpoint_binding = None;
+            self.disarm_keep_warm();
+            self.settle_entry();
+        }
         let mut faulted = false;
         for connection in &self.connections {
             if !names.contains(&connection.name) {
@@ -149,6 +157,7 @@ impl Agent {
             }
         }
         let mut active_replaced = false;
+        let mut rejected = None;
         for mut connection in view.ready {
             if let Some(index) = self
                 .connections
@@ -165,9 +174,33 @@ impl Agent {
                     self.usage_generations
                         .insert(connection.name.clone(), generation);
                 }
+                let incompatible = self.check_resumed_connection(&connection).err();
                 self.connections[index] = connection.clone();
-                if replaced && index == self.endpoint {
-                    active_replaced = true;
+                if let Some(reason) = incompatible {
+                    if let Some(retry) = self.queue.retry.take_if(|retry| retry.endpoint() == index)
+                    {
+                        self.refuse_retry(retry.request(), reason.clone(), events)
+                            .await;
+                    }
+                    if index == self.endpoint {
+                        faulted = replaced;
+                        self.binding_fault = Some(reason);
+                        if replaced && index == self.next_endpoint() {
+                            self.drop_compacts(events).await;
+                        }
+                    } else if index == self.next_endpoint() {
+                        if self.bound_endpoint().is_some() {
+                            self.settings.pending = None;
+                        } else if replaced {
+                            self.drop_compacts(events).await;
+                        }
+                        self.pending_endpoint_binding = None;
+                        if replaced {
+                            rejected = Some(reason);
+                        }
+                    }
+                } else if replaced && index == self.endpoint {
+                    active_replaced = !self.child_resume.unbound();
                     self.disarm_keep_warm();
                     self.binding_fault = self.refresh_binding().err();
                     faulted = self.binding_fault.is_some();
@@ -198,7 +231,7 @@ impl Agent {
         }
         self.register_held();
         self.catalog_revision = revision;
-        if let Some(reason) = self.binding_fault.clone().filter(|_| faulted) {
+        if let Some(reason) = rejected.or_else(|| self.binding_fault.clone().filter(|_| faulted)) {
             super::emit(events, AgentEvent::rejected(reason)).await;
         }
         if active_replaced {

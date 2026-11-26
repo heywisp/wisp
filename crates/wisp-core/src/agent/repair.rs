@@ -57,7 +57,7 @@ struct RepairTurn {
     step: u32,
     stats: TurnStats,
     inputs: Option<Resend>,
-    endpoint: usize,
+    failed: super::settings::Pending,
 }
 
 struct Resend {
@@ -158,7 +158,7 @@ impl Agent {
                     previous_prompt_tokens: None,
                 },
                 inputs: self.retry_inputs(logged, last),
-                endpoint: self.endpoint_index(last.endpoint.as_deref()),
+                failed: self.failed_pair(last),
             }
         });
         let mut seen = BTreeSet::new();
@@ -215,12 +215,20 @@ impl Agent {
             kind: *kind,
             detail: detail.clone(),
             gave_up: *gave_up,
-            endpoint: self.endpoint_index(last.endpoint.as_deref()),
+            failed: self.failed_pair(last),
             opening: resend.opening,
             steers: resend.steers,
             lapsed: lapsed(last.lapsed),
         });
         self.keep_notice(notice, kept, resend.ends);
+    }
+
+    fn failed_pair(&self, last: &LastTurn) -> super::settings::Pending {
+        super::settings::Pending {
+            endpoint: self.endpoint_index(last.endpoint.as_deref()),
+            model: last.model.clone(),
+            effort: last.effort,
+        }
     }
 
     fn retry_inputs(&self, logged: &LoggedSession, last: &LastTurn) -> Option<Resend> {
@@ -552,7 +560,7 @@ impl Agent {
                 let kept = resend.kept(self.epoch_number());
                 let notice = lead_notice(&resend.lead);
                 let outcome = self.offer_after(outcome, resend.opening, resend.steers);
-                self.offered_on(turn.endpoint);
+                self.offered_on(turn.failed);
                 self.keep_notice(notice, kept, resend.ends);
                 outcome
             }

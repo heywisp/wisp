@@ -243,6 +243,7 @@ impl Agent {
             message_time: self.session.message_time,
             context_note: self.session.context_note,
             endpoint: self.endpoint_name().to_owned(),
+            can_inherit_endpoint: self.bound_endpoint().is_some() && self.binding_fault.is_none(),
             plugins: self.child_switches(),
         }
     }

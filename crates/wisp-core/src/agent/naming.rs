@@ -163,6 +163,7 @@ impl Agent {
             && naming.flight.is_none()
             && naming.opening.len() == OPENING
             && self.log.is_some()
+            && self.bound_endpoint().is_some()
             && self.settings.pending.is_none();
         if !due {
             return;
