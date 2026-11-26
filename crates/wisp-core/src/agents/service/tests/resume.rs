@@ -2,6 +2,7 @@ use wisp_protocol::{InputId, MailFrom, MailId, PresetChange, QueueReason};
 
 use super::follow::{api, subscription};
 use super::guarantee::{background, idle_as};
+use super::hooks::native_summary;
 use super::*;
 use crate::kit::Resume;
 use crate::resume::{LoggedSession, recover};
@@ -2018,22 +2019,27 @@ async fn a_resumed_tree_keeps_one_shared_child_prefix_and_the_roots_and_every_hi
     let _ = run.quit().await;
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resumes_there() {
-    use crate::agent::testing::{B, step};
-    use crate::provider::openai::build_body;
-
-    let setup = || Setup {
+fn child_switch_setup() -> Setup {
+    Setup {
         endpoints: vec![
-            endpoint(ENV),
+            subscription(ENV),
             openai("gpt", wisp_protocol::Billing::Metered),
         ],
+        clock: Some(Arc::new(ShiftedClock::at(
+            Timestamp::from_second(1_800_000_000).unwrap(),
+            None,
+        ))),
         digests: true,
         ..Setup::default()
-    };
+    }
+}
+
+async fn manually_switch_child(setup: Setup) -> Run {
+    use crate::agent::testing::{B, step};
+
     let mut run = start(
         "resume-child-on-another-provider",
-        setup(),
+        setup,
         vec![
             ("/", vec![done("noted"); 3]),
             (
@@ -2055,6 +2061,9 @@ async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resum
         ],
     )
     .await;
+    run.providers.get("/w").knobs(|k| {
+        k.betas = vec![crate::provider::anthropic::FALLBACK_BETA.to_owned()];
+    });
     run.spawn(SpawnRequest {
         keep_warm: true,
         ..spawn_request("w", "A brief before the move.")
@@ -2072,20 +2081,60 @@ async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resum
             paused: false,
         })
     );
+    select_gpt(&mut run).await;
+    run
+}
+
+async fn gpt_choice(run: &mut Run, model: Option<String>, effort: Option<Effort>) -> RequestId {
+    child_account_choice(run, "gpt", model, effort).await
+}
+
+async fn child_account_choice(
+    run: &mut Run,
+    name: &str,
+    model: Option<String>,
+    effort: Option<Effort>,
+) -> RequestId {
     let request = run.request();
     run.send(child(
         "/w",
         ClientCommand::ChangeSettings {
             request,
-            changes: ClientCommand::shortcut_changes(Some("gpt".into()), None, Some(Effort::Low)),
+            changes: ClientCommand::shortcut_changes(Some(name.into()), model, effort),
             save: false,
         },
     ))
     .await;
+    request
+}
+
+async fn select_gpt(run: &mut Run) {
+    let request = gpt_choice(run, None, Some(Effort::Low)).await;
     run.until("the accepted switch", |e| {
         matches!(inner(e, "/w"), Some(AgentEvent::SettingsChanged { answers: Some(r), endpoint, .. }) if *r == request && endpoint == "gpt")
     })
     .await;
+}
+
+fn switch_ready(old_ready: bool) -> Setup {
+    let mut setup = child_switch_setup();
+    if !old_ready {
+        setup.endpoints.remove(0);
+        setup.unavailable.push((ENV, "provider is off"));
+    }
+    setup
+}
+
+async fn quit_after_switch() -> Run {
+    let run = manually_switch_child(child_switch_setup()).await;
+    run.quit().await
+}
+
+fn logged_worker(run: &Run) -> LoggedSession {
+    LoggedSession::read(&run.store.read(&session_name("/w")).unwrap()).unwrap()
+}
+
+async fn first_moved_child_request(run: &mut Run) {
     run.send(child_send("/w", "on-gpt", "A message after the move."))
         .await;
     run.until("the turn on OpenAI to start", |e| {
@@ -2096,6 +2145,14 @@ async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resum
     })
     .await;
     run.child_ended("/w").await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resumes_there() {
+    use crate::provider::openai::build_body;
+
+    let mut run = manually_switch_child(child_switch_setup()).await;
+    first_moved_child_request(&mut run).await;
     tokio::time::sleep(Duration::from_secs(5)).await;
     let agents = list(&mut run).await;
     assert_eq!(
@@ -2127,7 +2184,12 @@ async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resum
     assert!(!text.contains("placeholder reasoning"), "{text}");
     assert!(!text.contains("enc-search1"), "{text}");
 
-    let back = resume(run, setup(), vec![("gpt:/w", vec![done("Still here.")])]).await;
+    let back = resume(
+        run,
+        child_switch_setup(),
+        vec![("gpt:/w", vec![done("Still here.")])],
+    )
+    .await;
     assert_eq!(back.live, ["/w"], "{:?}", back.warnings);
     assert!(back.warnings.is_empty(), "{:?}", back.warnings);
     let mut run = back.run;
@@ -2152,6 +2214,1085 @@ async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resum
         serde_json::to_vec(input).unwrap(),
     );
     let _ = run.quit().await;
+
+    let control = serde_json::to_vec(&first_body).unwrap();
+    for (first_ready, old_ready) in [(true, true), (true, false), (false, false)] {
+        let run = quit_after_switch().await;
+        let first = resume(run, switch_ready(first_ready), vec![]).await;
+        assert!(first.warnings.is_empty(), "{:?}", first.warnings);
+        let back = resume(
+            first.run.quit().await,
+            switch_ready(old_ready),
+            vec![(
+                "gpt:/w",
+                vec![done("A later reply."), done("Another reply.")],
+            )],
+        )
+        .await;
+        assert_eq!(back.live, ["/w"], "{:?}", back.warnings);
+        assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+        let mut run = back.run;
+        let agents = list(&mut run).await;
+        let worker = entry(&agents, "/w");
+        assert_eq!(worker.endpoint.as_deref(), old_ready.then_some(ENV));
+        let logged = logged_worker(&run);
+        assert_eq!(logged.endpoint(), Some(ENV));
+        assert_eq!(
+            logged.pending.unwrap().destination(),
+            Some(("gpt", "openai"))
+        );
+        first_moved_child_request(&mut run).await;
+        run.send(child_send(
+            "/w",
+            "again-on-gpt",
+            "One more message before reopening.",
+        ))
+        .await;
+        run.child_ended("/w").await;
+        let run = run.quit().await;
+        let sent = run.requests("gpt:/w");
+        let [first, second] = sent.as_slice() else {
+            panic!("expected two reopened OpenAI requests")
+        };
+        let body = build_body(&first.request()).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&body).unwrap(),
+            control,
+            "old_ready={old_ready}: {body}"
+        );
+        grows_from(
+            second,
+            first,
+            "an idle move on reopen keeps growing the destination prefix",
+        );
+        let logged = logged_worker(&run);
+        assert_eq!(logged.current.provider.as_deref(), Some("openai"));
+        assert_eq!(
+            (logged.current.model.as_str(), logged.current.effort),
+            (GPT, Effort::Low)
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rebound_pending_child_account_does_not_replace_the_last_turn_pair() {
+    use wisp_protocol::Billing;
+
+    let setup = || Setup {
+        plugins: vec!["web_search"],
+        models: Some("[endpoints.gpt]\nnative_web_search = false\n"),
+        ..child_switch_setup()
+    };
+    for (rebound, missing_billing) in [
+        (Some(endpoint("gpt")), false),
+        (Some(openai("gpt", Billing::ChatGptPlan)), false),
+        (Some(openai("gpt", Billing::Metered)), true),
+        (None, false),
+    ] {
+        let run = manually_switch_child(setup()).await.quit().await;
+        let run = if rebound.is_none() {
+            let mut offline = setup();
+            offline.endpoints.remove(0);
+            let back = resume(run, offline, vec![]).await;
+            assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+            back.run.quit().await
+        } else {
+            run
+        };
+        let mut setup = setup();
+        if let Some(rebound) = rebound {
+            setup.endpoints[1] = rebound;
+        } else {
+            setup.endpoints.remove(1);
+        }
+        if missing_billing {
+            run.store.edit(&session_name("/w"), |records| {
+                for record in records {
+                    if let LogEvent::SettingsChanged {
+                        credential_source, ..
+                    } = &mut record.event
+                    {
+                        *credential_source = None;
+                    }
+                }
+            });
+        }
+        let back = resume(
+            run,
+            setup,
+            vec![("/w", vec![done("Still on the old account.")])],
+        )
+        .await;
+        assert_eq!(back.live, ["/w"], "{:?}", back.warnings);
+        assert_eq!(
+            back.warnings,
+            ["/w's selected account gpt is no longer available as chosen"]
+        );
+        let mut run = back.run;
+        let agents = list(&mut run).await;
+        let worker = entry(&agents, "/w");
+        assert_eq!(worker.endpoint.as_deref(), Some(ENV));
+        assert_eq!(worker.model, MODEL);
+        run.send(child_send("/w", "old", "Stay with the checked account."))
+            .await;
+        run.child_ended("/w").await;
+        let requests = run.requests("/w");
+        let [before, after] = requests.as_slice() else {
+            panic!("expected two source requests");
+        };
+        assert!(
+            before.tools.iter().any(|tool| tool.name == "web_search")
+                || !before.server_tools.is_empty()
+        );
+        grows_from(
+            after,
+            before,
+            "the rejected switch keeps the source tools and prefix",
+        );
+        assert!(run.requests("gpt:/w").is_empty());
+        let _ = run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_legacy_pending_child_account_without_a_provider_uses_the_old_resume_path() {
+    let run = quit_after_switch().await;
+    run.store.edit(&session_name("/w"), |records| {
+        for record in records {
+            if let LogEvent::SettingsChanged { provider, .. } = &mut record.event {
+                *provider = None;
+            }
+        }
+    });
+    let back = resume(
+        run,
+        child_switch_setup(),
+        vec![("gpt:/w", vec![done("Still here.")])],
+    )
+    .await;
+    assert_eq!(back.live, ["/w"]);
+    assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+    let mut run = back.run;
+    first_moved_child_request(&mut run).await;
+    assert_eq!(run.requests("gpt:/w")[0].session.model, GPT);
+    let _ = run.quit().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn selecting_a_pending_api_account_does_not_authorize_another_api_account() {
+    let run = quit_after_switch().await;
+    let back = resume(
+        run,
+        Setup {
+            endpoints: vec![openai("another", wisp_protocol::Billing::Metered)],
+            ..child_switch_setup()
+        },
+        vec![],
+    )
+    .await;
+    assert!(back.live.is_empty());
+    assert_eq!(back.ended, ["/w"]);
+    assert!(
+        back.warnings
+            .iter()
+            .any(|w| w.contains("selected account gpt"))
+    );
+    assert!(back.run.requests("another:/w").is_empty());
+    let _ = back.run.quit().await;
+}
+
+fn catalog_connection(account: FakeEndpoint, provider: Arc<Fake>) -> agent::Connection {
+    table(&provider, account.table);
+    provider.knobs(|k| k.billing = account.billing);
+    let mut connection = crate::agents::testing::connection(account.name, None);
+    connection.provider = provider;
+    connection.context.credential_source = CredentialSource::Mode {
+        billing: account.billing.unwrap_or_default(),
+        source: Box::new(CredentialSource::Environment),
+    };
+    connection
+}
+
+fn publish_account(host: &crate::endpoints::testing::AuthHost, connection: agent::Connection) {
+    let name = connection.name.clone();
+    let change = host.catalog.begin(&name).unwrap();
+    let mut view = host.catalog.view();
+    view.ready.retain(|c| c.name != name);
+    view.ready.push(connection);
+    host.write(&view, &[&name]);
+    change.publish(view);
+}
+
+async fn catalog_reopen(
+    run: Run,
+    source: Option<FakeEndpoint>,
+    destination: FakeEndpoint,
+    scripts: Vec<(&str, Vec<Step>)>,
+) -> (Back, Arc<crate::endpoints::testing::AuthHost>) {
+    let root = catalog_connection(
+        openai(ENV, wisp_protocol::Billing::Metered),
+        run.providers.get("/"),
+    );
+    let host = crate::endpoints::testing::AuthHost::with(root);
+    if let Some(source) = source {
+        publish_account(
+            &host,
+            catalog_connection(source, run.providers.get("source:/w")),
+        );
+    }
+    let connection =
+        catalog_connection(destination, run.providers.get(&on(destination.name, "/w")));
+    publish_account(&host, connection);
+    let back = resume(
+        run,
+        Setup {
+            endpoint_host: Some(host.clone()),
+            ..Setup::default()
+        },
+        scripts,
+    )
+    .await;
+    (back, host)
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unstarted_exact_child_cannot_follow_an_unnamed_api_account() {
+    use wisp_protocol::subscription_auth::{AuthCommand, AuthOutcome};
+    for (external, used) in [(false, false), (true, false), (false, true)] {
+        let mut setup = child_switch_setup();
+        setup.endpoints[0] = subscription("source");
+        setup
+            .endpoints
+            .insert(0, openai(ENV, wisp_protocol::Billing::Metered));
+        setup.root_model = GPT;
+        let mut run = start(
+            "resume-before-logout",
+            setup,
+            vec![("source:/w", vec![uses(&[report_call("r1", "Done")])])],
+        )
+        .await;
+        run.spawn(SpawnRequest {
+            endpoint: Some("source".into()),
+            model: Some(MODEL.into()),
+            ..spawn_request("w", "Begin.")
+        })
+        .await;
+        run.child_ended("/w").await;
+        select_gpt(&mut run).await;
+        let (back, host) = catalog_reopen(
+            run.quit().await,
+            None,
+            openai("gpt", wisp_protocol::Billing::Metered),
+            vec![("gpt:/w", vec![done("A reply on the selected API account")])],
+        )
+        .await;
+        assert_eq!(back.live, ["/w"], "{:?}", back.warnings);
+        let mut run = back.run;
+        assert_eq!(entry(&list(&mut run).await, "/w").endpoint, None);
+        if used {
+            first_moved_child_request(&mut run).await;
+            assert_eq!(
+                entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+                Some("gpt")
+            );
+        }
+        if external {
+            host.elsewhere(&["gpt"], &[]);
+        } else {
+            let request = run.request();
+            run.send(ClientCommand::SubscriptionAuth {
+                command: AuthCommand::logout(request, &["gpt".into()], true, None, Vec::new()),
+            })
+            .await;
+            let event = run.until("a confirmed sign-out without named followers", |e| matches!(e, AgentEvent::SubscriptionAuth { event } if event.request == request)).await;
+            let AgentEvent::SubscriptionAuth { event } = event else {
+                unreachable!()
+            };
+            assert!(
+                matches!(event.outcome, AuthOutcome::LoggedOut { ref moved, .. } if moved.is_empty() != used),
+                "{:?}",
+                event.outcome
+            );
+        }
+        if !used {
+            run.send(child_send("/w", "after-removal", "Do not send elsewhere."))
+                .await;
+            run.until("the unstarted selection fails closed", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { id: Some(id), .. }) if id.0 == "after-removal")).await;
+            assert_eq!(entry(&list(&mut run).await, "/w").endpoint, None);
+            assert!(run.requests("gpt:/w").is_empty());
+            assert!(run.requests("/w").is_empty());
+        }
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rebound_after_idle_reopen_needs_a_new_account_choice() {
+    use wisp_protocol::Billing;
+    for (source_ready, provider_changed) in [(false, false), (true, false), (false, true)] {
+        let source = subscription("source");
+        let selected = openai("gpt", Billing::ChatGptPlan);
+        let mut replies = Vec::new();
+        if provider_changed {
+            replies.push(uses(&[report_call("r0", "A committed reply.")]));
+        }
+        replies.push(server_error_step());
+        let mut run = start(
+            "resume-before-account-rebind",
+            Setup {
+                endpoints: vec![openai(ENV, Billing::Metered), source, selected],
+                root_model: GPT,
+                ..child_switch_setup()
+            },
+            vec![("source:/w", replies)],
+        )
+        .await;
+        run.spawn(SpawnRequest {
+            endpoint: Some("source".into()),
+            model: Some(MODEL.into()),
+            spawn: Some(true),
+            ..spawn_request("w", "Begin.")
+        })
+        .await;
+        if provider_changed {
+            run.child_ended("/w").await;
+            run.send(child_send("/w", "failure", "A second task."))
+                .await;
+        }
+        assert!(matches!(
+            run.child_ended("/w").await,
+            TurnOutcome::Error { .. }
+        ));
+        select_gpt(&mut run).await;
+        let (back, host) = catalog_reopen(
+            run.quit().await,
+            source_ready.then_some(source),
+            selected,
+            vec![(
+                "source:/w",
+                vec![uses(&[report_call("r1", "Stayed on the source.")])],
+            )],
+        )
+        .await;
+        assert_eq!(back.live, ["/w"]);
+        assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+        let mut run = back.run;
+        assert_eq!(
+            entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+            source_ready.then_some("source")
+        );
+        let (account, replies) = if provider_changed {
+            (
+                subscription("gpt"),
+                vec![native_summary("The earlier work."), done("Continued.")],
+            )
+        } else {
+            (
+                openai("gpt", Billing::Metered),
+                vec![uses(&[report_call("r2", "Explicitly chosen.")])],
+            )
+        };
+        let replacement = scripted(replies);
+        publish_account(&host, catalog_connection(account, replacement.clone()));
+        let request = run.request();
+        run.send(child(
+            "/w",
+            ClientCommand::Retry {
+                turn: if provider_changed { 2 } else { 1 },
+                endpoint: Some("gpt".into()),
+                request,
+            },
+        ))
+        .await;
+        run.until("Retry refuses the replacement", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { request: Some(r), reason, .. }) if *r == request && reason.contains("no longer available as chosen"))).await;
+        if !source_ready {
+            let request = run.request();
+            run.send(child(
+                "/w",
+                ClientCommand::SpawnAgent {
+                    request,
+                    spawn: spawn_request("helper", "Work on the inherited account."),
+                },
+            ))
+            .await;
+            run.until("an unbound account cannot be inherited", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { request: Some(r), reason, .. }) if *r == request && reason.contains("name an account"))).await;
+            let request = run.request();
+            run.send(child(
+                "/w",
+                ClientCommand::Compact {
+                    request,
+                    focus: None,
+                },
+            ))
+            .await;
+            run.until("compaction refuses the replacement", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { request: Some(r), reason, .. }) if *r == request && reason.contains("no longer available as chosen"))).await;
+        }
+        run.send(child_send("/w", "after-rebind", "Do not bill the new key."))
+            .await;
+        if source_ready {
+            run.child_ended("/w").await;
+            assert_eq!(run.requests("source:/w").len(), 2);
+        } else {
+            run.until("sending refuses the replacement", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { id: Some(id), .. }) if id.0 == "after-rebind")).await;
+        }
+        assert!(replacement.sent().is_empty());
+        assert_eq!(
+            entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+            source_ready.then_some("source")
+        );
+        let landed = if provider_changed {
+            let request = gpt_choice(&mut run, Some(GPT.into()), None).await;
+            run.until("the old provider's model is refused", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { request: Some(r), .. }) if *r == request)).await;
+            let request = gpt_choice(&mut run, None, None).await;
+            let event = run.until("the replacement model is accepted", |e| matches!(inner(e, "/w"), Some(AgentEvent::SettingsChanged { answers: Some(r), .. }) if *r == request)).await;
+            let Some(AgentEvent::SettingsChanged { model, .. }) = inner(&event, "/w") else {
+                unreachable!()
+            };
+            assert_eq!(
+                crate::endpoints::goes::model_provider(model),
+                Some(crate::endpoints::ProviderKind::Anthropic)
+            );
+            let request = run.request();
+            run.send(child(
+                "/w",
+                ClientCommand::Compact {
+                    request,
+                    focus: None,
+                },
+            ))
+            .await;
+            run.until("compaction uses the new pair", |e| matches!(inner(e, "/w"), Some(AgentEvent::Compacted { answers: Some(r), .. }) if *r == request)).await;
+            let sent = replacement.sent();
+            assert!(!sent.is_empty());
+            assert_eq!(&sent[0].session.model, model);
+            model.clone()
+        } else {
+            select_gpt(&mut run).await;
+            GPT.to_owned()
+        };
+        run.send(child_send(
+            "/w",
+            "deliberate",
+            "Use the account just selected.",
+        ))
+        .await;
+        run.child_ended("/w").await;
+        let sent = replacement.sent();
+        assert_eq!(sent.len(), if provider_changed { 2 } else { 1 });
+        assert_eq!(sent.last().unwrap().session.model, landed);
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_ready_source_adopts_the_logged_tool_copy_with_a_pending_destination() {
+    let plugins = vec!["web_search", "show_diff"];
+    let run = manually_switch_child(Setup {
+        plugins: plugins.clone(),
+        ..child_switch_setup()
+    })
+    .await
+    .quit()
+    .await;
+    let back = resume(
+        run,
+        Setup {
+            plugins,
+            removed: vec!["show-diff"],
+            ..child_switch_setup()
+        },
+        vec![],
+    )
+    .await;
+    assert_eq!(back.live, ["/w"]);
+    assert_eq!(
+        back.warnings,
+        [
+            "/w's tool show_diff isn't provided by any plugin now, so it's turned off from its next message"
+        ]
+    );
+    back.run.quit().await;
+}
+
+async fn select_child_account(run: &mut Run, name: &str) {
+    let request = child_account_choice(run, name, None, None).await;
+    run.until("explicit account selection", |e| matches!(inner(e, "/w"), Some(AgentEvent::SettingsChanged { answers: Some(r), endpoint, .. }) if *r == request && endpoint == name)).await;
+}
+
+async fn requested_worker_compaction(run: &mut Run) -> AgentEvent {
+    let request = run.request();
+    run.send(child(
+        "/w",
+        ClientCommand::Compact {
+            focus: None,
+            request,
+        },
+    ))
+    .await;
+    run.until("the worker's manual compaction", |e| matches!(inner(e, "/w"), Some(AgentEvent::Compacted { answers: Some(r), .. } | AgentEvent::CompactionFailed { answers: Some(r), .. }) if *r == request)).await
+}
+
+async fn compact_worker(run: &mut Run) {
+    let event = requested_worker_compaction(run).await;
+    assert!(
+        matches!(inner(&event, "/w"), Some(AgentEvent::Compacted { .. })),
+        "{event:?}"
+    );
+}
+
+async fn sync_worker(run: &mut Run) {
+    let request = run.request();
+    run.send(child("/w", ClientCommand::DescribeSettings { request }))
+        .await;
+    run.until("worker's settings after catalog refresh", |e| matches!(inner(e, "/w"), Some(AgentEvent::SettingsSnapshot(snapshot)) if snapshot.answers == request)).await;
+}
+
+async fn worker_before_account_move(
+    source: FakeEndpoint,
+    selected: FakeEndpoint,
+    native_head: bool,
+) -> Run {
+    let mut replies = vec![uses(&[report_call("r1", "A first reply.")])];
+    if native_head {
+        replies.extend([native_summary("Old summary."), done("Additional work.")]);
+    }
+    let mut run = start(
+        "resume-native-account",
+        Setup {
+            endpoints: vec![
+                openai(ENV, wisp_protocol::Billing::Metered),
+                source,
+                selected,
+            ],
+            root_model: GPT,
+            ..child_switch_setup()
+        },
+        vec![("source:/w", replies)],
+    )
+    .await;
+    run.spawn(SpawnRequest {
+        endpoint: Some(source.name.into()),
+        model: Some(MODEL.into()),
+        spawn: Some(true),
+        ..spawn_request("w", "Start this work.")
+    })
+    .await;
+    run.child_ended("/w").await;
+    if native_head {
+        compact_worker(&mut run).await;
+        run.send(child_send("/w", "later-work", "Work after the head."))
+            .await;
+        run.child_ended("/w").await;
+    }
+    run
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resumed_child_never_compacts_on_a_discarded_account() {
+    use wisp_protocol::Billing;
+    enum Work {
+        Send,
+        Retry,
+        Compact,
+    }
+    for (rebound, work) in [
+        (true, Work::Send),
+        (false, Work::Send),
+        (false, Work::Retry),
+        (false, Work::Compact),
+    ] {
+        let selected = if rebound {
+            subscription("claude2")
+        } else {
+            api("claude2")
+        };
+        let mut run = worker_before_account_move(subscription("source"), selected, true).await;
+        if matches!(work, Work::Retry) {
+            run.providers.script("source:/w", vec![server_error_step()]);
+            run.send(child_send("/w", "failed", "Work to be retried."))
+                .await;
+            assert!(matches!(
+                run.child_ended("/w").await,
+                TurnOutcome::Error { .. }
+            ));
+        }
+        select_child_account(&mut run, "claude2").await;
+        let (back, host) = catalog_reopen(
+            run.quit().await,
+            None,
+            selected,
+            vec![
+                ("claude2:/w", vec![native_summary("Must not be sent.")]),
+                ("gpt:/w", vec![done("On the selected subscription.")]),
+            ],
+        )
+        .await;
+        assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+        let mut run = back.run;
+        let rebound_api = scripted([native_summary("Must not be sent to a replacement.")]);
+        if rebound {
+            publish_account(
+                &host,
+                catalog_connection(api("claude2"), rebound_api.clone()),
+            );
+        }
+        let target = openai("gpt", Billing::ChatGptPlan);
+        publish_account(
+            &host,
+            catalog_connection(target, run.providers.get("gpt:/w")),
+        );
+        if !matches!(work, Work::Retry) {
+            select_child_account(&mut run, "gpt").await;
+        }
+        match work {
+            Work::Send => {
+                run.send(child_send(
+                    "/w",
+                    "send-after-move",
+                    "Continue on the subscription.",
+                ))
+                .await;
+                assert!(matches!(
+                    run.child_ended("/w").await,
+                    TurnOutcome::Completed { .. }
+                ));
+            }
+            Work::Retry => {
+                let request = run.request();
+                run.send(child(
+                    "/w",
+                    ClientCommand::Retry {
+                        turn: 3,
+                        endpoint: Some("gpt".into()),
+                        request,
+                    },
+                ))
+                .await;
+                assert!(matches!(
+                    run.child_ended("/w").await,
+                    TurnOutcome::Completed { .. }
+                ));
+            }
+            Work::Compact => compact_worker(&mut run).await,
+        }
+        assert!(run.requests("claude2:/w").is_empty());
+        assert!(rebound_api.sent().is_empty());
+        assert_eq!(
+            entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+            Some("gpt")
+        );
+        let run = run.quit().await;
+        assert!(!run.records("/w").iter().any(|e| matches!(e,
+            LogEvent::TurnStarted { endpoint_name: Some(name), .. } if name == "claude2"
+        ) || matches!(e, LogEvent::SettingsChanged {
+            endpoint_name: Some(name), credential_source: Some(CredentialSource::Mode { billing: Billing::Metered, .. }), ..
+        } if name == "claude2" && rebound)));
+        if rebound {
+            let back = resume(
+                run,
+                Setup {
+                    endpoints: vec![openai(ENV, Billing::Metered), api("claude2"), target],
+                    ..Setup::default()
+                },
+                vec![("gpt:/w", vec![done("Still on the subscription.")])],
+            )
+            .await;
+            assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+            let mut run = back.run;
+            run.send(child_send("/w", "after-second-reopen", "Continue."))
+                .await;
+            run.child_ended("/w").await;
+            assert!(run.requests("claude2:/w").is_empty());
+            assert_eq!(run.requests("gpt:/w").len(), 2);
+            run.quit().await;
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resumed_manual_compaction_binds_and_charges_the_selected_account() {
+    let selected = api("claude-api");
+    let mut run = worker_before_account_move(subscription("source"), selected, false).await;
+    select_child_account(&mut run, "claude-api").await;
+    let run = run.quit().await;
+    let setting_records = |run: &Run| {
+        run.records("/w")
+            .into_iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    LogEvent::SettingsChanged { .. } | LogEvent::RebuildMarked { .. }
+                )
+            })
+            .count()
+    };
+    let before = setting_records(&run);
+    let source_spend = logged_worker(&run).accounts["source"];
+    let (back, _) = catalog_reopen(
+        run,
+        None,
+        selected,
+        vec![("claude-api:/w", vec![native_summary("New summary.")])],
+    )
+    .await;
+    assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+    let mut run = back.run;
+    assert_eq!(entry(&list(&mut run).await, "/w").endpoint, None);
+    sync_worker(&mut run).await;
+    assert_eq!(
+        setting_records(&run),
+        before,
+        "idle reopen records no switch"
+    );
+    compact_worker(&mut run).await;
+    assert_eq!(
+        entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+        Some("claude-api")
+    );
+    let run = run.quit().await;
+    let logged = logged_worker(&run);
+    let cost = logged.compaction_usd.unwrap();
+    assert!(cost > 0.0);
+    assert_eq!(logged.accounts["claude-api"].api_usd(), Some(cost));
+    assert_eq!(logged.accounts["source"], source_spend);
+    assert_eq!(logged.endpoint(), Some("claude-api"));
+    let (back, _) = catalog_reopen(run, None, selected, vec![]).await;
+    let mut run = back.run;
+    assert_eq!(
+        entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+        Some("claude-api")
+    );
+    run.quit().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_resumed_child_preserves_its_choice_when_the_source_is_refreshed() {
+    use wisp_protocol::Billing;
+    for changes_billing in [false, true] {
+        let source = if changes_billing {
+            subscription("source")
+        } else {
+            api("source")
+        };
+        let selected = openai("gpt", Billing::ChatGptPlan);
+        let mut run = worker_before_account_move(source, selected, false).await;
+        select_gpt(&mut run).await;
+        let (back, host) = catalog_reopen(
+            run.quit().await,
+            Some(source),
+            selected,
+            vec![(
+                "gpt:/w",
+                vec![
+                    done(super::limits::SUMMARY),
+                    done("Continued on the subscription."),
+                ],
+            )],
+        )
+        .await;
+        assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+        let mut run = back.run;
+        assert_eq!(
+            entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+            Some("source")
+        );
+        let replacement = scripted([done("Must not be sent.")]);
+        publish_account(
+            &host,
+            catalog_connection(api("source"), replacement.clone()),
+        );
+        sync_worker(&mut run).await;
+        if changes_billing {
+            let request = run.request();
+            run.send(child(
+                "/w",
+                ClientCommand::SpawnAgent {
+                    request,
+                    spawn: spawn_request("helper", "Do not inherit the replacement."),
+                },
+            ))
+            .await;
+            run.until("detached source cannot be inherited", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { request: Some(r), reason, .. }) if *r == request && reason.contains("name an account"))).await;
+            requested_worker_compaction(&mut run).await;
+            assert_eq!(
+                entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+                Some("gpt")
+            );
+        } else {
+            let old = run.quit().await;
+            assert_eq!(
+                logged_worker(&old).pending.unwrap().destination(),
+                Some(("gpt", "openai"))
+            );
+            let (back, _) = catalog_reopen(
+                old,
+                Some(source),
+                selected,
+                vec![("gpt:/w", vec![done("Continued on the subscription.")])],
+            )
+            .await;
+            run = back.run;
+        }
+        run.send(child_send("/w", "after-source-refresh", "Continue."))
+            .await;
+        run.child_ended("/w").await;
+        assert!(replacement.sent().is_empty());
+        assert_eq!(run.requests("source:/w").len(), 1);
+        assert!(!run.requests("gpt:/w").is_empty());
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_model_only_pending_change_keeps_the_active_accounts_billing_evidence() {
+    use wisp_protocol::Billing;
+    let source = api("source");
+    let spare = openai("gpt", Billing::ChatGptPlan);
+    let run = worker_before_account_move(source, spare, false)
+        .await
+        .quit()
+        .await;
+    let (back, host) = catalog_reopen(run, Some(source), spare, vec![]).await;
+    let mut run = back.run;
+    let request = run.request();
+    run.send(child(
+        "/w",
+        ClientCommand::ChangeSettings {
+            request,
+            changes: ClientCommand::shortcut_changes(None, None, Some(Effort::Low)),
+            save: false,
+        },
+    ))
+    .await;
+    run.until("the effort-only change is pending", |e| matches!(inner(e, "/w"), Some(AgentEvent::SettingsChanged { answers: Some(r), effort: Effort::Low, .. }) if *r == request)).await;
+    let plan = scripted([done("On the subscription.")]);
+    publish_account(
+        &host,
+        catalog_connection(subscription("source"), plan.clone()),
+    );
+    sync_worker(&mut run).await;
+    run.send(child_send(
+        "/w",
+        "on-subscription",
+        "Continue on the subscription.",
+    ))
+    .await;
+    assert!(matches!(
+        run.child_ended("/w").await,
+        TurnOutcome::Completed { .. }
+    ));
+    assert_eq!(plan.sent().len(), 1);
+    let run = run.quit().await;
+    let records = run.store.read(&session_name("/w")).unwrap();
+    assert_eq!(
+        LoggedSession::read(&records).unwrap().current.effort,
+        Effort::Low
+    );
+    assert_eq!(
+        crate::resume::billing_mode(&records, "source"),
+        Some(Billing::AnthropicPlan)
+    );
+    let (back, _) = catalog_reopen(
+        run,
+        Some(source),
+        spare,
+        vec![("source:/w", vec![done("Must not run on the API.")])],
+    )
+    .await;
+    assert!(back.live.is_empty());
+    assert_eq!(back.ended, ["/w"]);
+    let run = back.run.quit().await;
+    assert_eq!(
+        run.requests("source:/w").len(),
+        1,
+        "only the initial, explicitly spawned API call"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_reopened_child_refreshes_its_native_head_on_the_ready_source_before_converting() {
+    let mut control = None;
+    for old_ready in [None, Some(true), Some(false)] {
+        let mut run = start(
+            "resume-child-native-head",
+            child_switch_setup(),
+            vec![
+                (
+                    "/w",
+                    vec![
+                        uses(&[report_call("r1", "First")]),
+                        native_summary("An old summary."),
+                        done("Later content."),
+                        native_summary("A fresh summary."),
+                    ],
+                ),
+                ("gpt:/w", vec![done("Third")]),
+            ],
+        )
+        .await;
+        run.spawn(spawn_request("w", "Begin.")).await;
+        run.child_ended("/w").await;
+        let request = run.request();
+        run.send(child(
+            "/w",
+            ClientCommand::Compact {
+                request,
+                focus: None,
+            },
+        ))
+        .await;
+        run.until("a native head", |e| {
+            matches!(
+                inner(e, "/w"),
+                Some(AgentEvent::Compacted {
+                    engine: wisp_protocol::CompactionEngine::Native,
+                    ..
+                })
+            )
+        })
+        .await;
+        run.send(child_send("/w", "second", "Add later content."))
+            .await;
+        run.child_ended("/w").await;
+        select_gpt(&mut run).await;
+        if let Some(old_ready) = old_ready {
+            let back = resume(
+                run.quit().await,
+                switch_ready(old_ready),
+                vec![
+                    ("/w", vec![native_summary("A fresh summary.")]),
+                    ("gpt:/w", vec![done("Third")]),
+                ],
+            )
+            .await;
+            assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+            run = back.run;
+        }
+        run.send(child_send("/w", "third", "Proceed.")).await;
+        run.child_ended("/w").await;
+        let requests = run.requests("gpt:/w");
+        let body = crate::provider::openai::build_body(&requests[0].request()).unwrap();
+        let events: Vec<_> = run
+            .seen
+            .iter()
+            .filter_map(|e| match inner(e, "/w") {
+                Some(AgentEvent::Compacted {
+                    trigger,
+                    turn: Some(3),
+                    partial,
+                    ..
+                }) => Some((*trigger, *partial)),
+                _ => None,
+            })
+            .collect();
+        if old_ready == Some(false) {
+            assert_eq!(events, [(wisp_protocol::CompactionTrigger::Convert, true)]);
+            assert!(body.to_string().contains("An old summary."));
+            assert_eq!(run.requests("/w").len(), 3);
+        } else {
+            assert_eq!(
+                events,
+                [
+                    (wisp_protocol::CompactionTrigger::Switch, false),
+                    (wisp_protocol::CompactionTrigger::Convert, false)
+                ]
+            );
+            assert!(body.to_string().contains("A fresh summary."));
+            assert_eq!(run.requests("/w").len(), 4);
+            if let Some(control) = &control {
+                assert_eq!(&body, control);
+            } else {
+                control = Some(body);
+            }
+        }
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_reopened_child_retries_at_the_failed_effort_before_its_pending_effort() {
+    for old_ready in [None, Some(true), Some(false)] {
+        let mut run = start(
+            "resume-child-retry",
+            child_switch_setup(),
+            vec![
+                ("/w", vec![server_error_step()]),
+                (
+                    "gpt:/w",
+                    vec![uses(&[report_call("r1", "Retry")]), done("Ordinary")],
+                ),
+            ],
+        )
+        .await;
+        run.spawn(spawn_request("w", "Try this.")).await;
+        assert!(matches!(
+            run.child_ended("/w").await,
+            TurnOutcome::Error { .. }
+        ));
+        select_gpt(&mut run).await;
+        if let Some(old_ready) = old_ready {
+            run = resume(
+                run.quit().await,
+                switch_ready(old_ready),
+                vec![(
+                    "gpt:/w",
+                    vec![uses(&[report_call("r1", "Retry")]), done("Ordinary")],
+                )],
+            )
+            .await
+            .run;
+        }
+        let request = run.request();
+        run.send(child(
+            "/w",
+            ClientCommand::Retry {
+                turn: 1,
+                endpoint: Some("gpt".into()),
+                request,
+            },
+        ))
+        .await;
+        run.child_ended("/w").await;
+        run.send(child_send("/w", "next", "Continue.")).await;
+        run.child_ended("/w").await;
+        let requests = run.requests("gpt:/w");
+        let [retried, ordinary] = requests.as_slice() else {
+            panic!("expected retry and ordinary turn");
+        };
+        assert_eq!(
+            (retried.session.model.as_str(), retried.session.effort),
+            (GPT, Effort::High)
+        );
+        assert_eq!(
+            (ordinary.session.model.as_str(), ordinary.session.effort),
+            (GPT, Effort::Low)
+        );
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_running_child_keeps_its_selected_account_across_quit() {
+    let mut run = start(
+        "resume-running-child-switch",
+        child_switch_setup(),
+        vec![("/w", vec![hanging("busy")])],
+    )
+    .await;
+    run.spawn(spawn_request("w", "Begin.")).await;
+    streaming(&mut run, "/w").await;
+    select_gpt(&mut run).await;
+    let back = resume(
+        run.quit().await,
+        switch_ready(false),
+        vec![("gpt:/w", vec![uses(&[report_call("r1", "Continued.")])])],
+    )
+    .await;
+    assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+    let mut run = back.run;
+    first_moved_child_request(&mut run).await;
+    assert_eq!(run.requests("gpt:/w").len(), 1);
+    run.quit().await;
 }
 
 #[tokio::test(start_paused = true)]

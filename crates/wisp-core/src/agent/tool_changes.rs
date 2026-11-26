@@ -297,11 +297,6 @@ impl Agent {
         names_of(self.deferred_on(self.endpoint_name(), &self.session.model))
     }
 
-    fn next_deferred_names(&self) -> BTreeSet<String> {
-        let (endpoint, model) = self.next_endpoint_model();
-        names_of(self.deferred_on(self.connection_name(endpoint), &model))
-    }
-
     pub(super) fn counted_tools(&self) -> Vec<ToolSpec> {
         let mut counted: BTreeMap<String, ToolSpec> = self
             .sent

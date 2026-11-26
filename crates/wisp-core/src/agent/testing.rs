@@ -192,6 +192,7 @@ pub(crate) struct Knobs {
     pub(crate) caps: Option<Caps>,
     pub(crate) documented: Option<bool>,
     pub(crate) bound: Option<bool>,
+    pub(crate) betas: Vec<String>,
     pub(crate) keeps_warm: Option<bool>,
     pub(crate) cache_life: Option<SignedDuration>,
     pub(crate) opt_in: Option<bool>,
@@ -461,6 +462,10 @@ impl Provider for Bare {
 }
 
 impl Provider for Fake {
+    fn betas(&self, _: &Request<'_>) -> Vec<String> {
+        self.knobs(|k| k.betas.clone())
+    }
+
     fn configure_plan_usage(&self, enabled: bool) -> bool {
         self.knobs(|k| match k.opt_in.as_mut() {
             Some(on) => std::mem::replace(on, enabled) != enabled,

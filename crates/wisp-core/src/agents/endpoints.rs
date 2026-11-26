@@ -53,6 +53,42 @@ impl Ready {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ExactAccount {
+    pub(crate) name: String,
+    pub(crate) kind: LoggedKind,
+    pub(crate) billing: Option<Billing>,
+}
+
+impl ExactAccount {
+    pub(crate) fn connected(connection: &Connection) -> Self {
+        Self {
+            name: connection.name.clone(),
+            kind: LoggedKind::Known(connection.provider.kind()),
+            billing: Some(connection.provider.billing()),
+        }
+    }
+
+    pub(crate) fn check(&self, candidate: Option<&Connection>) -> Result<(), String> {
+        if candidate.is_some_and(|c| self.matches(&c.name, c.provider.as_ref())) {
+            return Ok(());
+        }
+        Err(format!(
+            "{} is no longer available as chosen; choose an account again (/account)",
+            crate::endpoints::goes::named(&self.name)
+        ))
+    }
+
+    fn matches(&self, name: &str, provider: &dyn Provider) -> bool {
+        self.name == name
+            && self.kind == LoggedKind::Known(provider.kind())
+            && self.billing.map_or_else(
+                || !provider.billing().is_metered(),
+                |then| then == provider.billing(),
+            )
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct EndpointView {
     ready: Vec<Ready>,
@@ -120,6 +156,11 @@ impl EndpointView {
 
     pub fn is_empty(&self) -> bool {
         self.ready.is_empty() && self.unavailable.is_empty()
+    }
+
+    pub(crate) fn exact(&self, choice: &ExactAccount) -> Option<&Ready> {
+        self.ready(&choice.name)
+            .filter(|ready| choice.matches(&ready.name, ready.provider.as_ref()))
     }
 
     pub fn ready(&self, name: &str) -> Option<&Ready> {

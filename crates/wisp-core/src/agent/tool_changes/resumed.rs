@@ -77,7 +77,7 @@ impl Agent {
         let copy = &logged.copy;
         let sent = specs_of(&copy.tools.tool_definitions)?;
         let deferred = specs_of(&copy.tools.deferred_definitions)?;
-        let (endpoint, model) = self.next_endpoint_model();
+        let (endpoint, model) = self.resume_endpoint_model();
         let name = self.connections.get(endpoint)?.name.clone();
         let server = self.search_tools(&name, &model, self.array_search_form(&name, &model));
         let (wire_tools, server) = self.wire(&sent, server);
@@ -124,17 +124,19 @@ impl Agent {
         Some(())
     }
 
-    fn next_blocks(&self) -> bool {
-        let (endpoint, model) = self.next_endpoint_model();
-        self.connections.get(endpoint).is_some_and(|connection| {
-            self.feature_use_on(
-                connection.provider.as_ref(),
-                &connection.name,
+    fn resumed_offer(&self) -> Offer {
+        let (endpoint, model) = self.resume_endpoint_model();
+        let name = self.connection_name(endpoint);
+        let inline = self
+            .feature_use_on(
+                self.provider_at(endpoint).as_ref(),
+                name,
                 &model,
                 Feature::InlineTools,
             )
-            .is_some()
-        })
+            .is_some();
+        let deferred = super::names_of(self.deferred_on(name, &model));
+        self.read_offer_with(inline, &deferred)
     }
 
     pub(in crate::agent) async fn describe_copied(&mut self, logged: &LoggedSession) {
@@ -177,10 +179,7 @@ impl Agent {
         }
         let mut on = match &self.tool_switches.logged_on {
             Some(logged) => logged.clone(),
-            None => {
-                self.read_offer_with(self.next_blocks(), &self.next_deferred_names())
-                    .offered
-            }
+            None => self.resumed_offer().offered,
         };
         if self.found_use().is_none() {
             on.retain(|name| !self.tool_switches.found.contains_key(name));

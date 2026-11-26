@@ -30,6 +30,7 @@ use super::withdraw::end_of;
 use super::{Agent, InstructionsFacts, LastRequest, sections};
 use crate::agents::fold::exit_named;
 use crate::context::ttl_span;
+use crate::kit::ChildResume;
 use crate::provider::forms::server_call;
 use crate::provider::forms::thinking_shaped;
 use crate::provider::{Feature, Provider, RequestOptions};
@@ -477,6 +478,14 @@ impl Agent {
             refusal_fallback: logged.current.refusal_fallback,
             message_threads,
         });
+        match &self.child_resume {
+            ChildResume::Rejected => {
+                logged.pending = None;
+                logged.restore_committed_tools();
+            }
+            ChildResume::Pending { .. } => logged.restore_committed_tools(),
+            _ => {}
+        }
         self.restore_settings(&logged, moved.is_some());
         let lost = self.restore_pending(&logged);
         self.restore_kernel(&logged);
@@ -520,9 +529,9 @@ impl Agent {
         self.sections.set_start(&start);
         self.sections.resumed_start = Some(start.clone());
         self.search.refused = rebuilt.search_refused.clone();
-        let (pair, model) = logged.tools_pair();
-        let ran_on = pair.unwrap_or_else(|| self.endpoint_name()).to_owned();
-        let key = (ran_on.clone(), model.to_owned());
+        let (pair, model) = self.resume_tools_pair(&logged);
+        let ran_on = pair.unwrap_or_else(|| self.endpoint_name().to_owned());
+        let key = (ran_on.clone(), model.clone());
         let search_plugin = crate::resume::search_plugin_id(&self.catalog);
         let switched_off = logged.search_switched_off(search_plugin);
         let search_on = logged.search_on();
@@ -532,8 +541,8 @@ impl Agent {
         }
         let pickup = !search_on
             && !switched_off
-            && self.unkept_form(&ran_on, model, self.toolbox.web_search()) == SearchForm::Native;
-        let delay = self.switchable() && self.next_names() == key;
+            && self.unkept_form(&ran_on, &model, self.toolbox.web_search()) == SearchForm::Native;
+        let delay = self.switchable() && self.resume_names() == key;
         if delay && (pickup || array_had != search_on) {
             self.search.array = Some((key.clone(), array_had));
         }
@@ -770,7 +779,8 @@ impl Agent {
             flags,
         };
         let notice = self.resume_notice(&logged, now, &notes, fell_back, saved.as_deref());
-        let switched = self.flag_value(names::ENDPOINT).is_none()
+        let switched = !self.child_resume.unbound()
+            && self.flag_value(names::ENDPOINT).is_none()
             && logged
                 .endpoint()
                 .is_some_and(|ran_on| ran_on != self.endpoint_name());
@@ -1000,6 +1010,12 @@ impl Agent {
     }
 
     fn resumed_betas_differ(&self, logged: &LoggedSession) -> bool {
+        if logged
+            .endpoint()
+            .is_some_and(|ran_on| ran_on != self.endpoint_name())
+        {
+            return false;
+        }
         let Some(logged) = &logged.sent_betas else {
             return false;
         };
@@ -1063,13 +1079,36 @@ impl Agent {
         )
     }
 
+    pub(in crate::agent) fn resume_endpoint_model(&self) -> (usize, String) {
+        if matches!(self.child_resume, ChildResume::Pending { .. }) {
+            (self.endpoint, self.session.model.clone())
+        } else {
+            self.next_endpoint_model()
+        }
+    }
+
+    fn resume_names(&self) -> (String, String) {
+        let (endpoint, model) = self.resume_endpoint_model();
+        (self.connection_name(endpoint).to_owned(), model)
+    }
+
+    fn resume_tools_pair(&self, logged: &LoggedSession) -> (Option<String>, String) {
+        if matches!(self.child_resume, ChildResume::Pending { .. }) {
+            let (name, model) = self.resume_names();
+            (Some(name), model)
+        } else {
+            let (name, model) = logged.tools_pair();
+            (name.map(str::to_owned), model.to_owned())
+        }
+    }
+
     fn tools_changes(&self, logged: &LoggedSession) -> Vec<String> {
-        let (endpoint, model) = logged.tools_pair();
-        let endpoint = endpoint.unwrap_or_else(|| self.endpoint_name());
+        let (endpoint, model) = self.resume_tools_pair(logged);
+        let endpoint = endpoint.as_deref().unwrap_or_else(|| self.endpoint_name());
         if !self.connections.iter().any(|c| c.name == endpoint) {
             return Vec::new();
         }
-        let now = self.tool_set(endpoint, model).names;
+        let now = self.tool_set(endpoint, &model).names;
         let then = &logged.tools.names;
         let added: Vec<&str> = now
             .iter()
@@ -1089,12 +1128,12 @@ impl Agent {
     }
 
     fn logged_tools_now(&self, logged: &LoggedSession) -> Option<String> {
-        let (endpoint, model) = logged.tools_pair();
-        let endpoint = endpoint.unwrap_or_else(|| self.endpoint_name());
+        let (endpoint, model) = self.resume_tools_pair(logged);
+        let endpoint = endpoint.as_deref().unwrap_or_else(|| self.endpoint_name());
         self.connections
             .iter()
             .any(|c| c.name == endpoint)
-            .then(|| self.tool_set(endpoint, model).digest)
+            .then(|| self.tool_set(endpoint, &model).digest)
     }
 
     fn restore_instructions(&mut self, logged: &LoggedSession) -> RestoredBlock {
@@ -1160,12 +1199,15 @@ impl Agent {
         let unchanged = endpoint == self.endpoint
             && model == self.session.model
             && effort == self.session.effort;
-        self.settings.pending = (!unchanged).then_some(Pending {
+        self.settings.pending = (!unchanged || self.child_resume.unbound()).then_some(Pending {
             endpoint,
             model,
             effort,
         });
-        if !unchanged && endpoint != self.endpoint {
+        if !unchanged
+            && endpoint != self.endpoint
+            && !matches!(self.child_resume, ChildResume::Pending { .. })
+        {
             match self.reserve_binding(endpoint) {
                 Ok(binding) => self.pending_endpoint_binding = binding,
                 Err(reason) => {
@@ -1180,9 +1222,12 @@ impl Agent {
 
     fn restore_settings(&mut self, logged: &LoggedSession, origin_moved: bool) {
         let current = &logged.current;
-        self.session.model.clone_from(&current.model);
-        self.session.effort =
-            crate::models::ModelTable::shared().own_effort(&current.model, current.effort);
+        if !self.child_resume.unbound() {
+            self.session.model.clone_from(&current.model);
+            self.session.effort = current.effort;
+        }
+        self.session.effort = crate::models::ModelTable::shared()
+            .own_effort(&self.session.model, self.session.effort);
         self.session.cache_ttl = current.cache_ttl;
         self.session.message_time = current.message_time;
         self.session.context_note = current.context_note;
@@ -1685,7 +1730,7 @@ impl Agent {
             .filter(|_| resumed.block_written);
         let instructions_source = resumed.source_written.clone();
         let instructions_extra = resumed.extra_written.clone();
-        let (endpoint, model) = self.next_names();
+        let (endpoint, model) = self.resume_names();
         let tools = self.tool_set(&endpoint, &model);
         let whole_copy = resumed.whole_copy
             || resumed

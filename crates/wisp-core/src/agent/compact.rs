@@ -1176,6 +1176,14 @@ impl Agent {
         self.emit(events, event).await;
     }
 
+    fn manual_compaction_endpoint(&self) -> usize {
+        if self.bound_endpoint().is_none() {
+            self.next_endpoint()
+        } else {
+            self.endpoint
+        }
+    }
+
     pub(super) async fn compact_command(
         &mut self,
         focus: Option<String>,
@@ -1183,6 +1191,12 @@ impl Agent {
         events: &mpsc::Sender<AgentEvent>,
     ) {
         self.start_log(events).await;
+        let target = self.manual_compaction_endpoint();
+        if let Err(reason) = self.check_resume_destination(target) {
+            self.emit(events, AgentEvent::refused(Some(request), reason))
+                .await;
+            return;
+        }
         if self.track.is_some() {
             self.refuse_compact(request, RejectKind::TurnRunning, events)
                 .await;
@@ -1282,6 +1296,23 @@ impl Agent {
                 .await;
             return;
         }
+        let target = self.manual_compaction_endpoint();
+        let admission = self.check_resume_destination(target).and_then(|()| {
+            crate::endpoints::generation::admit(self.provider_at(target).generation())
+                .map_err(|error| error.to_string())
+        });
+        let bound = match admission {
+            Ok(lease) => self.bind_unbound(events).await.map(|()| lease),
+            Err(reason) => Err(reason),
+        };
+        let _admission = match bound {
+            Ok(lease) => lease,
+            Err(reason) => {
+                self.emit(events, AgentEvent::refused(Some(request), reason))
+                    .await;
+                return;
+            }
+        };
         let trigger = CompactionTrigger::Manual;
         let gate = self.gate(trigger).discarding(gate::Discard::Any(None));
         let gate = self.hand(gate, events).await;
@@ -1975,6 +2006,10 @@ impl Agent {
         model: &str,
         (from, pending): (SwitchFrom, Option<u64>),
     ) -> Option<SwitchDue> {
+        if self.bound_endpoint().is_none() {
+            return (self.head_holds_block() && !self.takes_block(endpoint, model))
+                .then_some(SwitchDue::Convert);
+        }
         if self.next_auto_compact()
             && pending.is_some_and(|tokens| self.over_new_point(endpoint, model, tokens))
         {
@@ -2150,8 +2185,13 @@ impl Agent {
             match run {
                 SwitchRun::Compacted => {}
                 SwitchRun::Cancelled => {
-                    self.settings.withdraw_after = Some(Withdrawal::SwitchCompactionCancelled);
-                    return PreTurn::Cancelled;
+                    if self.bound_endpoint().is_some() {
+                        self.settings.withdraw_after = Some(Withdrawal::SwitchCompactionCancelled);
+                        return PreTurn::Cancelled;
+                    }
+                    if self.track().stopped {
+                        return PreTurn::Cancelled;
+                    }
                 }
                 SwitchRun::Failed => {
                     let fits = if self.head_holds_block() && !self.takes_block(endpoint, &model) {
@@ -2160,7 +2200,7 @@ impl Agent {
                         due != SwitchDue::SmallerWindow
                             || !self.over_new_point(endpoint, &model, pending_tokens)
                     };
-                    if !fits {
+                    if !fits && self.bound_endpoint().is_some() {
                         self.withdraw_switch(Withdrawal::SwitchCompactionFailed, events)
                             .await;
                         return PreTurn::Ready;
@@ -2362,6 +2402,11 @@ impl Agent {
                 let Some(pass) = self.enter_endpoint_lane(0, commands, events).await else {
                     return cancelled(engine);
                 };
+                if self.bound_endpoint().is_none()
+                    || self.check_resume_destination(self.endpoint).is_err()
+                {
+                    return cancelled(engine);
+                }
                 sent_at = self.clock.now();
                 let streamed = self
                     .stream_compaction(

@@ -210,6 +210,7 @@ fn connection_words(spec: &SettingSpec) -> String {
 pub(in crate::agent) struct Verdict {
     target: Pending,
     binding: Option<crate::endpoints::generation::Binding>,
+    reselected: Option<crate::agents::endpoints::ExactAccount>,
     choices: Vec<Choice>,
     pub(in crate::agent) edits: Vec<SiteEdit>,
     pub(in crate::agent) by: Option<By>,
@@ -460,7 +461,8 @@ impl Agent {
         save: bool,
         projected: &Projected,
     ) -> Result<Verdict, Refusal> {
-        let (verdict, check_model, effort) = self.proposed_verdict(changes, save, projected)?;
+        let (mut verdict, mut check_model, mut effort) =
+            self.proposed_verdict(changes, save, projected)?;
         let target = &verdict.target;
         let before = self.next_pair();
         if let Some(catalog) = &self.endpoint_catalog
@@ -469,7 +471,18 @@ impl Agent {
                 .refetch_unlisted(self.connection_name(target.endpoint), &target.model)
                 .await
         {
-            return self.verdict(changes, save, projected);
+            (verdict, check_model, effort) = self.proposed_verdict(changes, save, projected)?;
+        }
+        if let Some(connection) = self.connections.get(verdict.target.endpoint)
+            && self.child_resume.destination().is_some()
+            && verdict.choices.iter().any(|choice| {
+                choice.spec.name == names::ENDPOINT
+                    && text_of(choice.value.as_ref()).as_deref() == Some(&connection.name)
+            })
+        {
+            verdict.reselected = Some(crate::agents::endpoints::ExactAccount::connected(
+                connection,
+            ));
         }
         self.checked_verdict(verdict, check_model, effort)
     }
@@ -676,6 +689,7 @@ impl Agent {
         Ok((
             Verdict {
                 binding: None,
+                reselected: None,
                 target,
                 choices,
                 edits,
@@ -693,15 +707,24 @@ impl Agent {
         effort: Option<Effort>,
     ) -> Result<Verdict, Refusal> {
         verdict.target = self.checked_pair(verdict.target, check_model, effort)?;
+        self.check_verdict_account(&verdict)?;
         if verdict.target.endpoint != self.endpoint
             || verdict
                 .choices
                 .iter()
                 .any(|choice| choice.class == Class::Pair && choice.spec.name == names::ENDPOINT)
         {
-            verdict.binding = self.reserve_binding(verdict.target.endpoint)?;
+            verdict.binding = self.reserve_generation(verdict.target.endpoint)?;
         }
         Ok(verdict)
+    }
+
+    fn check_verdict_account(&self, verdict: &Verdict) -> Result<(), String> {
+        if let Some(choice) = &verdict.reselected {
+            choice.check(self.connections.get(verdict.target.endpoint))
+        } else {
+            self.check_resume_destination(verdict.target.endpoint)
+        }
     }
 
     fn change_cache(&self, spec: &SettingSpec, target: &Pending) -> CacheEffect {
@@ -871,10 +894,16 @@ impl Agent {
         file: Option<SavedFile>,
         events: &mpsc::Sender<AgentEvent>,
     ) {
+        if let Err(reason) = self.check_verdict_account(&verdict) {
+            self.emit(events, AgentEvent::refused(request, reason))
+                .await;
+            return;
+        }
         let Verdict {
             target,
             choices,
             binding,
+            reselected,
             by,
             ..
         } = verdict;
@@ -886,6 +915,14 @@ impl Agent {
         } else {
             None
         };
+        let reseats_unbound =
+            reselected.is_some() && self.child_resume.unbound() && target.endpoint == self.endpoint;
+        if let Some(choice) = reselected {
+            self.child_resume.reselect(choice);
+            if reseats_unbound {
+                self.binding_fault = None;
+            }
+        }
         let off_before = crate::agent::manage::session_names(&self.settings.session);
         let account_bound = self.account_bound(target.endpoint);
         let defaults_before = self.endpoint_defaults();
@@ -1057,6 +1094,12 @@ impl Agent {
             .iter()
             .any(|choice| choice.path().provider_switch().is_some());
         let cache = self.pending_cache(&target);
+        if reseats_unbound {
+            self.session.model.clone_from(&target.model);
+            self.session.effort = target.effort;
+            self.search.array = None;
+            self.search.pickup = false;
+        }
         self.settings_changed(
             target,
             cache,

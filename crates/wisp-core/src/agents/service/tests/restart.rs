@@ -954,7 +954,7 @@ async fn getting_ready_does_not_start_a_background_compaction_after_a_final_repl
                 "/",
                 vec![
                     gated(priced(done("one"), 79_500, 10), &gate),
-                    gated(super::hooks::native_summary(), &summary),
+                    gated(super::hooks::native_summary("So far: one turn."), &summary),
                 ],
             )],
         )

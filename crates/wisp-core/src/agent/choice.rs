@@ -34,7 +34,7 @@ pub(super) struct Offered {
     pub(super) offer: RetryOffer,
     switch: bool,
     pub(super) on_mail: bool,
-    pub(super) endpoint: usize,
+    pub(super) failed: Pending,
     tools: &'static [ServerToolSpec],
     pub(super) opening: Vec<Input>,
     pub(super) steers: Vec<Input>,
@@ -56,7 +56,7 @@ pub(super) struct Restored {
     pub(super) kind: ErrorKind,
     pub(super) detail: Option<ErrorDetail>,
     pub(super) gave_up: Option<GaveUp>,
-    pub(super) endpoint: usize,
+    pub(super) failed: Pending,
     pub(super) opening: Vec<Input>,
     pub(super) steers: Vec<Input>,
     pub(super) lapsed: Option<&'static str>,
@@ -229,14 +229,18 @@ impl Agent {
     }
 
     pub(super) fn retry_endpoints(&self) -> Endpoints {
-        let current = self.endpoint_name();
+        self.retry_endpoints_from(self.endpoint)
+    }
+
+    fn retry_endpoints_from(&self, endpoint: usize) -> Endpoints {
+        let current = self.connection_name(endpoint);
         let gone = |name: &str| self.gone.iter().any(|(n, _)| n == name);
         let allowed = |index: usize| self.child_move_refused(index).is_none();
         let others = self
             .connections
             .iter()
             .enumerate()
-            .any(|(index, c)| index != self.endpoint && !gone(&c.name) && allowed(index));
+            .any(|(index, c)| index != endpoint && !gone(&c.name) && allowed(index));
         let suggest = self
             .completed_on
             .iter()
@@ -291,7 +295,7 @@ impl Agent {
                 offer: offer.clone(),
                 switch: retry::rule(kind, detail.as_ref(), gave_up).is_some_and(|r| r.1),
                 on_mail: self.retry_on_mail(offer, kind, detail.as_ref(), gave_up),
-                endpoint: self.endpoint,
+                failed: self.session_pair(),
                 tools: self.step_server_tools(),
                 opening,
                 steers,
@@ -346,7 +350,7 @@ impl Agent {
         self.offered
             .as_ref()
             .filter(|o| o.lapsed.is_none())
-            .map(|o| (o.endpoint, o.size))
+            .map(|o| (o.failed.endpoint, o.size))
     }
 
     pub(super) fn offer_stands(&self) -> bool {
@@ -379,13 +383,18 @@ impl Agent {
             kind,
             detail,
             gave_up,
-            endpoint,
+            failed,
             opening,
             steers,
             lapsed,
         } = restored;
-        let offer = retry::offer(kind, detail.as_ref(), gave_up, &self.retry_endpoints())
-            .map(|offer| self.at_reset(offer, detail.as_ref()));
+        let offer = retry::offer(
+            kind,
+            detail.as_ref(),
+            gave_up,
+            &self.retry_endpoints_from(failed.endpoint),
+        )
+        .map(|offer| self.at_reset(offer, detail.as_ref()));
         let tools = self.step_server_tools();
         self.offered = offer.map(|offer| {
             let on_mail = self.retry_on_mail(&offer, kind, detail.as_ref(), gave_up);
@@ -395,7 +404,7 @@ impl Agent {
                 offer,
                 switch: retry::rule(kind, detail.as_ref(), gave_up).is_some_and(|r| r.1),
                 on_mail,
-                endpoint,
+                failed,
                 tools,
                 opening,
                 steers,
@@ -413,9 +422,9 @@ impl Agent {
         }
     }
 
-    pub(super) fn offered_on(&mut self, endpoint: usize) {
+    pub(super) fn offered_on(&mut self, failed: Pending) {
         if let Some(offered) = &mut self.offered {
-            offered.endpoint = endpoint;
+            offered.failed = failed;
         }
     }
 
@@ -457,7 +466,7 @@ impl Agent {
         if let Some(reason) = self.child_move_refused(target) {
             return Err(reason);
         }
-        let same = target == offered.endpoint;
+        let same = target == offered.failed.endpoint;
         if (same && !offered.offer.retry) || (!same && !offered.switch) {
             return Err(if same {
                 same_endpoint_words(offered.kind).to_owned()
@@ -489,7 +498,9 @@ impl Agent {
                 return false;
             }
         };
-        let failed = self.session_pair();
+        let Some(failed) = self.offered.as_ref().map(|offered| offered.failed.clone()) else {
+            return false;
+        };
         let landed = match to.clone() {
             Some(to) => to,
             None if target == failed.endpoint => failed.clone(),
@@ -528,7 +539,7 @@ impl Agent {
         if let Some(to) = switch.filter(|to| *to != self.next_pair()) {
             self.switch_for_retry(to, events).await;
         }
-        let same_pair = target == offered.endpoint && landed.model == failed.model;
+        let same_pair = target == offered.failed.endpoint && landed.model == failed.model;
         self.queue.retry = Some(Accepted {
             continuation: Continuation {
                 _binding: binding,

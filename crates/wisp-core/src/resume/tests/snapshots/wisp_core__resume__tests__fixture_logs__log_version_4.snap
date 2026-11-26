@@ -82,6 +82,7 @@ Ok(
             ],
             from_change: false,
         },
+        committed_tools: None,
         inline_search: None,
         copy: LoggedCopy {
             system_prompt: Some(
@@ -120,6 +121,8 @@ Ok(
                 endpoint: Some(
                     "env",
                 ),
+                model: "claude-sonnet-5-5",
+                effort: Medium,
                 opening: [
                     LoggedInput {
                         id: InputId(

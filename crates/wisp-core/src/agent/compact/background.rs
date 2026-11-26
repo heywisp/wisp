@@ -367,7 +367,10 @@ impl Agent {
     }
 
     fn background_due(&self, outcome: &TurnOutcome) -> Option<Vec<Message>> {
-        if self.agents.restarting() || self.compaction.background.phase.is_some() {
+        if self.bound_endpoint().is_none()
+            || self.agents.restarting()
+            || self.compaction.background.phase.is_some()
+        {
             return None;
         }
         let band = self.background_band()?;

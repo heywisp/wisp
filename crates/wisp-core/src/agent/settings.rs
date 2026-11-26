@@ -418,8 +418,41 @@ impl Agent {
         Ok(())
     }
 
+    pub(super) async fn bind_unbound(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> Result<(), String> {
+        if self.child_resume.unbound() {
+            let selected = self.resumed_selection_is(self.next_endpoint());
+            self.apply_pending_binding()?;
+            if self.child_resume.unbound() {
+                self.use_connection(self.endpoint)?;
+            }
+            self.settle_entry();
+            if selected {
+                self.log_compaction_account(events).await;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) async fn log_compaction_account(&mut self, events: &mpsc::Sender<AgentEvent>) {
+        let turn = self.running_turn().unwrap_or(self.turns + 1);
+        self.log(
+            events,
+            LogEvent::RebuildMarked {
+                turn,
+                reason: crate::resume::RESUMED_COMPACTION_ACCOUNT.to_owned(),
+            },
+        )
+        .await;
+    }
+
     pub(super) fn begin_turn_settings(&mut self) -> Result<Option<EffortMarker>, String> {
         self.apply_pending_binding()?;
+        if matches!(self.child_resume, crate::kit::ChildResume::Pending { .. }) {
+            self.child_resume = crate::kit::ChildResume::Legacy;
+        }
         self.begin_kernel_turn();
         Ok(self.turn_limits())
     }
@@ -475,6 +508,14 @@ impl Agent {
             let turn = Some(self.turns.saturating_add(1));
             self.discard_background(wisp_protocol::DiscardReason::Superseded, turn, events)
                 .await;
+        }
+        if self.child_resume.destination().is_some()
+            && let Some(connection) = self.connections.get(target.endpoint)
+        {
+            self.child_resume
+                .reselect(crate::agents::endpoints::ExactAccount::connected(
+                    connection,
+                ));
         }
         let cache = self.pending_cache(&target);
         let account_bound = self.account_bound(target.endpoint);
@@ -635,13 +676,23 @@ impl Agent {
         self.lands_on(endpoint, from, None).model
     }
 
+    fn same_landing(&self, endpoint: usize, from: &Pending) -> bool {
+        endpoint == from.endpoint
+            && self.check_resume_destination(endpoint).is_ok()
+            && !(self.child_resume.unbound()
+                && self
+                    .provider_at(endpoint)
+                    .complete_model_list()
+                    .is_some_and(|list| list.find(&from.model).is_none()))
+    }
+
     fn lands_on(&self, endpoint: usize, from: &Pending, last: Option<&Remembered>) -> Landed {
         let entries = self.model_entries();
         let listing = self.account_listing(self.connection_name(endpoint));
         wisp_protocol::settings::lands_on(
             &wisp_protocol::settings::offers(&entries),
             listing.landing(self.provider_at(endpoint).kind().as_str()),
-            endpoint == from.endpoint,
+            self.same_landing(endpoint, from),
             (chat(&from.model), Some(from.effort)),
             last,
         )
@@ -737,7 +788,7 @@ impl Agent {
             check_model_id(id)?;
         }
         let named = model.is_some();
-        let moved = endpoint != base.endpoint;
+        let moved = !self.same_landing(endpoint, &base);
         let target = model.unwrap_or_else(|| self.runs_on(endpoint, &base));
         let mapped =
             effort.and_then(|level| crate::models::ModelTable::shared().sibling(&target, level));
@@ -826,6 +877,10 @@ impl Agent {
 
     pub(super) async fn connection_replaced(&mut self, events: &mpsc::Sender<AgentEvent>) {
         self.epoch.rebuilt(super::epoch::MarkReason::EndpointSwitch);
+        if self.next_endpoint() != self.endpoint || self.bound_endpoint().is_none() {
+            self.log_mark(events).await;
+            return;
+        }
         let account_bound = self
             .settings
             .thinking_models
@@ -834,11 +889,7 @@ impl Agent {
             .cloned()
             .collect();
         self.settings_changed(
-            Pending {
-                endpoint: self.endpoint,
-                model: self.session.model.clone(),
-                effort: self.session.effort,
-            },
+            self.next_pair(),
             CacheEffect::Rebuilt {
                 reason: RebuildReason::EndpointSwitch,
             },
@@ -875,6 +926,9 @@ impl Agent {
         why: Withdrawal,
         events: &mpsc::Sender<AgentEvent>,
     ) {
+        if self.bound_endpoint().is_none() {
+            return;
+        }
         let wanted = self
             .settings
             .pending

@@ -256,6 +256,7 @@ impl Agent {
     }
 
     fn warm_anchor(&self) -> Option<Anchor> {
+        self.bound_endpoint()?;
         if self.session.cache_ttl != CacheTtl::OneHour {
             return None;
         }
