@@ -6005,6 +6005,7 @@ dependencies = [
  "wisp-plugin-idle",
  "wisp-plugin-instructions",
  "wisp-plugin-mcp",
+ "wisp-plugin-memory",
  "wisp-plugin-menus",
  "wisp-plugin-search",
  "wisp-plugin-secret",
@@ -6193,6 +6194,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "wisp-plugin-memory"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "jiff",
+ "serde",
+ "serde_json",
+ "wisp-index",
+ "wisp-instructions",
+ "wisp-plugin-api",
+ "wisp-plugin-testkit",
+ "wisp-tool-text",
+]
+
+[[package]]
 name = "wisp-plugin-menus"
 version = "0.1.0"
 dependencies = [
@@ -6298,6 +6314,7 @@ name = "wisp-plugin-testkit"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "hmac-sha256",
  "image",
  "serde_json",
  "wisp-plugin-api",
@@ -6381,6 +6398,7 @@ dependencies = [
  "wisp-plugin-idle",
  "wisp-plugin-instructions",
  "wisp-plugin-mcp",
+ "wisp-plugin-memory",
  "wisp-plugin-menus",
  "wisp-plugin-openai",
  "wisp-plugin-page",

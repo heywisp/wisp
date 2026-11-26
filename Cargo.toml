@@ -31,6 +31,7 @@ wisp-plugin-context = { path = "plugins/context" }
 wisp-plugin-idle = { path = "plugins/idle" }
 wisp-plugin-instructions = { path = "plugins/instructions" }
 wisp-plugin-mcp = { path = "plugins/mcp" }
+wisp-plugin-memory = { path = "plugins/memory" }
 wisp-plugin-menus = { path = "plugins/menus" }
 wisp-plugin-page = { path = "plugins/page" }
 wisp-plugin-search = { path = "plugins/search" }

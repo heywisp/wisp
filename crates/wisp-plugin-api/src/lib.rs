@@ -12,6 +12,7 @@ pub mod manifest;
 pub mod mcp;
 pub mod model;
 pub mod pricing;
+pub mod private_files;
 pub mod project;
 pub mod prompt;
 pub mod questions;

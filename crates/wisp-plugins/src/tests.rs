@@ -42,3 +42,17 @@ fn exactly_one_bundled_hook_words_the_job_news_and_it_is_the_processes_notice() 
         .collect();
     assert_eq!(news, ["shell/processes"]);
 }
+
+#[test]
+fn memory_id_stays_reserved_without_the_bundle_feature() {
+    let reports_memory = bundled().iter().any(|bundle| {
+        Manifest::parse(bundle.manifest, Origin::Bundled)
+            .unwrap()
+            .id
+            == "memory"
+    });
+    assert_eq!(reports_memory, cfg!(feature = "memory"));
+    let outside = "id = 'memory'\nversion = '0.1.0'\nworld = '0.3.0'\nsummary = 'Fixture'\n";
+    let refused = Manifest::parse(outside, Origin::External).unwrap_err();
+    assert!(refused.to_string().contains("bundled"));
+}

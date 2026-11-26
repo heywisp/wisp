@@ -25,6 +25,9 @@ use wisp_plugin_api::types::{AskReply, FileSlice, Level, Question, SliceKind};
 use wisp_tool_text::files::NO_DATA_FOLDER;
 use wisp_tool_text::paths::shorten_path;
 
+mod private_files;
+pub use private_files::FakePrivateFiles;
+
 pub type ModelReplies = Arc<
     Mutex<
         std::collections::VecDeque<
@@ -95,6 +98,8 @@ pub struct FakeHost {
     pub refuse_agents: Option<String>,
     pub warm_refreshes: u32,
     pub identity: Option<Identity>,
+    pub project_key: Option<String>,
+    pub private_files: Option<FakePrivateFiles>,
     pub tree: Vec<AgentNode>,
     pub usage: Vec<wisp_plugin_api::usage::AccountUsage>,
     pub states: Vec<ShownState>,
@@ -736,7 +741,24 @@ impl SecretCheck for FakeHost {
     }
 }
 
+impl wisp_plugin_api::project::Project for FakeHost {
+    fn key(&self) -> Option<String> {
+        self.project_key.clone()
+    }
+}
+
 impl Host for FakeHost {
+    fn project(&self) -> &dyn wisp_plugin_api::project::Project {
+        self
+    }
+
+    fn private_files(&self) -> &dyn wisp_plugin_api::private_files::PrivateFiles {
+        match &self.private_files {
+            Some(files) => files,
+            None => &(),
+        }
+    }
+
     fn chat(&self) -> &dyn wisp_plugin_api::chat::Chat {
         self
     }

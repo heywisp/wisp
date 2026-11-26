@@ -940,13 +940,19 @@ pub(crate) fn check_regular_owned(file: &File, what: &str) -> io::Result<()> {
     if !meta.is_file() {
         return Err(io::Error::other(format!("{what} is not a regular file")));
     }
-    if meta.uid() != rustix::process::geteuid().as_raw() {
-        return Err(io::Error::new(
+    check_owned(meta.uid(), what)
+}
+
+#[cfg(unix)]
+pub(crate) fn check_owned(uid: u32, what: &str) -> io::Result<()> {
+    if uid == rustix::process::geteuid().as_raw() {
+        Ok(())
+    } else {
+        Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             format!("{what} is owned by another user"),
-        ));
+        ))
     }
-    Ok(())
 }
 
 #[cfg(not(unix))]
@@ -1059,11 +1065,16 @@ pub(crate) fn open_read_nofollow(path: &Path) -> io::Result<File> {
     o.read(true);
     #[cfg(unix)]
     {
-        use rustix::fs::OFlags;
         use std::os::unix::fs::OpenOptionsExt;
-        o.custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed());
+        o.custom_flags(read_nofollow_flags().bits().cast_signed());
     }
     o.open(path)
+}
+
+#[cfg(unix)]
+pub(crate) fn read_nofollow_flags() -> rustix::fs::OFlags {
+    use rustix::fs::OFlags;
+    OFlags::NOFOLLOW | OFlags::NONBLOCK
 }
 
 pub(crate) fn refuse_link(path: &Path, home: Option<&Path>) -> io::Result<()> {
@@ -1106,12 +1117,7 @@ pub(crate) fn private_dir(dir: &Path, home: Option<&Path>, what: &str) -> io::Re
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        if meta.uid() != rustix::process::geteuid().as_raw() {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                format!("{what} is owned by another user"),
-            ));
-        }
+        check_owned(meta.uid(), what)?;
         fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     }
     #[cfg(not(unix))]

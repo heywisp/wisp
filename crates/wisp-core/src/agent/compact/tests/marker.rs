@@ -1,5 +1,6 @@
-use wisp_protocol::{Effort, ImageData, Message};
+use wisp_protocol::{Effort, ImageData};
 
+pub(super) use super::assert_rebuilds;
 use super::*;
 use crate::test_guard::RED_PIXEL;
 
@@ -29,20 +30,6 @@ pub(super) async fn change(
         )
     })
     .await;
-}
-
-fn markers(history: &[Message]) -> usize {
-    history
-        .iter()
-        .filter(|m| m.effort_marker().is_some())
-        .count()
-}
-
-pub(super) fn assert_rebuilds(store: &MemoryStore, agent: &Agent) {
-    let rebuilt = rebuild_history(log_events(store).iter(), no_images).unwrap();
-    assert_eq!(markers(&rebuilt.messages), markers(&agent.history));
-    assert_eq!(rebuilt.messages, *agent.history());
-    assert_eq!(rebuilt.view(), agent.view_messages());
 }
 
 pub(super) fn late_markers(store: &MemoryStore) -> usize {

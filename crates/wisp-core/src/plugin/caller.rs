@@ -28,6 +28,7 @@ pub struct Caller {
     pub at: At,
     pub quiet_jobs: bool,
     pub describing: bool,
+    pub allows_private_write: bool,
     pub(crate) gather_checked: Option<Arc<AtomicBool>>,
 }
 
@@ -42,6 +43,18 @@ impl Caller {
             deadline,
             ..Self::default()
         }
+    }
+
+    #[must_use]
+    pub fn allow_private_write(mut self) -> Self {
+        self.allows_private_write = true;
+        self
+    }
+
+    #[must_use]
+    pub fn read_only_private_files(mut self) -> Self {
+        self.allows_private_write = false;
+        self
     }
 
     #[must_use]

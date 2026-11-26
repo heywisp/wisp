@@ -94,6 +94,7 @@ impl Engine {
         let short = name.hook.clone();
         let id = name.plugin.clone();
         caller
+            .read_only_private_files()
             .scope(async move {
                 let ran = |outcome: HookOutcome| Ran {
                     hook: full.clone(),

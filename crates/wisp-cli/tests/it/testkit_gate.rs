@@ -75,6 +75,13 @@ fn without_the_variable_help_names_no_testkit_tool() {
 }
 
 #[test]
+fn help_lists_remember_as_a_default_tool() {
+    let help = help(None);
+    let remember = value_line(&help, "remember").unwrap();
+    assert!(remember.ends_with("on by default in the tui"), "{remember}");
+}
+
+#[test]
 fn the_inert_testkit_lists_each_tool_as_off_unless_named() {
     let help = help(Some("inert"));
     for tool in TESTKIT_TOOLS {

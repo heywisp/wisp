@@ -70,6 +70,7 @@ windows-native-keyring-store = { workspace = true, optional = true }
 workspace = true
 
 [dev-dependencies]
+serde_json = { workspace = true, features = ["raw_value"] }
 rustix = { workspace = true, features = ["net"] }
 wisp-core = { workspace = true, features = ["test-support", "mcp-test-server"] }
 fancy-regex.workspace = true
@@ -92,6 +93,7 @@ wisp-plugin-secret.workspace = true
 wisp-plugin-self-check.workspace = true
 wisp-plugin-shell.workspace = true
 wisp-plugin-show-diff.workspace = true
+wisp-plugin-memory.workspace = true
 wisp-plugin-testkit.workspace = true
 wisp-plugin-time.workspace = true
 wisp-plugin-todos.workspace = true

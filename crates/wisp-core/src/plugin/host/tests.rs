@@ -1054,6 +1054,16 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
                 Import::SecretCheckCheck => {
                     assert_eq!(mcp.secret_check().check("ordinary text"), Verdict::Refused);
                 }
+                Import::PrivateFilesList => {
+                    assert_eq!(mcp.private_files().list("", 1), Err(wisp_plugin_api::private_files::PrivateFileError::Unavailable));
+                }
+                Import::PrivateFilesRead => {
+                    assert_eq!(mcp.private_files().read("example", 1), Err(wisp_plugin_api::private_files::PrivateFileError::Unavailable));
+                }
+                Import::PrivateFilesChange => {
+                    use wisp_plugin_api::private_files::{ChangeAction, Expected, PrivateFileError};
+                    assert_eq!(mcp.private_files().change("example", Expected::Absent, ChangeAction::Write(vec![]), None), Err(PrivateFileError::Unavailable));
+                }
                 Import::ManageManage => {
                     let search = PluginHost::new(manage::SEARCH_PLUGIN, "0.4.0", &[], kernel.clone());
                     let change = change(
@@ -1334,7 +1344,13 @@ async fn project_key_answers_a_0_4_0_plugin_outside_renders_only() {
     let _ = started.hooks.plugins["probe"].prepare("probe", "{}").await;
     let from_tool = prepared.lock().unwrap().clone();
     let key = host.project().key();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     assert!(key.is_some());
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        assert!(key.is_none());
+        assert!(!data.join(CORE_ID).exists());
+    }
     assert!(from_tool == key);
     assert!(key == crate::workspace::project_key(&workspace.root, &data));
     let old = PluginHost::new("probe", "0.3.0", &[], kernel.clone());

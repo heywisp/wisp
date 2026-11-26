@@ -111,6 +111,14 @@ pub struct Parsed {
 }
 
 pub fn parse(text: &str) -> Result<Parsed, String> {
+    parse_header(text, false).map(|(parsed, _)| parsed)
+}
+
+pub fn parse_with_saved(text: &str) -> Result<(Parsed, Option<String>), String> {
+    parse_header(text, true)
+}
+
+fn parse_header(text: &str, with_saved: bool) -> Result<(Parsed, Option<String>), String> {
     let mut lines = text.trim_start_matches('\u{feff}').split_inclusive('\n');
     if lines.next().is_none_or(|line| line.trim() != "---") {
         return Err("SKILL.md needs frontmatter between --- lines".to_owned());
@@ -125,6 +133,7 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
     }
     let mut name = None;
     let mut description = None;
+    let mut saved = None;
     let mut fields = header.into_iter().peekable();
     while let Some(line) = fields.next() {
         if line.trim().is_empty() || line.starts_with('#') || line.starts_with(char::is_whitespace)
@@ -137,6 +146,7 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
         let target = match key.trim() {
             "name" => &mut name,
             "description" => &mut description,
+            "saved" if with_saved => &mut saved,
             _ => continue,
         };
         let text = text.trim();
@@ -161,11 +171,14 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| format!("the frontmatter has no {field}"))
     };
-    Ok(Parsed {
-        name: required(name, "name")?,
-        description: required(description, "description")?,
-        body: lines.collect(),
-    })
+    Ok((
+        Parsed {
+            name: required(name, "name")?,
+            description: required(description, "description")?,
+            body: lines.collect(),
+        },
+        saved,
+    ))
 }
 
 fn scalar(text: &str) -> Result<String, String> {

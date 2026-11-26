@@ -333,13 +333,13 @@ fn an_unknown_tool_names_the_preset_and_the_key() {
     assert_eq!(
         checked_off("[agents.presets.x]\ndescription = \"X\"\ntools_off = [\"telepathy\"]\n"),
         [
-            "preset x (line 1) is off: tools_off names telepathy, which is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, show_page, stop_agent, view_file, web_search, write_todos"
+            "preset x (line 1) is off: tools_off names telepathy, which is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, remember, rename_chat, search, show_code, show_diff, show_page, stop_agent, view_file, web_search, write_todos"
         ]
     );
     assert_eq!(
         checked_off("[agents.presets.x]\ndescription = \"X\"\ntools_off = [\"reprot\"]\n"),
         [
-            "preset x (line 1) is off: tools_off names reprot, which is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, show_page, stop_agent, view_file, web_search, write_todos"
+            "preset x (line 1) is off: tools_off names reprot, which is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, remember, rename_chat, search, show_code, show_diff, show_page, stop_agent, view_file, web_search, write_todos"
         ]
     );
     for canary in [
@@ -352,7 +352,7 @@ fn an_unknown_tool_names_the_preset_and_the_key() {
         assert_eq!(
             shown,
             [
-                "preset x (line 1) is off: tools_off names something that is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, show_page, stop_agent, view_file, web_search, write_todos"
+                "preset x (line 1) is off: tools_off names something that is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, remember, rename_chat, search, show_code, show_diff, show_page, stop_agent, view_file, web_search, write_todos"
             ]
         );
     }

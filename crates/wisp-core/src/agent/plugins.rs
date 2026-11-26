@@ -67,7 +67,7 @@ impl Agent {
     }
 
     fn plugin_capabilities(&self) -> Vec<String> {
-        let mut capabilities = self.toolbox.capabilities().to_vec();
+        let mut capabilities = self.toolbox.capabilities();
         if self.models.turn_form(&self.session.model).is_some() {
             capabilities.push(DATA_BLOCK.to_owned());
         }

@@ -942,7 +942,7 @@ impl Registry {
         }));
         let before = host.snapshot();
         let mut snapshot = before.clone();
-        snapshot.facts.capabilities = toolbox.capabilities().to_vec();
+        snapshot.facts.capabilities = toolbox.capabilities();
         host.publish(snapshot);
         let index_problems = host
             .gather_index(
@@ -1084,7 +1084,10 @@ impl Registry {
             }
             rows
         };
-        Caller::default().scope(rows).await
+        Caller::default()
+            .read_only_private_files()
+            .scope(rows)
+            .await
     }
 }
 
@@ -1136,14 +1139,18 @@ impl Registry {
             platform: PLATFORM.to_owned(),
             capabilities: Vec::new(),
         };
-        let Some(plugin) = make_plugin(id, loaded, &host) else {
-            return Vec::new();
+        let rows = async {
+            let Some(plugin) = make_plugin(id, loaded, &host) else {
+                return Vec::new();
+            };
+            Contained::new(plugin.doctor(&context))
+                .await
+                .unwrap_or_default()
         };
-        let rows = async { Contained::new(plugin.doctor(&context)).await };
         Caller::default()
+            .read_only_private_files()
             .scope(rows)
             .await
-            .unwrap_or_default()
             .into_iter()
             .map(convert::doctor_row)
             .collect()

@@ -1,0 +1,14 @@
+package wisp:plugin@0.4.0;
+
+interface private-files {
+  enum status { regular, directory, refused }
+  record entry { name: string, status: status }
+  enum error { unavailable, invalid-path, not-found, refused, over-limit, changed, cap-reached, io }
+  record hash-check { sha256: string, max-bytes: u32 }
+  variant expected { absent, hash(hash-check) }
+  variant action { write(list<u8>), delete }
+  record create-cap { suffix: string, max-regular: u32 }
+  %list: func(path: string, max-entries: u32) -> result<list<entry>, error>;
+  read: func(path: string, max-bytes: u32) -> result<list<u8>, error>;
+  change: func(path: string, before: expected, action: action, create-cap: option<create-cap>) -> result<_, error>;
+}

@@ -25,7 +25,7 @@ use crate::clock::{Clock, ShiftedClock};
 use crate::context::ModelSettings;
 use crate::kit::{Built, Choices, Connected, OpenLog, OpenedLog, Spec, Start};
 use crate::provider::anthropic::capabilities;
-use crate::provider::{Provider, ProviderError, ProviderEvent, RequestOptions};
+use crate::provider::{Provider, ProviderError, ProviderEvent};
 use crate::session::{MemoryStore, Redactions, SessionLog, SessionStore};
 use crate::settings::host::StartLayers;
 use crate::test_guard::{
@@ -769,7 +769,7 @@ fn kit_for(
         kernels: setup.kernels.clone(),
         tool_starts: setup.tool_starts.clone(),
     };
-    Kit {
+    let mut kit = crate::test_support::rooted::Inputs {
         connect: setup
             .endpoint_host
             .as_ref()
@@ -791,22 +791,9 @@ fn kit_for(
             ),
             None => ModelSettings::shipped_only(),
         },
-        options: RequestOptions {
-            refusal_fallback: true,
-            debug_cache: false,
-            message_threads: true,
-        },
-        retry_budget: None,
-        count_tokens: false,
         auto_compact: setup.models.is_some(),
         user_input: true,
-        naming: false,
-        workspace: Ok(env.workspace()),
-        pin_test_environment: false,
-        instructions: crate::kit::InstructionsDirs {
-            config_dir: None,
-            home: Some(env.root.clone()),
-        },
+        workspace: env.workspace(),
         plugin_data: None,
         start_layers: StartLayers {
             remembered: setup.remembered.clone(),
@@ -826,20 +813,19 @@ fn kit_for(
                 .collect(),
             ..StartLayers::default()
         },
-        settings_host: None,
-        endpoint_host: setup.endpoint_host.clone(),
         clock: setup.clock.clone().unwrap_or_else(|| {
             Arc::new(ShiftedClock::at(
                 "2026-10-28T06:00:00Z".parse().unwrap(),
                 None,
             ))
         }),
-        plan_usage: setup.plan_usage.clone(),
-        usage_display: crate::plan_usage::Display::Disabled,
-        warmth: crate::warmth::WarmthTable::default(),
-        lanes: setup.lanes.clone(),
-        mcp: setup.mcp.clone(),
     }
+    .kit();
+    kit.endpoint_host = setup.endpoint_host.clone();
+    kit.plan_usage = setup.plan_usage.clone();
+    kit.lanes = setup.lanes.clone();
+    kit.mcp = setup.mcp.clone();
+    kit
 }
 
 fn instructions() -> InstructionsChoice {
@@ -930,7 +916,6 @@ async fn rooted(name: &str, mut setup: Setup, scripts: Vec<(&str, Vec<Step>)>) -
     };
     spec.choices.model = setup.root_model.into();
     spec.choices.effort = setup.root_effort.unwrap_or(spec.choices.effort);
-    let Built { agent, .. } = kit.build(spec).await.unwrap();
     let tree = TreeSetup {
         presets: setup.presets,
         tools_off: catalog_names(),
@@ -943,9 +928,13 @@ async fn rooted(name: &str, mut setup: Setup, scripts: Vec<(&str, Vec<Step>)>) -
         start: None,
         unusable: Vec::new(),
     };
+    let crate::test_support::rooted::Rooted { kit, built, tree } =
+        crate::test_support::rooted::Rooted::build(kit, spec, tree)
+            .await
+            .unwrap();
     Rooted {
         kit,
-        agent,
+        agent: built.agent,
         tree,
         providers,
         store,
@@ -966,7 +955,7 @@ fn serve(rooted: Rooted) -> Run {
         store,
         env,
     } = rooted;
-    let (commands, events, task) = start_root(kit, tree, agent);
+    let (commands, events, task) = crate::test_support::rooted::serve(kit, tree, agent);
     Run {
         commands: Some(commands),
         events,

@@ -293,7 +293,13 @@ fn every_builtin_tool_matches_its_golden_spec() {
     let toolbox = testkit::bundled(
         &[
             testkit::ALL,
-            &["show_page", "show_code", "manage", "rename_chat"],
+            &[
+                "show_page",
+                "show_code",
+                "manage",
+                "remember",
+                "rename_chat",
+            ],
         ]
         .concat(),
     );

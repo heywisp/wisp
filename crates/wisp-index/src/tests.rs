@@ -106,7 +106,7 @@ fn a_bare_name_finds_its_prefixed_tool() {
 #[test]
 fn queries_find_the_real_tool_definitions() {
     let entries = corpus();
-    assert_eq!(entries.len(), 19);
+    assert_eq!(entries.len(), 20);
     let cases = [
         ("secret password", "ask_secret"),
         ("multiple choice questions", "ask_user"),
@@ -120,6 +120,7 @@ fn queries_find_the_real_tool_definitions() {
         ("process stdin output", "process"),
         ("rename agent", "rename_agent"),
         ("rename this chat to Strada", "rename_chat"),
+        ("save a durable note", "remember"),
         ("change the session title", "rename_chat"),
         ("report task result", "report"),
         ("send message sibling", "send_message"),

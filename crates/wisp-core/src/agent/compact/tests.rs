@@ -63,6 +63,8 @@ mod kept_tools;
 mod lanes;
 mod log;
 mod marker;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(in crate::agent) mod memory;
 mod midturn;
 mod overflow;
 mod processes;

@@ -122,7 +122,7 @@ fn spawn_run(
     let deadline = Instant::now().checked_add(asked.command.timeout);
     let command = asked.command.clone();
     let args = asked.args.clone();
-    let caller = Caller::call(cancel.clone(), deadline);
+    let caller = Caller::call(cancel.clone(), deadline).allow_private_write();
     tokio::spawn(caller.scope(async move {
         let ran = run(&command, args.expose(), &cancel, deadline).await;
         drop(tx.send(Done::Plugin { generation, ran }));

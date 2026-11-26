@@ -528,6 +528,7 @@ mod tests {
             "ask_user",
             "list_accounts",
             "list_settings",
+            "remember",
             "show_code",
             "show_diff",
             "search",
@@ -740,6 +741,7 @@ mod tests {
             "list_accounts",
             "list_settings",
             "manage",
+            "remember",
             "rename_chat",
             "show_code",
             "show_diff",
@@ -821,6 +823,7 @@ mod tests {
                 "list_accounts",
                 "list_settings",
                 "manage",
+                "remember",
                 "rename_chat",
                 "search",
                 "show_code",
@@ -905,7 +908,7 @@ mod tests {
         }
         assert_eq!(
             flag_help(&catalog),
-            "Which tools the model may use, comma-separated: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, spawn_agent, view_file, web_search and write_todos, on by default in the tui; show_page, off unless named; or none. In jsonl output, tools are off by default. Tools that ask questions or start agents need the tui"
+            "Which tools the model may use, comma-separated: ask_secret, ask_user, bash, list_accounts, list_settings, manage, remember, rename_chat, search, show_code, show_diff, spawn_agent, view_file, web_search and write_todos, on by default in the tui; show_page, off unless named; or none. In jsonl output, tools are off by default. Tools that ask questions or start agents need the tui"
         );
     }
 
@@ -1013,7 +1016,7 @@ mod tests {
         assert_eq!(checked(spec, &SettingValue::List(vec![])), Ok(()));
         assert_eq!(
             checked(spec, &SettingValue::List(list(&["nope"]))),
-            Err("nope is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, rename_chat, search, show_code, show_diff, show_page, spawn_agent, view_file, web_search, write_todos, or none".to_owned())
+            Err("nope is no tool; tools: ask_secret, ask_user, bash, list_accounts, list_settings, manage, remember, rename_chat, search, show_code, show_diff, show_page, spawn_agent, view_file, web_search, write_todos, or none".to_owned())
         );
         assert_eq!(
             checked(spec, &SettingValue::List(list(&["process"]))),
