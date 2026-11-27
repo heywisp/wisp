@@ -85,6 +85,8 @@ Every Gemini request sends four stop sequences: a newline, a `user` line, then W
 
 On an invalid finish (`MALFORMED_FUNCTION_CALL`, `UNEXPECTED_TOOL_CALL`, or an empty `STOP`), the Gemini stream decoder attaches `detail.stream` counts (`stop_reason_seen: true`, `partial_event: false`) to the error detail. For `MALFORMED_FUNCTION_CALL`, it also classifies the candidate's `finishMessage` into `detail.malformed_call` labels (`docs/session-log.md`) using the declared tool names and stop sequences read from the sent request body, without logging Google's message text.
 
+Both Antigravity subscription and Gemini API-key or gateway streams wait up to 10 minutes for response headers and the first body chunk (since Gemini holds large function calls until complete) and up to 10 minutes between chunks once streaming starts (`docs/architecture.md`, "Adapter contract (today)").
+
 System instructions (`system` plus `instructions`) stay fixed in top-level `systemInstruction`, mid-session `Role::System` deltas append in `contents`, `PrefixBytes` and `cache_prefix` hash `(model, thinkingConfig, tools, systemInstruction)` without serializing `contents`, and `wire_print` hashes each wire `contents` entry so in-life misses distinguish `remote_loss` from `message_changed` (indexed by `contents` entry). Implicit prefix caching reports hits via `usageMetadata.cachedContentTokenCount` (`cache_read_input_tokens`) with no explicit cache-TTL storage resource required.
 
 ### File attachments

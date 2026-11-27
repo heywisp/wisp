@@ -27,7 +27,7 @@ use super::anthropic::{status_outcome, unexpected, unreachable};
 use super::classify::{self, Carries, error_object};
 use super::client_version;
 use super::credential::{Credential, EnvFile, Source, SubscriptionKind};
-use super::sse::{IDLE_TIMEOUT, Waits};
+use super::sse::Waits;
 use super::{
     ModelCapabilities, PrefixBytes, Provider, ProviderError, ProviderEvent, Request, WirePrint,
 };
@@ -114,7 +114,8 @@ pub(crate) const TEXT_SIGNATURE_ITEM: &str = "text_signature";
 pub(crate) const CALL_SIGNATURES_ITEM: &str = "call_signatures";
 pub(crate) const FOLD_TEXT: &str = "fold_text";
 pub(crate) const PART_ITEM: &str = "part";
-const FIRST_BYTE: Duration = Duration::from_secs(300);
+const FIRST_BYTE: Duration = Duration::from_secs(10 * 60);
+const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const LIST_LIMIT: usize = 8 * 1024 * 1024;
 const MAX_MODEL_PAGES: usize = 5;
 
@@ -1376,6 +1377,28 @@ pub(crate) mod tests {
         for ttl in [CacheTtl::FiveMinutes, CacheTtl::OneHour] {
             assert_eq!(subscription.cache_life(ttl), life);
             assert_eq!(api.cache_life(ttl), crate::context::ttl_span(ttl));
+        }
+    }
+
+    #[test]
+    fn gemini_stream_waits_are_ten_minutes_for_subscription_and_api_routes() {
+        let wait = Duration::from_secs(10 * 60);
+        assert_eq!(FIRST_BYTE, wait);
+        assert_eq!(IDLE_TIMEOUT, wait);
+        assert_eq!(crate::provider::sse::IDLE_TIMEOUT, Duration::from_secs(300));
+        for credential in [
+            Credential::Subscription {
+                kind: SubscriptionKind::Antigravity,
+                secret: "CANARY_subscription_token".into(),
+                profile: None,
+            },
+            Credential::ApiKey("synthetic".into()),
+            Credential::AuthToken("synthetic".into()),
+        ] {
+            let provider =
+                GeminiProvider::from_endpoint(&endpoint(credential, "http://127.0.0.1:1")).unwrap();
+            assert_eq!(provider.waits.first_byte, wait);
+            assert_eq!(provider.waits.idle, wait);
         }
     }
 
