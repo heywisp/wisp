@@ -16,7 +16,7 @@ fn under(section: &str, text: &str) -> Todo {
 }
 
 #[test]
-fn the_result_line_counts_completed_items_and_names_the_one_in_progress() {
+fn the_result_line_only_counts_completed_items() {
     let items = [
         todo("Read the plan", TodoStatus::Completed),
         todo("Write the plan", TodoStatus::InProgress),
@@ -24,10 +24,7 @@ fn the_result_line_counts_completed_items_and_names_the_one_in_progress() {
         todo("Drop the old one", TodoStatus::Cancelled),
         todo("Merge", TodoStatus::Completed),
     ];
-    assert_eq!(
-        updated(&items),
-        "Todos updated: 2 of 5 completed. In progress: \"Write the plan\"."
-    );
+    assert_eq!(updated(&items), "Todos updated: 2 of 5 completed.");
     assert_eq!(target(&items), "2 of 5 completed");
     assert_eq!(progress(2, 5), target(&items));
     assert_eq!(updated(&items[2..3]), "Todos updated: 0 of 1 completed.");

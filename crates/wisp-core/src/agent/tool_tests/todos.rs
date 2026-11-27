@@ -1,8 +1,11 @@
+use wisp_plugin_api::hooks::Reply;
+use wisp_plugin_testkit::hooks::Calls;
 use wisp_plugin_todos::NAME;
 use wisp_protocol::{RequestId, RewindPoint, TodoItem, TodoStatus};
 
 use super::*;
 use crate::agent::testing::todo_item as item;
+use crate::plugin::testing::{hook_body, hook_source, replying, with_test_hooks};
 
 fn checklisting(provider: Arc<Fake>, env: &Env) -> Agent {
     Agent::new(provider, default_session())
@@ -135,10 +138,7 @@ async fn an_update_follows_its_finished_call_and_is_logged_after_it() {
     assert_eq!(requests.len(), 4);
     assert_one_prefix(&requests);
     let sent = requests[1].text();
-    assert!(
-        sent.contains("Todos updated: 0 of 2 completed. In progress: \\\"Read the plan\\\"."),
-        "{sent}"
-    );
+    assert!(sent.contains("Todos updated: 0 of 2 completed."), "{sent}");
 
     let items = &updates(&events)[0].1;
     let progress = wisp_protocol::todos::progress(items);
@@ -172,19 +172,80 @@ async fn an_update_follows_its_finished_call_and_is_logged_after_it() {
 #[tokio::test]
 async fn a_refused_list_changes_nothing() {
     let env = Env::new("todos-refused");
-    let bad = json!({"todos": [
-        {"text": "a", "status": "in_progress"},
-        {"text": "b", "status": "in_progress"},
-    ]});
+    let key = format!(
+        "CANARY-{} sk-ant-api03-CANARY-refused-checklist-field",
+        "x".repeat(100)
+    );
+    let bad = json!({"todos": [{"text": "a", "status": "pending"}], (key): 1});
     let scripted = scripted(vec![uses(&[call("t1", NAME, bad)]), done("sorry")]);
     let mut agent = checklisting(scripted, &env);
     let (_, events) = turn(&mut agent, "plan it").await;
     assert!(updates(&events).is_empty(), "{events:#?}");
     assert!(agent.todos.is_empty());
-    assert!(matches!(
-        finished(&events).as_slice(),
-        [(_, ToolOutcome::InvalidInput { .. })]
-    ));
+    assert_eq!(
+        finished(&events),
+        [(
+            "t1".to_owned(),
+            ToolOutcome::InvalidInput {
+                message: "unknown field".to_owned(),
+            }
+        )]
+    );
+    assert_eq!(
+        pick!(&events, AgentEvent::ToolCallRequested { display, .. } => display.target.as_str()),
+        [""]
+    );
+}
+
+#[tokio::test]
+async fn a_rewritten_checklist_keeps_private_fields_out_of_its_result_and_update() {
+    const ACK: &str = "Todos updated: 0 of 1 completed.";
+    let key = "sk-ant-api03-CANARY-checklist-rewrite-test-key";
+    let email = ["CANARY-checklist-rewrite", "example.invalid"].join("@");
+    let path = ["/home", "CANARY-checklist-rewrite", "work"].join("/");
+    let private = format!("Check {key} for {email} in {path}");
+    let rewritten = input(&[item(&private, TodoStatus::InProgress)]);
+    let original = input(&[item("Review the plan", TodoStatus::InProgress)]);
+    let provider = scripted(vec![uses(&[call("t1", NAME, original)]), done("ok")]);
+    let env = Env::new("todos-private-rewrite");
+    let store = MemoryStore::default();
+    let hooks = vec![hook_source(
+        "aa",
+        &hook_body("h", "before-tool", ""),
+        replying(Reply::Rewrite(rewritten.to_string())),
+        &Calls::default(),
+    )];
+    let mut agent = with_test_hooks(checklisting(provider.clone(), &env), hooks).with_log(
+        SessionLog::new(Box::new(store.clone()), "s1"),
+        log_context(),
+    );
+
+    let (_, events) = turn(&mut agent, "plan it").await;
+    let expected = vec![item(crate::session::REDACTED, TodoStatus::InProgress)];
+    assert_eq!(
+        updates(&events),
+        [(Some("t1".to_owned()), expected.clone())]
+    );
+    assert_eq!(
+        pick!(&events, AgentEvent::ToolCallFinished { result, .. } => result.as_deref()),
+        [Some(ACK)]
+    );
+    let logged = log_events(&store);
+    assert_eq!(
+        pick!(&logged, LogEvent::ToolCallFinished { result, .. } => result.as_deref()),
+        [Some(ACK)]
+    );
+    assert_eq!(
+        pick!(&logged, LogEvent::TodosUpdated { items, .. } => items.as_slice()),
+        [expected.as_slice()]
+    );
+    let requests = provider.sent();
+    let next = &requests[1];
+    assert_eq!(results(next.messages.last().unwrap()), [("t1", ACK, false)]);
+    let sent = next.text();
+    for value in [key, email.as_str(), path.as_str()] {
+        assert!(!sent.contains(value), "{sent}");
+    }
 }
 
 #[tokio::test]

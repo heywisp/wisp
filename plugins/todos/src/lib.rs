@@ -104,10 +104,10 @@ pub fn def() -> ToolDef {
 }
 
 fn only_fields(map: &Map<String, Value>, known: &[&str], within: &str) -> Result<(), String> {
-    match map.keys().find(|k| !known.contains(&k.as_str())) {
-        Some(key) => Err(format!("unknown field `{key}`{within}")),
-        None => Ok(()),
+    if map.keys().any(|k| !known.contains(&k.as_str())) {
+        return Err(format!("unknown field{within}"));
     }
+    Ok(())
 }
 
 fn parse_item(value: &Value, n: usize) -> Result<Todo, String> {
@@ -160,16 +160,19 @@ pub fn parse(input: &Value) -> Result<Vec<Todo>, String> {
 }
 
 pub fn parse_text(input: &str) -> Result<Vec<Todo>, String> {
-    let value: Value =
-        serde_json::from_str(input).map_err(|e| format!("input is not JSON: {e}"))?;
+    let value = serde_json::from_str(input).map_err(|_| "input is not JSON".to_owned())?;
     parse(&value)
 }
 
 pub fn display(items: &[Todo]) -> Display {
+    display_with_target(target(items))
+}
+
+fn display_with_target(target: String) -> Display {
     Display {
         action: Action::Other(NAME.to_owned()),
         verbs: None,
-        target: target(items),
+        target,
         output: OutputKind::None,
         view: None,
         title: None,
@@ -236,6 +239,14 @@ impl Plugin for Todos {
             let call: Box<dyn Prepared> = Box::new(Writing(parse_text(input)?));
             Ok(call)
         })
+    }
+
+    fn rejected_display<'a>(
+        &'a self,
+        _tool: &'a str,
+        _input: &'a str,
+    ) -> BoxFuture<'a, Option<Display>> {
+        Box::pin(std::future::ready(Some(display_with_target(String::new()))))
     }
 
     fn time_limit_ms<'a>(&'a self, _tool: &'a str, _input: &'a str) -> BoxFuture<'a, Option<u64>> {
