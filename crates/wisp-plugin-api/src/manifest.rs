@@ -279,6 +279,7 @@ impl From<World020> for Manifest {
             prompt_sections: old.prompt_sections,
             strategy: old.strategy,
             index: false,
+            live_documents: false,
             dynamic_tools: None,
         }
     }
@@ -333,6 +334,7 @@ impl From<World030> for Manifest {
             prompt_sections: old.prompt_sections,
             strategy: old.strategy,
             index: old.index,
+            live_documents: false,
             dynamic_tools: None,
         }
     }
@@ -367,6 +369,8 @@ pub struct Manifest {
     pub strategy: Option<Strategy>,
     #[serde(default)]
     pub index: bool,
+    #[serde(default)]
+    pub live_documents: bool,
     #[serde(default)]
     pub dynamic_tools: Option<String>,
 }
@@ -459,6 +463,7 @@ impl From<World010> for Manifest {
             prompt_sections: Vec::new(),
             strategy: None,
             index: false,
+            live_documents: false,
             dynamic_tools: None,
         }
     }
@@ -1210,6 +1215,9 @@ impl Manifest {
 
     fn validate(&self, origin: Origin) -> Result<(), String> {
         check_id(&self.id, origin)?;
+        if self.live_documents && !self.index {
+            return Err("live_documents requires index = true".into());
+        }
         if self
             .dynamic_tools
             .as_ref()

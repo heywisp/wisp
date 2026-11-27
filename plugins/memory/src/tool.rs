@@ -122,7 +122,7 @@ pub(super) fn parse(input: &str) -> Result<Box<dyn Prepared>, String> {
 
 fn apply(host: &dyn Host, call: &RememberInput) -> Result<String, &'static str> {
     if !store::is_root(host) {
-        return Err("Suggest the note in your report.");
+        return Err(store::WORKER_REFUSAL);
     }
     let RememberInput {
         action,
@@ -149,7 +149,7 @@ fn apply(host: &dyn Host, call: &RememberInput) -> Result<String, &'static str> 
             Ok(similar(host, *scope, name, fact, done))
         }
         Mutation::Forget => {
-            Store::writing(host, *scope).forget(*scope, name)?;
+            Store::reading(host).forget(*scope, name)?;
             Ok("Forgotten.".into())
         }
     }

@@ -537,3 +537,255 @@ fn serialized_snapshot_must_pass_the_outbound_secret_check() {
     }));
     assert_eq!(render(&host, Prior::None, None), Rendered::default());
 }
+
+fn command(memory: &Memory, args: &str) -> Vec<wisp_plugin_api::commands::CommandLine> {
+    let CommandReply::Lines(lines) = block_on(memory.run_command("memory", args)) else {
+        panic!("non-local memory reply");
+    };
+    lines
+}
+
+fn command_text(memory: &Memory, args: &str) -> Vec<String> {
+    use wisp_plugin_api::commands::CommandLine;
+    command(memory, args)
+        .into_iter()
+        .map(|line| match line {
+            CommandLine::Text(spans) => spans.into_iter().map(|span| span.text).collect(),
+            CommandLine::Row(row) => row
+                .left
+                .into_iter()
+                .chain(row.right)
+                .map(|span| span.text)
+                .collect(),
+        })
+        .collect()
+}
+
+#[test]
+fn local_list_show_and_delete_keep_complete_names_dates_and_hand_edits() {
+    use wisp_plugin_api::commands::CommandLine;
+    let (host, files) = host();
+    let root = Memory(Arc::new(host.clone()));
+    assert_eq!(
+        command_text(&root, ""),
+        ["Memory", "No notes.", "Ask Wisp to remember a fact."]
+    );
+    let round = "sample-tiles-for-the-board-with-round-corners";
+    let square = "sample-tiles-for-the-board-with-square-corners";
+    assert_eq!(
+        result(&host, save("project", round, "Round tiles.")),
+        "Saved."
+    );
+    let shown = command_text(&root, &format!("show project {round}"));
+    assert!(shown.iter().any(|line| line == "saved: 1970-01-01"));
+    let raw = note::encode(
+        square,
+        "Square tiles.",
+        "2000-01-01",
+        "青いタイル。\n Keep  the sample.",
+    );
+    files.seed(
+        &format!("projects/opaque/{square}.md"),
+        raw.as_bytes().to_vec(),
+    );
+    let lines = command(&root, "");
+    assert_eq!(
+        command_text(&root, ""),
+        [
+            "Memory2",
+            "This project2",
+            round,
+            "1970-01-01",
+            square,
+            "2000-01-01"
+        ]
+    );
+    for i in [2, 4] {
+        assert!(matches!(&lines[i], CommandLine::Text(_)));
+    }
+    for i in [3, 5] {
+        assert!(
+            matches!(&lines[i], CommandLine::Row(row) if row.left.is_empty() && row.right.len() == 1)
+        );
+    }
+    let args = format!("show project {square}");
+    let shown = command_text(&root, &args);
+    assert_eq!(display::decode(&shown[1..shown.len() - 2]), raw);
+    assert_eq!(
+        shown.last().unwrap(),
+        &format!("/memory delete project {square}")
+    );
+    let args = format!("delete project {square}");
+    assert_eq!(command_text(&root, &args), ["Deleted."]);
+    assert_eq!(command_text(&root, &args), [store::NOT_FOUND]);
+}
+
+#[test]
+fn all_local_read_routes_hide_files_and_doctor_counts_only_visible_scopes() {
+    let (mut host, files) = host();
+    let root = Memory(Arc::new(host.clone()));
+    host.identity.as_mut().unwrap().parent = Some("/".into());
+    let worker = Memory(Arc::new(host.clone()));
+    assert_eq!(command_text(&worker, ""), ["Memory", "No notes."]);
+    assert!(store::doctor(&host).is_empty());
+    seed(&files, "user", "tiling", "User tiles.", "2000-01-01");
+    seed(
+        &files,
+        "projects/opaque",
+        "tiling",
+        "Project tiles.",
+        "2000-01-01",
+    );
+    for (name, fact) in [
+        ("concealed-fixture", "Hidden name."),
+        ("hidden-body", "concealed-fixture"),
+    ] {
+        seed(&files, "projects/opaque", name, fact, "2000-01-01");
+        for verb in ["show", "delete"] {
+            assert_eq!(
+                command_text(&root, &format!("{verb} project {name}")),
+                [store::LOCAL_ONLY]
+            );
+        }
+        assert!(block_on(root.open_entry(&format!("memory.project.{name}"))).is_err());
+    }
+    files.seed("projects/opaque/broken.md", vec![255]);
+    for verb in ["show", "delete"] {
+        assert_eq!(
+            command_text(&root, &format!("{verb} project broken")),
+            [store::LOCAL_ONLY]
+        );
+    }
+    assert!(
+        !command_text(&worker, "show project tiling")
+            .iter()
+            .any(|s| s.starts_with("/memory delete"))
+    );
+    assert_eq!(command_text(&worker, "show you tiling"), [store::NOT_FOUND]);
+    assert_eq!(
+        command_text(&worker, "delete you tiling"),
+        ["Suggest the note in your report."]
+    );
+    assert_eq!(block_on(worker.entries()).len(), 1);
+    assert_eq!(block_on(root.entries()).len(), 2);
+    assert!(block_on(worker.open_entry("memory.user.tiling")).is_err());
+    assert_eq!(
+        block_on(root.open_entry("memory.user.tiling")).unwrap(),
+        "User tiles."
+    );
+    assert_eq!(
+        block_on(root.open_entry("memory.project.tiling")).unwrap(),
+        "Project tiles."
+    );
+    let rows = format!("{:?}", store::doctor(&host));
+    for count in ["1 saved", "2 refused", "1 unreadable"] {
+        assert!(rows.contains(count));
+    }
+    for hidden in ["user", "tiling", "concealed-fixture", "broken", "opaque"] {
+        assert!(!rows.contains(hidden));
+    }
+    host.project_key = None;
+    assert!(block_on(Memory(Arc::new(host.clone())).entries()).is_empty());
+    host.private_files = None;
+    assert!(format!("{:?}", store::doctor(&host)).contains("unavailable"));
+}
+
+#[test]
+fn capacity_and_prompt_budget_do_not_hide_valid_documents_from_search() {
+    let (host, files) = host();
+    for i in 0..128 {
+        seed(
+            &files,
+            "projects/opaque",
+            &format!("sample-{i:03}"),
+            &"Tiles. ".repeat(30),
+            "2000-01-01",
+        );
+    }
+    let frame = render(&host, Prior::None, None).text.unwrap();
+    assert!(!frame.contains("sample-127"));
+    let memory = Memory(Arc::new(host.clone()));
+    let (lists, reads) = files.read_counts();
+    assert_eq!(block_on(memory.entries()).len(), 128);
+    let (scanned_lists, scanned_reads) = files.read_counts();
+    assert_eq!((scanned_lists - lists, scanned_reads - reads), (3, 128));
+    assert!(block_on(memory.open_entry("memory.project.sample-127")).is_ok());
+    let (opened_lists, opened_reads) = files.read_counts();
+    assert_eq!(
+        (opened_lists - scanned_lists, opened_reads - scanned_reads),
+        (1, 1)
+    );
+    let rows = format!("{:?}", store::doctor(&host));
+    assert!(rows.contains("128 saved") && rows.contains("scope at cap"));
+}
+
+#[test]
+fn list_distinguishes_unavailability_and_hidden_rows_in_worker_chats() {
+    let (mut host, files) = host();
+    let mut unavailable = host.clone();
+    unavailable.private_files = None;
+    assert_eq!(
+        command_text(&Memory(Arc::new(unavailable.clone())), ""),
+        [store::UNAVAILABLE]
+    );
+    unavailable.identity.as_mut().unwrap().parent = Some("/".into());
+    assert_eq!(
+        command_text(&Memory(Arc::new(unavailable)), ""),
+        [store::UNAVAILABLE]
+    );
+
+    host.identity.as_mut().unwrap().parent = Some("/".into());
+    let worker = Memory(Arc::new(host.clone()));
+    seed(
+        &files,
+        "projects/opaque",
+        "concealed-fixture",
+        "Safe fact.",
+        "2000-01-01",
+    );
+    assert_eq!(
+        command_text(&worker, ""),
+        ["Memory", "No notes.", store::LOCAL_ONLY]
+    );
+    host.secret_check = Some(Arc::new(|text| {
+        if text == "2000-01-01" {
+            Verdict::Refused
+        } else {
+            Verdict::Safe
+        }
+    }));
+    assert_eq!(
+        command_text(&Memory(Arc::new(host)), ""),
+        ["Memory", "No notes.", store::LOCAL_ONLY]
+    );
+}
+
+#[test]
+fn doctor_distinguishes_proven_capacity_from_directory_overflow() {
+    let (host, files) = host();
+    for i in 0..127 {
+        seed(
+            &files,
+            "projects/opaque",
+            &format!("sample-{i:03}"),
+            "Tiles.",
+            "2000-01-01",
+        );
+    }
+    seed(
+        &files,
+        "projects/opaque",
+        "concealed-fixture",
+        "Tiles.",
+        "2000-01-01",
+    );
+    let rows = format!("{:?}", store::doctor(&host));
+    assert!(
+        rows.contains("127 saved") && rows.contains("1 refused") && rows.contains("scope at cap")
+    );
+    for i in 0..129 {
+        files.seed(&format!("projects/opaque/sample-{i:03}.txt"), vec![]);
+    }
+    let rows = format!("{:?}", store::doctor(&host));
+    assert!(rows.contains("directory scan limit reached") && !rows.contains("scope at cap"));
+}

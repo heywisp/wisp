@@ -1,12 +1,17 @@
 use std::future::ready;
 use std::sync::Arc;
 
+use wisp_plugin_api::commands::CommandReply;
 use wisp_plugin_api::host::{CallContext, Host};
+use wisp_plugin_api::index::Entry;
 use wisp_plugin_api::prompt::{At, Prior, Rendered};
-use wisp_plugin_api::tools::{BuildContext, Prepared, ToolDef};
+use wisp_plugin_api::tools::{BuildContext, DoctorRow, Prepared, ToolDef};
 use wisp_plugin_api::types::{Display, ToolRun};
 use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
 
+mod command;
+mod display;
+mod index;
 mod lead;
 mod note;
 mod store;
@@ -46,6 +51,22 @@ impl Plugin for Memory {
         _: &'a dyn CallContext,
     ) -> BoxFuture<'a, ToolRun> {
         Box::pin(async move { tool::run(self.0.as_ref(), prepared) })
+    }
+
+    fn run_command<'a>(&'a self, _: &'a str, args: &'a str) -> BoxFuture<'a, CommandReply> {
+        Box::pin(ready(command::run(self.0.as_ref(), args)))
+    }
+
+    fn entries(&self) -> BoxFuture<'_, Vec<Entry>> {
+        Box::pin(ready(index::entries(self.0.as_ref())))
+    }
+
+    fn open_entry<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<String, String>> {
+        Box::pin(ready(index::open(self.0.as_ref(), name)))
+    }
+
+    fn doctor<'a>(&'a self, _: &'a BuildContext) -> BoxFuture<'a, Vec<DoctorRow>> {
+        Box::pin(ready(store::doctor(self.0.as_ref())))
     }
 
     fn render_section<'a>(

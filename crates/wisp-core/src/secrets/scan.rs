@@ -1,7 +1,6 @@
 use std::ops::Range;
 use std::path::Path;
 use std::sync::LazyLock;
-#[cfg(any(test, not(feature = "test-support")))]
 use std::{ffi::OsString, path::PathBuf};
 
 use regex::Regex;
@@ -23,7 +22,6 @@ pub(crate) fn contains_secret_or_identity(text: &str, home: Option<&Path>) -> bo
         || has_home_path(text, home)
 }
 
-#[cfg(any(test, not(feature = "test-support")))]
 pub(crate) fn fallback_detection_home(
     home: Option<PathBuf>,
     userprofile: Option<OsString>,

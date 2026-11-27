@@ -800,6 +800,18 @@ impl Agent {
         }
     }
 
+    fn deferred_fire(&self, point: &str, event: Event, at: At) -> Fire {
+        let command = matches!(event, Event::Command(_));
+        let mut fire = Fire::new(point, What::Event(event), at);
+        if command {
+            fire.command_workspace_home = self
+                .tools
+                .as_ref()
+                .and_then(|env| env.workspace.home.clone());
+        }
+        fire
+    }
+
     pub(super) fn drain_deferred<'a>(
         &'a mut self,
         commands: &'a mut mpsc::Receiver<ClientCommand>,
@@ -814,7 +826,7 @@ impl Agent {
                 match deferred {
                     Deferred::Point { point, event } => {
                         let at = self.at(None, None);
-                        let fire = Fire::new(point, What::Event(event), at);
+                        let fire = self.deferred_fire(point, event, at);
                         self.await_hooks(fire, commands, events).await;
                     }
                     Deferred::Command(asked) => self.enter_lane(asked, events).await,
@@ -836,7 +848,7 @@ impl Agent {
                 };
                 match deferred {
                     Deferred::Point { point, event } => {
-                        let fire = Fire::new(point, What::Event(event), At::default());
+                        let fire = self.deferred_fire(point, event, At::default());
                         self.await_outside(fire, events).await;
                     }
                     Deferred::Command(asked) => self.enter_lane(asked, events).await,

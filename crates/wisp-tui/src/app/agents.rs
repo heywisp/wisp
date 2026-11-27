@@ -317,6 +317,7 @@ pub struct Model {
     pub tracker: Tracker,
     pub listed: Option<Vec<EndpointFacts>>,
     pub runs: BTreeMap<RequestId, u64>,
+    pub plugin_echo: BTreeMap<RequestId, (String, wisp_protocol::Secret)>,
 }
 
 impl Model {
@@ -373,6 +374,12 @@ pub struct Models {
 }
 
 impl Models {
+    pub fn clear_plugin_echo(&mut self) {
+        for model in self.live.values_mut() {
+            model.plugin_echo.clear();
+        }
+    }
+
     pub fn new(config: Config, home: Option<String>) -> Models {
         Models {
             reset_time: std::sync::Arc::new(|_| copy::TIME_UNAVAILABLE.into()),
@@ -461,6 +468,7 @@ impl Models {
                 tracker,
                 listed: None,
                 runs: BTreeMap::new(),
+                plugin_echo: BTreeMap::new(),
             }
         });
         if let Some(index) = self

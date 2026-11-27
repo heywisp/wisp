@@ -197,6 +197,23 @@ fn millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
+pub(crate) fn lookup_is_safe(
+    text: &str,
+    host: Option<&KernelHost>,
+    workspace_home: Option<&Path>,
+) -> bool {
+    let home = host
+        .and_then(KernelHost::secret_check_home)
+        .or_else(|| workspace_home.map(Path::to_path_buf))
+        .or_else(|| {
+            crate::secrets::scan::fallback_detection_home(
+                crate::workspace::home(),
+                std::env::var_os("USERPROFILE"),
+            )
+        });
+    !crate::secrets::scan::contains_secret_or_identity(text, home.as_deref())
+}
+
 impl KernelHost {
     pub fn new() -> Self {
         Self {
@@ -351,7 +368,7 @@ impl KernelHost {
         *locked(&self.fallback_home) = home;
     }
 
-    pub(super) fn secret_check_home(&self) -> Option<PathBuf> {
+    pub(crate) fn secret_check_home(&self) -> Option<PathBuf> {
         if let Some(home) = self.workspace().and_then(|workspace| workspace.home) {
             return Some(home);
         }
@@ -360,6 +377,13 @@ impl KernelHost {
         #[cfg(not(any(test, feature = "test-support")))]
         let fallback = crate::secrets::scan::os_detection_home();
         fallback
+    }
+
+    pub(crate) fn lookup_is_safe(&self, text: &str) -> bool {
+        !crate::secrets::scan::contains_secret_or_identity(
+            text,
+            self.secret_check_home().as_deref(),
+        )
     }
 
     #[cfg(unix)]
@@ -1455,11 +1479,10 @@ impl SecretCheck for PluginHost {
         if let Some(checked) = Caller::current().gather_checked {
             checked.store(true, Ordering::Release);
         }
-        let home = self.kernel.secret_check_home();
-        if crate::secrets::scan::contains_secret_or_identity(text, home.as_deref()) {
-            Verdict::Refused
-        } else {
+        if self.kernel.lookup_is_safe(text) {
             Verdict::Safe
+        } else {
+            Verdict::Refused
         }
     }
 }
@@ -1884,6 +1907,7 @@ impl Kernel for PluginHost {
 
 pub(crate) mod accounts;
 mod index;
+pub(crate) use index::IndexSources;
 pub(crate) mod manage;
 mod mcp;
 

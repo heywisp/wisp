@@ -48,9 +48,7 @@ pub trait Plugin: Send + Sync {
         Box::pin(std::future::ready(Vec::new()))
     }
     fn open_entry<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<String, String>> {
-        Box::pin(std::future::ready(Err(format!(
-            "nothing named `{name}` was found"
-        ))))
+        index::Index::open(&(), name)
     }
 
     fn describe<'a>(&'a self, _ctx: &'a BuildContext) -> BoxFuture<'a, Vec<ToolDef>> {

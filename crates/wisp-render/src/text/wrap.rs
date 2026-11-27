@@ -2,9 +2,25 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::width::{self, WidthMode, grapheme_width};
 use crate::styled::{Joined, Look, StyledLine, StyledSpan};
+use crate::theme::Token;
 use crate::theme::glyphs::Glyphs;
 
 pub const TOO_WIDE: &str = "?";
+
+pub(crate) fn soft_lead(indent: usize, joined: Option<Joined>, glyphs: &Glyphs) -> Vec<StyledSpan> {
+    let spaces = |count: usize| StyledSpan::new(" ".repeat(count), Look::default());
+    let Some(joined) = joined.filter(|_| indent >= 2) else {
+        return vec![spaces(indent)];
+    };
+    let mut lead = vec![
+        spaces(indent - 1 - usize::from(joined.space)),
+        StyledSpan::new(glyphs.wrap, Look::fg(Token::TextFaint)),
+    ];
+    if joined.space {
+        lead.push(spaces(1));
+    }
+    lead
+}
 
 #[derive(Clone, Copy)]
 struct Cell<'a> {

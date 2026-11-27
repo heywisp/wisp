@@ -796,6 +796,7 @@ pub(super) struct Presenter {
     chat_area: Rect,
     sidebar_click: Option<crate::app::selection::Click>,
     plugin_runs: BTreeMap<RequestId, u64>,
+    plugin_echo: BTreeMap<RequestId, (String, wisp_protocol::Secret)>,
     terminal_sent: Option<wisp_protocol::TermSize>,
 }
 
@@ -807,6 +808,7 @@ struct Parts<'a> {
     view: &'a mut View,
     tracker: &'a mut Tracker,
     runs: &'a mut BTreeMap<RequestId, u64>,
+    plugin_echo: &'a mut BTreeMap<RequestId, (String, wisp_protocol::Secret)>,
 }
 
 fn host_exit(ended: Option<wisp_client::link::LinkEnd>, quitting: bool, saving: bool) -> Exit {
@@ -1272,6 +1274,7 @@ impl Presenter {
             chat_area: Rect::default(),
             sidebar_click: None,
             plugin_runs: BTreeMap::new(),
+            plugin_echo: BTreeMap::new(),
             terminal_sent: None,
         };
         if let Some(caps) = p.kept.as_ref().map(super::display::Kept::resolve) {
@@ -1387,6 +1390,7 @@ impl Presenter {
                 view: &mut m.view,
                 tracker: &mut m.tracker,
                 runs: &mut m.runs,
+                plugin_echo: &mut m.plugin_echo,
             },
             None => Parts {
                 transcript: &mut self.transcript,
@@ -1396,6 +1400,7 @@ impl Presenter {
                 view: &mut self.view,
                 tracker: &mut self.tracker,
                 runs: &mut self.plugin_runs,
+                plugin_echo: &mut self.plugin_echo,
             },
         }
     }
@@ -3098,9 +3103,10 @@ impl Presenter {
             Parsed::Plugin {
                 command,
                 base,
+                spelling,
                 args,
             } => {
-                if self.typed_plugin(command, base, args, busy, at) {
+                if self.typed_plugin(command, base, spelling, args, busy, at) {
                     self.rewind_notes.clear();
                     self.suggest.reset();
                 }
@@ -3874,6 +3880,8 @@ impl Presenter {
     }
 
     fn events_closed(&mut self) {
+        self.plugin_echo.clear();
+        self.agent_models.clear_plugin_echo();
         self.commands = None;
         if let Some(ended) = &self.host_ended {
             self.exit = Some(host_exit(

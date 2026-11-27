@@ -745,9 +745,10 @@ impl Presenter {
             Parsed::Plugin {
                 command,
                 base,
+                spelling,
                 args,
             } => {
-                self.typed_plugin(command, base, args, own, at);
+                self.typed_plugin(command, base, spelling, args, own, at);
                 return;
             }
         }

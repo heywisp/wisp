@@ -191,8 +191,8 @@ History still holds the model's original `use` call. Invalid tool input returns
 the parameters for a retry. Opening a skill or document returns its owner's text;
 the row says `Read skill` or `Read document`, with its estimated token count.
 
-The index is gathered at start and refreshed at a turn opening or after a completed,
-uncancelled tool call when a source marks it changed. This does not change provider
+The cached index is gathered at start and refreshed at a turn opening or after a completed,
+uncancelled tool call when a source marks it changed. Draft live document sources are instead read on lookup in the current caller's read-only scope. Refused lookup targets do not appear in new previews or compaction ledgers. This does not change provider
 declarations or the cached system prefix. Held server tools follow a listing before
 the next step; a child follows only the servers present when it starts or resumes. Shared server-off
 filters apply to every agent's lookups. Duplicate names are resolved

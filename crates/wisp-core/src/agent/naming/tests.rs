@@ -533,6 +533,7 @@ async fn a_rename_during_a_name_request_keeps_its_name() {
             .await,
         AgentEvent::CommandDone {
             answers: RequestId(41),
+            args_safe_to_echo: true,
             outcome: CommandOutcome::Note {
                 text: renamed("Strada")
             }

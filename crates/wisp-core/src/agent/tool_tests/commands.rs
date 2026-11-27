@@ -218,9 +218,9 @@ impl Live {
 
     async fn answer(&mut self, request: u64) -> CommandOutcome {
         let earlier = self.seen.iter().find_map(|e| match e {
-            AgentEvent::CommandDone { answers, outcome } if answers.0 == request => {
-                Some(outcome.clone())
-            }
+            AgentEvent::CommandDone {
+                answers, outcome, ..
+            } if answers.0 == request => Some(outcome.clone()),
             _ => None,
         });
         if let Some(outcome) = earlier {
@@ -2038,4 +2038,129 @@ async fn mcp_sign_in_keeps_its_private_link_and_typed_code_out_of_the_session_lo
     assert_eq!(hooks.len(), 2);
     assert_eq!(hooks[1], wisp_protocol::masked_command(&typed).unwrap());
     assert!(!hooks[1].contains(mcp_http::CODE));
+}
+
+#[tokio::test]
+async fn held_command_args_never_reach_observers_even_without_a_plugin_host() {
+    const HELD: &str = "CANARY-held-local-command-argument";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let env = Env::new("command-args-check");
+    let (gates, calls) = (Gates::default(), Calls::default());
+    let mut agent = with_test_hooks(
+        logged_agent(Fake::new(vec![]), &env, &MemoryStore::default()),
+        vec![kit_source(
+            &hook_body("h", "command", ""),
+            kit::none(),
+            &gates,
+            &calls,
+        )],
+    );
+    agent.hooks.host = None;
+    agent.defer_command("testkit:none".into(), HELD.into());
+    let home = env.workspace().home.unwrap();
+    agent.defer_command(
+        "testkit:none".into(),
+        home.join("sample").display().to_string(),
+    );
+    assert!(agent.hooks.deferred.is_empty());
+    agent.defer_command("testkit:none".into(), "tile".into());
+    assert!(
+        matches!(agent.hooks.deferred.front(), Some(crate::agent::hooks::Deferred::Point { event: Event::Command(info), .. }) if info.args == "tile")
+    );
+}
+
+#[tokio::test]
+async fn command_observers_in_both_drains_omit_args_held_after_enqueue() {
+    for (in_turn, word) in [
+        (false, "CANARY-late-idle-command-arg"),
+        (true, "CANARY-late-turn-command-arg"),
+    ] {
+        let env = Env::new("late-command-args");
+        let (gates, calls) = (Gates::default(), Calls::default());
+        let mut agent = with_test_hooks(
+            logged_agent(Fake::new(vec![]), &env, &MemoryStore::default()),
+            vec![kit_source(
+                &hook_body("h", "command", ""),
+                kit::none(),
+                &gates,
+                &calls,
+            )],
+        );
+        agent.hooks.host = None;
+        assert!(agent.lookup_is_safe(word));
+        agent.defer_command("testkit:none".into(), word.into());
+        agent.defer_command("testkit:none".into(), "tile".into());
+        assert_eq!(agent.hooks.deferred.len(), 2);
+        crate::session::register_secrets([word.to_owned()]);
+        assert!(!agent.lookup_is_safe(word));
+        let (events, _received) = mpsc::channel(64);
+        if in_turn {
+            let (_send, mut commands) = mpsc::channel(1);
+            agent.track = Some(crate::agent::TurnTrack::new(1));
+            agent.drain_deferred(&mut commands, &events).await;
+        } else {
+            agent.drain_idle(&events).await;
+        }
+        let observed: Vec<_> = calls
+            .of("h")
+            .into_iter()
+            .filter_map(|call| match call.event {
+                Event::Command(info) => Some(info.args),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(observed, ["tile"]);
+        assert!(agent.hooks.deferred.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn a_later_command_observer_does_not_receive_args_held_by_the_first() {
+    const HELD: &str = "CANARY-held-between-command-observers";
+    let env = Env::new("between-command-observers");
+    let first = Calls::default();
+    let second = Calls::default();
+    let source = crate::plugin::testing::hook_source;
+    let mut agent = with_test_hooks(
+        logged_agent(Fake::new(vec![]), &env, &MemoryStore::default()),
+        vec![
+            source(
+                "first-observer",
+                &hook_body("first", "command", ""),
+                Arc::new(|_, _, event| {
+                    Box::pin(async move {
+                        if matches!(event, Event::Command(info) if info.args == HELD) {
+                            crate::session::register_secrets([HELD.to_owned()]);
+                        }
+                        Reply::None
+                    })
+                }),
+                &first,
+            ),
+            source(
+                "second-observer",
+                &hook_body("second", "command", "after = [\"first-observer/first\"]\n"),
+                kit::none(),
+                &second,
+            ),
+        ],
+    );
+    assert!(agent.lookup_is_safe(HELD));
+    agent.defer_command("testkit:none".into(), HELD.into());
+    agent.defer_command("testkit:none".into(), "tile".into());
+    let (events, _received) = mpsc::channel(64);
+    agent.drain_idle(&events).await;
+    assert!(!agent.lookup_is_safe(HELD));
+    let args = |calls: &Calls, hook| {
+        calls
+            .of(hook)
+            .into_iter()
+            .filter_map(|call| match call.event {
+                Event::Command(info) => Some(info.args),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(args(&first, "first"), [HELD, "tile"]);
+    assert_eq!(args(&second, "second"), ["tile"]);
 }

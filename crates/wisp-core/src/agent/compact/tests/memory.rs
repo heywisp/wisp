@@ -67,8 +67,32 @@ impl Session {
         auto: bool,
         user_input: bool,
     ) -> Self {
+        Self::new_seeded(
+            provider,
+            tools,
+            model_settings,
+            start_layers,
+            (auto, user_input),
+            None,
+        )
+        .await
+    }
+
+    async fn new_seeded(
+        provider: Arc<dyn Provider>,
+        tools: Tools,
+        model_settings: ModelSettings,
+        start_layers: crate::settings::host::StartLayers,
+        (auto, user_input): (bool, bool),
+        user_note: Option<(&str, &str)>,
+    ) -> Self {
         let scratch = ScratchDir::new("wisp-memory-fixture-", "rooted");
         let data = scratch.root.join("plugin-data");
+        if let Some((name, raw)) = user_note {
+            let dir = data.join("memory/user");
+            crate::secrets::create_folder(&dir).unwrap();
+            fs::write(dir.join(name), raw).unwrap();
+        }
         let store = MemoryStore::default();
         let inputs = Inputs {
             connect: rooted::single_provider(provider, log_context()),
@@ -937,4 +961,197 @@ async fn a_rejected_held_remember_call_never_echoes_unknown_input_keys() {
     );
     assert!(!live.data.exists());
     live.finish().await;
+}
+
+#[tokio::test]
+async fn rooted_show_uses_the_local_transcript_without_provider_calls() {
+    let provider = scripted(vec![]);
+    let raw =
+        "---\nname: sample\ndescription: Square tiles.\nsaved: 2000-01-01\n---\nKeep the top edge.";
+    let mut live = Session::new_seeded(
+        provider.clone(),
+        tools(true),
+        models(WISP),
+        Default::default(),
+        (false, true),
+        Some(("sample.md", raw)),
+    )
+    .await;
+    let request = wisp_protocol::RequestId(1);
+    live.send(ClientCommand::RunPluginCommand {
+        name: "memory:memory".into(),
+        args: wisp_protocol::Secret::new("show you sample"),
+        request,
+    })
+    .await;
+    let event = live
+        .until(
+            |event| matches!(event, AgentEvent::CommandDone { answers, .. } if *answers == request),
+        )
+        .await;
+    let AgentEvent::CommandDone {
+        outcome: wisp_protocol::CommandOutcome::Lines { lines },
+        args_safe_to_echo: true,
+        ..
+    } = &event
+    else {
+        panic!("{event:?}");
+    };
+    let copy = serde_json::to_string(lines).unwrap();
+    for expected in [
+        "Memory",
+        "Square tiles.",
+        "Keep the top edge.",
+        "No final newline",
+        "/memory delete you sample",
+    ] {
+        assert!(copy.contains(expected));
+    }
+    assert!(provider.sent().is_empty());
+    live.finish().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn standalone_doctor_uses_real_project_context_without_assuming_a_root_agent() {
+    use crate::plugin::{DoctorWorkspace, doctor_rows};
+    let scratch = ScratchDir::new("wisp-memory-doctor-", "standalone");
+    let cwd = scratch.workspace().root;
+    crate::instructions::make_repository(&cwd).unwrap();
+    let data = scratch.root.join("plugin-data");
+    let (registry, problems) = Registry::new(
+        vec![wisp_plugin_memory::bundled()],
+        &PluginConfig::default(),
+    );
+    assert!(problems.is_empty());
+    let read = |plugin_data| {
+        doctor_rows(
+            &registry,
+            &EMPTY_SET,
+            Default::default(),
+            &REDACTIONS,
+            DoctorWorkspace {
+                cwd: cwd.clone(),
+                plugin_data,
+            },
+        )
+    };
+    static EMPTY_SET: std::sync::LazyLock<std::collections::BTreeSet<String>> =
+        std::sync::LazyLock::new(Default::default);
+    static REDACTIONS: std::sync::LazyLock<crate::session::Redactions> =
+        std::sync::LazyLock::new(Default::default);
+    let memory_rows = |rows: Vec<wisp_protocol::DoctorRow>| {
+        rows.into_iter()
+            .filter(|row| row.key.starts_with("memory"))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(memory_rows(read(None).await)[0].key, "memory");
+    crate::secrets::create_folder(&data.join("memory/projects")).unwrap();
+    assert!(memory_rows(read(Some(data.clone())).await).is_empty());
+    assert!(!data.join("core/project-secret").exists());
+    let project = data
+        .join("memory/projects")
+        .join(crate::workspace::project_key(&cwd, &data).unwrap());
+    crate::secrets::create_folder(&project).unwrap();
+    let user = data.join("memory/user");
+    crate::secrets::create_folder(&user).unwrap();
+    let note = |dir: &std::path::Path, name: &str| {
+        fs::write(
+            dir.join(format!("{name}.md")),
+            format!("---\nname: {name}\ndescription: Tile sample.\nsaved: 2000-01-01\n---\n"),
+        )
+        .unwrap()
+    };
+    note(&project, "project-sample");
+    note(&user, "private-sample");
+    fs::write(project.join("broken.md"), [255]).unwrap();
+    const HELD: &str = "CANARY-doctor-refused-note-body";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let refused = "refused-sample";
+    fs::write(
+        project.join(format!("{refused}.md")),
+        format!("---\nname: {refused}\ndescription: Tile sample.\nsaved: 2000-01-01\n---\n{HELD}"),
+    )
+    .unwrap();
+    for i in 0..125 {
+        note(&project, &format!("tile-{i:03}"));
+    }
+    let rows = memory_rows(read(Some(data)).await);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].key, "memory project");
+    assert_eq!(
+        rows[0].cells,
+        ["126 saved", "1 refused", "1 unreadable", "scope at cap"]
+            .map(|text| wisp_protocol::DoctorCell::Text { text: text.into() })
+    );
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn real_search_sees_each_current_disk_note_and_not_stale_or_unsafe_edits() {
+    use wisp_plugin_api::manifest::Origin;
+    use wisp_plugin_testkit::host::FakeCall;
+    const HELD: &str = "CANARY-live-note-body";
+    let scratch = ScratchDir::new("wisp-memory-search-", "live-index");
+    let workspace = scratch.workspace();
+    crate::instructions::make_repository(&workspace.root).unwrap();
+    let data = scratch.root.join("plugin-data");
+    let key = crate::workspace::project_key(&workspace.root, &data).unwrap();
+    let dir = data.join("memory/projects").join(key);
+    crate::secrets::create_folder(&dir).unwrap();
+    let kernel = Arc::new(crate::plugin::KernelHost::new());
+    kernel.bind(&crate::jobs::Processes::default(), &workspace);
+    kernel.set_data_dir(Some(data));
+    let memory = wisp_plugin_memory::bundled();
+    let search = wisp_plugin_search::bundled();
+    let make = |id, bundle: wisp_plugin_api::Bundled| {
+        (bundle.instantiate)(Arc::new(
+            crate::plugin::PluginHost::new(id, "0.4.0", &[], kernel.clone())
+                .origin(Origin::Bundled),
+        ))
+    };
+    let memory = make("memory", memory);
+    let search = make("search", search);
+    kernel
+        .gather_index_sources(
+            &crate::tool::Toolbox::default(),
+            &Default::default(),
+            crate::plugin::host::IndexSources {
+                live: [("memory".into(), memory.clone())].into_iter().collect(),
+                ..Default::default()
+            },
+        )
+        .await;
+    let run = |tool: &'static str, input: Value| {
+        let search = search.clone();
+        async move {
+            let prepared = search.prepare(tool, &input.to_string()).await.unwrap();
+            search
+                .run(prepared, &FakeCall::default())
+                .await
+                .result
+                .unwrap()
+        }
+    };
+    let value = |name, body| {
+        format!("---\nname: {name}\ndescription: Sample tiles.\nsaved: 2000-01-01\n---\n{body}")
+    };
+    let list = || run("search", json!({"query":"tiles"}));
+    let open = |name: &str| run("use", json!({"name":format!("memory.project.{name}")}));
+    let old = dir.join("old.md");
+    let moved = dir.join("moved.md");
+    fs::write(&old, value("old", "First sample.")).unwrap();
+    assert!(open("old").await.contains("First sample."));
+    fs::write(&old, value("old", "Edited sample.")).unwrap();
+    assert!(open("old").await.contains("Edited sample."));
+    fs::rename(&old, &moved).unwrap();
+    fs::write(&moved, value("moved", "Moved sample.")).unwrap();
+    assert_eq!(open("old").await, "entry not found");
+    assert!(list().await.contains("memory.project.moved"));
+    crate::session::register_secrets([HELD.to_owned()]);
+    for bytes in [value("moved", HELD).into_bytes(), vec![255]] {
+        fs::write(&moved, bytes).unwrap();
+        assert_eq!(list().await, "nothing found");
+        assert_eq!(open("moved").await, "entry not found");
+    }
 }

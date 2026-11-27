@@ -351,6 +351,7 @@ fn sent(parsed: Parsed<'_>) -> Option<(String, &str)> {
             command,
             base,
             args,
+            ..
         } => Some((command.full(base), args)),
         Parsed::Command { .. } | Parsed::Unknown(_) | Parsed::Message => None,
     }

@@ -397,6 +397,7 @@ pub enum Parsed<'a> {
     Plugin {
         command: &'a PluginCommand,
         base: &'a str,
+        spelling: &'a str,
         args: &'a str,
     },
     Unknown(&'a str),
@@ -470,6 +471,7 @@ pub fn parse_in<'a>(
             command.base_of(word).map(|base| Parsed::Plugin {
                 command,
                 base,
+                spelling: word,
                 args,
             })
         })

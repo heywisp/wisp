@@ -3069,7 +3069,9 @@ impl Transcript {
             AgentEvent::CommandDeferred { request, until } => {
                 self.command_deferred(*request, *until);
             }
-            AgentEvent::CommandDone { answers, outcome } => self.command_done(*answers, outcome),
+            AgentEvent::CommandDone {
+                answers, outcome, ..
+            } => self.command_done(*answers, outcome),
             AgentEvent::UnknownProviderEvent { event, .. } => {
                 let name = event
                     .get("type")

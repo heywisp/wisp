@@ -197,6 +197,7 @@ pub use width::{WidthMode, fit_end, grapheme_width, padded, spans_text, width};
 pub(crate) use width::{
     cap_chars, fit_end_or_cut, fit_middle, fit_start, plain_ascii, spans_padded, spans_width,
 };
+pub(crate) use wrap::soft_lead;
 pub use wrap::{Long, TOO_WIDE, split, trim_end, wrap, wrap_keeping, wrap_plain, wrap_words};
 
 #[cfg(test)]

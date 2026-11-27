@@ -2922,7 +2922,7 @@ async fn a_started_call_names_its_file_and_a_streamed_call_its_writing() {
             _ => None,
         })
         .unwrap();
-    assert_eq!(refused.target, "{input}");
+    assert_eq!(refused.target, "{}");
 }
 
 #[test]

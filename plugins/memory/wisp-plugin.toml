@@ -3,6 +3,14 @@ version = "0.1.0"
 world = "0.4.0"
 summary = "Saves and restores notes requested by the user"
 
+index = true
+live_documents = true
+
+[[commands]]
+name = "memory"
+summary = "List, show or delete saved notes"
+busy = "runs"
+
 [[tools]]
 name = "remember"
 provides = ["memory"]

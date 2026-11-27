@@ -29,13 +29,28 @@ pub const PLATFORM: &str = "unix";
 #[cfg(not(unix))]
 pub const PLATFORM: &str = "windows";
 
+#[derive(Clone, Default)]
+pub struct DoctorWorkspace {
+    pub cwd: std::path::PathBuf,
+    pub plugin_data: Option<std::path::PathBuf>,
+}
+
 pub async fn doctor_rows(
     registry: &Registry,
     on: &std::collections::BTreeSet<String>,
     mcp: crate::mcp::Service,
     redactions: &crate::session::Redactions,
+    workspace: DoctorWorkspace,
 ) -> Vec<wisp_protocol::DoctorRow> {
-    let rows = plugin_doctor_rows(registry, on, mcp, redactions, crate::workspace::home()).await;
+    let rows = plugin_doctor_rows(
+        registry,
+        on,
+        mcp,
+        redactions,
+        crate::workspace::home(),
+        workspace,
+    )
+    .await;
     #[cfg(unix)]
     let rows = {
         let mut rows = rows;
@@ -53,7 +68,18 @@ pub async fn doctor_rows_with_home(
     redactions: &crate::session::Redactions,
     home: Option<std::path::PathBuf>,
 ) -> Vec<wisp_protocol::DoctorRow> {
-    plugin_doctor_rows(registry, on, mcp, redactions, home).await
+    plugin_doctor_rows(
+        registry,
+        on,
+        mcp,
+        redactions,
+        home,
+        DoctorWorkspace {
+            cwd: std::env::temp_dir(),
+            plugin_data: None,
+        },
+    )
+    .await
 }
 
 async fn plugin_doctor_rows(
@@ -62,21 +88,25 @@ async fn plugin_doctor_rows(
     mcp: crate::mcp::Service,
     redactions: &crate::session::Redactions,
     home: Option<std::path::PathBuf>,
+    workspace: DoctorWorkspace,
 ) -> Vec<wisp_protocol::DoctorRow> {
     crate::session::register(redactions);
     mcp.refresh_keys().await;
     let host = std::sync::Arc::new(KernelHost::new());
     host.set_mcp(mcp);
+    host.set_data_dir(workspace.plugin_data);
     let temp = std::env::temp_dir();
     host.bind(
         &crate::jobs::Processes::default(),
         &crate::workspace::Workspace {
-            root: temp.clone(),
+            root: workspace.cwd,
             home,
             temp,
         },
     );
-    registry.doctor(on, host).await
+    caller::Caller::default()
+        .scope(registry.doctor(on, host))
+        .await
 }
 
 #[derive(Debug, Clone, PartialEq)]

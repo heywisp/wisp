@@ -159,7 +159,11 @@ impl Agent {
                 .map(|call| CallEntry {
                     turn: call.turn,
                     tool: call.tool.clone(),
-                    target: call.target.clone(),
+                    target: if call.lookup && !self.lookup_is_safe(&call.target) {
+                        wisp_tool_text::index::INVALID_TARGET.to_owned()
+                    } else {
+                        call.target.clone()
+                    },
                     status: call.status.clone(),
                     cwd: call.cwd.clone(),
                     saved: call.saved.clone(),

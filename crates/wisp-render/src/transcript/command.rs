@@ -2,10 +2,11 @@ use wisp_protocol::plugin::{CommandOutcome, CommandRefusal, CommandWait};
 use wisp_protocol::slot::SlotSpan;
 use wisp_protocol::{CommandLine, RequestId};
 
-use super::{Body, FACTS_GAP, Pen, Token, Transcript, copy, facts_at_edge, one_line, spaces};
+use super::{Body, FACTS_GAP, Pen, Token, Transcript, copy, facts_at_edge, one_line};
 use crate::chrome::clip;
 use crate::chrome::sidebar::token;
 use crate::styled::{Look, StyledLine, StyledSpan};
+use crate::text::soft_lead;
 use crate::text::{spans_width, wrap};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185,11 +186,10 @@ pub(super) fn rows(lines: &[CommandLine], pen: &Pen) -> Vec<StyledLine> {
                     }
                 }
                 let hang = hang.min(pen.measure.saturating_sub(1));
-                let mut lead = pen.indent();
-                lead.push(spaces(hang));
+
                 wrap(&body, pen.measure.saturating_sub(hang), pen.mode)
                     .into_iter()
-                    .map(|row| pen.row(lead.clone(), row))
+                    .map(|row| pen.row(soft_lead(pen.gutter + hang, row.joined, &pen.glyphs), row))
                     .collect()
             }
             CommandLine::Unknown => Vec::new(),

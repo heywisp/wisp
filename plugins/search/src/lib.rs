@@ -4,9 +4,10 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use wisp_plugin_api::host::{CallContext, Host};
-use wisp_plugin_api::index::Kind;
+use wisp_plugin_api::index::{Entry, Kind};
 use wisp_plugin_api::manage as switch;
 use wisp_plugin_api::manage::{Action as Verb, Kind as Noun};
+use wisp_plugin_api::secret_check::Verdict;
 use wisp_plugin_api::tools::{
     BuildContext, ClientTool, Effect, Prepared, Purpose, Tags, Timeouts, ToolDef, ToolKind,
     ToolMeta,
@@ -15,7 +16,7 @@ use wisp_plugin_api::types::{
     Action, Completed, Display, Fact, Failure, Hit, Outcome, OutputKind, ToolRun, Verbs,
 };
 use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
-use wisp_tool_text::index::{INVALID_INPUT, hit_line, run_with};
+use wisp_tool_text::index::{INVALID_INPUT, INVALID_TARGET, hit_line, run_with};
 use wisp_tool_text::manage;
 
 mod skills;
@@ -134,21 +135,34 @@ enum Asked {
     },
 }
 
+fn lookup_display(search: bool, target: String, kind: Option<Kind>) -> Display {
+    let noun = kind.map_or("entry", Kind::name);
+    Display {
+        action: if search { Action::Search } else { Action::Read },
+        verbs: (!search).then(|| Verbs {
+            doing: format!("Reading {noun}"),
+            done: format!("Read {noun}"),
+            failed: format!("couldn't read {noun}"),
+        }),
+        target,
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+    }
+}
+
 impl Prepared for Asked {
     fn display(&self) -> Display {
         let (action, verbs, target) = match self {
-            Self::Search { query, .. } => (Action::Search, None, format!("\"{query}\"")),
+            Self::Search { query, .. } => {
+                return lookup_display(true, format!("\"{query}\""), None);
+            }
             Self::Open { name, kind } => {
-                let noun = kind.map_or("entry", Kind::name);
-                (
-                    Action::Read,
-                    Some(Verbs {
-                        doing: format!("Reading {noun}"),
-                        done: format!("Read {noun}"),
-                        failed: format!("couldn't read {noun}"),
-                    }),
-                    name.clone(),
-                )
+                return lookup_display(
+                    false,
+                    kind.map_or_else(|| "entry".into(), |_| name.clone()),
+                    *kind,
+                );
             }
             Self::Manage {
                 verb, noun, name, ..
@@ -191,10 +205,34 @@ pub struct Search {
 }
 
 impl Search {
+    fn safe(&self, text: &str) -> bool {
+        self.host.secret_check().check(text) == Verdict::Safe
+    }
+
+    fn safe_entry(&self, hit: &Entry) -> bool {
+        self.safe(&hit.name) && self.safe(&hit.summary) && self.safe(&hit.text)
+    }
+
     async fn run_search(&self, query: &str, kind: Option<Kind>, limit: Option<usize>) -> ToolRun {
-        let hits = wisp_index::Index::new(self.host.index().entries()).search(query, kind, limit);
-        let mut lines = Vec::new();
-        for hit in &hits {
+        if !self.safe(query) {
+            return refused(INVALID_TARGET.to_owned());
+        }
+        let entries = self
+            .host
+            .index()
+            .entries()
+            .into_iter()
+            .filter(|hit| self.safe_entry(hit))
+            .collect();
+        if !self.safe(query) {
+            return refused(INVALID_TARGET.to_owned());
+        }
+        let hits = wisp_index::Index::new(entries).search(query, kind, limit);
+        let mut candidates = Vec::new();
+        for hit in hits {
+            if !self.safe_entry(&hit) {
+                continue;
+            }
             let next = if hit.kind == Kind::Tool {
                 match self.host.index().open(&hit.name).await {
                     Ok(parameters) => run_with(&parameters),
@@ -203,21 +241,33 @@ impl Search {
             } else {
                 "read it with use".to_owned()
             };
-            lines.push(hit_line(hit, &next));
+            candidates.push((hit, next));
         }
-        let mut run = ToolRun::completed().with_result(if lines.is_empty() {
-            "nothing found".to_owned()
+        if !self.safe(query) {
+            return refused(INVALID_TARGET.to_owned());
+        }
+        let (lines, hits): (Vec<_>, Vec<_>) = candidates
+            .into_iter()
+            .filter_map(|(hit, next)| {
+                let line = hit_line(&hit, &next);
+                (self.safe_entry(&hit) && self.safe(&next) && self.safe(&line)).then_some((
+                    line,
+                    Hit {
+                        kind: hit.kind,
+                        name: hit.name,
+                    },
+                ))
+            })
+            .unzip();
+        let text = lines.join("\n");
+        let mut run = ToolRun::completed();
+        if lines.is_empty() || !self.safe(&text) {
+            run = run.with_result("nothing found".to_owned());
+            run.facts.push(Fact::Hits(Vec::new()));
         } else {
-            lines.join("\n")
-        });
-        run.facts.push(Fact::Hits(
-            hits.into_iter()
-                .map(|entry| Hit {
-                    kind: entry.kind,
-                    name: entry.name,
-                })
-                .collect(),
-        ));
+            run = run.with_result(text);
+            run.facts.push(Fact::Hits(hits));
+        }
         run
     }
 
@@ -262,9 +312,15 @@ impl Search {
     }
 
     async fn run_use(&self, name: &str) -> ToolRun {
+        if !self.safe(name) {
+            return refused(INVALID_TARGET.to_owned());
+        }
         let result = self.host.index().open(name).await;
         let is_error = result.is_err();
         let text = result.unwrap_or_else(|error| error);
+        if !self.safe(name) || !self.safe(&text) {
+            return refused(INVALID_TARGET.to_owned());
+        }
         let mut run = ToolRun::new(Outcome::Completed(Completed {
             is_error,
             exit: None,
@@ -303,6 +359,9 @@ impl Plugin for Search {
                         .as_deref()
                         .map(|kind| Kind::parse(kind).ok_or_else(|| INVALID_INPUT.to_owned()))
                         .transpose()?;
+                    if !self.safe(&query.query) || !self.safe(&format!("\"{}\"", query.query)) {
+                        return Err(INVALID_TARGET.to_owned());
+                    }
                     Asked::Search {
                         query: query.query,
                         kind,
@@ -312,6 +371,9 @@ impl Plugin for Search {
                 "use" => {
                     let open: Open =
                         serde_json::from_str(input).map_err(|_| INVALID_INPUT.to_owned())?;
+                    if !self.safe(&open.name) {
+                        return Err(INVALID_TARGET.to_owned());
+                    }
                     if open.input.is_some() {
                         return Err(
                             "input is only for a tool; search for its full name first".to_owned()
@@ -322,8 +384,11 @@ impl Plugin for Search {
                         .index()
                         .entries()
                         .into_iter()
-                        .find(|entry| entry.name == open.name)
+                        .find(|entry| entry.name == open.name && self.safe_entry(entry))
                         .map(|entry| entry.kind);
+                    if !self.safe(&open.name) {
+                        return Err(INVALID_TARGET.to_owned());
+                    }
                     Asked::Open {
                         name: open.name,
                         kind,
@@ -357,6 +422,13 @@ impl Plugin for Search {
         input: &'a str,
     ) -> BoxFuture<'a, Option<Display>> {
         Box::pin(async move {
+            if matches!(tool, "use" | "search") {
+                return Some(lookup_display(
+                    tool == "search",
+                    if tool == "search" { "query" } else { "entry" }.into(),
+                    None,
+                ));
+            }
             if tool != "manage" {
                 return None;
             }

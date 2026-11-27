@@ -95,7 +95,12 @@ async fn run(a: &mut Agent, line: &str) -> (String, String, RequestId) {
 }
 
 async fn done(a: &Agent, request: RequestId, outcome: CommandOutcome) {
+    answered(a, request, outcome, false).await;
+}
+
+async fn answered(a: &Agent, request: RequestId, outcome: CommandOutcome, safe: bool) {
     a.emit(AgentEvent::CommandDone {
+        args_safe_to_echo: safe,
         answers: request,
         outcome,
     })
@@ -588,7 +593,7 @@ async fn typed_plugin_commands_echo_with_opaque_secrets_masked_and_skills_keeps_
             let (_, args, request) =
                 run(&mut a, &format!("/mcp add notes server --token {secret}")).await;
             assert!(args.ends_with(secret));
-            done(&a, request, CommandOutcome::None).await;
+            answered(&a, request, CommandOutcome::None, true).await;
             let lines = a.settle().await;
             assert!(!lines.iter().any(|line| line.contains(secret)), "{lines:?}");
             assert!(
@@ -598,13 +603,23 @@ async fn typed_plugin_commands_echo_with_opaque_secrets_masked_and_skills_keeps_
                         && line.contains("0011")),
                 "{lines:?}"
             );
+            let (_, args, request) = run(&mut a, &format!("/mcp\u{00a0}--token {secret}")).await;
+            assert_eq!(args, format!("--token {secret}"));
+            answered(&a, request, CommandOutcome::None, true).await;
+            let masked = wisp_protocol::masked_command(&args).unwrap();
+            let lines = a.settle().await;
+            assert!(shows(&lines, &format!("/mcp {masked}")));
+            assert!(!shows(&lines, secret));
+            a.key(KeyCode::Up);
+            assert!(composer(&a.settle().await).contains(&format!("/mcp {masked}")));
+            a.key(KeyCode::Down);
             let code = "CANARY-code-0011";
             let address =
                 format!("http://127.0.0.1:8123/oauth-callback?%63ode={code}&state=CANARY-state");
             let redirect = format!("/mcp sign-in linear '{address}' # {address}");
             let (_, args, request) = run(&mut a, &redirect).await;
             assert!(args.contains(code));
-            done(&a, request, CommandOutcome::None).await;
+            answered(&a, request, CommandOutcome::None, true).await;
             let lines = a.settle().await;
             assert!(!lines.iter().any(|line| line.contains(code)));
             assert!(lines.iter().any(|line| line.contains("state=CANARY-state")));
@@ -624,4 +639,73 @@ async fn typed_plugin_commands_echo_with_opaque_secrets_masked_and_skills_keeps_
         },
     )
     .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn command_args_enter_recall_only_with_an_explicit_safe_answer() {
+    steering_on(
+        Screen::new(ROWS, 100),
+        options_in(Mode::Dark),
+        |mut a| async move {
+            a.emit(catalog(vec![testkit(commands())])).await;
+            for (word, approval) in [
+                ("CANARY-held-word", "false"),
+                ("invented-legacy", "omitted"),
+                ("invented-rejected", "rejected"),
+                ("invented-safe", "true"),
+            ] {
+                let (_, _, request) = run(&mut a, &format!("/go {word}")).await;
+                assert!(!shows(&a.settle().await, word));
+                match approval {
+                    "omitted" => {
+                        let event = format!(
+                            r#"{{"type":"command_done","answers":{},"outcome":{{"type":"none"}}}}"#,
+                            request.0
+                        );
+                        a.emit(serde_json::from_str(&event).unwrap()).await;
+                    }
+                    "rejected" => {
+                        a.emit(AgentEvent::Rejected {
+                            request: Some(request),
+                            id: None,
+                            kind: None,
+                            reason: "Unavailable.".into(),
+                        })
+                        .await
+                    }
+                    _ => answered(&a, request, CommandOutcome::None, approval == "true").await,
+                }
+                let lines = a.settle().await;
+                assert!(shows(&lines, "/go"));
+                assert_eq!(shows(&lines, word), approval == "true");
+                a.key(KeyCode::Up);
+                assert_eq!(
+                    composer(&a.settle().await).contains(word),
+                    approval == "true"
+                );
+                a.key(KeyCode::Down);
+            }
+            finish(a).await;
+        },
+    )
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn disconnect_drops_unchecked_plugin_args_without_echo_or_recall() {
+    const WORD: &str = "invented-pending-argument";
+    let mut opts = options_in(Mode::Dark);
+    let ended = super::steering::attached(&mut opts, wisp_protocol::link::REQUEST_RANGE);
+    let screen = Screen::new(ROWS, 100);
+    let finished =
+        super::steering::steering_finished(screen, opts, super::facts(), |mut a| async move {
+            a.emit(catalog(vec![testkit(commands())])).await;
+            run(&mut a, &format!("/go {WORD}")).await;
+            a.key(KeyCode::Up);
+            assert!(!shows(&a.settle().await, WORD));
+            a.cut(ended).await;
+        })
+        .await;
+    assert_eq!(finished.exit.unwrap(), wisp_tui::app::Exit::Cut);
+    assert!(finished.unshown.iter().all(|line| !line.contains(WORD)));
 }

@@ -32,6 +32,7 @@ pub struct Glyphs {
     pub bullet: &'static str,
     pub more: &'static str,
     pub newline: &'static str,
+    pub wrap: &'static str,
     pub arrow: &'static str,
     pub back: &'static str,
     pub rewound: &'static str,
@@ -92,6 +93,7 @@ pub const UNICODE: Glyphs = Glyphs {
     bullet: "\u{2219}",
     more: "\u{2026}",
     newline: "\u{23CE}",
+    wrap: "\u{21B3}",
     arrow: "\u{2192}",
     back: "\u{2190}",
     rewound: "\u{21B6}",
@@ -172,6 +174,7 @@ pub const ASCII: Glyphs = Glyphs {
     bullet: "-",
     more: "...",
     newline: "\\n",
+    wrap: "|",
     arrow: "->",
     back: "<-",
     rewound: "<-",
@@ -212,7 +215,7 @@ impl Glyphs {
         }
     }
 
-    pub fn fold(&self, text: &str) -> String {
+    fn fold_mapping(&self) -> [(&str, &str); 7] {
         [
             (UNICODE.separator, self.separator),
             (UNICODE.minus, self.minus),
@@ -229,8 +232,12 @@ impl Glyphs {
             (UNICODE.back, self.back),
             (UNICODE.done, self.done),
         ]
-        .into_iter()
-        .fold(text.to_owned(), |text, (from, to)| text.replace(from, to))
+    }
+
+    pub fn fold(&self, text: &str) -> String {
+        self.fold_mapping()
+            .into_iter()
+            .fold(text.to_owned(), |text, (from, to)| text.replace(from, to))
     }
 
     pub fn all(&self) -> Vec<(&'static str, &'static str)> {
@@ -258,6 +265,7 @@ impl Glyphs {
             ("bullet", self.bullet),
             ("more", self.more),
             ("newline", self.newline),
+            ("wrap", self.wrap),
             ("arrow", self.arrow),
             ("back", self.back),
             ("minus", self.minus),
@@ -290,4 +298,23 @@ impl Glyphs {
         out.extend(self.spark.into_iter().flatten().map(|g| ("spark", *g)));
         out
     }
+}
+
+#[cfg(test)]
+#[test]
+fn terminal_fold_sources_match_renderer_mapping() {
+    use std::collections::BTreeSet;
+    let glyphs = [UNICODE, AMBIGUOUS_WIDE, ASCII];
+    let sources = glyphs
+        .iter()
+        .flat_map(Glyphs::fold_mapping)
+        .map(|(source, _)| source)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        sources,
+        wisp_tool_text::terminal::FOLD_SOURCES
+            .iter()
+            .copied()
+            .collect()
+    );
 }

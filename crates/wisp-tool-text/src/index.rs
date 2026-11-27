@@ -1,3 +1,5 @@
+pub const INVALID_TARGET: &str = "The lookup target is unavailable.";
+
 pub const INVALID_INPUT: &str = "input must be an object with the tool's fields";
 
 use wisp_plugin_api::index::Entry;

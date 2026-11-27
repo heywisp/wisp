@@ -107,6 +107,7 @@ fn plugin_commands_and_their_answers_match_their_fixtures() {
         golden(
             &format!("event_command_done_{name}"),
             &AgentEvent::CommandDone {
+                args_safe_to_echo: false,
                 answers: RequestId(7),
                 outcome,
             },
@@ -379,4 +380,27 @@ fn restart_readiness_matches_its_fixtures() {
     assert_eq!(rows[1].running_ms, u64::MAX);
     wisp_protocol::age_unready(&mut rows, std::time::Duration::MAX);
     assert!(rows.iter().all(|row| row.running_ms == u64::MAX));
+}
+
+#[test]
+fn command_done_requires_explicit_permission_to_echo_args() {
+    let old = include_str!("fixtures/event_command_done_none.json");
+    let decoded: AgentEvent = serde_json::from_str(old).unwrap();
+    assert!(matches!(
+        decoded,
+        AgentEvent::CommandDone {
+            args_safe_to_echo: false,
+            ..
+        }
+    ));
+    let mut wire = serde_json::to_value(decoded).unwrap();
+    assert!(wire.get("args_safe_to_echo").is_none());
+    wire["args_safe_to_echo"] = json!(true);
+    assert!(matches!(
+        serde_json::from_value::<AgentEvent>(wire).unwrap(),
+        AgentEvent::CommandDone {
+            args_safe_to_echo: true,
+            ..
+        }
+    ));
 }

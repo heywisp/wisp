@@ -4268,6 +4268,30 @@ impl Agent {
         Box::pin(self.request_calls_unboxed(step, found, model, events))
     }
 
+    fn invalid_tool_input(&self, message: String) -> Finished {
+        let message = if !self.lookup_is_safe(&message) {
+            "Invalid tool input.".to_owned()
+        } else {
+            message
+        };
+        let text = invalid_input_text(&message);
+        Finished::synthetic(ToolOutcome::InvalidInput { message }, text)
+    }
+
+    fn rejection_display_is_safe(&self, display: &wisp_protocol::ToolDisplay) -> bool {
+        fn checked(agent: &Agent, value: &Value) -> bool {
+            match value {
+                Value::String(text) => agent.lookup_is_safe(text),
+                Value::Array(items) => items.iter().all(|item| checked(agent, item)),
+                Value::Object(fields) => fields
+                    .iter()
+                    .all(|(key, value)| agent.lookup_is_safe(key) && checked(agent, value)),
+                Value::Null | Value::Bool(_) | Value::Number(_) => true,
+            }
+        }
+        serde_json::to_value(display).is_ok_and(|value| checked(self, &value))
+    }
+
     async fn request_calls_unboxed(
         &mut self,
         step: u32,
@@ -4279,7 +4303,10 @@ impl Agent {
         let mut calls = Vec::with_capacity(found.len());
         for (block, id, name, input) in found {
             let sent = self.track().sent_search;
-            let forwarded = self.forward_call(&name, &input);
+            let caller = crate::plugin::caller::Caller::read_only_agent();
+            let forwarded = caller
+                .clone()
+                .sync_scope(|| self.forward_call(&name, &input));
             let is_forwarded = matches!(&forwarded, Ok(Some(_)));
             let (run_name, run_input) = match &forwarded {
                 Ok(Some((name, input))) => (name.clone(), input.clone()),
@@ -4287,8 +4314,12 @@ impl Agent {
             };
             let prepared = match forwarded {
                 Err(message) => Err(crate::tool::InvalidInput::new(message)),
-                Ok(Some(_)) => self.prepare_runnable(&run_name, &run_input).await,
-                Ok(None) => self.prepare_call(&name, &input, sent).await,
+                Ok(Some(_)) => {
+                    caller
+                        .scope(self.prepare_runnable(&run_name, &run_input))
+                        .await
+                }
+                Ok(None) => caller.scope(self.prepare_call(&name, &input, sent)).await,
             };
             if let Err(e) = &prepared
                 && e.cause == crate::tool::InvalidCause::SearchNotRun
@@ -4296,8 +4327,27 @@ impl Agent {
                 self.search_not_run(model, events).await;
             }
             let hidden = self.hidden_mcp_name(&run_name);
+            let registry = self.hooks.registry.as_ref();
+            let lookup = registry
+                .and_then(|registry| registry.lookup_tool(&name))
+                .or_else(|| self.toolbox.lookup_tool(&name));
+            let forwards = is_forwarded
+                || registry.is_some_and(|registry| registry.forwards(&name))
+                || self.toolbox.forwards(&name);
+            let target = if forwards {
+                input.get("name")
+            } else if lookup == Some(true) {
+                input.get("query")
+            } else {
+                None
+            };
+            let refused_target = target
+                .and_then(Value::as_str)
+                .is_some_and(|target| !self.lookup_is_safe(target));
             let prepared = if hidden {
                 Err(crate::mcp::HELD_CREDENTIAL.to_owned())
+            } else if refused_target {
+                Err(wisp_tool_text::index::INVALID_TARGET.to_owned())
             } else {
                 prepared.map_err(|e| e.message)
             };
@@ -4306,21 +4356,38 @@ impl Agent {
                 Err(message) if message == crate::mcp::HELD_CREDENTIAL => {
                     crate::tool::fallback_display(crate::mcp::PLUGIN, &Value::Null)
                 }
-                Err(_) if is_forwarded => match self.runnable_tool(&run_name).cloned() {
-                    Some(tool) => tool
-                        .rejected_display(&run_input)
-                        .await
-                        .unwrap_or_else(|| crate::tool::fallback_display(&run_name, &run_input)),
-                    None => self
-                        .rejected_dynamic(&run_name, &run_input)
-                        .await
-                        .unwrap_or_else(|| crate::tool::fallback_display(&run_name, &run_input)),
-                },
-                Err(_) => match self.rejected_dynamic(&name, &input).await {
-                    Some(display) => display,
-                    None => self.toolbox.rejected_display(&name, &input).await,
-                },
+                Err(_) if is_forwarded => {
+                    let shown = if refused_target {
+                        None
+                    } else {
+                        match self.runnable_tool(&run_name).cloned() {
+                            Some(tool) => tool.rejected_display(&Value::Null).await,
+                            None => self.rejected_dynamic(&run_name, &Value::Null).await,
+                        }
+                    };
+                    if refused_target || !self.lookup_is_safe(&run_name) {
+                        crate::tool::fallback_display("tool", &Value::Null)
+                    } else {
+                        shown.unwrap_or_else(|| {
+                            crate::tool::fallback_display(&run_name, &Value::Null)
+                        })
+                    }
+                }
+                Err(_) => {
+                    let shown_input = if lookup == Some(false) && !forwards {
+                        &input
+                    } else {
+                        &Value::Null
+                    };
+                    match self.rejected_dynamic(&name, shown_input).await {
+                        Some(display) => display,
+                        None => self.toolbox.rejected_display(&name, shown_input).await,
+                    }
+                }
             };
+            if prepared.is_err() && !self.rejection_display_is_safe(&display) {
+                display = crate::tool::fallback_display("tool", &Value::Null);
+            }
             display.purpose = self
                 .runnable_tool(&run_name)
                 .map_or(self.toolbox.purpose(&name), |tool| tool.meta().purpose);
@@ -5167,10 +5234,7 @@ impl Agent {
                 let text = not_run_text(&reason);
                 Finished::synthetic(ToolOutcome::NotRun { reason }, text)
             }
-            (None, Err(message)) => {
-                let text = invalid_input_text(&message);
-                Finished::synthetic(ToolOutcome::InvalidInput { message }, text)
-            }
+            (None, Err(message)) => self.invalid_tool_input(message),
             (None, Ok(prepared)) => match self.place(&call.name) {
                 Err(message) => {
                     let text = failed_text(&message);

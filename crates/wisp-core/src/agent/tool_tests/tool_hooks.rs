@@ -722,7 +722,7 @@ async fn searchable(
     provider: Arc<Fake>,
     env: &Env,
     sources: Vec<(String, crate::plugin::Make)>,
-    echo_on: bool,
+    held: &[&str],
 ) -> Agent {
     let echo = test_toolbox().get("echo").unwrap().tool().plugin().clone();
     let definitions = echo
@@ -743,21 +743,25 @@ async fn searchable(
     let search = wisp_plugin_search::bundled();
     let make: crate::plugin::Make = Arc::new(move |host| (search.instantiate)(host));
     all.push((search.manifest.to_owned(), make));
+    if held.contains(&"show_diff") {
+        let diff = wisp_plugin_show_diff::bundled();
+        let make: crate::plugin::Make = Arc::new(move |host| (diff.instantiate)(host));
+        all.push((diff.manifest.to_owned(), make));
+    }
     all.extend(sources);
     let (registry, problems) =
         crate::plugin::Registry::from_sources(all, &crate::plugin::PluginConfig::default());
     assert!(problems.is_empty(), "{problems:?}");
-    let mut names = ["search".to_owned(), "use".to_owned()]
+    let names = ["search", "use"]
         .into_iter()
+        .chain(held.iter().copied())
+        .map(str::to_owned)
         .collect::<std::collections::BTreeSet<_>>();
-    if echo_on {
-        names.insert("echo".to_owned());
-    }
     let started = registry
         .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
         .await;
     assert!(started.problems.is_empty(), "{:?}", started.problems);
-    let toolbox = if echo_on {
+    let toolbox = if !held.is_empty() {
         started.toolbox.clone().with_preload(
             &["search".to_owned(), "use".to_owned()]
                 .into_iter()
@@ -775,7 +779,7 @@ async fn searchable(
     assert!(
         started
             .host
-            .gather_index(&toolbox, &names, sources)
+            .gather_index_sources(&toolbox, &names, sources)
             .await
             .is_empty()
     );
@@ -820,7 +824,7 @@ async fn use_follows_search_in_defaults_saved_flags_and_children() {
                 }),
                 _ => {}
             }
-            let mut agent = searchable(scripted(Vec::new()), &env, Vec::new(), false).await;
+            let mut agent = searchable(scripted(Vec::new()), &env, Vec::new(), &[]).await;
             agent.settings.session.clear();
             let agent = agent.with_start_layers(layers);
             let selected = agent.wanted_tools(&[]).unwrap();
@@ -855,7 +859,7 @@ async fn use_runs_the_named_tool_with_its_row_and_hooks_and_keeps_the_model_call
         provider.clone(),
         &env,
         one("before-tool", rewrite_text("B"), &calls),
-        true,
+        &["echo"],
     )
     .await;
     let (_, events) = turn(&mut agent, "go").await;
@@ -900,7 +904,7 @@ async fn use_refuses_a_tool_that_is_off_without_running_it() {
             )]),
             done("ok"),
         ]);
-        let mut agent = searchable(provider.clone(), &env, Vec::new(), false).await;
+        let mut agent = searchable(provider.clone(), &env, Vec::new(), &[]).await;
         if child {
             agent = agent.with_parent(wisp_protocol::ParentLink {
                 session_id: "parent".to_owned(),
@@ -957,7 +961,7 @@ async fn use_refuses_a_tool_that_is_off_without_running_it() {
         )]),
         done("ok"),
     ]);
-    let mut permitted = searchable(provider.clone(), &env, Vec::new(), true).await;
+    let mut permitted = searchable(provider.clone(), &env, Vec::new(), &["echo"]).await;
     let (_, events) = turn(&mut permitted, "go").await;
     assert!(
         provider.sent()[1]
@@ -981,27 +985,65 @@ async fn use_refuses_a_tool_that_is_off_without_running_it() {
     };
     let source =
         crate::plugin::testing::index_source("aa", Arc::new(Mutex::new(vec![entry])), false);
-    let mut agent = searchable(provider.clone(), &env, vec![source], false).await;
+    let mut agent = searchable(provider.clone(), &env, vec![source], &[]).await;
     turn(&mut agent, "read").await;
     assert_eq!(last_results(&provider)[0].1, "aa: echo");
     assert!(!last_results(&provider)[0].2);
 }
 
 #[tokio::test]
-async fn a_refused_forwarded_input_includes_the_tools_parameters() {
+async fn a_refused_forwarded_input_includes_parameters_but_never_displays_rejected_values() {
+    const HELD: &str = "CANARY-held-diff-title";
+    crate::session::register_secrets([HELD.to_owned()]);
     let env = Env::new("forwarded-invalid");
+    let title = format!("{} {HELD}", "Fixture heading. ".repeat(6));
+    let diff = json!({"files": [], "title": title});
     let provider = scripted(vec![
-        uses(&[call("c1", "use", json!({"name":"echo","input":{"text":3}}))]),
+        uses(&[
+            call("c1", "use", json!({"name":"echo","input":{"text":3}})),
+            call(
+                "c2",
+                "use",
+                json!({"name":"show_diff","input":diff.clone()}),
+            ),
+        ]),
         done("ok"),
     ]);
-    let mut agent = searchable(provider.clone(), &env, Vec::new(), true).await;
+    let mut agent = searchable(provider.clone(), &env, Vec::new(), &["echo", "show_diff"]).await;
+    let mut unchecked =
+        crate::plugin::convert::display(wisp_plugin_show_diff::rejected(&diff)).unwrap();
+    assert!(!unchecked.target.contains(HELD));
+    assert!(unchecked.title.as_ref().unwrap().contains(HELD));
+    assert!(!agent.rejection_display_is_safe(&unchecked));
+    unchecked.title = None;
+    unchecked.view = Some(wisp_protocol::ToolView::Code {
+        language: None,
+        code: format!("Fixture\n{HELD}"),
+    });
+    assert!(!agent.rejection_display_is_safe(&unchecked));
     let (_, events) = turn(&mut agent, "go").await;
     assert!(started_ids(&events).is_empty());
-    assert!(events.iter().any(|event| matches!(event, AgentEvent::ToolCallRequested { display, .. } if display.action == ToolAction::Other { name: "echo".to_owned() })));
+    assert!(events.iter().any(|event| matches!(event, AgentEvent::ToolCallRequested { call_id, display, .. } if call_id == "c1" && display.action == ToolAction::Other { name: "echo".to_owned() })));
+    let shown = events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolCallRequested {
+                call_id, display, ..
+            } if call_id == "c2" => Some(display),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(shown.target, "diff");
+    assert!(shown.title.is_none() && shown.view.is_none());
+    assert!(!serde_json::to_string(shown).unwrap().contains(HELD));
     let results = last_results(&provider);
-    assert!(results[0].2);
-    assert!(results[0].1.contains("Parameters:"));
+    assert!(
+        results
+            .iter()
+            .all(|result| result.2 && result.1.contains("Parameters:"))
+    );
     assert!(results[0].1.contains("\"text\""));
+    assert!(results[1].1.contains("`files` is empty"));
 }
 
 #[tokio::test]
@@ -1040,7 +1082,7 @@ async fn search_then_use_strictly_appends_each_request_without_changing_the_pref
     );
     let store = MemoryStore::default();
     use wisp_plugin_api::host::Host;
-    let mut agent = searchable(provider.clone(), &env, vec![source, hook], true)
+    let mut agent = searchable(provider.clone(), &env, vec![source, hook], &["echo"])
         .await
         .with_log(
             SessionLog::new(Box::new(store.clone()), "s1"),
@@ -1118,7 +1160,7 @@ async fn a_skill_installed_mid_turn_is_found_by_the_next_turns_first_search() {
         provider.clone(),
         &env,
         vec![(skills.manifest.to_owned(), make)],
-        false,
+        &[],
     )
     .await;
     let (_, first) = turn(&mut agent, "start").await;
@@ -1134,4 +1176,155 @@ async fn a_skill_installed_mid_turn_is_found_by_the_next_turns_first_search() {
     let requests: Vec<_> = provider.sent().iter().map(Sent::body).collect();
     assert_eq!(requests.len(), 5);
     prefix::assert_prefix_stable(&requests, None);
+}
+
+#[tokio::test]
+async fn an_unsafe_forwarded_use_target_never_appears_in_display_or_result() {
+    const HELD: &str = "CANARY-use-target-not-for-display";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let env = Env::new("held-use-target");
+    let provider = scripted(vec![
+        uses(&[call("lookup", "use", json!({"name": HELD}))]),
+        done("Done."),
+    ]);
+    let mut agent = searchable(provider.clone(), &env, Vec::new(), &["echo"]).await;
+    let (_, events) = turn(&mut agent, "Look up the entry.").await;
+    assert!(started_ids(&events).is_empty());
+    assert!(events.iter().any(|event| matches!(event, AgentEvent::ToolCallRequested { display, .. } if display.target == "entry")));
+    let results = last_results(&provider);
+    assert!(results[0].1.contains(wisp_tool_text::index::INVALID_TARGET));
+    assert!(!results[0].1.contains(HELD));
+}
+
+#[tokio::test]
+async fn forwarded_validation_never_publishes_a_private_diagnostic_after_preparation_or_rewrite() {
+    let private = ["tile-fixture", "example.invalid"].join("@");
+    let valid = json!({"files":[{"path":"tile.txt","before":"square\n","after":"round\n"}]});
+    let mut invalid = valid.clone();
+    invalid[&private] = json!(true);
+    for rewritten in [false, true] {
+        let calls = Calls::default();
+        let sources = if rewritten {
+            one(
+                "before-tool",
+                replying(Reply::Rewrite(invalid.to_string())),
+                &calls,
+            )
+        } else {
+            Vec::new()
+        };
+        let input = if rewritten { &valid } else { &invalid };
+        let provider = scripted(vec![
+            uses(&[call(
+                "validate",
+                "use",
+                json!({"name":"show_diff","input":input}),
+            )]),
+            done("Ready."),
+        ]);
+        let env = Env::new("forwarded-identity-diagnostic");
+        let mut agent = searchable(provider.clone(), &env, sources, &["show_diff"]).await;
+        assert!(!agent.lookup_is_safe(&private));
+        let (_, events) = turn(&mut agent, "Validate the diff.").await;
+        assert_eq!(calls.of("h").len(), usize::from(rewritten));
+        let outcome = events.into_iter().find_map(|event| match event {
+            AgentEvent::ToolCallFinished {
+                call_id, outcome, ..
+            } if call_id == "validate" => Some(outcome),
+            _ => None,
+        });
+        assert_eq!(
+            outcome,
+            Some(ToolOutcome::InvalidInput {
+                message: "Invalid tool input.".into()
+            })
+        );
+        let results = last_results(&provider);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "validate");
+        assert!(results[0].2 && results[0].1.contains("Invalid tool input."));
+        assert!(!results[0].1.contains(&private));
+    }
+}
+
+#[tokio::test]
+async fn a_queued_unknown_forward_diagnostic_is_rechecked_when_its_name_becomes_held() {
+    const HELD: &str = "CANARY-off-tool-late-held-name";
+    let calls = Calls::default();
+    let sources = one(
+        "before-tool",
+        Arc::new(|_, _, _| {
+            Box::pin(async {
+                crate::session::register_secrets([HELD.to_owned()]);
+                Reply::None
+            })
+        }),
+        &calls,
+    );
+    let input = json!({"name": HELD});
+    let provider = scripted(vec![
+        uses(&[
+            call(
+                "first",
+                "use",
+                json!({"name":"echo","input":{"text":"Tile."}}),
+            ),
+            call("off", "use", input.clone()),
+        ]),
+        done("Done."),
+    ]);
+    let env = Env::new("late-held-lookup-error");
+    let mut agent = searchable(provider.clone(), &env, sources, &["echo"]).await;
+    agent.settings.session.push(crate::settings::Given {
+        target: wisp_protocol::settings::Target::Name(
+            wisp_protocol::settings::find(wisp_protocol::settings::names::TURNED_OFF).unwrap(),
+        ),
+        value: SettingValue::List(vec![HELD.to_owned()]),
+        origin: "fixture".into(),
+    });
+    assert!(
+        agent
+            .forward_call("use", &input)
+            .unwrap_err()
+            .contains(HELD)
+    );
+    let (_, events) = turn(&mut agent, "Review the tiles.").await;
+    assert_eq!(started_ids(&events), ["first"]);
+    let error = events.iter().find_map(|event| match event {
+        AgentEvent::ToolCallFinished {
+            call_id,
+            outcome: ToolOutcome::InvalidInput { message },
+            ..
+        } if call_id == "off" => Some(message.as_str()),
+        _ => None,
+    });
+    assert_eq!(error, Some("Invalid tool input."));
+    let results = last_results(&provider);
+    let result = results.iter().find(|result| result.0 == "off").unwrap();
+    assert!(result.2 && result.1.contains("Invalid tool input."));
+    assert!(!result.1.contains(HELD));
+}
+
+#[tokio::test]
+async fn a_missing_tool_has_a_data_free_rejection_display() {
+    const HELD: &str = "CANARY-held-missing-tool-input-key";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let provider = scripted(vec![
+        uses(&[call("missing", "fixture-missing", json!({(HELD): true}))]),
+        done("Ready."),
+    ]);
+    let env = Env::new("missing-tool-private-input-key");
+    let mut agent = searchable(provider, &env, Vec::new(), &[]).await;
+    let (_, events) = turn(&mut agent, "Try the tool.").await;
+    let shown = events
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::ToolCallRequested {
+                call_id, display, ..
+            } if call_id == "missing" => Some(display),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(shown.target, "{}");
+    assert!(!serde_json::to_string(shown).unwrap().contains(HELD));
 }
