@@ -15,7 +15,10 @@ use crate::agent::sections::{HeadTexts, StrategyHead};
 use crate::plugin::caller::At;
 use crate::plugin::hooks::Ran;
 use crate::plugin::hooks::sections::Limits;
-use crate::plugin::hooks::strategy::{Answer, Ask, HistoryView, STRATEGY_TIMEOUT, strategy_hook};
+use crate::plugin::hooks::strategy::{
+    Answer, Ask, HistoryView, STRATEGY_REFUSED, STRATEGY_TIMEOUT, strategy_hook,
+};
+use crate::secrets::scan::scrub_field;
 
 pub(in crate::agent) const DEFAULT_STRATEGY: &str = "default";
 
@@ -299,12 +302,15 @@ impl Agent {
             .await;
         let plugin = run.plugin.clone();
         self.compaction.strategy_run = Some(run);
-        match answer {
-            Some(Answer::Accept(Err(sentence))) if plugin == DEFAULT_PLUGIN => Some(sentence),
-            Some(Answer::Accept(Err(sentence))) => Some(format!(
-                "The {plugin} strategy refused the summary, so Wisp kept the conversation as it was: {sentence}"
-            )),
-            _ => None,
+        let Some(Answer::Accept(Err(sentence))) = answer else {
+            return None;
+        };
+        let home = self.secret_check_home();
+        let sentence = scrub_field(&sentence, home.as_deref(), &crate::session::read_held());
+        if plugin == DEFAULT_PLUGIN {
+            Some(sentence)
+        } else {
+            Some(format!("The {plugin}{STRATEGY_REFUSED}{sentence}"))
         }
     }
 

@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use tokio::sync::mpsc;
 use wisp_protocol::log::{ImageRef, LeadEntry, LogEvent, LogRecord, LoggedInput};
 use wisp_protocol::{
-    AgentEvent, ContentBlock, DeliveryMode, ErrorKind, ImageData, InputId, Message, QuestionEnd,
+    AgentEvent, ContentBlock, DeliveryMode, ErrorKind, ImageData, InputId, QuestionEnd,
     ReportedEnd, Role, TurnOutcome, TurnStats, UnfinishedReason, Usage, WithdrawnBy,
 };
 use wisp_tool_text::output::with_held_key_note;
@@ -17,7 +17,9 @@ use super::inbox::{Input, TurnEnd, note_last};
 use super::sections::kept_for_retry;
 use super::withdraw::file_note;
 use super::{Agent, TurnTrack};
-use crate::resume::{Lapse, LastTurn, LoggedSession, RepairContext, RepairedCall, repair_calls};
+use crate::resume::{
+    Lapse, LastTurn, LoggedSession, RepairContext, RepairedCall, repair_calls_with_hooks,
+};
 use crate::tool::SHELL;
 
 pub const INTERRUPTED_MESSAGE: &str = "Wisp stopped before this turn ended.";
@@ -49,7 +51,7 @@ struct RepairTurn {
     plan_usd: f64,
     plan_unknown: bool,
     turn: u64,
-    results: Vec<RepairedCall>,
+    results: Vec<(RepairedCall, bool)>,
     usage: Option<Usage>,
     usd: Option<f64>,
     committed_steps: u32,
@@ -330,7 +332,7 @@ impl Agent {
         &self,
         records: &[LogRecord],
         calls: &[(String, String)],
-    ) -> Vec<RepairedCall> {
+    ) -> Vec<(RepairedCall, bool)> {
         let home = self
             .tools
             .as_ref()
@@ -346,7 +348,7 @@ impl Agent {
             exists: &exists,
             saves_output: &saves_output,
         };
-        repair_calls(records, calls, &context)
+        repair_calls_with_hooks(records, calls, &context)
     }
 
     fn inputs_of(&self, logged: &LoggedSession, inputs: &[LoggedInput]) -> Option<Vec<Input>> {
@@ -471,10 +473,10 @@ impl Agent {
 
     async fn commit_repaired(
         &mut self,
-        results: &[RepairedCall],
+        results: &[(RepairedCall, bool)],
         events: &mpsc::Sender<AgentEvent>,
     ) {
-        for call in results.iter().filter(|c| c.interrupted_question) {
+        for (call, _) in results.iter().filter(|(call, _)| call.interrupted_question) {
             let event = AgentEvent::QuestionClosed {
                 call_id: call.call_id.clone(),
                 how: QuestionEnd::Interrupted,
@@ -485,14 +487,21 @@ impl Agent {
             return;
         }
         let redactions = crate::session::held();
+        let mut hook_blocks = Vec::new();
         let content = results
             .iter()
-            .map(|call| {
-                let text = redactions.mask(&call.text);
-                let text = if text == call.text {
-                    text
+            .enumerate()
+            .map(|(index, (call, hook_blocked))| {
+                let text = if *hook_blocked {
+                    hook_blocks.push(index);
+                    call.text.clone()
                 } else {
-                    with_held_key_note(&text)
+                    let text = redactions.mask(&call.text);
+                    if text == call.text {
+                        text
+                    } else {
+                        with_held_key_note(&text)
+                    }
                 };
                 ContentBlock::ToolResult {
                     tool_use_id: call.call_id.clone(),
@@ -501,12 +510,7 @@ impl Agent {
                 }
             })
             .collect();
-        let message = Message {
-            role: Role::User,
-            content,
-        };
-        self.history.push(message.clone());
-        self.sync_history();
+        let message = self.accept_tool_results(content, &hook_blocks);
         self.commit_record(message, None, None, events).await;
     }
 

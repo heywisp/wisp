@@ -280,7 +280,7 @@ async fn a_native_compact_sends_the_instruction_and_puts_the_layout_after_the_su
 }
 
 #[tokio::test]
-async fn a_refused_summary_fails_the_compaction_and_logs_the_sentence_and_instruction_whole() {
+async fn a_refused_summary_fails_the_compaction_and_scrubs_the_reason_not_its_context() {
     let calls = Calls::default();
     let store = MemoryStore::default();
     let provider = scripted(vec![
@@ -289,14 +289,16 @@ async fn a_refused_summary_fails_the_compaction_and_logs_the_sentence_and_instru
         answer("Again.", 300),
     ]);
     let strategy = answering(|called| match called {
-        StrategyCalled::Accept(..) => Answer::Accept(Err(REFUSAL.to_owned())),
+        StrategyCalled::Accept(..) => {
+            Answer::Accept(Err(["CANARYstrategy", "example.invalid"].join("@")))
+        }
         other => answered(other),
     });
     let agent = laid(wisp_engine(&provider, &store), strategy, &calls).await;
     let (agent, done) = compacted_once(agent).await;
-    let message = format!(
-        "The aa strategy refused the summary, so Wisp kept the conversation as it was: {REFUSAL}"
-    );
+    let message =
+        "The aa strategy refused the summary, so Wisp kept the conversation as it was: [redacted]"
+            .to_owned();
     assert!(
         matches!(&done, AgentEvent::CompactionFailed { kind: CompactionFailure::CheckFailed, message: m, .. } if *m == message),
         "{done:?}"
@@ -315,7 +317,7 @@ async fn a_refused_summary_fails_the_compaction_and_logs_the_sentence_and_instru
     assert_eq!(
         ran(&store, HOOK)[1],
         HookOutcome::Blocked {
-            reason: REFUSAL.to_owned()
+            reason: crate::session::REDACTED.to_owned()
         }
     );
 }
@@ -399,6 +401,131 @@ async fn a_wisp_overflow_recovery_lays_out_its_head_with_the_strategy() {
     assert!(head_text(&agent).contains(&layout(&heads[0].0, Some(&heads[0].2))));
     assert!(!head_text(&agent).contains("<compacted_context"));
     assert_rebuilds(&store, &agent);
+}
+
+#[tokio::test]
+async fn late_secrets_are_scrubbed_from_backpressured_compaction_and_terminal_errors() {
+    use crate::plugin::{KernelHost, PluginConfig, Registry};
+    use crate::session::{REDACTED, register_secrets};
+
+    let canary = "CANARYOpaqueLateTerminalCompaction";
+    let mut steps = three_answers();
+    steps.extend([too_long(TOO_LONG), answer(WRITTEN, 1_200)]);
+    let provider = scripted(steps);
+    let store = MemoryStore::default();
+    let strategy = answering(move |called| match called {
+        StrategyCalled::Accept(..) => Answer::Accept(Err(canary.to_owned())),
+        other => answered(other),
+    });
+    let make: Make = kit::strategising(kit::none(), None, strategy, Calls::default());
+    let observers = Calls::default();
+    let observer_body = hook_body("front", "after-compact", "")
+        + &hook_body("back", "after-compact", "background = true\n");
+    let received = |name: &str| {
+        observers
+            .of(name)
+            .into_iter()
+            .filter_map(|called| match called.event {
+                Event::AfterCompact(info) => info.failed,
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let (registry, problems) = Registry::from_sources(
+        vec![
+            (
+                kit::manifest_in("0.2.0", "compaction", &kit::strategy_body()),
+                make,
+            ),
+            (
+                kit::manifest("observer", &observer_body),
+                kit::instantiate(kit::none(), observers.clone()),
+            ),
+        ],
+        &PluginConfig::default(),
+    );
+    assert!(problems.is_empty());
+    let started = registry
+        .start(
+            &std::collections::BTreeSet::new(),
+            Arc::new(KernelHost::new()),
+        )
+        .await;
+    let mut agent = wisp_off(&provider, &store).with_hooks(started.hooks, started.host);
+    {
+        let (send_commands, mut commands) = mpsc::channel(1);
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut serve = std::pin::pin!(agent.serve(&mut commands, &tx));
+        for (id, words) in [("u1", "first"), ("u2", "second"), ("u3", "third")] {
+            send_commands.send(send(id, words)).await.unwrap();
+            tokio::select! {
+                () = &mut serve => panic!("agent stopped before the turn ended"),
+                () = within("the warm-up turn", async {
+                    while let Some(event) = rx.recv().await {
+                        if let AgentEvent::TurnEnded { outcome, .. } = event {
+                            assert!(completed(&outcome));
+                            break;
+                        }
+                    }
+                }) => {}
+            }
+        }
+        send_commands.send(send("u4", "fourth")).await.unwrap();
+        within("a logged failure waiting for channel capacity", async {
+        loop {
+            assert!(futures::poll!(serve.as_mut()).is_pending());
+            if log_events(&store).iter().any(|event| matches!(event,
+                LogEvent::CompactionFailed { kind: CompactionFailure::CheckFailed, message, .. } if message == canary)) {
+                assert_eq!(tx.capacity(), 0);
+                break;
+            }
+            let _ = rx.try_recv();
+            tokio::task::yield_now().await;
+        }
+    }).await;
+        register_secrets([canary.to_owned()]);
+        let mut seen = Vec::new();
+        tokio::select! {
+            () = &mut serve => panic!("agent stopped before the turn failed"),
+            event = until_event(&mut rx, &mut seen, "the failed turn", |event| matches!(event, AgentEvent::TurnEnded { .. })) => {
+                assert!(matches!(event, AgentEvent::TurnEnded { outcome: TurnOutcome::Error { message, .. }, .. } if message == "Compaction stopped: [redacted]"));
+            }
+        }
+        assert!(seen.iter().any(|event| matches!(event, AgentEvent::CompactionFailed { kind: CompactionFailure::CheckFailed, message, .. } if message == REDACTED)));
+        assert!(log_events(&store).iter().any(|event| matches!(event, LogEvent::TurnEnded { turn: 4, outcome: TurnOutcome::Error { message, .. }, .. } if message == "Compaction stopped: [redacted]")));
+        tokio::select! {
+            () = &mut serve => panic!("agent stopped before after-compact observers ran"),
+            () = within("foreground and background after-compact observers", async {
+                while received("front").is_empty() || received("back").is_empty() {
+                    let _ = rx.try_recv();
+                    tokio::task::yield_now().await;
+                }
+            }) => {}
+        }
+    }
+    for observer in ["front", "back"] {
+        assert_eq!(received(observer), [REDACTED]);
+    }
+    let mut ordinary = log_events(&store)
+        .into_iter()
+        .find(|event| matches!(event, LogEvent::CompactionFailed { .. }))
+        .unwrap();
+    if let LogEvent::CompactionFailed { kind, message, .. } = &mut ordinary {
+        *kind = CompactionFailure::Error(ErrorKind::Server);
+        *message = canary.to_owned();
+    }
+    let (tx, _rx) = mpsc::channel(16);
+    agent.log(&tx, ordinary).await;
+    agent.drain_idle(&tx).await;
+    within("the untouched ordinary failure", async {
+        while received("front").len() < 2 || received("back").len() < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    for observer in ["front", "back"] {
+        assert_eq!(received(observer), [REDACTED, canary]);
+    }
 }
 
 struct Rig {

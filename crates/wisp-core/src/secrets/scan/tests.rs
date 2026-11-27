@@ -22,9 +22,9 @@ fn extra_key_prefixes_require_twenty_tail_characters_and_a_token_boundary() {
 #[test]
 fn checklist_scrubbing_is_idempotent_when_a_log_only_match_overlaps_the_marker() {
     let held = Redactions::log_only(["redact".to_owned()]);
-    let safe = scrub_todo_text("Use the redact command", None, &held);
+    let safe = scrub_field("Use the redact command", None, &held);
     assert_eq!(safe, REDACTED);
-    assert_eq!(scrub_todo_text(&safe, None, &held), safe);
+    assert_eq!(scrub_field(&safe, None, &held), safe);
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn scrubbing_a_todo_refuses_a_key_exposed_by_a_log_only_match() {
     let text = format!("Record CANARY-prefix{key}");
     assert!(!contains_secret_or_identity_with(&text, None, &log_only));
     assert_eq!(log_only.scrub(&text), format!("Record {REDACTED}{key}"));
-    assert_eq!(scrub_todo_text(&text, None, &log_only), REDACTED);
+    assert_eq!(scrub_field(&text, None, &log_only), REDACTED);
 }
 
 #[test]

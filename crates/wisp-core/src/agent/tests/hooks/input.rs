@@ -73,11 +73,19 @@ async fn every_input_blocked_starts_no_turn_and_closes_the_send_with_rejected() 
     let store = MemoryStore::default();
     let provider = Fake::new(vec![ends("one")]);
     let calls = Calls::default();
-    let agent = with_sections(
-        logged(provider.clone(), &store),
-        guard(blocks_block(), &calls),
-    )
-    .await;
+    let email = ["CANARYinputBlock", "example.invalid"].join("@");
+    let block: HookScript = Arc::new(move |_, _, event| {
+        let Event::UserInput(input) = event else {
+            panic!("expected a user input")
+        };
+        let reply = if input.text.starts_with("block") {
+            Reply::Block(email.clone())
+        } else {
+            Reply::None
+        };
+        Box::pin(async move { reply })
+    });
+    let agent = with_sections(logged(provider.clone(), &store), guard(block, &calls)).await;
     let (commands, mut events, _task) = spawn(agent);
     commands
         .send(ClientCommand::send("tui-1", "block me"))
@@ -95,11 +103,11 @@ async fn every_input_blocked_starts_no_turn_and_closes_the_send_with_rejected() 
                 ids: vec![InputId("tui-1".into())],
                 by: WithdrawnBy::Hook {
                     hook: "aa/u".into(),
-                    reason: "not that".into(),
+                    reason: crate::session::REDACTED.into(),
                 },
             },
             &AgentEvent::Rejected {
-                reason: "Blocked by aa/u: not that".into(),
+                reason: "Blocked by aa/u: [redacted]".into(),
                 id: None,
                 kind: Some(RejectKind::InputBlocked),
                 request: None,
@@ -121,11 +129,9 @@ async fn every_input_blocked_starts_no_turn_and_closes_the_send_with_rejected() 
         .skip_while(|k| k != "hook_ran")
         .collect();
     assert_eq!(kinds, ["hook_ran", "input_withdrawn", "rejected"]);
-    let rejected = log_events(&store).into_iter().find_map(|e| match e {
-        LogEvent::Rejected { turn, .. } => Some(turn),
-        _ => None,
-    });
-    assert_eq!(rejected, Some(None));
+    let records = log_events(&store);
+    assert!(records.iter().any(|e| matches!(e, LogEvent::InputWithdrawn { by: WithdrawnBy::Hook { reason, .. }, .. } if reason == crate::session::REDACTED)));
+    assert!(records.iter().any(|e| matches!(e, LogEvent::Rejected { turn: None, kind: Some(RejectKind::InputBlocked), reason, .. } if reason == "Blocked by aa/u: [redacted]")));
     commands
         .send(ClientCommand::send("tui-2", "fine"))
         .await

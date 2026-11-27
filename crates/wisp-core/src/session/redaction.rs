@@ -2,16 +2,23 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::Value;
-use wisp_protocol::ToolView;
+use wisp_plugin_api::manifest::{is_id, is_name};
 use wisp_protocol::log::LogEvent;
 use wisp_protocol::plan_usage::{UsageScope, UsageWindow};
+use wisp_protocol::{
+    AgentEvent, CompactionFailure, ErrorKind, HookChange, HookOutcome, RejectKind, ToolOutcome,
+    ToolView, TurnOutcome, WithdrawnBy,
+};
 
-use super::{RedactionKind, Redactions};
-use crate::secrets::scan::{os_detection_home, scrub_todo_fields};
+use super::{RedactionKind, Redactions, scrub_json_strings};
+use crate::plugin::hooks::BLOCKED_BY;
+use crate::plugin::hooks::strategy::STRATEGY_REFUSED;
+use crate::secrets::scan::{os_detection_home, scrub_field, scrub_todo_fields};
 
 struct Scrub<'a> {
     held: &'a Redactions,
     home: Option<&'a Path>,
+    hook_audited: bool,
 }
 
 trait Content {
@@ -79,13 +86,190 @@ macro_rules! content {
     };
 }
 
-pub(super) fn scrub(redactions: &Redactions, mut event: LogEvent) -> LogEvent {
+const COMPACTION_STOPPED: &str = "Compaction stopped: ";
+
+const HOOK_COMPACTION_FAILURES: [CompactionFailure; 2] =
+    [CompactionFailure::Blocked, CompactionFailure::CheckFailed];
+
+pub(crate) fn hook_compaction_error_kind(failure: &CompactionFailure) -> Option<ErrorKind> {
+    HOOK_COMPACTION_FAILURES
+        .contains(failure)
+        .then(|| failure.turn_kind().unwrap_or(ErrorKind::Other))
+}
+
+fn formatted_reason(message: &str) -> Option<(&str, &str)> {
+    if let Some(reason) = message.strip_prefix(COMPACTION_STOPPED) {
+        return Some((COMPACTION_STOPPED, reason));
+    }
+    let separator = if message.starts_with(BLOCKED_BY) {
+        ": "
+    } else if message.starts_with("The ") {
+        STRATEGY_REFUSED
+    } else {
+        return None;
+    };
+    let (heading, reason) = message.split_once(separator)?;
+    if let Some(hook) = heading.strip_prefix(BLOCKED_BY) {
+        let (plugin, name) = hook.split_once('/')?;
+        if !is_id(plugin) || !is_name(name) {
+            return None;
+        }
+    } else if !heading.strip_prefix("The ").is_some_and(is_id) {
+        return None;
+    }
+    Some((&message[..heading.len() + separator.len()], reason))
+}
+
+pub(crate) fn compaction_terminal_message(message: String) -> String {
+    if formatted_reason(&message).is_some() {
+        message
+    } else {
+        format!("{COMPACTION_STOPPED}{message}")
+    }
+}
+
+pub(crate) fn turn_hook_audit(outcome: &mut TurnOutcome) -> Option<HookAudit<'_>> {
+    let TurnOutcome::Error { kind, message, .. } = outcome else {
+        return None;
+    };
+    (HOOK_COMPACTION_FAILURES
+        .iter()
+        .any(|failure| hook_compaction_error_kind(failure) == Some(*kind))
+        && formatted_reason(message).is_some())
+    .then_some(HookAudit::Formatted(message))
+}
+
+pub(crate) enum HookAudit<'a> {
+    Input(&'a mut Value, &'a mut Value),
+    Text(&'a mut String),
+    Formatted(&'a mut String),
+    BlockedTool(Option<&'a mut String>, Option<&'a mut String>),
+}
+
+macro_rules! hook_audit {
+    ($event:expr, $event_type:ident) => {
+        match $event {
+            $event_type::HookApplied {
+                change: HookChange::Input { before, after },
+                ..
+            } => Some(HookAudit::Input(before, after)),
+            $event_type::HookApplied {
+                change: HookChange::Blocked { reason },
+                ..
+            }
+            | $event_type::HookRan {
+                outcome: HookOutcome::Blocked { reason } | HookOutcome::Failed { message: reason },
+                ..
+            }
+            | $event_type::InputWithdrawn {
+                by: WithdrawnBy::Hook { reason, .. },
+                ..
+            } => Some(HookAudit::Text(reason)),
+            $event_type::Rejected {
+                kind: Some(RejectKind::InputBlocked),
+                reason,
+                ..
+            } => Some(HookAudit::Formatted(reason)),
+            $event_type::CompactionFailed { kind, message, .. }
+                if hook_compaction_error_kind(kind).is_some() =>
+            {
+                Some(HookAudit::Formatted(message))
+            }
+            $event_type::TurnEnded { outcome, .. } => turn_hook_audit(outcome),
+            $event_type::ToolCallFinished {
+                outcome, result, ..
+            } => {
+                let (message, saved) = hook_blocked_tool_fields(outcome, result.as_deref());
+                let (audit_message, audit_result) = (message.is_some(), saved.is_some());
+                let message = match outcome {
+                    ToolOutcome::Failed { message, .. } if audit_message => Some(message),
+                    _ => None,
+                };
+                let result = result.as_mut().filter(|_| audit_result);
+                (audit_message || audit_result).then_some(HookAudit::BlockedTool(message, result))
+            }
+            _ => None,
+        }
+    };
+}
+
+pub(crate) fn agent_hook_audit(event: &mut AgentEvent) -> Option<HookAudit<'_>> {
+    hook_audit!(event, AgentEvent)
+}
+
+pub(crate) fn log_hook_audit(event: &mut LogEvent) -> Option<HookAudit<'_>> {
+    hook_audit!(event, LogEvent)
+}
+
+impl HookAudit<'_> {
+    pub(crate) fn scrub(self, home: Option<&Path>, held: &Redactions) -> bool {
+        let scrub = |text: &str| scrub_field(text, home, held);
+        match self {
+            Self::Input(before, after) => {
+                scrub_json_strings(before, &scrub);
+                scrub_json_strings(after, &scrub);
+            }
+            Self::Text(text) => *text = scrub(text),
+            Self::Formatted(text) => scrub_hook_failure(text, home, held),
+            Self::BlockedTool(message, result) => {
+                let audited_message = message.is_some();
+                for text in message.into_iter().chain(result) {
+                    scrub_hook_failure(text, home, held);
+                }
+                return audited_message;
+            }
+        }
+        true
+    }
+}
+
+pub(crate) fn hook_blocked_tool_fields<'a>(
+    outcome: &'a ToolOutcome,
+    result: Option<&'a str>,
+) -> (Option<&'a str>, Option<&'a str>) {
+    let ToolOutcome::Failed {
+        message,
+        before_start: true,
+    } = outcome
+    else {
+        return (None, None);
+    };
+    (
+        message.starts_with(BLOCKED_BY).then_some(message),
+        result.filter(|text| text.starts_with(BLOCKED_BY)),
+    )
+}
+
+pub(crate) fn scrub_hook_failure(text: &mut String, home: Option<&Path>, held: &Redactions) {
+    scrub_formatted_reason(text, &|text| scrub_field(text, home, held));
+}
+
+fn scrub_formatted_reason(text: &mut String, scrub: &impl Fn(&str) -> String) {
+    *text = if let Some((heading, reason)) = formatted_reason(text) {
+        let formatted = format!("{heading}{}", scrub(reason));
+        if scrub(&formatted) == formatted {
+            formatted
+        } else {
+            super::REDACTED.to_owned()
+        }
+    } else {
+        scrub(text)
+    };
+}
+
+pub(super) fn scrub(redactions: &Redactions, mut event: LogEvent, home: Option<&Path>) -> LogEvent {
     let has_todos = wisp_protocol::todos::listed(&event).is_some_and(|items| !items.is_empty());
+    let audit = log_hook_audit(&mut event);
+    let fallback = (home.is_none() && (has_todos || audit.is_some()))
+        .then(os_detection_home)
+        .flatten();
+    let home = home.or(fallback.as_deref());
+    let hook_audited = audit.is_some_and(|audit| audit.scrub(home, redactions));
     if !redactions.is_empty() || has_todos {
-        let home = has_todos.then(os_detection_home).flatten();
         event.redact(&Scrub {
             held: redactions,
-            home: home.as_deref(),
+            home,
+            hook_audited,
         });
     }
     event
@@ -153,7 +337,7 @@ content!(LogEvent, redactions, {
     Self::InputUnheld { turn: _, ids: _ } => [],
     Self::ReturnedTaken { ids: _ } => [],
     Self::InputCommitted { turn: _, step: _, inputs: _ } => [],
-    Self::InputWithdrawn { turn: _, ids: _, by } => [by],
+    Self::InputWithdrawn { turn: _, ids: _, by: _ } => [],
     Self::InputDelivered { turn: _, step: _, ids: _ } => [],
     Self::Retrying {
         turn: _, attempt: _, delay_ms: _, reason, step: _, kind: _, detail, usage: _, partial_output,
@@ -187,7 +371,9 @@ content!(LogEvent, redactions, {
     } => [outcome, lines, endpoint_name, model],
     Self::UnknownProviderEvent { turn: _, provider: _, event } => [event],
     Self::InputTransformations { turn: _, provider: _, transformations } => [transformations],
-    Self::Rejected { turn: _, reason, id: _, kind: _ } => [reason],
+    Self::Rejected { turn: _, reason, id: _, kind: _ } => [] {
+        if !redactions.hook_audited { reason.redact(redactions); }
+    },
     Self::WakeHeld { turn: _, sources: _, reason: _ } => [],
     Self::AgentRefused { turn: _, by: _, action: _, reason } => [reason],
     Self::AgentSpawned {
@@ -203,7 +389,9 @@ content!(LogEvent, redactions, {
     Self::ToolCallFinished {
         turn: _, call_id: _, outcome, output, facts: _, state: _, duration_ms: _, result: _, process: _,
         attachments, notes, typed: _,
-    } => [outcome, output, notes, attachments],
+    } => [output, notes, attachments] {
+        if !redactions.hook_audited { outcome.redact(redactions); }
+    },
     Self::QuestionAsked { turn: _, call_id: _, questions: _ } => [],
     Self::QuestionClosed { turn: _, call_id: _, how: _ } => [],
     Self::SessionEnded { turns: _, interrupted: _ } => [],
@@ -243,7 +431,9 @@ content!(LogEvent, redactions, {
     Self::CompactionFailed {
         plan_usd: _, turn: _, trigger: _, engine: _, kind, message, usage: _, cost_usd: _, list_usd: _,
         model, lower_bound: _, switch: _, strategy, instruction, requested_by,
-    } => [message, model, strategy, instruction, requested_by, kind],
+    } => [model, strategy, instruction, requested_by, kind] {
+        if !redactions.hook_audited { message.redact(redactions); }
+    },
     Self::TailClosed { through: _, calls: _, reason: _ } => [],
     Self::RenderingForm { form: _ } => [],
     Self::ThinkingCut { from: _, through: _, tools_sha256: _ } => [],
@@ -482,19 +672,20 @@ content!(wisp_protocol::TurnOutcome, redactions, {
     Self::Cancelled { usage: _, cost: _, committed_steps: _ } => [],
     Self::Error {
         kind: _, message, usage: _, cost: _, committed_steps: _, detail, attempts: _, gave_up: _, offer,
-    } => [message, detail, offer],
+    } => [detail, offer] {
+        if !redactions.hook_audited { message.redact(redactions); }
+    },
 });
 content!(wisp_protocol::HookOutcome, redactions, {
     Self::None | Self::Applied | Self::Continued | Self::TimedOut | Self::Cancelled | Self::Unknown => [],
-    Self::Blocked { reason } => [reason],
-    Self::Failed { message } => [message],
+    Self::Blocked { reason: _ } | Self::Failed { message: _ } => [],
     Self::Rejected { rule } => [rule],
 });
 content!(wisp_protocol::HookChange, redactions, {
-    Self::Input { before, after } => [before, after],
+    Self::Input { before: _, after: _ } => [],
     Self::Result { before, after } | Self::Text { before, after } => [before, after],
     Self::Continue { text } => [text],
-    Self::Blocked { reason } => [reason],
+    Self::Blocked { reason: _ } => [],
     Self::Unknown => [],
 });
 content!(wisp_protocol::SearchEnd, redactions, {

@@ -364,8 +364,22 @@ async fn describe_refreshes_checklists_after_waiting_for_snapshot_capacity() {
         log_context(),
     );
     turn(&mut agent, "plan it").await;
+    let audit = |message: &str| AgentEvent::HookRan {
+        hook: "aa/h".into(),
+        point: "before-tool".into(),
+        turn: None,
+        step: None,
+        call_id: None,
+        outcome: wisp_protocol::HookOutcome::Failed {
+            message: message.into(),
+        },
+        ms: 0,
+    };
+    let (audit_tx, _audit_rx) = mpsc::channel(2);
+    agent.emit(&audit_tx, audit(canary)).await;
     agent.cut_view();
     let original = store.read("s1").unwrap();
+    assert!(agent.view(&original).events.contains(&audit(canary)));
     assert_eq!(
         updates(&agent.view(&original).events),
         [(Some("t1".into()), list.clone())]
@@ -386,6 +400,7 @@ async fn describe_refreshes_checklists_after_waiting_for_snapshot_capacity() {
     };
     list[1].text = REDACTED.into();
     assert_eq!(updates(&view.events), [(Some("t1".into()), list)]);
+    assert!(view.events.contains(&audit(REDACTED)));
     assert_eq!(store.read("s1").unwrap(), original);
 }
 
@@ -692,7 +707,44 @@ fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue(
         call_id: None,
         items: vec![item(secret, TodoStatus::InProgress), safe.clone()],
     };
-    let cached = [ToClient::event(checklist(canary))];
+    let child_audit = |text: &str| {
+        ToClient::event(AgentEvent::Agent {
+            agent: AgentPath::new("/worker"),
+            event: Box::new(AgentEvent::HookApplied {
+                hook: "aa/h".into(),
+                point: "before-tool".into(),
+                turn: None,
+                step: None,
+                call_id: None,
+                input_id: None,
+                change: wisp_protocol::HookChange::Input {
+                    before: json!({"old": true}),
+                    after: json!({"new": text}),
+                },
+            }),
+        })
+    };
+    let terminal = |text: &str| {
+        ToClient::event(AgentEvent::TurnEnded {
+            outcome: TurnOutcome::Error {
+                kind: ErrorKind::InvalidResponse,
+                message: crate::session::compaction_terminal_message(text.to_owned()),
+                usage: None,
+                cost: None,
+                committed_steps: 0,
+                detail: None,
+                attempts: 1,
+                gave_up: None,
+                offer: None,
+            },
+            stats: TurnStats::default(),
+        })
+    };
+    let cached = [
+        ToClient::event(checklist(canary)),
+        child_audit(canary),
+        terminal(canary),
+    ];
     let in_publish = Barrier::new(2);
     let probed = Barrier::new(2);
     let enqueued = AtomicBool::new(false);
@@ -723,7 +775,14 @@ fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue(
     );
     let mut replay = cached;
     with_scrubbed_link_frames(&mut replay, None, |frames| {
-        assert_eq!(frames, &[ToClient::event(checklist(REDACTED))]);
+        assert_eq!(
+            frames,
+            &[
+                ToClient::event(checklist(REDACTED)),
+                child_audit(REDACTED),
+                terminal(REDACTED)
+            ]
+        );
     });
 
     let delta = AgentEvent::TextDelta {

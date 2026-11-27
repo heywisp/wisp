@@ -723,6 +723,7 @@ struct Finished {
     todos: Option<Vec<TodoItem>>,
     ends: Vec<String>,
     ran: bool,
+    hook_blocked: bool,
 }
 
 impl Finished {
@@ -769,6 +770,7 @@ impl Finished {
             todos: None,
             ends: Vec::new(),
             ran: false,
+            hook_blocked: false,
         }
     }
 }
@@ -1936,19 +1938,22 @@ impl Agent {
         Box::pin(self.log_unboxed(events, event))
     }
 
-    async fn log_unboxed(&mut self, events: &mpsc::Sender<AgentEvent>, event: LogEvent) {
+    async fn log_unboxed(&mut self, events: &mpsc::Sender<AgentEvent>, mut event: LogEvent) {
         self.publish_spend(events).await;
         let compacted = self.after_compact(&event);
         self.naming.see(&event);
+        let home = (self.log.is_some() && crate::session::log_hook_audit(&mut event).is_some())
+            .then(|| self.secret_check_home())
+            .flatten();
         let failure = match &mut self.log {
-            Some((log, _)) => log.record(event),
+            Some((log, _)) => log.record_with_home(event, home.as_deref()),
             None => None,
         };
         if let Some(reason) = failure {
             emit(events, AgentEvent::LogDisabled { reason }).await;
         }
-        if let Some(compacted) = compacted {
-            self.defer(AFTER_COMPACT, compacted);
+        if let Some((compacted, hook_failure)) = compacted {
+            self.defer_point(AFTER_COMPACT, compacted, hook_failure);
         }
     }
 
@@ -1990,7 +1995,24 @@ impl Agent {
         turn: Option<u64>,
     ) {
         self.record_event(events, &event, turn).await;
-        emit(events, event).await;
+        self.publish_event(events, event).await;
+    }
+
+    fn publish_event<'a>(
+        &self,
+        events: &'a mpsc::Sender<AgentEvent>,
+        mut event: AgentEvent,
+    ) -> impl Future<Output = ()> + use<'a> {
+        use futures::future::Either;
+
+        if has_sensitive_event(&mut event) {
+            let home = self.secret_check_home();
+            Either::Left(Box::pin(async move {
+                send_scrubbed(events, event, home.as_deref()).await;
+            }))
+        } else {
+            Either::Right(emit(events, event))
+        }
     }
 
     async fn record_event(
@@ -2233,7 +2255,14 @@ impl Agent {
             arrival: Some(self.inbox.arrive()),
         };
         let inputs = self.on_send(sent, events).await?;
-        self.run_inputs(inputs, None, None, commands, events).await
+        let mut outcome = self
+            .run_inputs(inputs, None, None, commands, events)
+            .await?;
+        if let Some(audit) = crate::session::turn_hook_audit(&mut outcome) {
+            let home = self.secret_check_home();
+            audit.scrub(home.as_deref(), &crate::session::read_held());
+        }
+        Some(outcome)
     }
 
     async fn opening(
@@ -3030,7 +3059,8 @@ impl Agent {
         let stats = self.last_turn_stats().cloned().unwrap_or_default();
         let ended = outcome.clone();
         let settled = self.child_ended(&outcome, &stats, events).await;
-        emit(events, AgentEvent::TurnEnded { outcome, stats }).await;
+        self.publish_event(events, AgentEvent::TurnEnded { outcome, stats })
+            .await;
         self.child_moved(events).await;
         self.child_settled(settled, events).await;
         self.finish_withdrawal(events).await;
@@ -4250,6 +4280,7 @@ impl Agent {
             }
 
             let mut results = Vec::with_capacity(calls.len());
+            let mut hook_blocks = Vec::new();
             let mut halt: Option<NotRunReason> = None;
             self.begin_calls();
             let _ = self.agents.take_reply_halted();
@@ -4257,7 +4288,7 @@ impl Agent {
                 let ends_reply = self
                     .runnable_tool(&call.name)
                     .is_some_and(|t| t.meta().ends_reply);
-                let result = self
+                let (result, hook_blocked) = self
                     .run_call(
                         call,
                         &stop_reason,
@@ -4267,6 +4298,9 @@ impl Agent {
                         events,
                     )
                     .await;
+                if hook_blocked {
+                    hook_blocks.push(results.len());
+                }
                 results.push(result);
                 let refused = self.agents.take_reply_halted();
                 if halt.is_none() {
@@ -4287,12 +4321,7 @@ impl Agent {
                     _ => None,
                 })
                 .collect();
-            let message = Message {
-                role: Role::User,
-                content: results,
-            };
-            self.history.push(message.clone());
-            self.sync_history();
+            let message = self.accept_tool_results(results, &hook_blocks);
             self.commit_record(message, None, None, events).await;
             self.track().carried_ends.extend(carriers);
             let found = self.found_moment(events).await;
@@ -4570,6 +4599,34 @@ impl Agent {
         }
         let record = LogEvent::InputCommitted { turn, step, inputs };
         self.log(events, record).await;
+    }
+
+    fn accept_tool_results(
+        &mut self,
+        mut content: Vec<ContentBlock>,
+        hook_blocks: &[usize],
+    ) -> Message {
+        let home = (!hook_blocks.is_empty())
+            .then(|| self.secret_check_home())
+            .flatten();
+        let held = (!hook_blocks.is_empty()).then(crate::session::read_held);
+        if let Some(held) = &held {
+            for &index in hook_blocks {
+                if let Some(ContentBlock::ToolResult { content, .. }) = content.get_mut(index)
+                    && let Some(ContentBlock::Text { text }) = content.first_mut()
+                {
+                    crate::session::scrub_hook_failure(text, home.as_deref(), held);
+                }
+            }
+        }
+        let message = Message {
+            role: Role::User,
+            content,
+        };
+        self.history.push(message.clone());
+        drop(held);
+        self.sync_history();
+        message
     }
 
     async fn commit_record(
@@ -5287,7 +5344,7 @@ impl Agent {
         earlier: &[ContentBlock],
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
-    ) -> Pin<Box<impl Future<Output = ContentBlock>>> {
+    ) -> Pin<Box<impl Future<Output = (ContentBlock, bool)>>> {
         Box::pin(self.run_call_unboxed(call, stop_reason, halt, earlier, commands, events))
     }
 
@@ -5299,7 +5356,7 @@ impl Agent {
         earlier: &[ContentBlock],
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
-    ) -> ContentBlock {
+    ) -> (ContentBlock, bool) {
         let started = Instant::now();
         if *stop_reason == StopReason::ToolUse {
             self.drain(commands, events).await;
@@ -5361,7 +5418,7 @@ impl Agent {
             },
         };
         self.found_hits(&mut finished);
-        let masked = finished.mask(&crate::session::held());
+        let masked = !finished.hook_blocked && finished.mask(&crate::session::held());
         let applied = self
             .after_tool(
                 (&call.id, &call.name, &input),
@@ -5381,7 +5438,8 @@ impl Agent {
             .await;
         let kept_hook = finished.text == hooked;
         let streamed = self.processes.take_masked(&call.id);
-        if finished.mask(&crate::session::held()) || masked || streamed {
+        if (!finished.hook_blocked && finished.mask(&crate::session::held())) || masked || streamed
+        {
             finished.masked_note();
         }
         if kept_hook {
@@ -5424,11 +5482,14 @@ impl Agent {
             text: finished.text,
         }];
         content.extend(attached.blocks);
-        ContentBlock::ToolResult {
-            tool_use_id: call.id,
-            content,
-            is_error,
-        }
+        (
+            ContentBlock::ToolResult {
+                tool_use_id: call.id,
+                content,
+                is_error,
+            },
+            finished.hook_blocked,
+        )
     }
 
     #[allow(
@@ -5716,6 +5777,7 @@ impl Agent {
             todos: todos.map(|items| items.into_iter().map(plugin_convert::todo).collect()),
             ends,
             ran,
+            hook_blocked: false,
         };
         if token.is_cancelled() {
             attach::stopped(&mut finished, timed_out.then_some(max_ms));
@@ -6199,25 +6261,52 @@ async fn emit(events: &mpsc::Sender<AgentEvent>, event: AgentEvent) {
     let _ = events.send(event).await;
 }
 
-fn scrub_event_todos_with<G: std::ops::Deref<Target = Redactions>>(
+enum SensitiveEvent<'a> {
+    Todos(&'a mut [TodoItem]),
+    Hook(crate::session::HookAudit<'a>),
+}
+
+fn visit_sensitive_event(
+    event: &mut AgentEvent,
+    visit: &mut impl FnMut(SensitiveEvent<'_>) -> ControlFlow<()>,
+) -> ControlFlow<()> {
+    match event {
+        AgentEvent::TodosUpdated { items, .. } if !items.is_empty() => {
+            visit(SensitiveEvent::Todos(items))
+        }
+        AgentEvent::Agent { event, .. } => visit_sensitive_event(event, visit),
+        AgentEvent::SessionSnapshot { view, state, .. } => view
+            .events
+            .iter_mut()
+            .chain(state)
+            .try_for_each(|event| visit_sensitive_event(event, visit)),
+        _ => match crate::session::agent_hook_audit(event) {
+            Some(audit) => visit(SensitiveEvent::Hook(audit)),
+            None => ControlFlow::Continue(()),
+        },
+    }
+}
+
+fn has_sensitive_event(event: &mut AgentEvent) -> bool {
+    visit_sensitive_event(event, &mut |_| ControlFlow::Break(())).is_break()
+}
+
+fn scrub_event_with<G: std::ops::Deref<Target = Redactions>>(
     event: &mut AgentEvent,
     home: Option<&Path>,
     held: &mut Option<G>,
     load: &mut impl FnMut() -> G,
 ) {
-    match event {
-        AgentEvent::TodosUpdated { items, .. } if !items.is_empty() => {
-            let held = held.get_or_insert_with(load);
-            scrub_todos(items, home, held);
-        }
-        AgentEvent::Agent { event, .. } => scrub_event_todos_with(event, home, held, load),
-        AgentEvent::SessionSnapshot { view, state, .. } => {
-            for event in view.events.iter_mut().chain(state) {
-                scrub_event_todos_with(event, home, held, load);
+    let _ = visit_sensitive_event(event, &mut |field| {
+        let held = held.get_or_insert_with(&mut *load);
+        match field {
+            SensitiveEvent::Todos(items) => scrub_todos(items, home, held),
+            SensitiveEvent::Hook(audit) => {
+                audit.scrub(home, held);
             }
         }
-        _ => {}
-    }
+        ControlFlow::Continue(())
+    });
 }
 
 fn with_scrubbed_event_with<G: std::ops::Deref<Target = Redactions>, R>(
@@ -6227,7 +6316,7 @@ fn with_scrubbed_event_with<G: std::ops::Deref<Target = Redactions>, R>(
     publish: impl FnOnce(AgentEvent) -> R,
 ) -> R {
     let mut guard = None;
-    scrub_event_todos_with(&mut event, home, &mut guard, &mut load);
+    scrub_event_with(&mut event, home, &mut guard, &mut load);
     let result = publish(event);
     drop(guard);
     result
@@ -6246,11 +6335,11 @@ fn with_scrubbed_link_frames_with<G: std::ops::Deref<Target = Redactions>, R>(
         match frame {
             ToClient::Opened { view, .. } => {
                 for event in &mut view.events {
-                    scrub_event_todos_with(event, home, &mut guard, &mut load);
+                    scrub_event_with(event, home, &mut guard, &mut load);
                 }
             }
             ToClient::Event(event) => {
-                scrub_event_todos_with(event, home, &mut guard, &mut load);
+                scrub_event_with(event, home, &mut guard, &mut load);
             }
             ToClient::Welcome(_)
             | ToClient::Refused { .. }

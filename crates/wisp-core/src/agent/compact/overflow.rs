@@ -546,7 +546,7 @@ impl Agent {
                 event,
                 ..
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 Recovery::Cancelled
             }
             InTurn::Failed {
@@ -554,7 +554,7 @@ impl Agent {
                 event,
                 ..
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 Recovery::Second
             }
             InTurn::Failed {
@@ -562,7 +562,7 @@ impl Agent {
                 message,
                 event,
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 self.ended_on(CompactionTrigger::Overflow, fit);
                 Recovery::Ended(kind.turn_kind().unwrap_or(ErrorKind::Other), message)
             }
@@ -643,7 +643,7 @@ impl Agent {
                 event,
                 ..
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 self.compaction.overflow.due = true;
                 Some(super::auto::Early::Cancelled)
             }
@@ -652,7 +652,7 @@ impl Agent {
                 event,
                 ..
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 None
             }
             InTurn::Failed {
@@ -660,7 +660,7 @@ impl Agent {
                 message,
                 event,
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 self.ended_on(CompactionTrigger::Overflow, Fit::View);
                 self.compaction.overflow.cut_off = None;
                 let kind = kind.turn_kind().unwrap_or(ErrorKind::Other);

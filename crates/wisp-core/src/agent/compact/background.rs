@@ -693,7 +693,7 @@ impl Agent {
             lower_bound: charged.lower_bound,
         };
         let event = self.compaction_failed(failure, &spent, events).await;
-        emit(events, event).await;
+        self.publish_event(events, event).await;
     }
 
     pub(in crate::agent) async fn poll_background(&mut self, events: &mpsc::Sender<AgentEvent>) {

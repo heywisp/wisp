@@ -190,7 +190,7 @@ impl Agent {
                 event,
                 ..
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 PreTurn::Cancelled
             }
             InTurn::Failed {
@@ -198,7 +198,7 @@ impl Agent {
                 event,
                 ..
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 PreTurn::Ready
             }
             InTurn::Failed {
@@ -206,7 +206,7 @@ impl Agent {
                 message,
                 event,
             } => {
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 self.ended_on(rerun.trigger, rerun.fit);
                 PreTurn::Ended(kind.turn_kind().unwrap_or(ErrorKind::Other), message)
             }

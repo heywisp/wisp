@@ -1239,7 +1239,7 @@ impl Agent {
         let event = self
             .compaction_failed(failure, &Spent::default(), events)
             .await;
-        emit(events, event).await;
+        self.publish_event(events, event).await;
     }
 
     async fn compaction_failed(
@@ -1401,7 +1401,7 @@ impl Agent {
                     answers: Some(request),
                 };
                 let event = self.compaction_failed(failure, &spent, events).await;
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 None
             }
             fresh => fresh.fresh(),
@@ -2301,7 +2301,7 @@ impl Agent {
                     answers: None,
                 };
                 let event = self.compaction_failed(failure, &spent, events).await;
-                emit(events, event).await;
+                self.publish_event(events, event).await;
                 return if cancelled {
                     SwitchRun::Cancelled
                 } else {

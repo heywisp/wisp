@@ -12,6 +12,7 @@ use wisp_tool_text::output::{
 use crate::agent::not_run_text;
 use crate::call::result_text;
 use crate::plugin::hooks::points::AFTER_TOOL;
+use crate::session::hook_blocked_tool_fields;
 use crate::tool::question::{self, INTERRUPTED};
 use crate::workspace::shorten_path;
 
@@ -198,6 +199,7 @@ fn repaired(
     call: &(String, String),
     facts: Option<&Facts<'_>>,
     context: &Context<'_>,
+    hook_block: Option<&str>,
 ) -> RepairedCall {
     let (call_id, tool) = call;
     let masked = facts
@@ -219,15 +221,18 @@ fn repaired(
         return made(NOT_RUN.to_owned(), true);
     };
     if let Some(finished) = &facts.finished
-        && let Some(result) = if masked {
-            finished.result.or(facts.hooked)
-        } else {
-            facts.hooked.or(finished.result)
-        }
+        && let Some(result) = hook_block.or_else(|| {
+            let saved = if masked {
+                finished.result.or(facts.hooked)
+            } else {
+                facts.hooked.or(finished.result)
+            };
+            saved.map(String::as_str)
+        })
     {
         return RepairedCall {
             attachments: finished.attachments.to_vec(),
-            ..made(result.clone(), finished.outcome.is_error())
+            ..made(result.to_owned(), finished.outcome.is_error())
         };
     }
     if facts.finished.is_none()
@@ -293,10 +298,40 @@ pub fn repair_calls(
     calls: &[(String, String)],
     context: &Context<'_>,
 ) -> Vec<RepairedCall> {
+    repair_calls_with_hooks(records, calls, context)
+        .into_iter()
+        .map(|(call, _)| call)
+        .collect()
+}
+
+pub(crate) fn repair_calls_with_hooks(
+    records: &[LogRecord],
+    calls: &[(String, String)],
+    context: &Context<'_>,
+) -> Vec<(RepairedCall, bool)> {
     let facts = facts(records, calls);
     calls
         .iter()
-        .map(|call| repaired(call, facts.get(call.0.as_str()), context))
+        .map(|call| {
+            let facts = facts.get(call.0.as_str());
+            let hook_block = facts
+                .and_then(|facts| facts.finished.as_ref())
+                .and_then(|finished| {
+                    let (message, result) = hook_blocked_tool_fields(
+                        finished.outcome,
+                        finished.result.map(String::as_str),
+                    );
+                    if finished.result.is_some() {
+                        result
+                    } else {
+                        message
+                    }
+                });
+            (
+                repaired(call, facts, context, hook_block),
+                hook_block.is_some(),
+            )
+        })
         .collect()
 }
 

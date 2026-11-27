@@ -14,7 +14,9 @@ use crate::agent::state_event;
 use crate::provider::{forms, quiet_end};
 use crate::secrets::scan::{os_detection_home, scrub_todos};
 use crate::session::mirror::live_event;
-use crate::session::{Redactions, held};
+use crate::session::{
+    REDACTED, Redactions, compaction_terminal_message, held, hook_compaction_error_kind,
+};
 use crate::tool::Toolbox;
 
 pub(crate) fn replayed(event: &LogEvent) -> Option<(u64, AgentEvent)> {
@@ -138,9 +140,10 @@ struct Replay<'a> {
     todos: Vec<TodoItem>,
     home: Option<&'a Path>,
     redactions: Redactions,
+    compaction_failures: BTreeMap<u64, Vec<(ErrorKind, &'a str)>>,
 }
 
-impl Replay<'_> {
+impl<'a> Replay<'a> {
     fn flush_end(&mut self) {
         self.out.extend(self.step_end.take());
     }
@@ -291,7 +294,23 @@ impl Replay<'_> {
     fn ended(&mut self, turn: u64, mut outcome: TurnOutcome, stats: wisp_protocol::TurnStats) {
         self.flush_end();
         self.citations.clear();
-        if let TurnOutcome::Error { offer, .. } = &mut outcome {
+        let compaction_failures = self.compaction_failures.remove(&turn);
+        if let TurnOutcome::Error {
+            kind,
+            offer,
+            message,
+            ..
+        } = &mut outcome
+        {
+            if message != REDACTED
+                && compaction_failures.is_some_and(|failures| {
+                    failures.into_iter().any(|(error, earlier)| {
+                        error == *kind && same_compaction_reason(earlier, message)
+                    })
+                })
+            {
+                *message = compaction_terminal_message(std::mem::take(message));
+            }
             *offer = self
                 .offer
                 .as_ref()
@@ -314,12 +333,25 @@ impl Replay<'_> {
         }
     }
 
-    fn event(&mut self, record_index: usize, event: &LogEvent) {
+    fn event(&mut self, record_index: usize, event: &'a LogEvent) {
         match event {
             LogEvent::SessionStarted { model, .. } | LogEvent::SettingsChanged { model, .. } => {
                 self.model.clone_from(model);
             }
             LogEvent::TurnStarted { model, .. } => self.turn_model.clone_from(model),
+            LogEvent::CompactionFailed {
+                turn: Some(turn),
+                kind,
+                message,
+                ..
+            } => {
+                if let Some(kind) = hook_compaction_error_kind(kind) {
+                    self.compaction_failures
+                        .entry(*turn)
+                        .or_default()
+                        .push((kind, message));
+                }
+            }
             _ => {}
         }
         match event {
@@ -729,6 +761,7 @@ impl Replay<'_> {
                 self.inputs = Inputs::read(run_of(records, index));
                 self.accepted.clear();
                 self.delivered.clear();
+                self.compaction_failures.clear();
                 self.out.push(AgentEvent::SessionResumed {
                     turns: self.turn,
                     moved: Vec::new(),
@@ -744,8 +777,35 @@ impl Replay<'_> {
                 items: Vec::new(),
             });
         }
+        for event in &mut self.out {
+            if let Some(audit) = crate::session::agent_hook_audit(event) {
+                audit.scrub(self.home, &self.redactions);
+            }
+        }
         self.out
     }
+}
+
+fn same_compaction_reason(earlier: &str, terminal: &str) -> bool {
+    let Some((prefix, tail)) = terminal.split_once(REDACTED) else {
+        return earlier == terminal;
+    };
+    let (middle, suffix) = tail
+        .rsplit_once(REDACTED)
+        .map_or((None, tail), |(middle, suffix)| (Some(middle), suffix));
+    let Some(mut available) = earlier
+        .strip_prefix(prefix)
+        .and_then(|earlier| earlier.strip_suffix(suffix))
+    else {
+        return false;
+    };
+    for literal in middle.into_iter().flat_map(|middle| middle.split(REDACTED)) {
+        let Some((_, rest)) = available.split_once(literal) else {
+            return false;
+        };
+        available = rest;
+    }
+    true
 }
 
 fn only_client_owned(changes: &[LoggedChange]) -> bool {
@@ -795,6 +855,7 @@ pub(crate) fn transcript_with_home(
         todos: Vec::new(),
         home,
         redactions: held(),
+        compaction_failures: BTreeMap::new(),
     }
     .run()
 }
