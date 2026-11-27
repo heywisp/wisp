@@ -1,4 +1,6 @@
-use wisp_plugin_api::host::{Facts, Fill};
+use std::sync::Arc;
+
+use wisp_plugin_api::host::{Facts, Fill, Todo};
 use wisp_plugin_api::pricing::SpendTotals;
 use wisp_protocol::AgentEvent;
 use wisp_tool_text::DATA_BLOCK;
@@ -56,6 +58,7 @@ impl Agent {
             gate: self.gate.clone(),
             environment: self.environment_facts(),
             terminal: self.terminal.map(crate::jobs::screen::api_size),
+            todos: self.snapshot_todos(),
             usage_accounts: self
                 .account_basics()
                 .into_iter()
@@ -64,6 +67,27 @@ impl Agent {
             usage_cache: self.plan_usage.clone(),
             no_rename: self.no_rename(),
         }
+    }
+
+    fn snapshot_todos(&self) -> Arc<[Todo]> {
+        if !self.has_todos() {
+            return Arc::from([]);
+        }
+        self.todos
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let origin = self.todos_provenance.get(i).copied().unwrap_or_default();
+                let mut item = convert::todo_to_api(item);
+                if !origin.text {
+                    item.text = crate::session::REDACTED.to_owned();
+                }
+                if item.section.is_some() && !origin.section {
+                    item.section = Some(crate::session::REDACTED.to_owned());
+                }
+                item
+            })
+            .collect()
     }
 
     fn plugin_capabilities(&self) -> Vec<String> {

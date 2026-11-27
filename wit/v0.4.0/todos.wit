@@ -5,4 +5,5 @@ interface todos {
   use wisp:plugin/todos@0.1.0.{todo-status};
   record todo { text: string, status: todo-status, section: option<string> }
   replace: func(items: list<todo>, ctx: borrow<call-context>) -> result<_, string>;
+  checklist: func() -> list<todo>;
 }

@@ -160,9 +160,7 @@ async fn a_compact_by_wisps_engine_hands_its_summary() {
     let calls = Calls::default();
     let store = MemoryStore::default();
     let provider = scripted(vec![answer("Hello.", 1_000), answer(WRITTEN, 60_000)]);
-    let agent = logged(provider, &store).with_model_settings(models(
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    ));
+    let agent = logged(provider, &store).with_model_settings(models(WISP));
     let mut live = Live::start(heard(agent, &calls).await);
     assert!(completed(&live.turn("u1", "first").await));
     live.compact(2, None).await;

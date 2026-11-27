@@ -310,6 +310,8 @@ fn pick_keeps_each_match_by_reference_and_by_value() {
     assert_eq!(owned, ["a", "b"]);
 }
 
+pub(crate) const WISP: &str = "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n";
+
 pub(crate) fn models(config: &str) -> ModelSettings {
     ModelSettings::new(
         ModelTable::shipped().unwrap(),

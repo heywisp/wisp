@@ -148,9 +148,7 @@ async fn wisps_head_reads_the_running_processes_when_it_is_built_not_at_the_last
         answer("Hello.", 1_000),
         Step::from(script).gated(&gate),
     ]);
-    let agent = logged(provider, &store).with_model_settings(models(
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    ));
+    let agent = logged(provider, &store).with_model_settings(models(WISP));
     if !background(&agent, "c1", &wait_for("go"), &dir.root) {
         return;
     }

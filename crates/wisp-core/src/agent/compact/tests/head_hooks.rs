@@ -60,9 +60,7 @@ async fn resumed(store: &MemoryStore, provider: Arc<Fake>, calls: &Calls) -> Age
     let log = SessionLog::continuing(Box::new(store.clone()), "s1", seq);
     let agent = Agent::new(provider, default_session())
         .with_log(log, log_context())
-        .with_model_settings(models(
-            "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-        ));
+        .with_model_settings(models(WISP));
     heard_by(agent, &head_body(), noting(), calls)
         .await
         .resume(&records, 0)

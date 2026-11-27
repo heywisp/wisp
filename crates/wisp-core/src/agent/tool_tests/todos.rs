@@ -2,6 +2,7 @@ use wisp_plugin_todos::NAME;
 use wisp_protocol::{RequestId, RewindPoint, TodoItem, TodoStatus};
 
 use super::*;
+use crate::agent::testing::todo_item as item;
 
 fn checklisting(provider: Arc<Fake>, env: &Env) -> Agent {
     Agent::new(provider, default_session())
@@ -54,14 +55,6 @@ fn resume_into(
         .with_log(log, log_context())
         .resume(records, 0)
         .unwrap()
-}
-
-fn item(text: &str, status: TodoStatus) -> TodoItem {
-    TodoItem {
-        text: text.to_owned(),
-        status,
-        section: None,
-    }
 }
 
 fn first_list() -> Vec<TodoItem> {

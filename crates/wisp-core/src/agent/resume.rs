@@ -689,9 +689,7 @@ impl Agent {
             })
             .count();
         self.outputs = u32::try_from(outputs).unwrap_or(u32::MAX);
-        if self.has_todos() {
-            self.todos.clone_from(&logged.todos);
-        }
+        self.restore_todos(&logged.todos, &logged.todos_provenance);
         self.posted.clone_from(&logged.posted);
         if let (Some(env), Some(path)) = (&mut self.tools, &logged.tool_cwd) {
             env.cwd = Some(PathBuf::from(path));

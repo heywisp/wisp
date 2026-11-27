@@ -502,9 +502,7 @@ fn wisp_engine(provider: &Arc<Fake>) -> Agent {
     };
     Agent::new(provider.clone(), default_session())
         .with_retry_policy(policy)
-        .with_model_settings(models(
-            "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-        ))
+        .with_model_settings(models(WISP))
 }
 
 #[tokio::test]

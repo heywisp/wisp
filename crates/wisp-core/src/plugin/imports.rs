@@ -56,6 +56,7 @@ pub enum Import {
     JobsWhich,
     JobsCapture,
     TodosReplace,
+    TodosChecklist,
     AgentsSpawnAgent,
     AgentsListAgents,
     AgentsReport,
@@ -124,7 +125,7 @@ pub enum Inside {
     NeedsCall,
 }
 
-pub const ALL: [Import; 110] = [
+pub const ALL: [Import; 111] = [
     Import::SessionCurrent,
     Import::WorkspaceRoot,
     Import::WorkspaceHome,
@@ -177,6 +178,7 @@ pub const ALL: [Import; 110] = [
     Import::JobsWhich,
     Import::JobsCapture,
     Import::TodosReplace,
+    Import::TodosChecklist,
     Import::AgentsSpawnAgent,
     Import::AgentsListAgents,
     Import::AgentsReport,
@@ -292,6 +294,7 @@ impl Import {
             Self::JobsWhich => "jobs.which",
             Self::JobsCapture => "jobs.capture",
             Self::TodosReplace => "todos.replace",
+            Self::TodosChecklist => "todos.checklist",
             Self::AgentsSpawnAgent => "agents.spawn-agent",
             Self::AgentsListAgents => "agents.list-agents",
             Self::AgentsReport => "agents.report",
@@ -427,6 +430,7 @@ impl Import {
             | Self::PrivateFilesChange
             | Self::ProjectKey
             | Self::WorkspaceFactsTerminal
+            | Self::TodosChecklist
             | Self::JobNewsOpening
             | Self::PointsFire
             | Self::HttpFetch
@@ -498,6 +502,7 @@ impl Import {
             | Self::McpRemove
             | Self::QuestionsPost
             | Self::QuestionsWithdraw
+            | Self::TodosChecklist
             | Self::MediaSlices => "0.4.0",
             Self::IndexEntries
             | Self::IndexOpen
@@ -542,7 +547,10 @@ impl Import {
                 Inside::Quiet
             }
             None if caller.describing
-                && matches!(self, Self::ProjectKey | Self::SecretCheckCheck) =>
+                && matches!(
+                    self,
+                    Self::ProjectKey | Self::SecretCheckCheck | Self::TodosChecklist
+                ) =>
             {
                 Inside::Unavailable
             }

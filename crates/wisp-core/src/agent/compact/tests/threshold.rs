@@ -20,7 +20,6 @@ const GATE: &str = "aa/gate";
 pub(super) const KEEP: &str = "Keep the plan.";
 const LOW: &str = "[models.\"claude-opus-5-5\"]\ncompact_at = 2000\n";
 const TINY: &str = "[models.\"claude-opus-5-5\"]\ncompact_at = 10\n";
-const WISP: &str = "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n";
 const WISP_LOW: &str =
     "[models.\"claude-opus-5-5\"]\ncompact_at = 2000\nnative_compaction = false\n";
 const SHORT: &str = "A short summary.";

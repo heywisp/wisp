@@ -22,9 +22,7 @@ pub(super) fn off(provider: &Arc<Fake>, store: &MemoryStore) -> Agent {
 }
 
 pub(super) fn wisp_off(provider: &Arc<Fake>, store: &MemoryStore) -> Agent {
-    off(provider, store).with_model_settings(models(
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    ))
+    off(provider, store).with_model_settings(models(WISP))
 }
 
 fn leads(body: &Value) -> bool {
@@ -863,9 +861,7 @@ async fn fallback_marks(native: bool) -> (usize, Vec<(usize, usize, String)>) {
     let agent = if native {
         off(&provider, &store)
     } else {
-        off(&provider, &store).with_model_settings(models(
-            "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-        ))
+        off(&provider, &store).with_model_settings(models(WISP))
     };
     let mut live = Live::start(agent);
     three_turns(&mut live).await;
@@ -1462,9 +1458,7 @@ fn turns_are_kept_only_on_the_native_engine_and_the_same_model_outside_a_switch(
     agent.compaction.overflow.switching = true;
     assert!(!agent.keeps_turns_from(2));
     agent.compaction.overflow.switching = false;
-    let agent = agent.with_model_settings(models(
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    ));
+    let agent = agent.with_model_settings(models(WISP));
     assert!(!agent.keeps_turns_from(2));
 }
 
@@ -1496,9 +1490,7 @@ fn answered(id: &str) -> Message {
 fn stepping(native: bool) -> Agent {
     let mut agent = Agent::new(scripted(vec![]), default_session());
     if !native {
-        agent = agent.with_model_settings(models(
-            "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-        ));
+        agent = agent.with_model_settings(models(WISP));
     }
     agent.history = vec![
         Message::user_text("first"),

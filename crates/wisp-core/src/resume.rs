@@ -18,6 +18,7 @@ use wisp_protocol::{
 
 use crate::agent::add_usage;
 use crate::agent::question::{Posted, PostedFold};
+use crate::agent::todo_provenance::{TodoFold, TodoProvenance};
 use crate::plugin::hooks::points::USER_INPUT;
 use crate::provider::Feature;
 use crate::provider::forms::is_thinking;
@@ -373,6 +374,7 @@ pub struct LoggedSession {
     pub started_tools: Vec<String>,
     pub tool_cwd: Option<String>,
     pub todos: Vec<wisp_protocol::TodoItem>,
+    pub(crate) todos_provenance: Vec<TodoProvenance>,
     pub(crate) posted: Option<Posted>,
     pub rendered: BTreeMap<String, usize>,
     pub unreadable: BTreeMap<String, usize>,
@@ -478,12 +480,16 @@ impl LoggedSession {
             .map(|r| (r.seq, &r.event))
             .collect();
         let masked = rewind_mask(&keyed).map_err(|e| e.to_string())?;
+        let mut todos = TodoFold::default();
         for ((index, record), masked) in records
             .iter()
             .map(Borrow::<LogRecord>::borrow)
             .enumerate()
             .zip(masked)
         {
+            if !masked {
+                todos.see(&record.event);
+            }
             if index != start {
                 fold.apply(index, record, masked);
             }
@@ -494,7 +500,8 @@ impl LoggedSession {
             first_at: first.at.clone(),
             last_at: last.at.clone(),
             ended: matches!(last.event, LogEvent::SessionEnded { .. }),
-            todos: wisp_protocol::todos::checklist(records.iter().map(Borrow::<LogRecord>::borrow)),
+            todos: todos.todos,
+            todos_provenance: todos.provenance,
             ..fold.finish()
         })
     }
@@ -820,6 +827,7 @@ impl Fold {
                 started_tools: Vec::new(),
                 tool_cwd: None,
                 todos: Vec::new(),
+                todos_provenance: Vec::new(),
                 posted: None,
                 rendered: BTreeMap::new(),
                 unreadable: BTreeMap::new(),

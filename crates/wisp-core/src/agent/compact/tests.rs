@@ -33,8 +33,8 @@ use crate::provider::{Provider, ProviderError, Thread, reply_text};
 use crate::session::{MemoryStore, Redactions, SessionLog, SessionStore};
 use crate::settings::host::{HostError, SavedFile, SavedRead, SettingsHost};
 use crate::test_guard::{
-    continued, log_context, log_events, models, pick, server_error, stored, until, until_event,
-    within,
+    WISP, continued, log_context, log_events, models, pick, server_error, stored, until,
+    until_event, within,
 };
 use wisp_plugin_compaction::{ATTACHED_LEFT, CUT_OFF_INTRO, SUMMARY_INSTRUCTION};
 use wisp_tool_text::STEER_NOTE;
@@ -42,6 +42,15 @@ use wisp_tool_text::compaction::INSTRUCTIONS_LINE;
 
 const SUMMARY: &str = "So far: a greeting.";
 const WRITTEN: &str = "## Goal and standing instructions\nSay hello.\n\n## Decisions\nNone yet.\n\n## State of the work\nDone: the greeting.\n\n## Files, branches and artefacts\nNone.\n\n## Commands, errors and fixes\nNone.\n\n## Open questions\nNone.";
+
+fn temp_workspace() -> crate::workspace::Workspace {
+    let dir = std::env::temp_dir();
+    crate::workspace::Workspace {
+        root: dir.clone(),
+        home: None,
+        temp: dir,
+    }
+}
 
 mod attachments;
 mod auto;
@@ -564,9 +573,7 @@ async fn nothing_to_compact_is_refused_before_a_turn_and_right_after_a_compactio
 #[tokio::test]
 async fn a_model_without_native_compaction_compacts_with_wisps_engine() {
     let provider = scripted(vec![answer("Hello.", 1_000), answer(WRITTEN, 60_000)]);
-    let agent = Agent::new(provider.clone(), default_session()).with_model_settings(models(
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    ));
+    let agent = Agent::new(provider.clone(), default_session()).with_model_settings(models(WISP));
     let mut live = Live::start(agent);
     live.turn("u1", "first").await;
     let done = live.compact(2, None).await;
@@ -1414,9 +1421,7 @@ fn bad_request() -> Step {
 }
 
 fn wisp_engine(provider: &Arc<Fake>, store: &MemoryStore) -> Agent {
-    logged(provider.clone(), store).with_model_settings(models(
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    ))
+    logged(provider.clone(), store).with_model_settings(models(WISP))
 }
 
 fn ends_of(store: &MemoryStore, id: u32) -> Vec<ProcessEnd> {

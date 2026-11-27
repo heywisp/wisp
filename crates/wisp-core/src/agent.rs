@@ -96,11 +96,13 @@ mod switches;
 #[cfg(test)]
 pub(crate) mod testing;
 mod threads;
+pub(crate) mod todo_provenance;
 mod tool_changes;
 pub mod view;
 mod voice;
 mod withdraw;
 use compact::overflow::Recovery;
+use todo_provenance::{TodoProvenance, todo_provenance, visible_strings};
 
 use crate::provider::forms::{server_call, server_result};
 use child::AgentsCommand;
@@ -689,11 +691,20 @@ struct Failure {
     searches: u64,
 }
 
-struct Call {
-    forwarded: bool,
+struct FoundCall {
+    block: usize,
     id: String,
     name: String,
     input: Value,
+    model_visible: bool,
+}
+
+struct Call {
+    forwarded_input: Option<Value>,
+    id: String,
+    name: String,
+    input: Value,
+    model_visible: bool,
     prepared: Result<Prepared, String>,
 }
 
@@ -888,6 +899,7 @@ pub struct Agent {
     sections: sections::SectionState,
     outputs: u32,
     todos: Vec<TodoItem>,
+    todos_provenance: Vec<TodoProvenance>,
     todos_unannounced: bool,
     grace: Duration,
     file_cap: u64,
@@ -1047,6 +1059,7 @@ impl Agent {
             sections: sections::SectionState::default(),
             outputs: 0,
             todos: Vec::new(),
+            todos_provenance: Vec::new(),
             todos_unannounced: false,
             grace: CANCEL_GRACE,
             file_cap: FILE_CAP,
@@ -4045,7 +4058,7 @@ impl Agent {
                 message.indices.clear();
             }
             let echoed = self.provider().echoed(&message.content, &earlier);
-            let found: Vec<(usize, String, String, Value)> = echoed
+            let found = echoed
                 .iter()
                 .filter_map(|block| {
                     let position = message
@@ -4054,7 +4067,13 @@ impl Agent {
                         .position(|b| std::ptr::eq(b, *block))?;
                     let index = message.indices.get(position).copied().unwrap_or(position);
                     let (id, name, input) = tool_call(block)?;
-                    Some((index, id.to_owned(), name.to_owned(), input.into_owned()))
+                    Some(FoundCall {
+                        block: index,
+                        id: id.to_owned(),
+                        name: name.to_owned(),
+                        input: input.into_owned(),
+                        model_visible: matches!(block, ContentBlock::ToolUse { .. }),
+                    })
                 })
                 .collect();
             let stop_reason = message.stop_reason.clone();
@@ -4261,7 +4280,7 @@ impl Agent {
     fn request_calls<'a>(
         &'a mut self,
         step: u32,
-        found: Vec<(usize, String, String, Value)>,
+        found: Vec<FoundCall>,
         model: &'a str,
         events: &'a mpsc::Sender<AgentEvent>,
     ) -> Pin<Box<impl Future<Output = Vec<Call>> + 'a>> {
@@ -4295,13 +4314,20 @@ impl Agent {
     async fn request_calls_unboxed(
         &mut self,
         step: u32,
-        found: Vec<(usize, String, String, Value)>,
+        found: Vec<FoundCall>,
         model: &str,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Vec<Call> {
         self.follow_servers(events).await;
         let mut calls = Vec::with_capacity(found.len());
-        for (block, id, name, input) in found {
+        for FoundCall {
+            block,
+            id,
+            name,
+            input,
+            model_visible,
+        } in found
+        {
             let sent = self.track().sent_search;
             let caller = crate::plugin::caller::Caller::read_only_agent();
             let forwarded = caller
@@ -4402,10 +4428,11 @@ impl Agent {
             };
             self.emit(events, event).await;
             calls.push(Call {
-                forwarded: is_forwarded,
+                forwarded_input: is_forwarded.then_some(run_input),
                 id,
                 name: run_name,
-                input: run_input,
+                input,
+                model_visible,
                 prepared,
             });
         }
@@ -5228,7 +5255,8 @@ impl Agent {
         } else {
             halt.cloned()
         };
-        let mut input = call.input.clone();
+        let original_run_input = call.forwarded_input.as_ref().unwrap_or(&call.input);
+        let mut input = original_run_input.clone();
         let mut finished = match (not_run, call.prepared) {
             (Some(reason), _) => {
                 let text = not_run_text(&reason);
@@ -5248,7 +5276,12 @@ impl Agent {
                 }
                 Ok((cwd, note)) => match self
                     .before_tool(
-                        (&call.id, &call.name, &call.input, call.forwarded),
+                        (
+                            &call.id,
+                            &call.name,
+                            original_run_input,
+                            call.forwarded_input.is_some(),
+                        ),
                         prepared,
                         commands,
                         events,
@@ -5256,7 +5289,7 @@ impl Agent {
                     .await
                 {
                     hooks::Before::Settled(finished) => {
-                        input = call.input.clone();
+                        input = original_run_input.clone();
                         finished
                     }
                     hooks::Before::Run(final_input, prepared) => {
@@ -5324,6 +5357,8 @@ impl Agent {
         self.emit(events, event).await;
         if let Some(items) = todos {
             self.todos.clone_from(&items);
+            let visible = call.model_visible.then(|| visible_strings(&call.input));
+            self.todos_provenance = todo_provenance(&items, visible.as_ref());
             let updated = AgentEvent::TodosUpdated {
                 call_id: Some(call.id.clone()),
                 items,

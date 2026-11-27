@@ -14,7 +14,8 @@ use wisp_protocol::plan_usage::{PlanUsage, PlanUsageError};
 use wisp_protocol::{
     AgentEvent, Billing, CacheTtl, ClientCommand, ContentBlock, ErrorDetail, ErrorKind,
     FailurePhase, FailureSource, HistoryChange, ImageData, InputTransformation, Message,
-    RetryClass, SessionConfig, StopReason, TurnOutcome, Usage, WithdrawnAttachment,
+    RetryClass, SessionConfig, StopReason, TodoItem, TodoStatus, TurnOutcome, Usage,
+    WithdrawnAttachment,
 };
 
 use crate::agent::tests::{start, usage};
@@ -29,6 +30,14 @@ use crate::provider::{
 use crate::session::{MemoryStore, REDACTED, SessionStore};
 use crate::test_guard::{self, pick, search_use, within};
 use crate::tool::ToolSpec;
+
+pub(super) fn todo_item(text: &str, status: TodoStatus) -> TodoItem {
+    TodoItem {
+        text: text.to_owned(),
+        status,
+        section: None,
+    }
+}
 
 pub(crate) type Script = Vec<Result<ProviderEvent, ProviderError>>;
 

@@ -12,7 +12,6 @@ use crate::test_support::rooted::{self, Inputs, Logs, Rooted};
 
 const NOTE: &str = "The fixture rosette is cobalt.";
 const REPLACED: &str = "The fixture rosette is vermilion.";
-const WISP: &str = "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n";
 
 fn remember(action: &str, name: &str, fact: Option<&str>) -> Value {
     let mut input = json!({"action":action,"scope":"you","name":name});
@@ -23,10 +22,7 @@ fn remember(action: &str, name: &str, fact: Option<&str>) -> Value {
 }
 
 fn calling(id: &str, name: &str, input: Value, tokens: u64) -> Step {
-    let mut script = vec![start(tokens, 0)];
-    script.extend(tool_use(0, id, name, &[&input.to_string()]));
-    script.extend(finish(StopReason::ToolUse, tokens, 0, 40));
-    Step::from(script)
+    super::attachments::named_call_with(id, name, input, tokens, 40)
 }
 
 pub(in crate::agent) fn tools(memory: bool) -> Tools {

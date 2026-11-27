@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 pub mod agents;
 pub mod chat;
 pub mod code;
@@ -26,4 +28,20 @@ pub const STEER_NOTE: &str = "Sent while working: the user wrote the message jus
 
 pub fn flat(text: &str) -> String {
     text.replace('\n', "^J").replace('\t', "^I")
+}
+
+pub fn escape_xml(text: &str) -> String {
+    let mut out = String::new();
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            ch if ch.is_control() || matches!(ch, '\u{2028}' | '\u{2029}') => {
+                let _ = write!(out, "\\u{{{:x}}}", u32::from(ch));
+            }
+            ch => out.push(ch),
+        }
+    }
+    out
 }

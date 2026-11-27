@@ -66,7 +66,7 @@ To resolve world 0.3.0, tools load its three folders into one `Resolve`, oldest 
 | `private-files.wit` | `interface private-files`: bounded private data reads and conditional writes under the plugin data root (Linux and macOS) |
 | `secret-check.wit` | `interface secret-check`: synchronous `check(text) -> verdict`, either `safe` or `refused` |
 | `usage.wit` | `interface usage`: `usage-state`, `account-usage` and the synchronous read `accounts()`; windows are 0.2.0's `limit-window` |
-| `todos.wit` | `interface todos`: `todo` (`text`, `status`, optional `section`), reusing 0.1.0's `todo-status` and `call-context`, and `replace(items, ctx)` |
+| `todos.wit` | `interface todos`: `todo` (`text`, `status`, optional `section`), reusing 0.1.0's `todo-status` and `call-context`, `replace(items, ctx)`, and read-only `checklist()` |
 | `tools.wit` | `interface types`: `slice-kind`, `page-slice`, `second-slice`, `file-slice`, `attachment` with optional `slice`, and `tool-run` using that attachment; `interface tools`: 0.3.0's tool functions with the new `tool-run` |
 | `world.wit` | `world plugin`: replaces the `media@0.1.0` import and the `tools@0.3.0` export with their 0.4.0 versions, retains the rest of the 0.3.0 world, and adds `chat`, `usage`, `mcp`, `manage`, `model`, `project`, `todos`, `questions`, `secret-check` and `private-files`; both versions of `todos` remain imported |
 
@@ -423,7 +423,7 @@ The bundled `workspace` plugin's `workspace/terminal` section (`lead`, after `wo
 | `secret` | `plugins/secret` | `ask_secret` (Unix) | On world 0.3.0 for the `secrets` import; types a secret from the user into a running process through the host; the plugin never receives the value |
 | `self-check` | `plugins/self-check` | none | On world 0.2.0 for the `agent` import; the `self-check/worked` and `self-check/review` hooks ask the root to check its work before a turn that ran tools ends, off by default ("The bundled hooks", below). No `[system]` sentence, so installing it adds nothing to any request |
 | `show-diff` | `plugins/show-diff` | `show_diff`, `show_code` | On world 0.3.0 for `show_code`'s code view; `tool-meta.purpose` is `show` |
-| `todos` | `plugins/todos` | `write_todos` (on by default; provides `todos`) | On world 0.4.0. Replaces the agent's checklist through the `todos` host interface; the kernel logs `todos_updated` and emits `TodosUpdated` once the call completes (`docs/tools.md`) |
+| `todos` | `plugins/todos` | `write_todos` (on by default; provides `todos`) | On world 0.4.0. Replaces the agent's checklist through the `todos` host interface; the kernel logs `todos_updated` and emits `TodosUpdated` once the call completes. Its `lead` section `todos/checklist` shows the saved checklist only at compaction heads (`docs/tools.md`) |
 | `shell` | `plugins/shell` | `bash` and `process` (Unix; `process` follows `bash`, and `bash` provides `shell`) | Runs commands through the `jobs` host interface only, with `call` for its working-directory file, `clock` and `workspace` for the paths in results; bash's context line comes from `describe` through `jobs.capture` (`bash --version`) while `shell` is on; `doctor` gives the `bash` row; its `before-turn` hook `processes` words the `<processes>` notice from `job-news.opening` (`docs/tools.md`, "The `<processes>` notice"); `Shell::with_timing` sets the start window and the hand-back quiet for tests |
 | `mcp` | `plugins/mcp` | Tools, prompts and resources from your MCP servers | `/mcp` lists, adds, removes and signs in to servers |
 | `memory` | `plugins/memory` | `remember` | Saves notes for you or this project, and restores them in each context window |
@@ -800,6 +800,10 @@ Inside a slot render:
 - `jobs.all` lists kept processes without probing them, and a job's `info` reads its `hidden` flag and, while the output slot is held, its unread lines without waiting;
 - `spawn`, `adopt` and `todos.replace` get nothing even with a running call's id, and the `agents.*` imports, `agent-rename.rename-agent`, `chat.rename`, `secrets.type-into`, `config.settings` and `accounts.list` refuse;
 - 0.2.0's `http.fetch` answers `not-allowed` and a body's `read` fails.
+
+World 0.4.0's `todos.checklist` returns the agent's saved checklist only while a tool provides `todos`; it returns an empty list in slot and start renders, while describing tools, and in older worlds.
+Only fields that match strings in the original model tool input, or are text from a child’s starting brief, are eligible for the read. Starting headings and other local-only fields and legacy updates without a matching committed tool call become `[redacted]`, preserving status and order.
+Each eligible field that looks like a credential or private identity is replaced in full with `[redacted]`. Live reads mask registered log-only substrings, such as gateway paths or queries, in place. After reopening or rewinding from the log, fields containing `[redacted]` or lacking an exact match in the committed tool input are replaced in full; marker-free text from a child’s starting brief stays eligible. Adjacent refused section names merge under `## [redacted]`. Historic heads replay unchanged.
 
 The `history.view` methods (`said`, `calls`, `log-pointer`, `output-pointer`) are unavailable in both renders: a view exists only inside a strategy's `head` call, which answers them from its snapshot.
 

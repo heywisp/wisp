@@ -469,6 +469,7 @@ pub struct Todo {
 
 pub trait Todos {
     fn replace(&self, items: Vec<Todo>, ctx: &dyn CallContext) -> Result<(), String>;
+    fn checklist(&self) -> Vec<Todo>;
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

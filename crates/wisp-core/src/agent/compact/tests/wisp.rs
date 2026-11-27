@@ -6,8 +6,6 @@ use crate::test_guard::until;
 
 const BIG: u64 = 60_000;
 
-const NO_NATIVE: &str = "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n";
-
 pub(super) fn reply(
     words: Option<&str>,
     call: bool,
@@ -42,7 +40,7 @@ pub(super) fn written(text: &str, input: u64) -> Step {
 }
 
 fn without_native(provider: &Arc<Fake>) -> Agent {
-    Agent::new(provider.clone(), default_session()).with_model_settings(models(NO_NATIVE))
+    Agent::new(provider.clone(), default_session()).with_model_settings(models(WISP))
 }
 
 fn engine_of(event: &AgentEvent) -> Option<CompactionEngine> {
@@ -192,7 +190,7 @@ async fn without_native_compaction_compact_writes_wisps_own_head() {
         written(WRITTEN, BIG),
         answer("Again.", 300),
     ]);
-    let agent = logged(provider.clone(), &store).with_model_settings(models(NO_NATIVE));
+    let agent = logged(provider.clone(), &store).with_model_settings(models(WISP));
     let mut live = Live::start(agent);
     assert!(completed(&live.turn("u1", "first").await));
     let done = live.compact(2, Some("the greeting")).await;
@@ -432,7 +430,7 @@ async fn an_unproven_pair_asks_for_the_summary_with_no_marker() {
         effort: Effort::Xhigh,
         ..default_session()
     };
-    let agent = Agent::new(provider.clone(), session).with_model_settings(models(NO_NATIVE));
+    let agent = Agent::new(provider.clone(), session).with_model_settings(models(WISP));
     let mut live = Live::start(agent);
     live.turn("u1", "first").await;
     live.compact(2, None).await;
@@ -527,7 +525,7 @@ async fn a_summary_missing_a_section_or_no_smaller_swaps_nothing() {
 #[tokio::test]
 async fn a_head_over_half_of_a_low_compact_at_still_swaps() {
     let provider = scripted(vec![answer("Hello.", 1_000), written(WRITTEN, BIG)]);
-    let config = format!("{NO_NATIVE}compact_at = 200\n");
+    let config = format!("{WISP}compact_at = 200\n");
     let agent =
         Agent::new(provider.clone(), default_session()).with_model_settings(models(&config));
     let mut live = Live::start(agent);
@@ -554,7 +552,7 @@ async fn a_summarys_searches_are_part_of_its_cost_and_unpriced_where_nothing_is(
             priced,
         };
         let agent = Agent::new(provider.clone(), default_session())
-            .with_model_settings(models(NO_NATIVE))
+            .with_model_settings(models(WISP))
             .with_connections(vec![connection], vec![], "env");
         let mut live = Live::start(agent);
         live.turn("u1", "first").await;
@@ -873,7 +871,7 @@ async fn a_summary_split_across_text_blocks_is_joined_as_the_transcript_shows_it
         answer("Hello.", 1_000),
         split_reply(&[before, after], BIG),
     ]);
-    let agent = logged(provider.clone(), &store).with_model_settings(models(NO_NATIVE));
+    let agent = logged(provider.clone(), &store).with_model_settings(models(WISP));
     let mut live = Live::start(agent);
     live.turn("u1", "first").await;
     let done = live.compact(2, None).await;
