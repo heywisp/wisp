@@ -1,6 +1,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::time::Instant;
 
+use super::super::tests::{assert_unused, read_file, recorded_args, wslg_host};
 use super::*;
 use crate::scratch::ScratchDir;
 use crate::term::caps::Env;
@@ -62,17 +63,11 @@ impl Fakes {
     }
 
     fn read(&self, file: &str) -> String {
-        std::fs::read_to_string(self.dir.root.join(file)).unwrap_or_default()
+        read_file(&self.dir.root, file)
     }
 
     fn args(&self, tool: &str) -> Vec<Vec<String>> {
-        let all = self.read(&format!("{tool}.args"));
-        let mut calls: Vec<&str> = all.split("--\n").collect();
-        calls.pop();
-        calls
-            .into_iter()
-            .map(|c| c.lines().map(str::to_owned).collect())
-            .collect()
+        recorded_args(&self.dir.root, tool)
     }
 }
 
@@ -206,24 +201,38 @@ fn a_wsl_file_drop_list_goes_through_wslpath() {
 
 #[test]
 fn no_image_gives_its_sentence_after_every_platform_is_asked() {
-    let fakes = Fakes::new("none", &["powershell.exe", "wl-paste"]);
-    fakes.put("powershell.exe.out", b"none");
+    let fakes = Fakes::new("none", &["wl-paste", "xclip"]);
     fakes.put("wl-paste.types", b"text/plain\n");
-    let got = ran(&fakes.setup(&[Native::Windows, Native::Wayland]));
+    let got = ran(&fakes.setup(&[Native::Wayland, Native::X11]));
     assert_eq!(got, Err(Miss::NoImage));
     assert_eq!(got.unwrap_err().sentence(), "No image on the clipboard.");
     assert_eq!(fakes.args("wl-paste").len(), 1);
-    let fakes = Fakes::new("none-x11", &["xclip"]);
-    assert_eq!(ran(&fakes.setup(&[Native::X11])), Err(Miss::NoImage));
+    assert_eq!(fakes.args("xclip").len(), 1);
 }
 
 #[test]
-fn a_missing_powershell_falls_back_to_wl_paste() {
-    let fakes = Fakes::new("fallback", &["wl-paste"]);
-    fakes.put("wl-paste.types", b"image/bmp\n");
-    fakes.put("wl-paste.out", b"BM...");
+fn wslg_does_not_read_display_clipboards_when_powershell_is_missing() {
+    let display_readers = [WAYLAND_READ.program, X11_READ.program];
+    let fakes = Fakes::new("wslg-missing", &display_readers);
+    let setup = Setup {
+        tools: fakes.setup(&[]).tools,
+        ..Setup::current(&wslg_host(&[]))
+    };
     assert_eq!(
-        ran(&fakes.setup(&[Native::Windows, Native::Wayland])),
+        ran(&setup),
+        Err(Miss::Missing(vec!["powershell.exe wasn't found"]))
+    );
+    assert_eq!(text_of(&setup), Text::Empty);
+    assert_unused(&fakes.dir.root, &display_readers, "wslg-missing");
+}
+
+#[test]
+fn a_missing_wayland_reader_falls_back_to_x11() {
+    let fakes = Fakes::new("fallback", &["xclip"]);
+    fakes.put("xclip.types", b"image/bmp\n");
+    fakes.put("xclip.out", b"BM...");
+    assert_eq!(
+        ran(&fakes.setup(&[Native::Wayland, Native::X11])),
         Ok(Found::Image(b"BM...".to_vec()))
     );
 }
@@ -245,8 +254,12 @@ fn a_missing_tool_names_what_to_install() {
             "Couldn't read the clipboard: install pngpaste.",
         ),
         (
-            vec![Native::Windows, Native::Wayland],
-            "Couldn't read the clipboard: powershell.exe wasn't found; install wl-clipboard.",
+            vec![Native::Windows],
+            "Couldn't read the clipboard: powershell.exe wasn't found.",
+        ),
+        (
+            vec![Native::Wayland, Native::X11],
+            "Couldn't read the clipboard: install wl-clipboard; install xclip.",
         ),
     ] {
         let got = ran(&fakes.setup(&natives)).unwrap_err();
@@ -273,7 +286,7 @@ fn over_ssh_nothing_is_run_and_the_hint_names_paths() {
     let env = Env::from_pairs([("SSH_CONNECTION", "1 2 3 4"), ("WAYLAND_DISPLAY", "w")]);
     let host = Host::of(&env, Some("6.18-microsoft-standard-WSL2"), false);
     assert!(host.ssh && host.wsl);
-    assert!(natives(&host).is_empty());
+    assert!(native_routes(&host).is_empty());
     assert!(Setup::current(&host).ssh);
 }
 
@@ -719,12 +732,13 @@ fn the_first_platform_with_a_tool_answers() {
     fakes.put("wl-paste.fail", b"");
     fakes.put("xclip.out", b"from x11");
     assert_eq!(
-        text_of(&fakes.setup(&[Native::Windows, Native::Wayland, Native::X11])),
+        text_of(&fakes.setup(&[Native::Wayland, Native::X11])),
         Text::Empty
     );
     assert!(fakes.args("xclip").is_empty());
+    std::fs::remove_file(fakes.dir.root.join("wl-paste")).unwrap();
     assert_eq!(
-        text_of(&fakes.setup(&[Native::Windows, Native::X11])),
+        text_of(&fakes.setup(&[Native::Wayland, Native::X11])),
         Text::Found("from x11".to_owned())
     );
 }

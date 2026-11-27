@@ -12,7 +12,7 @@ use wisp_render::chrome::ImageTier;
 use wisp_render::text::sanitize;
 use wisp_render::transcript::copy;
 
-use super::{Host, Native, POWERSHELL, Raw, Running, Tools, run_raw, span, utf16le};
+use super::{Host, Native, POWERSHELL, Raw, Running, Tools, native_routes, run_raw, span, utf16le};
 
 pub const SLOW: Duration = Duration::from_millis(300);
 pub const READ_CAP: u64 = MAX_SOURCE_BYTES as u64;
@@ -49,38 +49,13 @@ pub struct Setup {
     pub home: Option<PathBuf>,
 }
 
-pub fn natives(host: &Host) -> Vec<Native> {
-    let mut natives = vec![];
-    if host.ssh {
-        return natives;
-    }
-    if host.wsl {
-        natives.push(Native::Windows);
-    }
-    if host.macos {
-        natives.push(Native::Mac);
-    }
-    if host.wayland {
-        natives.push(Native::Wayland);
-    }
-    if host.x11 {
-        natives.push(Native::X11);
-    }
-    natives
-}
-
 impl Setup {
     pub fn none() -> Setup {
         Setup {
             ssh: false,
             wsl: false,
             natives: vec![],
-            tools: Tools {
-                path: None,
-                powershell: vec![],
-                setsid: None,
-                timeout: super::TIMEOUT,
-            },
+            tools: Tools::none(),
             home: None,
         }
     }
@@ -89,7 +64,7 @@ impl Setup {
         Setup {
             ssh: host.ssh,
             wsl: host.wsl,
-            natives: natives(host),
+            natives: native_routes(host),
             tools: Tools::current(),
             home: std::env::var_os("HOME")
                 .map(PathBuf::from)
@@ -129,9 +104,8 @@ impl Miss {
 
 pub const fn missing_reader(native: Native) -> &'static str {
     match native {
-        Native::Windows => "powershell.exe wasn't found",
+        Native::Windows | Native::Wayland => native.missing(),
         Native::Mac => "install pngpaste",
-        Native::Wayland => "install wl-clipboard",
         Native::X11 => "install xclip",
     }
 }

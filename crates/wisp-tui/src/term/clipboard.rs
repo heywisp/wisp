@@ -160,25 +160,30 @@ pub fn route(host: &Host) -> Route {
     if host.ssh && !host.tmux {
         return Route::Terminal;
     }
-    let mut natives = vec![];
-    if !host.ssh {
-        if host.wsl {
-            natives.push(Native::Windows);
-        }
-        if host.macos {
-            natives.push(Native::Mac);
-        }
-        if host.wayland {
-            natives.push(Native::Wayland);
-        }
-        if host.x11 {
-            natives.push(Native::X11);
-        }
-    }
     Route::Local {
         tmux: host.tmux,
-        natives,
+        natives: native_routes(host),
     }
+}
+
+pub fn native_routes(host: &Host) -> Vec<Native> {
+    if host.ssh {
+        return vec![];
+    }
+    if host.wsl {
+        return vec![Native::Windows];
+    }
+    let mut natives = vec![];
+    if host.macos {
+        natives.push(Native::Mac);
+    }
+    if host.wayland {
+        natives.push(Native::Wayland);
+    }
+    if host.x11 {
+        natives.push(Native::X11);
+    }
+    natives
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -207,6 +212,15 @@ fn executable(path: &Path) -> bool {
 }
 
 impl Tools {
+    pub fn none() -> Tools {
+        Tools {
+            path: None,
+            powershell: vec![],
+            setsid: None,
+            timeout: TIMEOUT,
+        }
+    }
+
     pub fn current() -> Tools {
         Tools::at_wsl_root(&wsl_root())
     }
@@ -886,12 +900,7 @@ impl Clipboard {
                 tmux: false,
                 natives: vec![],
             },
-            tools: Tools {
-                path: None,
-                powershell: vec![],
-                setsid: None,
-                timeout: TIMEOUT,
-            },
+            tools: Tools::none(),
         }
     }
 
