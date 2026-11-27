@@ -34,7 +34,7 @@ impl Server {
     }
 }
 
-async fn read_request(socket: &mut TcpStream) -> Option<String> {
+pub(crate) async fn read_request(socket: &mut TcpStream) -> Option<String> {
     let mut seen = Vec::new();
     let mut buffer = [0u8; 4096];
     loop {

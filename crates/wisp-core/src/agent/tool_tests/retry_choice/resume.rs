@@ -112,6 +112,7 @@ async fn a_failed_first_step_resumed_then_retried_resends_the_message_and_the_st
                     replaces: None,
                     held: false,
                     from: None,
+                    checklist_spans: Vec::new(),
                 };
                 let mut lapsed = records.clone();
                 lapsed.push(accepted);
@@ -499,4 +500,49 @@ async fn ids_withdrawn_by_the_repair_are_free_for_new_messages() {
         assert!(body.contains(text), "{body}");
     }
     again.assert_rebuilds();
+}
+
+#[tokio::test]
+async fn failed_brief_wake_turn_retry_uses_persisted_waiting_mail_revision_across_two_resumes() {
+    use crate::agent::testing::checklist_mail;
+    let canary = "CANARYOpaqueFailedWakeRetry";
+    let task = "A failed waking review task";
+    for restart in [false, true] {
+        crate::session::reset_held_for_test();
+        let mut live = Setup::new(vec![failed(ErrorKind::Server)]).rig();
+        live.agent = live
+            .agent
+            .with_path(wisp_protocol::AgentPath::new("/child"));
+        live.agent
+            .mail_sender()
+            .send(checklist_mail("retry-brief", task, &[canary]))
+            .unwrap();
+        let failed = live.run(Vec::new(), 1).await;
+        assert!(offer_of(&failed).is_some());
+        let before = records(&live.store);
+        let mut fresh = resumed(
+            if restart {
+                Vec::new()
+            } else {
+                vec![done("retried")]
+            },
+            &before,
+        );
+        crate::session::register_secrets([canary.to_owned()]);
+        let seen = fresh.idle(Vec::new()).await;
+        assert!(seen.iter().any(|event| matches!(event, AgentEvent::InputAccepted { text, .. } if text.contains("[redacted]") && !text.contains(canary))));
+        let after = records(&fresh.store);
+        assert!(after.iter().any(|row| matches!(&row.event, LogEvent::InputRevised { turn: None, inputs } if inputs[0].text.contains("[redacted]"))));
+        if restart {
+            crate::session::reset_held_for_test();
+            assert!(crate::session::held().is_empty());
+            fresh = resumed(vec![done("retried")], &after);
+        }
+        fresh.run(vec![retry_turn(1, None, 3)], 1).await;
+        let body = fresh.a.texts().pop().unwrap();
+        assert_eq!(body.matches(task).count(), 1, "{body}");
+        assert!(body.contains("[redacted]") && !body.contains(canary));
+        assert!(records(&fresh.store).iter().any(|row| matches!(&row.event, LogEvent::TurnStarted { turn: 2, inputs, .. } if inputs.iter().any(|input| input.text.contains("[redacted]") && !input.text.contains(canary)))));
+        fresh.assert_rebuilds();
+    }
 }

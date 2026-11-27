@@ -3,8 +3,8 @@ use wisp_plugin_api::questions as api_questions;
 use wisp_protocol::log::{LogEvent, LogRecord};
 use wisp_protocol::{
     AgentEvent, Answer, AttachRequestEnd, ImageData, InputId, MailFrom, MailId, MailKind, Question,
-    QuestionEnd, RejectKind, Role, Secret, SecretRequestEnd, answer_refusal, check_answers,
-    check_secret, report_refusal, secret_refusal,
+    QuestionEnd, RejectKind, Secret, SecretRequestEnd, answer_refusal, check_answers, check_secret,
+    report_refusal, secret_refusal,
 };
 
 use super::Agent;
@@ -107,7 +107,7 @@ impl PostedFold {
                         .then(|| (*turn, letter.clone()))
                 });
             }
-            LogEvent::MessageCommitted { turn, message, .. } if message.role == Role::Assistant => {
+            LogEvent::MessageCommitted { turn, .. } => {
                 if let Some((_, letter)) = self.opening.take_if(|(t, _)| t == turn)
                     && self.posted.as_ref().is_some_and(
                         |p| matches!(&p.state, PostedState::Ending(Some(id)) if *id == letter),
@@ -582,7 +582,8 @@ impl Agent {
             wake,
             plugin: None,
         };
-        self.push_letter(id.clone(), from, text, events).await;
+        self.push_letter(id.clone(), from, text, Vec::new(), events)
+            .await;
         id
     }
 

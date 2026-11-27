@@ -40,7 +40,7 @@ async fn hosted_first_open_and_reattach_scrub_cached_checklists_against_current_
         ..SessionView::default()
     };
     let mut script = Script::with(view(vec![checklist(early, home_section)]), 1, |session| {
-        super::build_host(session, Some(PathBuf::from("/opt/wisp-test-home")))
+        super::build_host(session, Some(PathBuf::from("/opt/wisp-test-home")), None)
     })
     .await;
     let connection = script
@@ -84,4 +84,59 @@ async fn hosted_first_open_and_reattach_scrub_cached_checklists_against_current_
     script.events.send(live.clone()).await.unwrap();
     assert_eq!(event(&mut second).await, live);
     script.close(&mut second, false).await;
+}
+
+#[tokio::test]
+async fn hosted_build_host_wires_brief_owners_into_outbound_link_frames() {
+    let canary = "CANARYOpaqueWiredViaBuildHost";
+    let prose = "Keep wired prose
+- [ ] ";
+    let full = format!("{prose}{canary}");
+    let brief = AgentEvent::Agent {
+        agent: AgentPath::new("/missing"),
+        event: Box::new(AgentEvent::InputAccepted {
+            opening: false,
+            id: wisp_protocol::InputId("wired-brief".into()),
+            mode: wisp_protocol::DeliveryMode::Steer,
+            text: full.clone(),
+            images: Vec::new(),
+            replaces: None,
+            held: false,
+            front: false,
+            from: None,
+            checklist_spans: vec![wisp_protocol::TextSpan {
+                start: prose.len(),
+                end: full.len(),
+            }],
+        }),
+    };
+    let provider = wisp_core::provider::anthropic::AnthropicProvider::new(
+        &wisp_core::provider::anthropic::Credential::ApiKey("unused-test-token".into()),
+        "https://example.invalid",
+    )
+    .unwrap();
+    let agent = wisp_core::agent::Agent::new(
+        std::sync::Arc::new(provider),
+        wisp_core::agent::default_session(),
+    );
+    let (commands, _events, task) = wisp_core::agent::spawn(agent);
+    let owners = task.brief_owners();
+    let mut script = Script::with(SessionView::default(), 1, move |session| {
+        super::build_host(session, None, Some(owners.clone()))
+    })
+    .await;
+    let mut link = script.open().await;
+
+    script.events.send(brief.clone()).await.unwrap();
+    assert_eq!(event(&mut link).await, brief);
+
+    register_secrets([canary.to_owned()]);
+    let after = text("still open");
+    script.events.send(brief).await.unwrap();
+    script.events.send(after.clone()).await.unwrap();
+    assert_eq!(event(&mut link).await, after);
+
+    script.close(&mut link, false).await;
+    drop(commands);
+    let _ = task.join().await;
 }

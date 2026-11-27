@@ -329,6 +329,8 @@ impl Agent {
             tools_point: self.view_index(self.tools_point()),
             array: self.array_names(),
             inline_search: self.inline_search_live(self.endpoint, &self.session.model),
+            redactions_generation: None,
+            auth_refresh_spent: false,
         }
     }
 

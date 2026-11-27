@@ -1308,6 +1308,8 @@ mod tests {
             from: None,
             arrival: Some(1),
             note: None,
+            checklist_spans: Vec::new(),
+            revision_unlogged: false,
         });
         let (events, mut received) = mpsc::channel(64);
         for command in [
@@ -1919,6 +1921,7 @@ mod tests {
                 kind: wisp_protocol::MailKind::Report,
                 wake: true,
                 text: "waiting-kernel-mail".to_owned(),
+                checklist_spans: Vec::new(),
             })
             .unwrap();
         root.accept_mail(&events).await;

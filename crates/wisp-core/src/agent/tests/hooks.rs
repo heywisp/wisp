@@ -322,6 +322,7 @@ async fn a_mail_arriving_during_a_hook_is_queued_for_the_next_boundary() {
         kind: wisp_protocol::agents::MailKind::Message,
         wake: true,
         text: "a letter".into(),
+        checklist_spans: Vec::new(),
     })
     .unwrap();
     settle().await;
@@ -1285,6 +1286,8 @@ fn letter(text: &str) -> super::inbox::Input {
             above: true,
             returned: false,
         }),
+        checklist_spans: Vec::new(),
+        revision_unlogged: false,
     }
 }
 

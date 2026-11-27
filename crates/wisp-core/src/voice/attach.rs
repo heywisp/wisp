@@ -25,11 +25,32 @@ pub fn attach(
     mpsc::Receiver<AgentEvent>,
     AudioLane,
 ) {
+    attach_with_task(commands, events, voice, None)
+}
+
+pub fn attach_with_task(
+    commands: mpsc::Sender<ClientCommand>,
+    events: mpsc::Receiver<AgentEvent>,
+    voice: Voice,
+    task: Option<&crate::agent::AgentTask>,
+) -> (
+    mpsc::Sender<ClientCommand>,
+    mpsc::Receiver<AgentEvent>,
+    AudioLane,
+) {
     let (client_commands, command_rx) = mpsc::channel(ROOT_COMMANDS);
     let (client_events, event_rx) = mpsc::channel(ROOT_EVENTS);
     let (up, up_rx) = mpsc::channel(LANE_FRAMES);
     let (down_tx, down) = mpsc::channel(LANE_FRAMES);
-    let service = Service::new(voice, commands, client_events, up_rx, down_tx);
+    let service = Service::new(
+        voice,
+        commands,
+        client_events,
+        up_rx,
+        down_tx,
+        task.map(|task| task.brief_owner.clone()),
+        task.and_then(|task| task.owner_tree.clone()),
+    );
     tokio::spawn(run(service, command_rx, events));
     (client_commands, event_rx, AudioLane { up, down })
 }

@@ -280,6 +280,8 @@ impl OpenAiProvider {
         };
         let this = self.clone();
         let waits = self.waits;
+        let redactions_generation = request.rendering.redactions_generation;
+        let auth_refresh_spent = request.rendering.auth_refresh_spent;
         stream::once(async move {
             let token = match this.credential.access_token().await {
                 Ok(token) => Secret::new(token),
@@ -290,14 +292,19 @@ impl OpenAiProvider {
             };
             let call = this.inference_request(&body, token.expose());
             let open = move |response: reqwest::Response| async move {
-                let response = if this.subscription && response.status().as_u16() == 401 {
+                let response = if this.subscription
+                    && !auth_refresh_spent
+                    && response.status().as_u16() == 401
+                {
                     drop(response);
                     let token = match refresh(token).await {
                         Ok(token) => Secret::new(token),
                         Err(error) => return (Vec::new(), Err(this.authentication_error(error))),
                     };
                     let call = this.inference_request(&body, token.expose());
-                    match super::sse::send(call, waits.first_byte).await {
+                    match super::sse::send(call, waits.first_byte, redactions_generation, true)
+                        .await
+                    {
                         Ok(response) => response,
                         Err(error) => return (Vec::new(), Err(error)),
                     }
@@ -321,7 +328,7 @@ impl OpenAiProvider {
                 machine.request_id = request_id(response.headers());
                 (lead, Ok((response, machine)))
             };
-            super::sse::drive(async { Ok(call) }, open, waits)
+            super::sse::drive(async { Ok(call) }, open, waits, redactions_generation)
         })
         .flatten()
         .boxed()

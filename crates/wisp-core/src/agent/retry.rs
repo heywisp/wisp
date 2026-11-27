@@ -32,6 +32,7 @@ pub(super) fn call_note_input(turn: u64, step: u32) -> LoggedInput {
         text: MALFORMED_CALL_NOTE.to_owned(),
         images: Vec::new(),
         note: None,
+        checklist_spans: Vec::new(),
     }
 }
 

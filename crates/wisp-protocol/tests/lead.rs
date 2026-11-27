@@ -134,6 +134,7 @@ fn a_turn_rebuilds_its_lead_in_the_order_it_was_logged() {
             text: "steer".into(),
             images: Vec::new(),
             note: None,
+            checklist_spans: Vec::new(),
         }],
     };
     let events = [&turn(lead, "hi"), &steer, &reply("ok")];

@@ -598,6 +598,7 @@ fn accepted(id: &InputId, text: &str) -> AgentEvent {
         held: false,
         front: false,
         from: None,
+        checklist_spans: Vec::new(),
     }
 }
 

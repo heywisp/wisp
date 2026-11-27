@@ -520,3 +520,89 @@ fn multibyte_boundaries_and_large_adversarial_inputs_never_panic_or_stall() {
     assert!(contains_secret_or_identity(&mailbox, None));
     assert!(redact_emails(&mailbox) == format!("{mixed}\n{REDACTED}"));
 }
+
+#[test]
+fn scrub_checklist_spans_preserves_prose_handles_multiline_empty_and_fails_closed_on_corrupt_spans()
+{
+    let prose = "café\nChecklist:\n- [ ] sk-CANARYfakekeyintaskprose000\n";
+    let first = "café: use log-only-CANARY here";
+    let second = "second\n- [ ] credential-CANARY";
+    let mut text = format!("{prose}- [ ] {first}\n- [ ] \n- [ ] {second}");
+    let first_start = text.find(first).unwrap();
+    let second_start = text.find(second).unwrap();
+    let mut spans = vec![
+        TextSpan {
+            start: first_start,
+            end: first_start + first.len(),
+        },
+        TextSpan {
+            start: second_start - "\n- [ ] ".len(),
+            end: second_start - "\n- [ ] ".len(),
+        },
+        TextSpan {
+            start: second_start,
+            end: text.len(),
+        },
+    ];
+    assert!(valid_checklist_spans(&text, &spans));
+    assert!(scrub_checklist_spans(
+        &mut text,
+        &mut spans,
+        None,
+        &Redactions::log_only(["log-only-CANARY".to_owned()])
+    ));
+    assert!(text.starts_with(prose));
+    assert_eq!(
+        &text[spans[0].start..spans[0].end],
+        "café: use [redacted] here"
+    );
+    assert_eq!(&text[spans[1].start..spans[1].end], "");
+    assert_eq!(&text[spans[2].start..spans[2].end], second);
+    let credentials = Redactions::new(["credential-CANARY".to_owned()]);
+    assert!(scrub_checklist_spans(
+        &mut text,
+        &mut spans,
+        None,
+        &credentials
+    ));
+    assert_eq!(&text[spans[2].start..spans[2].end], REDACTED);
+    assert!(!scrub_checklist_spans(
+        &mut text,
+        &mut spans,
+        None,
+        &credentials
+    ));
+
+    for mut corrupt in [
+        vec![TextSpan {
+            start: 0,
+            end: usize::MAX,
+        }],
+        vec![TextSpan { start: 4, end: 3 }],
+        vec![TextSpan { start: 0, end: 5 }, TextSpan { start: 2, end: 8 }],
+        vec![TextSpan { start: 1, end: 2 }],
+    ] {
+        let mut raw = "é opaque-CANARY".to_owned();
+        assert!(scrub_checklist_spans(
+            &mut raw,
+            &mut corrupt,
+            None,
+            &credentials
+        ));
+        assert_eq!(raw, REDACTED);
+        assert_eq!(
+            corrupt,
+            [TextSpan {
+                start: 0,
+                end: REDACTED.len()
+            }]
+        );
+        assert!(valid_checklist_spans(&raw, &corrupt));
+        assert!(!scrub_checklist_spans(
+            &mut raw,
+            &mut corrupt,
+            None,
+            &credentials
+        ));
+    }
+}

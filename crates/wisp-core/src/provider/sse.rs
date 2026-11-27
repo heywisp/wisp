@@ -133,7 +133,12 @@ struct Reading<D> {
     started: bool,
 }
 
-pub(crate) fn drive<R, O, F, D>(request: R, open: O, waits: Waits) -> BoxStream<'static, Item>
+pub(crate) fn drive<R, O, F, D>(
+    request: R,
+    open: O,
+    waits: Waits,
+    redactions_generation: Option<u64>,
+) -> BoxStream<'static, Item>
 where
     R: Future<Output = Result<reqwest::RequestBuilder, ProviderError>> + Send + 'static,
     O: FnOnce(reqwest::Response) -> F + Send + 'static,
@@ -145,19 +150,25 @@ where
             stage = match stage {
                 Stage::Done => return None,
                 Stage::Request(request, open) => {
-                    return Some(match request.await {
-                        Ok(call) => (
-                            Ok(ProviderEvent::Sending),
-                            Stage::Send(Box::new(call), open),
-                        ),
-                        Err(error) => (Err(error), Stage::Done),
-                    });
+                    return Some(
+                        match request.await.and_then(|call| {
+                            super::ensure_fresh_redactions(redactions_generation, false)?;
+                            Ok(call)
+                        }) {
+                            Ok(call) => (
+                                Ok(ProviderEvent::Sending),
+                                Stage::Send(Box::new(call), open),
+                            ),
+                            Err(error) => (Err(error), Stage::Done),
+                        },
+                    );
                 }
                 Stage::Send(call, open) => {
-                    let response = match send(*call, waits.first_byte).await {
-                        Ok(response) => response,
-                        Err(error) => return Some((Err(error), Stage::Done)),
-                    };
+                    let response =
+                        match send(*call, waits.first_byte, redactions_generation, false).await {
+                            Ok(response) => response,
+                            Err(error) => return Some((Err(error), Stage::Done)),
+                        };
                     let (lead, opened) = open(response).await;
                     let mut queue: VecDeque<Item> = lead.into_iter().map(Ok).collect();
                     match opened {
@@ -213,11 +224,34 @@ where
     .boxed()
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static BEFORE_HTTP_SEND: std::cell::Cell<Option<Box<dyn FnOnce()>>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn before_http_send() {
+    if let Some(before) = BEFORE_HTTP_SEND.take() {
+        before();
+    }
+}
+
 pub(crate) async fn send(
     call: reqwest::RequestBuilder,
     first_byte: Duration,
+    redactions_generation: Option<u64>,
+    after_auth_refresh: bool,
 ) -> Result<reqwest::Response, ProviderError> {
-    match tokio::time::timeout(first_byte, call.send()).await {
+    let request = match redactions_generation {
+        Some(generation) => crate::session::send_if_generation_current(generation, call, |call| {
+            #[cfg(test)]
+            before_http_send();
+            call.send()
+        })
+        .map_err(|_| super::stale_redactions(after_auth_refresh))?,
+        None => call.send(),
+    };
+    match tokio::time::timeout(first_byte, request).await {
         Ok(response) => response.map_err(send_failure),
         Err(_) => Err(no_response()),
     }
@@ -432,6 +466,7 @@ mod tests {
                 async { Ok(call) },
                 |response| async { (Vec::new(), Ok((response, Quiet))) },
                 waits,
+                None,
             );
             let items: Vec<_> = tokio::time::timeout(Duration::from_secs(5), stream.collect())
                 .await
@@ -456,5 +491,103 @@ mod tests {
         chunk.extend(vec![0xff; MAX_EVENT / 2]);
         chunk.extend_from_slice(b"\n\nevent: b\ndata: 2\n\n");
         assert_eq!(p.push(&chunk), vec![Ok(ev("a", "1")), Err(EventTooLarge)]);
+    }
+
+    #[tokio::test]
+    async fn send_orders_http_handoff_with_secret_registration_drops_guard_before_network_io_and_skips_lock_when_unchecked()
+     {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use tokio::io::AsyncWriteExt;
+
+        crate::session::reset_held_for_test();
+        let canary = "CANARYOpaqueAtSseHttpSend";
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = reqwest::Client::new();
+
+        let (at_send_tx, at_send_rx) = std::sync::mpsc::channel();
+        let (probed_tx, probed_rx) = std::sync::mpsc::channel();
+        let (reg_done_tx, reg_done_rx) = tokio::sync::oneshot::channel();
+        let worker = std::thread::spawn(move || {
+            at_send_rx.recv().unwrap();
+            let blocked = crate::session::secrets_write_blocked();
+            probed_tx.send(()).unwrap();
+            crate::session::register_secrets([canary.to_owned()]);
+            let _ = reg_done_tx.send(());
+            blocked
+        });
+        BEFORE_HTTP_SEND.set(Some(Box::new(move || {
+            at_send_tx.send(()).unwrap();
+            probed_rx.recv().unwrap();
+        })));
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = crate::test_guard::http::read_request(&mut socket)
+                .await
+                .unwrap();
+            assert!(request.starts_with("POST / "), "{request}");
+            reg_done_rx.await.unwrap();
+            let blocked_after_reg = crate::session::secrets_write_blocked();
+            socket
+                .write_all(crate::test_guard::http::response("200 OK", &[], "").as_bytes())
+                .await
+                .unwrap();
+            socket.flush().await.unwrap();
+            socket.shutdown().await.unwrap();
+            blocked_after_reg
+        });
+        let generation = crate::session::held_generation();
+        let response = send(
+            client.post(format!("http://{addr}")),
+            Duration::from_secs(5),
+            Some(generation),
+            false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert!(response.bytes().await.unwrap().is_empty());
+        assert!(worker.join().unwrap());
+        assert!(!server.await.unwrap());
+
+        let stale_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let stale_addr = stale_listener.local_addr().unwrap();
+        for after_auth_refresh in [false, true] {
+            let hit = std::sync::Arc::new(AtomicBool::new(false));
+            let seen_hit = hit.clone();
+            BEFORE_HTTP_SEND.set(Some(Box::new(move || {
+                seen_hit.store(true, Ordering::Release);
+            })));
+            let err = send(
+                client.post(format!("http://{stale_addr}")),
+                Duration::from_secs(5),
+                Some(generation),
+                after_auth_refresh,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                err.refused,
+                Some(crate::provider::Refused::StaleRequest { after_auth_refresh })
+            );
+            assert!(!err.possibly_billed);
+            assert!(!hit.load(Ordering::Acquire));
+            assert!(futures::poll!(std::pin::pin!(stale_listener.accept())).is_pending());
+        }
+
+        let unchecked_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let unchecked_addr = unchecked_listener.local_addr().unwrap();
+        let ((), snapshots, reads) = crate::session::count_held_loads(|| {
+            use std::future::Future;
+            let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+            let mut fut = std::pin::pin!(send(
+                client.post(format!("http://{unchecked_addr}")),
+                Duration::from_secs(5),
+                None,
+                false,
+            ));
+            let _ = fut.as_mut().poll(&mut cx);
+        });
+        assert_eq!((snapshots, reads), (0, 0));
     }
 }

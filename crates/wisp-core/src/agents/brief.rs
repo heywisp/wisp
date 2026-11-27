@@ -1,5 +1,5 @@
 use wisp_protocol::agents::{Preset, shown_agent};
-use wisp_protocol::{AgentPath, Effort, ErrorKind, report_text, shown_text};
+use wisp_protocol::{AgentPath, Effort, ErrorKind, TextSpan, report_text, shown_text};
 
 use wisp_tool_text::agents::{
     AGENT_LABEL, BACKGROUND_LINE, PARENT_LABEL, PRESET_INSTRUCTIONS, PRESETS_LABEL, SPAWNING_LABEL,
@@ -16,16 +16,22 @@ pub const NUDGE: &str = "Finish by calling report, or ask your parent with send_
 pub const NUDGE_REPORT_ONLY: &str = "Finish by calling report.";
 pub const MAX_REPORT_BYTES: usize = 16 * 1024;
 
-pub(super) fn brief(task: &str, todos: &[String]) -> String {
+pub(crate) fn brief(task: &str, todos: &[String]) -> (String, Vec<TextSpan>) {
     let mut text = task.trim().to_owned();
+    let mut spans = Vec::with_capacity(todos.len());
     if !todos.is_empty() {
         text.push_str("\n\nChecklist:");
         for todo in todos {
             text.push_str("\n- [ ] ");
+            let start = text.len();
             text.push_str(todo.trim());
+            spans.push(TextSpan {
+                start,
+                end: text.len(),
+            });
         }
     }
-    text
+    (text, spans)
 }
 
 pub(super) fn presets_line(presets: &[&Preset]) -> Option<String> {

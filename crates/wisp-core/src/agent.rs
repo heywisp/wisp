@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -14,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use wisp_plugin_api::prompt::News;
 use wisp_protocol::log::{
     BlockPosition, CredentialSource, ImageRef, LEAD_DATA, LEAD_FILL, LEAD_SENT, LEAD_TOOLS,
-    LeadEntry, LogEvent, LoggedInput, LoggedMessage, ToolContext, TurnLead,
+    LeadEntry, LogEvent, LoggedInput, LoggedMessage, Slot, ToolContext, TurnLead, input_slots,
 };
 use wisp_protocol::settings::{AccountModel, Landing};
 use wisp_protocol::subscription_auth::AuthCommand;
@@ -22,9 +23,9 @@ use wisp_protocol::{
     AccountSpend, AgentEvent, BlockKind, CLOSED_PAUSE_NOTE, CacheTtl, ClientCommand, ContentBlock,
     Cost, DeliveryMode, DetachReason, DiscardReason, Effort, EffortMarker, ErrorDetail, ErrorKind,
     FailureSource, GaveUp, ImageData, InputId, InstructionsSource, InstructionsSummary, Message,
-    MessageTime, MissCause, NotRunReason, PluginRecord, ReportedEnd, RetryClass, Role,
-    SessionConfig, StopReason, TodoItem, ToolOutcome, ToolOutputView, TurnOrigin, TurnOutcome,
-    TurnStats, Typed, UnfinishedReason, Usage, WorkspaceChange,
+    MessageTime, MissCause, NotRunReason, PluginRecord, ReportedEnd, RequestId, RetryClass, Role,
+    SessionConfig, StopReason, TextSpan, TodoItem, ToolOutcome, ToolOutputView, TurnOrigin,
+    TurnOutcome, TurnStats, Typed, UnfinishedReason, Usage, WorkspaceChange,
 };
 use wisp_tool_text::output::{Captured, failed_text, invalid_input_text};
 
@@ -44,10 +45,10 @@ use crate::pricing::{self, ModelInfo};
 use crate::provider::forms::thinking_shaped;
 use crate::provider::{
     AssembledMessage, Assembler, Delta, Discarded, Feature, Features, Iteration, NO_TEXT, Provider,
-    ProviderError, ProviderEvent, Refused, Rendering, Request, SearchSignal, View, has_content,
-    may_end_quietly, quiet_end, reply_text, view,
+    ProviderError, ProviderEvent, Refused, Rendering, Request, RequestOptions, SearchSignal,
+    ServerToolSpec, View, has_content, may_end_quietly, quiet_end, reply_text, view,
 };
-use crate::secrets::scan::scrub_todos;
+use crate::secrets::scan::{scrub_checklist_spans, scrub_todos};
 use crate::session::mirror::log_record;
 use crate::session::{Redactions, SessionLog, new_session_id, now_rfc3339, rfc3339, sha256_hex};
 use crate::tool::{AskRequest, Attachment, PluginTool, Prepared, ToolRun, Toolbox, UserChannel};
@@ -56,8 +57,11 @@ use crate::workspace::{Workspace, platform, resources};
 pub(crate) mod ask;
 mod attach;
 mod auth;
+mod brief_owner;
 mod chats;
 mod child;
+pub(crate) use brief_owner::BriefOwner;
+use brief_owner::{OwnerState, SharedLog};
 mod choice;
 mod compact;
 mod endpoint;
@@ -333,6 +337,7 @@ struct TurnTrack {
     lower_bound: bool,
     stopped: bool,
     opening: Vec<InputId>,
+    opening_briefs: Vec<InputId>,
     carried_ends: Vec<Carrier>,
     steers: Vec<LoggedInput>,
     inputs: Vec<Input>,
@@ -391,6 +396,26 @@ fn lead_block(text: &str) -> ContentBlock {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BriefPlace {
+    User(usize),
+    After(usize),
+}
+
+#[derive(Debug, Clone)]
+struct PendingBrief {
+    id: InputId,
+    place: BriefPlace,
+    spans: Vec<TextSpan>,
+    logged_text: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Durability {
+    Flush,
+    Sync,
+}
+
 #[derive(Debug, Default)]
 struct Pending {
     user: Option<Vec<ContentBlock>>,
@@ -404,9 +429,108 @@ struct Pending {
     continue_note: bool,
     retry_note: bool,
     after: Vec<ContentBlock>,
+    briefs: Vec<PendingBrief>,
+}
+
+fn collect_pending_briefs(inputs: &[Input], mut index: usize, in_after: bool) -> Vec<PendingBrief> {
+    let mut briefs = Vec::new();
+    for input in inputs {
+        for slot in input_slots(input.images.len(), input.note.is_some()) {
+            if slot == Slot::Text && !input.checklist_spans.is_empty() {
+                briefs.push(PendingBrief {
+                    id: input.id.clone(),
+                    place: if in_after {
+                        BriefPlace::After(index)
+                    } else {
+                        BriefPlace::User(index)
+                    },
+                    spans: input.checklist_spans.clone(),
+                    logged_text: (!input.revision_unlogged).then(|| input.text.clone()),
+                });
+            }
+            index += 1;
+        }
+    }
+    briefs
 }
 
 impl Pending {
+    fn brief_text(&self, place: BriefPlace) -> Option<&str> {
+        let block = match place {
+            BriefPlace::User(index) => self.user.as_ref()?.get(index),
+            BriefPlace::After(index) => self.after.get(index),
+        }?;
+        match block {
+            ContentBlock::Text { text } => Some(text),
+            _ => None,
+        }
+    }
+
+    fn shift_user_briefs(&mut self, drained: usize, added: usize) {
+        self.briefs.retain_mut(|brief| {
+            if let BriefPlace::User(index) = brief.place {
+                let Some(index) = index.checked_sub(drained) else {
+                    return false;
+                };
+                brief.place = BriefPlace::User(index + added);
+            }
+            true
+        });
+    }
+
+    fn split_user_briefs_to_after(&mut self, cut: usize, moved: usize) {
+        for brief in &mut self.briefs {
+            brief.place = match brief.place {
+                BriefPlace::User(index) if index >= cut => BriefPlace::After(index - cut),
+                BriefPlace::After(index) => BriefPlace::After(index + moved),
+                place => place,
+            };
+        }
+    }
+
+    fn move_after_briefs_to_user(&mut self) {
+        for brief in &mut self.briefs {
+            if let BriefPlace::After(index) = brief.place {
+                brief.place = BriefPlace::User(index);
+            }
+        }
+    }
+
+    fn has_unlogged_revisions(&self) -> bool {
+        self.briefs.iter().any(|brief| {
+            self.brief_text(brief.place)
+                .is_some_and(|text| brief.logged_text.as_deref() != Some(text))
+        })
+    }
+
+    fn unlogged_revisions(&self) -> Vec<LoggedInput> {
+        self.briefs
+            .iter()
+            .filter_map(|brief| {
+                let text = self.brief_text(brief.place)?;
+                (brief.logged_text.as_deref() != Some(text)).then(|| LoggedInput {
+                    id: brief.id.clone(),
+                    text: text.to_owned(),
+                    images: Vec::new(),
+                    note: None,
+                    checklist_spans: brief.spans.clone(),
+                })
+            })
+            .collect()
+    }
+
+    fn mark_revisions_logged(&mut self) {
+        let mut briefs = std::mem::take(&mut self.briefs);
+        for brief in &mut briefs {
+            if let Some(text) = self.brief_text(brief.place)
+                && brief.logged_text.as_deref() != Some(text)
+            {
+                brief.logged_text = Some(text.to_owned());
+            }
+        }
+        self.briefs = briefs;
+    }
+
     fn place(&self, messages: &mut Vec<Message>) {
         if !self.has_payload() {
             return;
@@ -514,6 +638,7 @@ impl TurnTrack {
             lower_bound: false,
             stopped: false,
             opening: Vec::new(),
+            opening_briefs: Vec::new(),
             carried_ends: Vec::new(),
             steers: Vec::new(),
             inputs: Vec::new(),
@@ -885,7 +1010,8 @@ pub struct Agent {
     published_spend: Option<(f64, bool)>,
     spend_lost: BTreeSet<jiff::civil::Date>,
     cache_rebuild: Option<CacheRebuild>,
-    log: Option<(SessionLog, LogContext)>,
+    log: Option<(SharedLog, LogContext)>,
+    brief_owner: BriefOwner,
     log_started: bool,
     view_cut: view::Cut,
     turns: u64,
@@ -1046,6 +1172,7 @@ impl Agent {
             spend_lost: BTreeSet::new(),
             cache_rebuild: None,
             log: None,
+            brief_owner: BriefOwner::default(),
             log_started: false,
             view_cut: view::Cut::default(),
             turns: 0,
@@ -1272,6 +1399,12 @@ impl Agent {
             only.context = context.clone();
         }
         self.session_id = log.id().to_owned();
+        let log = SharedLog::new(log);
+        {
+            let mut owner = self.brief_owner.lock();
+            owner.log = Some(log.downgrade());
+            owner.configured_log = true;
+        }
         self.log = Some((log, context));
         self.register_held();
         self
@@ -1854,58 +1987,57 @@ impl Agent {
         if self.log.is_none() {
             return;
         }
-        if self
-            .parent
-            .as_ref()
-            .is_some_and(|parent| !parent.todos.is_empty())
-        {
-            let home = self.secret_check_home();
-            if let Some(parent) = &mut self.parent {
-                scrub_todos(
-                    &mut parent.todos,
-                    home.as_deref(),
-                    &crate::session::read_held(),
-                );
-            }
-        }
-        let context = &self.connection().context;
-        let env = self.tools.as_ref();
-        let event = LogEvent::SessionStarted {
-            sections: self.start_sections(),
-            session_id: self.session_id.clone(),
-            wisp_version: crate::version::wisp_version(),
-            model: self.session.model.clone(),
-            effort: self.session.effort,
-            cache_ttl: self.session.cache_ttl,
-            system_prompt: self.session.system.clone(),
-            system_prompt_sha256: self.session.system.as_deref().map(sha256_hex),
-            system_base_sha256: self.base_sha256(),
-            endpoint: context.endpoint.clone(),
-            credential_source: context.credential_source.clone(),
-            endpoint_name: Some(self.endpoint_name().to_owned()),
-            message_time: Some(self.session.message_time),
-            tools: tools.names,
-            tools_sha256: tools.sha256,
-            whole: self.whole_tools(),
-            cwd: env.map(|e| e.workspace.shorten(&e.workspace.root)),
-            output_dir: self.output_dir().map(|d| d.path().display().to_string()),
-            instructions: self.session.instructions.clone(),
-            instructions_sha256: self.session.instructions.as_deref().map(sha256_hex),
-            instructions_source: self.instructions.as_ref().map(|i| i.source.clone()),
-            instructions_extra: self
-                .instructions
+        self.log_fresh(events, |agent| {
+            if agent
+                .parent
                 .as_ref()
-                .and_then(|i| i.extra)
-                .map(|extra| extra.name().to_owned()),
-            preset: self.main_preset().map(|p| p.name.clone()),
-            context_note_enabled: Some(self.session.context_note),
-            debug_cache: Some(self.request_options().debug_cache),
-            refusal_fallback: Some(self.request_options().refusal_fallback),
-            parent: self.parent.clone().map(Box::new),
-            headless: self.parent.is_none() && !self.user_input,
-            plugins: self.toolbox.plugins().to_vec(),
-        };
-        self.log(events, event).await;
+                .is_some_and(|parent| !parent.todos.is_empty())
+            {
+                let home = agent.secret_check_home();
+                let held = crate::session::read_held();
+                if let Some(parent) = &mut agent.parent {
+                    scrub_todos(&mut parent.todos, home.as_deref(), &held);
+                }
+            }
+            let context = &agent.connection().context;
+            let env = agent.tools.as_ref();
+            LogEvent::SessionStarted {
+                sections: agent.start_sections(),
+                session_id: agent.session_id.clone(),
+                wisp_version: crate::version::wisp_version(),
+                model: agent.session.model.clone(),
+                effort: agent.session.effort,
+                cache_ttl: agent.session.cache_ttl,
+                system_prompt: agent.session.system.clone(),
+                system_prompt_sha256: agent.session.system.as_deref().map(sha256_hex),
+                system_base_sha256: agent.base_sha256(),
+                endpoint: context.endpoint.clone(),
+                credential_source: context.credential_source.clone(),
+                endpoint_name: Some(agent.endpoint_name().to_owned()),
+                message_time: Some(agent.session.message_time),
+                tools: tools.names,
+                tools_sha256: tools.sha256,
+                whole: agent.whole_tools(),
+                cwd: env.map(|e| e.workspace.shorten(&e.workspace.root)),
+                output_dir: agent.output_dir().map(|d| d.path().display().to_string()),
+                instructions: agent.session.instructions.clone(),
+                instructions_sha256: agent.session.instructions.as_deref().map(sha256_hex),
+                instructions_source: agent.instructions.as_ref().map(|i| i.source.clone()),
+                instructions_extra: agent
+                    .instructions
+                    .as_ref()
+                    .and_then(|i| i.extra)
+                    .map(|extra| extra.name().to_owned()),
+                preset: agent.main_preset().map(|p| p.name.clone()),
+                context_note_enabled: Some(agent.session.context_note),
+                debug_cache: Some(agent.request_options().debug_cache),
+                refusal_fallback: Some(agent.request_options().refusal_fallback),
+                parent: agent.parent.clone().map(Box::new),
+                headless: agent.parent.is_none() && !agent.user_input,
+                plugins: agent.toolbox.plugins().to_vec(),
+            }
+        })
+        .await;
         if fresh {
             emit(events, self.resumed_event()).await;
             self.log_restarted(events).await;
@@ -1935,37 +2067,162 @@ impl Agent {
         events: &mpsc::Sender<AgentEvent>,
         event: LogEvent,
     ) -> Pin<Box<impl Future<Output = ()>>> {
-        Box::pin(self.log_unboxed(events, event))
+        Box::pin(async move {
+            self.log_unboxed(events, event, Durability::Flush).await;
+        })
     }
 
-    async fn log_unboxed(&mut self, events: &mpsc::Sender<AgentEvent>, mut event: LogEvent) {
+    async fn log_unboxed(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        event: LogEvent,
+        durability: Durability,
+    ) -> bool {
         self.publish_spend(events).await;
+        self.record_logged(events, event, durability).await
+    }
+
+    pub(super) fn log_is_on(&self) -> bool {
+        self.log.as_ref().is_none_or(|(log, _)| log.lock().is_on())
+    }
+
+    async fn record_logged(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        event: LogEvent,
+        durability: Durability,
+    ) -> bool {
+        let terminal = matches!(event, LogEvent::SessionEnded { .. });
         let compacted = self.after_compact(&event);
-        self.naming.see(&event);
-        let home = (self.log.is_some() && crate::session::log_hook_audit(&mut event).is_some())
-            .then(|| self.secret_check_home())
-            .flatten();
-        let failure = match &mut self.log {
-            Some((log, _)) => log.record_with_home(event, home.as_deref()),
-            None => None,
+        let write = |agent: &mut Self, writer: Option<&mut SessionLog>| {
+            agent.record_logged_sync(writer, event, durability)
         };
-        if let Some(reason) = failure {
-            emit(events, AgentEvent::LogDisabled { reason }).await;
-        }
+        let (persisted, failure) = if terminal {
+            let owner = self.brief_owner.clone();
+            let mut owner = owner.lock();
+            let result = self.with_log_writer(write);
+            owner.ended = true;
+            owner.log = None;
+            result
+        } else {
+            self.with_log_writer(write)
+        };
         if let Some((compacted, hook_failure)) = compacted {
             self.defer_point(AFTER_COMPACT, compacted, hook_failure);
         }
-    }
-
-    async fn sync_log(&mut self, events: &mpsc::Sender<AgentEvent>) {
-        if self.closed {
-            return;
-        }
-        self.record_side(events).await;
-        let failure = self.log.as_mut().and_then(|(log, _)| log.sync());
         if let Some(reason) = failure {
             emit(events, AgentEvent::LogDisabled { reason }).await;
         }
+        persisted
+    }
+
+    fn with_log_writer<T>(
+        &mut self,
+        write: impl FnOnce(&mut Self, Option<&mut SessionLog>) -> T,
+    ) -> T {
+        let log = self.log.as_ref().map(|(log, _)| log.clone());
+        let mut writer = log.as_ref().map(SharedLog::lock);
+        write(self, writer.as_deref_mut())
+    }
+
+    fn record_logged_sync(
+        &mut self,
+        writer: Option<&mut SessionLog>,
+        event: LogEvent,
+        durability: Durability,
+    ) -> (bool, Option<String>) {
+        self.record_logged_at(writer, event, durability, None)
+            .unwrap_or((false, None))
+    }
+
+    fn record_logged_at(
+        &mut self,
+        writer: Option<&mut SessionLog>,
+        mut event: LogEvent,
+        durability: Durability,
+        generation: Option<u64>,
+    ) -> Result<(bool, Option<String>), ()> {
+        self.naming.see(&event);
+        let Some(log) = writer else {
+            return Ok((true, None));
+        };
+        let home = (log.is_on() && crate::session::log_needs_home(&mut event))
+            .then(|| self.secret_check_home())
+            .flatten();
+        SharedLog::write(
+            log,
+            event,
+            durability == Durability::Sync && !self.closed,
+            generation,
+            home.as_deref(),
+        )
+    }
+
+    async fn log_fresh(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        build: impl FnOnce(&mut Self) -> LogEvent,
+    ) -> bool {
+        self.publish_spend(events).await;
+        let (persisted, failure) = self.with_log_writer(|agent, writer| {
+            let event = build(agent);
+            agent.record_logged_sync(writer, event, Durability::Flush)
+        });
+        if let Some(reason) = failure {
+            emit(events, AgentEvent::LogDisabled { reason }).await;
+        }
+        persisted
+    }
+
+    pub(super) async fn record_event_fresh(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        turn: Option<u64>,
+        mut build: impl FnMut(&mut Self) -> (AgentEvent, Option<u64>),
+    ) -> bool {
+        self.publish_spend(events).await;
+        let ((persisted, failure), event, seq) = self.with_log_writer(|agent, mut writer| {
+            loop {
+                let (event, generation) = build(agent);
+                let seq = writer.as_deref().map(SessionLog::next_seq);
+                let result = match log_record(&event, turn) {
+                    Some(record) => agent.record_logged_at(
+                        writer.as_deref_mut(),
+                        record,
+                        Durability::Flush,
+                        generation,
+                    ),
+                    None => Ok((true, None)),
+                };
+                if let Ok(result) = result {
+                    break (result, event, seq);
+                }
+            }
+        });
+        if let Some(reason) = failure {
+            emit(events, AgentEvent::LogDisabled { reason }).await;
+        }
+        self.note_event(&event, seq);
+        persisted
+    }
+
+    async fn sync_log(&mut self, events: &mpsc::Sender<AgentEvent>) -> bool {
+        if self.closed {
+            return self.log_is_on();
+        }
+        self.record_side(events).await;
+        let (synced, failure) = self.log.as_ref().map_or((true, None), |(log, _)| {
+            let mut log = log.lock();
+            if !log.is_on() {
+                return (false, None);
+            }
+            let failure = log.sync();
+            (failure.is_none(), failure)
+        });
+        if let Some(reason) = failure {
+            emit(events, AgentEvent::LogDisabled { reason }).await;
+        }
+        synced
     }
 
     async fn log_event(
@@ -2007,8 +2264,13 @@ impl Agent {
 
         if has_sensitive_event(&mut event) {
             let home = self.secret_check_home();
+            let owner = self.brief_owner();
+            let agents = self.agents.clone();
             Either::Left(Box::pin(async move {
-                send_scrubbed(events, event, home.as_deref()).await;
+                send_scrubbed(events, event, home.as_deref(), |target| {
+                    target.map_or_else(|| Some(owner.clone()), |path| agents.brief_owner(path))
+                })
+                .await;
             }))
         } else {
             Either::Right(emit(events, event))
@@ -2042,12 +2304,18 @@ impl Agent {
         call_id: Option<String>,
     ) {
         if call_id.is_some() {
-            drop(self.scrub_live_todos());
-            let event = AgentEvent::TodosUpdated {
-                call_id: call_id.clone(),
-                items: self.todos.clone(),
-            };
-            self.record_event(events, &event, self.running_turn()).await;
+            let turn = self.running_turn();
+            self.record_event_fresh(events, turn, |agent| {
+                drop(agent.scrub_live_todos());
+                (
+                    AgentEvent::TodosUpdated {
+                        call_id: call_id.clone(),
+                        items: agent.todos.clone(),
+                    },
+                    None,
+                )
+            })
+            .await;
         }
         let permit = events.reserve().await.ok();
         let guard = self.scrub_live_todos();
@@ -2417,7 +2685,7 @@ impl Agent {
         self.start_log(events).await;
         self.session_start(events).await;
         self.plugin_moment(true, events).await;
-        let inputs = match retry {
+        let mut inputs = match retry {
             Some(_) => inputs,
             None => {
                 let mut inputs = self.take_inputs(inputs, origin, commands, events).await?;
@@ -2433,7 +2701,7 @@ impl Agent {
             self.close_failed_tail(events).await;
         }
         self.offered = None;
-        self.closed = false;
+        self.set_closed(false);
         self.turns += 1;
         let turn = self.turns;
         let mut track = TurnTrack::new(turn);
@@ -2445,6 +2713,10 @@ impl Agent {
         track.resend_first = retry.is_some();
         self.inbox.clear_front();
         track.pending_images = inputs.iter().flat_map(|i| i.refs.iter().cloned()).collect();
+        for input in &mut inputs {
+            self.brief_owner.read(input);
+        }
+        self.scrub_brief_inputs(&mut inputs);
         track.mail = inputs.iter().filter(|i| i.is_mail()).cloned().collect();
         self.track = Some(track);
         self.replay_held(events).await;
@@ -2563,7 +2835,7 @@ impl Agent {
             None
         };
         let stopped_early = !cancelled && self.track().stopped;
-        let (user, lead, worded) = match opening {
+        let (mut user, lead, worded) = match opening {
             Some(o) => (Some(o.user), o.lead, o.worded),
             None => (None, TurnLead::default(), false),
         };
@@ -2588,20 +2860,6 @@ impl Agent {
             .cloned()
             .collect();
         self.track().lead_epoch = self.epoch_number();
-        let (text, images, input_id, logged) = match inputs.as_slice() {
-            [one] if !one.is_mail() && one.note.is_none() => (
-                one.text.clone(),
-                one.refs.clone(),
-                Some(one.id.clone()),
-                Vec::new(),
-            ),
-            many => (
-                String::new(),
-                Vec::new(),
-                None,
-                many.iter().map(Input::logged).collect(),
-            ),
-        };
         let previous_prompt_tokens = self.last.as_ref().map(|l| l.prompt_tokens);
         let said = inputs
             .iter()
@@ -2630,31 +2888,143 @@ impl Agent {
             }
         }
         self.settings.turn_binding = self.settings.binding_controls;
-        self.log(
-            events,
-            LogEvent::TurnStarted {
-                turn,
-                origin,
-                lead: lead.clone(),
-                ends: ends.clone(),
-                text,
-                model: Some(self.session.model.clone()),
-                effort: Some(self.session.effort),
-                effort_marker: marker,
-                tool_message: tool_part.blocks.clone(),
-                images,
-                endpoint_name: self.bound_endpoint().map(str::to_owned),
-                input_id,
-                inputs: logged,
-                cache_ttl: Some(self.session.cache_ttl),
-                debug_cache: Some(self.request_options().debug_cache),
-                refusal_fallback: Some(self.request_options().refusal_fallback),
-                binding_controls: Some(self.settings.binding_controls),
-                retry_of: retry.as_ref().map(|r| r.of),
-                kept_tools_sha256,
-            },
-        )
-        .await;
+        self.publish_spend(events).await;
+        let ((turn_logged, log_failure), mut opening_briefs) = {
+            let owner = self.brief_owner.clone();
+            let mut owner = inputs
+                .iter()
+                .any(|input| !input.checklist_spans.is_empty())
+                .then(|| owner.lock());
+            if let Some(owner) = owner.as_ref() {
+                for input in &mut inputs {
+                    if !input.revision_unlogged {
+                        owner.read(input);
+                    }
+                }
+            }
+            self.with_log_writer(|agent, mut writer| {
+                let mut durability = Durability::Flush;
+                let result = loop {
+                    let generation = agent.scrub_brief_inputs(&mut inputs);
+                    let revised: Vec<_> = inputs
+                        .iter()
+                        .filter(|input| {
+                            input.revision_unlogged && !input.checklist_spans.is_empty()
+                        })
+                        .map(Input::logged)
+                        .collect();
+                    if revised.is_empty() {
+                        let (text, images, input_id, logged) = match inputs.as_slice() {
+                            [one] if !one.is_mail() && one.note.is_none() => (
+                                one.text.clone(),
+                                one.refs.clone(),
+                                Some(one.id.clone()),
+                                Vec::new(),
+                            ),
+                            many => (
+                                String::new(),
+                                Vec::new(),
+                                None,
+                                many.iter().map(Input::logged).collect(),
+                            ),
+                        };
+                        let turn_event = LogEvent::TurnStarted {
+                            turn,
+                            origin,
+                            lead: lead.clone(),
+                            ends: ends.clone(),
+                            text,
+                            model: Some(agent.session.model.clone()),
+                            effort: Some(agent.session.effort),
+                            effort_marker: marker,
+                            tool_message: tool_part.blocks.clone(),
+                            images,
+                            endpoint_name: agent.bound_endpoint().map(str::to_owned),
+                            input_id,
+                            inputs: logged,
+                            cache_ttl: Some(agent.session.cache_ttl),
+                            debug_cache: Some(agent.request_options().debug_cache),
+                            refusal_fallback: Some(agent.request_options().refusal_fallback),
+                            binding_controls: Some(agent.settings.binding_controls),
+                            retry_of: retry.as_ref().map(|r| r.of),
+                            kept_tools_sha256: kept_tools_sha256.clone(),
+                        };
+                        if let Ok(result) = agent.record_logged_at(
+                            writer.as_deref_mut(),
+                            turn_event,
+                            durability,
+                            generation,
+                        ) {
+                            break result;
+                        }
+                        continue;
+                    }
+                    let Ok((persisted, failure)) = agent.record_logged_at(
+                        writer.as_deref_mut(),
+                        LogEvent::InputRevised {
+                            turn: None,
+                            inputs: revised,
+                        },
+                        Durability::Flush,
+                        generation,
+                    ) else {
+                        continue;
+                    };
+                    if !persisted {
+                        break (false, failure);
+                    }
+                    for input in &mut inputs {
+                        input.revision_unlogged = false;
+                    }
+                    durability = Durability::Sync;
+                };
+                let opening_briefs = collect_pending_briefs(&inputs, lead.leading(), false);
+                for brief in &opening_briefs {
+                    if let (BriefPlace::User(index), Some(input)) = (
+                        brief.place,
+                        inputs.iter().find(|input| input.id == brief.id),
+                    ) && let Some(ContentBlock::Text { text }) =
+                        user.as_mut().and_then(|user| user.get_mut(index))
+                    {
+                        text.clone_from(&input.text);
+                    }
+                }
+                if let Some(owner) = owner.as_mut() {
+                    for input in &inputs {
+                        if !input.checklist_spans.is_empty() {
+                            owner.update(input.logged(), Some(turn), !result.0);
+                            agent.sync_track_brief(
+                                &input.id,
+                                &input.text,
+                                &input.checklist_spans,
+                                !result.0,
+                            );
+                        }
+                    }
+                }
+                (result, opening_briefs)
+            })
+        };
+        if let Some(reason) = log_failure {
+            emit(events, AgentEvent::LogDisabled { reason }).await;
+        }
+        self.track().opening_briefs = opening_briefs
+            .iter()
+            .map(|brief| brief.id.clone())
+            .collect();
+        for brief in &mut opening_briefs {
+            brief.logged_text = None;
+            if turn_logged && let Some(input) = inputs.iter_mut().find(|input| input.id == brief.id)
+            {
+                brief.logged_text = Some(input.text.clone());
+                input.revision_unlogged = false;
+            }
+        }
+        if turn_logged {
+            for input in &mut self.track().mail {
+                input.revision_unlogged = false;
+            }
+        }
         let started = match &retry {
             Some(r) => AgentEvent::retry_started(turn, r.of, r.request),
             None => AgentEvent::TurnStarted {
@@ -2679,6 +3049,7 @@ impl Agent {
             continue_note: false,
             retry_note: false,
             after: Vec::new(),
+            briefs: opening_briefs,
         };
         if !opens && !cancelled && self.found_use().is_some() {
             let restated = self.restated_tools();
@@ -2753,7 +3124,7 @@ impl Agent {
             ids.retain(|id| !mail.iter().any(|m| &m.id == id));
             (ids, mail)
         };
-        self.inbox.requeue_mail(mail);
+        self.requeue_brief_mail(mail);
         self.settle_inputs(end, uncommitted, events).await;
         self.inbox.record_end(turn, end);
         for carrier in std::mem::take(&mut self.track().carried_ends) {
@@ -2805,6 +3176,7 @@ impl Agent {
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
     ) {
+        self.set_closed(false);
         self.start_log(events).await;
         if self.agents.restarted() {
             self.restart_keep_warm(events).await;
@@ -2939,6 +3311,7 @@ impl Agent {
                 command = commands.recv() => match command {
                     Some(command) => self.idle_command(command, events).await,
                     None => {
+                        self.set_closed(true);
                         self.window_gone(events, true).await;
                         break;
                     }
@@ -2994,6 +3367,10 @@ impl Agent {
                 self.serve_turn(inputs, None, None, commands, events).await;
             }
         }
+        Box::pin(self.finish_serve(events)).await;
+    }
+
+    async fn finish_serve(&mut self, events: &mpsc::Sender<AgentEvent>) {
         self.plan_usage.release(&self.session_id, None);
         self.plan_usage.unhold(&self.session_id);
         self.cancel_commands(None, events).await;
@@ -3115,7 +3492,7 @@ impl Agent {
         events: &mpsc::Sender<AgentEvent>,
     ) -> bool {
         let Some(command) = command else {
-            self.closed = true;
+            self.set_closed(true);
             self.interrupted = self.running_turn();
             self.track().stopped = true;
             self.window_gone(events, true).await;
@@ -3493,12 +3870,124 @@ impl Agent {
         self.log(events, record).await;
     }
 
-    fn place_steers(&mut self, pending: &mut Pending, steers: Vec<Input>) -> Vec<InputId> {
+    fn scrub_brief_inputs(&self, inputs: &mut [Input]) -> Option<u64> {
+        if !inputs.iter().any(|input| !input.checklist_spans.is_empty()) {
+            return None;
+        }
+        let home = self.secret_check_home();
+        let (held, generation) = crate::session::held_with_generation();
+        for input in inputs {
+            if mail::scrub_input_brief_at(input, home.as_deref(), &held) {
+                input.revision_unlogged = self.log.is_some();
+            }
+        }
+        Some(generation)
+    }
+
+    fn sync_track_brief(&mut self, id: &InputId, text: &str, spans: &[TextSpan], dirty: bool) {
+        let track = self.track();
+        for input in track
+            .inputs
+            .iter_mut()
+            .chain(&mut track.resend)
+            .chain(&mut track.mail)
+        {
+            if &input.id == id {
+                input.text.clear();
+                input.text.push_str(text);
+                input.checklist_spans.clear();
+                input.checklist_spans.extend_from_slice(spans);
+                input.revision_unlogged = dirty;
+            }
+        }
+        for input in &mut track.steers {
+            if &input.id == id {
+                input.text.clear();
+                input.text.push_str(text);
+                input.checklist_spans.clear();
+                input.checklist_spans.extend_from_slice(spans);
+            }
+        }
+    }
+
+    fn clear_track_revision_unlogged(&mut self, pending: &Pending) {
+        let track = self.track();
+        for input in track
+            .inputs
+            .iter_mut()
+            .chain(&mut track.resend)
+            .chain(&mut track.mail)
+        {
+            if pending.briefs.iter().any(|brief| brief.id == input.id) {
+                input.revision_unlogged = false;
+            }
+        }
+    }
+
+    fn refresh_pending_briefs(
+        &mut self,
+        pending: &mut Pending,
+        owner: &OwnerState,
+    ) -> (bool, Option<u64>) {
+        if pending.briefs.is_empty() {
+            return (false, None);
+        }
+        let (held, generation) = crate::session::held_with_generation();
+        let home = self.secret_check_home();
+        let mut changed = false;
+        for brief in &mut pending.briefs {
+            let block = match brief.place {
+                BriefPlace::User(index) => {
+                    pending.user.as_mut().and_then(|user| user.get_mut(index))
+                }
+                BriefPlace::After(index) => pending.after.get_mut(index),
+            };
+            if let Some(ContentBlock::Text { text }) = block {
+                let mut updated = false;
+                if let Some(entry) = owner.waiting.get(&brief.id)
+                    && brief.logged_text.as_deref() != Some(entry.input.text.as_str())
+                {
+                    updated =
+                        *text != entry.input.text || brief.spans != entry.input.checklist_spans;
+                    text.clone_from(&entry.input.text);
+                    brief.spans.clone_from(&entry.input.checklist_spans);
+                    brief.logged_text =
+                        (!entry.revision_unlogged).then(|| entry.input.text.clone());
+                }
+                let scrubbed =
+                    scrub_checklist_spans(text, &mut brief.spans, home.as_deref(), &held);
+                if scrubbed || updated {
+                    let dirty = self.log.is_some() && (scrubbed || brief.logged_text.is_none());
+                    self.sync_track_brief(&brief.id, text, &brief.spans, dirty);
+                    changed = true;
+                }
+            }
+        }
+        (changed, Some(generation))
+    }
+
+    fn place_steers(&mut self, pending: &mut Pending, mut steers: Vec<Input>) -> Vec<InputId> {
         if steers.is_empty() {
             return Vec::new();
         }
-        let blocks: Vec<ContentBlock> = steers.iter().flat_map(Input::blocks).collect();
+        for steer in &mut steers {
+            self.brief_owner.read(steer);
+        }
         let has_system = pending.has_system() && pending.has_payload();
+        let index = if has_system {
+            pending.after.len()
+        } else {
+            pending.user.as_ref().map_or(0, Vec::len)
+        };
+        let mut briefs = collect_pending_briefs(&steers, index, has_system);
+        self.scrub_brief_inputs(&mut steers);
+        for brief in &mut briefs {
+            if let Some(steer) = steers.iter().find(|steer| steer.id == brief.id) {
+                brief.spans.clone_from(&steer.checklist_spans);
+            }
+        }
+        pending.briefs.extend(briefs);
+        let blocks: Vec<ContentBlock> = steers.iter().flat_map(Input::blocks).collect();
         match (&mut pending.user, has_system) {
             (_, true) => pending.after.extend(blocks),
             (Some(user), false) => user.extend(blocks),
@@ -3697,7 +4186,7 @@ impl Agent {
                 }
                 self.refresh_sections(commands, events).await;
                 let compacted = if std::mem::take(&mut cut_off) {
-                    self.compact_cut_off(&mut pending, commands, events).await
+                    Box::pin(self.compact_cut_off(&mut pending, commands, events)).await
                 } else {
                     self.auto_between_steps(&mut pending, commands, events)
                         .await
@@ -3788,7 +4277,7 @@ impl Agent {
                 sent_at = Some(self.clock.now());
                 let streamed = self
                     .stream_step(
-                        &messages,
+                        &mut messages,
                         &mut pending,
                         &session,
                         features,
@@ -3878,11 +4367,11 @@ impl Agent {
                     continue;
                 }
                 if failure.error.refused == Some(Refused::CrossAccount) {
-                    if self.render_foreign_searches(events).await {
+                    if Box::pin(self.render_foreign_searches(events)).await {
                         messages = self.request_messages(&pending);
                         continue;
                     }
-                    match self.render_unreadable_searches(events).await {
+                    match Box::pin(self.render_unreadable_searches(events)).await {
                         Some(SearchRefusal::Resend) => {
                             messages = self.request_messages(&pending);
                             continue;
@@ -3949,8 +4438,7 @@ impl Agent {
                 }
                 if failure.error.kind == ErrorKind::ThinkingBinding {
                     let rendering = self.rendering(messages.len());
-                    match self
-                        .recover_refused_thinking(&messages, &rendering, events)
+                    match Box::pin(self.recover_refused_thinking(&messages, &rendering, events))
                         .await
                     {
                         Some(SearchRefusal::Resend) => {
@@ -3985,9 +4473,14 @@ impl Agent {
                         .carried_billed
                         .extend(carried_ids.iter().cloned());
                 }
-                match self
-                    .after_failure(step, &failure, retry::Mode::Request, commands, events)
-                    .await
+                match Box::pin(self.after_failure(
+                    step,
+                    &failure,
+                    retry::Mode::Request,
+                    commands,
+                    events,
+                ))
+                .await
                 {
                     AfterFailure::Retry => {
                         if failure.error.malformed_call() && !pending.retry_note {
@@ -4597,8 +5090,20 @@ impl Agent {
         if inputs.is_empty() {
             return;
         }
+        let briefs: Vec<_> = inputs
+            .iter()
+            .filter(|input| !input.checklist_spans.is_empty())
+            .map(|input| input.id.clone())
+            .collect();
         let record = LogEvent::InputCommitted { turn, step, inputs };
-        self.log(events, record).await;
+        let durability = if briefs.is_empty() {
+            Durability::Flush
+        } else {
+            Durability::Sync
+        };
+        if Box::pin(self.log_unboxed(events, record, durability)).await {
+            self.brief_owner.materialized(briefs);
+        }
     }
 
     fn accept_tool_results(
@@ -4643,8 +5148,15 @@ impl Agent {
             model,
             stop_reason,
         };
-        self.log(events, record).await;
-        self.sync_log(events).await;
+        let appended = Box::pin(self.log_unboxed(events, record, Durability::Flush)).await;
+        let synced = self.sync_log(events).await;
+        if appended
+            && synced
+            && let Some(track) = self.track.as_mut()
+        {
+            self.brief_owner
+                .materialized(std::mem::take(&mut track.opening_briefs));
+        }
     }
 
     #[allow(
@@ -4816,7 +5328,7 @@ impl Agent {
             spend,
         };
         let day = crate::spend::day(at, self.clock.as_ref());
-        if !log.spend(day, record) {
+        if !log.lock().spend(day, record) {
             self.spend_lost.insert(day);
         }
     }
@@ -4851,7 +5363,7 @@ impl Agent {
     )]
     fn stream_step(
         &mut self,
-        messages: &[Message],
+        messages: &mut Vec<Message>,
         pending: &mut Pending,
         session: &SessionConfig,
         features: Features,
@@ -4871,7 +5383,7 @@ impl Agent {
     )]
     async fn stream_step_unboxed(
         &mut self,
-        messages: &[Message],
+        messages: &mut Vec<Message>,
         pending: &mut Pending,
         session: &SessionConfig,
         features: Features,
@@ -4889,49 +5401,23 @@ impl Agent {
         let server_tools = self.step_server_tools();
         self.track().sent_search = server_tools;
         let (wire_tools, server_tools) = self.wire(&self.sent, server_tools);
-        let mut rendering: Rendering = self.rendering(messages.len());
-        if !rendering.attachments_as_notes {
-            rendering.provisional =
-                withdraw::provisional_media(messages, self.to_view(self.accepted));
-            rendering.sends_media = withdraw::first_media(messages).is_some();
-        }
-        let logical = Request {
+        let frozen = StepRequest {
             session,
-            tools: &wire_tools,
-            deferred: tool_changes::deferred_for(&self.deferred, features),
-            by_value: tool_changes::by_value_for(&self.deferred, features),
-            server_tools,
-            messages,
-            previous_response_id: self
-                .last
-                .as_ref()
-                .filter(|l| l.endpoint == self.endpoint)
-                .and_then(|l| l.response_id.as_deref()),
             features,
+            tools: &wire_tools,
+            server_tools,
             options: self.request_options(),
-            rendering: &rendering,
-            compaction: None,
+            key,
         };
-        let print = self.prefix_print(&logical);
-        let sent = self.sent(&logical, print.clone());
-        let may = self.provider().threads(&logical);
-        let (thread, head) =
-            self.threads
-                .choose(may, self.endpoint, sent.wire.as_ref(), self.clock.as_ref());
-        let request = Request {
-            previous_response_id: head.as_deref().or(logical.previous_response_id),
-            features: Features { thread, ..features },
-            ..logical
-        };
-        let betas = self.provider().betas(&request);
-        self.epoch
-            .sending(self.provider().cache_prefix(&request), betas, key);
+        let initial_rendering = self.step_rendering(messages);
+        let print = self.prefix_print(&frozen.logical(self, messages, &initial_rendering));
+        let (mut warming, mut stagger) = self.hold_for_warmth(print.clone(), events).await;
         let watch = self.watch();
         let sent_model = session.model.as_str();
-        self.sent_sound = self.sent_sound(request.messages, request.rendering);
-        let mut stream = self.provider().stream(&request);
-        self.sending = Some(sent);
-        let (mut warming, mut stagger) = self.hold_for_warmth(print, events).await;
+        let mut auth_refresh_spent = false;
+        let mut saved_threads = None;
+        let mut stream = None;
+        let mut rendering = Some(initial_rendering);
         let mut asm = Assembler::default();
         let mut unshown = Some(Vec::new());
         let mut in_flight = false;
@@ -4949,11 +5435,33 @@ impl Agent {
         let processes = self.processes.clone();
         let mailbox = self.mailbox.clone();
         let result = loop {
+            if stagger.is_none() && stream.is_none() {
+                match self
+                    .prepare_step_stream(
+                        messages,
+                        pending,
+                        &frozen,
+                        print.as_ref(),
+                        auth_refresh_spent,
+                        &mut saved_threads,
+                        &mut rendering,
+                        events,
+                    )
+                    .await
+                {
+                    Ok((next, rendered)) => {
+                        stream = Some(next);
+                        rendering = Some(rendered);
+                    }
+                    Err(error) => break Err(error),
+                }
+            }
             tokio::select! {
                 biased;
                 command = commands.recv() => {
                     if self.on_command(command, events).await {
                         drop(stream);
+                        self.release_brief_attempt(pending);
                         drop(pass);
                         self.release(&mut unshown, false, events).await;
                         self.keep_partial(&asm);
@@ -4973,7 +5481,7 @@ impl Agent {
                     warming = Some(ticket);
                     self.waiting_as(None, events).await;
                 },
-                item = stream.next(), if stagger.is_none() => match item {
+                item = next_stream(&mut stream), if stream.is_some() => match item {
                     Some(Ok(event)) => {
                         if let ProviderEvent::PlanUsage(observation) = event {
                             watch.observe(observation);
@@ -4995,6 +5503,7 @@ impl Agent {
                                         ticket.streamed();
                                     }
                                     self.accept(messages, events).await;
+                                    pending.briefs.clear();
                                     if pending.found_tools {
                                         let opened = self.commit_pending_input(pending, events).await;
                                         self.log_heard(opened, events).await;
@@ -5002,7 +5511,9 @@ impl Agent {
                                     self.commit_probe(events).await;
                                     self.keep_tools(events).await;
                                     self.keep_rendering(events).await;
-                                    self.keep_notes(messages, &rendering, events).await;
+                                    if let Some(rendering) = rendering.as_ref() {
+                                        self.keep_notes(messages, rendering, events).await;
+                                    }
                                 }
                                 self.keep_form(events).await;
                             }
@@ -5051,6 +5562,18 @@ impl Agent {
                             self.on_search(signal, index, seen, events).await;
                         }
                     }
+                    Some(Err(e)) if !accepted && matches!(e.refused, Some(Refused::StaleRequest { .. })) => {
+                        if let Some(Refused::StaleRequest { after_auth_refresh }) = e.refused {
+                            auth_refresh_spent |= after_auth_refresh;
+                        }
+                        if let Some(saved) = saved_threads.as_ref() {
+                            self.threads = saved.clone();
+                        }
+                        in_flight = false;
+                        sent_at = None;
+                        stream = None;
+                        self.release_brief_attempt(pending);
+                    }
                     Some(Err(mut e)) => {
                         watch.note(&mut e, sent_model);
                         watch.failed(&e);
@@ -5061,6 +5584,7 @@ impl Agent {
             }
         };
         drop(stream);
+        self.release_brief_attempt(pending);
         drop(pass);
         self.refresh_plan_usage();
 
@@ -5117,6 +5641,183 @@ impl Agent {
                 searches: started.saturating_add(carried as u64),
             })),
         }
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "step request, journal, and authentication retry state"
+    )]
+    async fn prepare_step_stream(
+        &mut self,
+        messages: &mut Vec<Message>,
+        pending: &mut Pending,
+        frozen: &StepRequest<'_>,
+        print: Option<&crate::warmth::Fingerprint>,
+        auth_refresh_spent: bool,
+        saved_threads: &mut Option<threads::Threads>,
+        rendering: &mut Option<Rendering>,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> Result<(StepStream, Rendering), ProviderError> {
+        let owner = self.brief_owner.clone();
+        let open = |agent: &mut Self,
+                    messages: &[Message],
+                    generation,
+                    saved_threads,
+                    rendering: &mut Option<Rendering>| {
+            let rendering = rendering
+                .take()
+                .unwrap_or_else(|| agent.step_rendering(messages));
+            agent.open_step_stream_sync(
+                messages,
+                frozen,
+                print,
+                (generation, auth_refresh_spent),
+                saved_threads,
+                rendering,
+            )
+        };
+        if pending.briefs.is_empty() {
+            return Ok(open(self, messages, None, saved_threads, rendering));
+        }
+        loop {
+            let ready = {
+                let mut owner = owner.lock();
+                let (changed, generation) = self.refresh_pending_briefs(pending, &owner);
+                if changed {
+                    *messages = self.request_messages(pending);
+                }
+                if !self.log_is_on() {
+                    return Err(ProviderError::new(
+                        ErrorKind::Other,
+                        "session log is unavailable; cannot send an unaccepted checklist brief",
+                    ));
+                }
+                if pending.has_unlogged_revisions() {
+                    None
+                } else {
+                    self.clear_track_revision_unlogged(pending);
+                    let turn = self.track().index;
+                    for brief in &pending.briefs {
+                        if let Some(entry) = owner.waiting.get_mut(&brief.id) {
+                            entry.active_turn = Some(turn);
+                            entry.in_flight = true;
+                        }
+                    }
+                    Some(generation)
+                }
+            };
+            if let Some(generation) = ready {
+                return Ok(open(self, messages, generation, saved_threads, rendering));
+            }
+            if self.log.is_some() {
+                self.publish_spend(events).await;
+            }
+            let ((persisted, failure), changed) = {
+                let mut owner = owner.lock();
+                self.with_log_writer(|agent, mut writer| {
+                    let mut changed = false;
+                    loop {
+                        let (freshened, generation) = agent.refresh_pending_briefs(pending, &owner);
+                        changed |= freshened;
+                        let inputs = pending.unlogged_revisions();
+                        let turn = Some(agent.track().index);
+                        let result = if inputs.is_empty() {
+                            Ok((true, None))
+                        } else {
+                            agent.record_logged_at(
+                                writer.as_deref_mut(),
+                                LogEvent::InputRevised {
+                                    turn,
+                                    inputs: inputs.clone(),
+                                },
+                                Durability::Sync,
+                                generation,
+                            )
+                        };
+                        let Ok(result) = result else { continue };
+                        for input in inputs {
+                            owner.update(input, turn, !result.0);
+                        }
+                        if result.0 {
+                            pending.mark_revisions_logged();
+                        }
+                        break (result, changed);
+                    }
+                })
+            };
+            if changed {
+                *messages = self.request_messages(pending);
+            }
+            if let Some(reason) = failure {
+                emit(events, AgentEvent::LogDisabled { reason }).await;
+            }
+            if !persisted {
+                return Err(ProviderError::new(
+                    ErrorKind::Other,
+                    "session log write failed; cannot send a revised checklist brief",
+                ));
+            }
+        }
+    }
+
+    fn release_brief_attempt(&self, pending: &Pending) {
+        if !pending.briefs.is_empty() {
+            let mut owner = self.brief_owner.lock();
+            for brief in &pending.briefs {
+                if let Some(entry) = owner.waiting.get_mut(&brief.id) {
+                    entry.in_flight = false;
+                }
+            }
+        }
+    }
+
+    fn step_rendering(&self, messages: &[Message]) -> Rendering {
+        let mut rendering = self.rendering(messages.len());
+        if !rendering.attachments_as_notes {
+            rendering.provisional =
+                withdraw::provisional_media(messages, self.to_view(self.accepted));
+            rendering.sends_media = withdraw::first_media(messages).is_some();
+        }
+        rendering
+    }
+
+    fn open_step_stream_sync(
+        &mut self,
+        messages: &[Message],
+        frozen: &StepRequest<'_>,
+        print: Option<&crate::warmth::Fingerprint>,
+        (redactions_generation, auth_refresh_spent): (Option<u64>, bool),
+        saved_threads: &mut Option<threads::Threads>,
+        mut rendering: Rendering,
+    ) -> (StepStream, Rendering) {
+        if redactions_generation.is_some() {
+            saved_threads.get_or_insert_with(|| self.threads.clone());
+        }
+        rendering.redactions_generation = redactions_generation;
+        rendering.auth_refresh_spent = auth_refresh_spent;
+        let logical = frozen.logical(self, messages, &rendering);
+        let sent = self.sent(&logical, print.cloned());
+        let may = self.provider().threads(&logical);
+        let (thread, head) =
+            self.threads
+                .choose(may, self.endpoint, sent.wire.as_ref(), self.clock.as_ref());
+        let logical = frozen.logical(self, messages, &rendering);
+        let request = Request {
+            previous_response_id: head.as_deref().or(logical.previous_response_id),
+            features: Features {
+                thread,
+                ..frozen.features
+            },
+            ..logical
+        };
+        let betas = self.provider().betas(&request);
+        let prefix = self.provider().cache_prefix(&request);
+        let sound = self.sent_sound(request.messages, request.rendering);
+        let stream = self.provider().stream(&request);
+        self.epoch.sending(prefix, betas, frozen.key.clone());
+        self.sent_sound = sound;
+        self.sending = Some(sent);
+        (stream, rendering)
     }
 
     async fn on_search(
@@ -6264,22 +6965,99 @@ async fn emit(events: &mpsc::Sender<AgentEvent>, event: AgentEvent) {
 enum SensitiveEvent<'a> {
     Todos(&'a mut [TodoItem]),
     Hook(crate::session::HookAudit<'a>),
+    Brief {
+        path: Option<wisp_protocol::AgentPath>,
+        id: &'a InputId,
+        text: &'a mut String,
+        spans: &'a mut Vec<TextSpan>,
+    },
 }
 
-fn visit_sensitive_event(
-    event: &mut AgentEvent,
-    visit: &mut impl FnMut(SensitiveEvent<'_>) -> ControlFlow<()>,
+#[derive(Clone, Default)]
+pub struct BriefOwners {
+    root: Option<BriefOwner>,
+    tree: Option<crate::agents::AgentsService>,
+}
+
+impl BriefOwners {
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        root: Option<BriefOwner>,
+        tree: Option<crate::agents::AgentsService>,
+    ) -> Self {
+        Self { root, tree }
+    }
+
+    fn resolve(&self, path: Option<&wisp_protocol::AgentPath>) -> Option<BriefOwner> {
+        match path {
+            Some(path) if !path.is_root() => self.tree.as_ref()?.brief_owner(path),
+            _ => self.root.clone(),
+        }
+    }
+}
+
+struct FrameTarget {
+    frame: usize,
+    opened: bool,
+    reply: Option<(Option<wisp_protocol::AgentPath>, RequestId)>,
+}
+
+struct BriefChange<'a> {
+    frame: usize,
+    opened: bool,
+    reply: Option<(Option<wisp_protocol::AgentPath>, RequestId)>,
+    path: Option<wisp_protocol::AgentPath>,
+    owner: Option<BriefOwner>,
+    id: &'a InputId,
+    text: &'a mut String,
+    spans: &'a mut Vec<TextSpan>,
+}
+
+impl BriefChange<'_> {
+    fn persist(self, home: Option<&Path>) -> brief_owner::Projection {
+        self.owner
+            .map_or(brief_owner::Projection::Suppress(None), |owner| {
+                owner.persist(self.id, self.text, self.spans, home)
+            })
+    }
+}
+
+fn visit_sensitive_event<'a>(
+    event: &'a mut AgentEvent,
+    path: Option<&wisp_protocol::AgentPath>,
+    visit: &mut impl FnMut(SensitiveEvent<'a>) -> ControlFlow<()>,
 ) -> ControlFlow<()> {
     match event {
-        AgentEvent::TodosUpdated { items, .. } if !items.is_empty() => {
-            visit(SensitiveEvent::Todos(items))
+        AgentEvent::TodosUpdated { items, .. } => {
+            if items.is_empty() {
+                ControlFlow::Continue(())
+            } else {
+                visit(SensitiveEvent::Todos(items))
+            }
         }
-        AgentEvent::Agent { event, .. } => visit_sensitive_event(event, visit),
+        AgentEvent::InputAccepted {
+            id,
+            text,
+            checklist_spans,
+            ..
+        } => {
+            if checklist_spans.is_empty() {
+                ControlFlow::Continue(())
+            } else {
+                visit(SensitiveEvent::Brief {
+                    path: path.cloned(),
+                    id,
+                    text,
+                    spans: checklist_spans,
+                })
+            }
+        }
+        AgentEvent::Agent { agent, event } => visit_sensitive_event(event, Some(agent), visit),
         AgentEvent::SessionSnapshot { view, state, .. } => view
             .events
             .iter_mut()
             .chain(state)
-            .try_for_each(|event| visit_sensitive_event(event, visit)),
+            .try_for_each(|event| visit_sensitive_event(event, path, visit)),
         _ => match crate::session::agent_hook_audit(event) {
             Some(audit) => visit(SensitiveEvent::Hook(audit)),
             None => ControlFlow::Continue(()),
@@ -6288,91 +7066,324 @@ fn visit_sensitive_event(
 }
 
 fn has_sensitive_event(event: &mut AgentEvent) -> bool {
-    visit_sensitive_event(event, &mut |_| ControlFlow::Break(())).is_break()
+    visit_sensitive_event(event, None, &mut |_| ControlFlow::Break(())).is_break()
 }
 
-fn scrub_event_with<G: std::ops::Deref<Target = Redactions>>(
-    event: &mut AgentEvent,
+type ResolveOwner<'a> = &'a dyn Fn(Option<&wisp_protocol::AgentPath>) -> Option<BriefOwner>;
+
+fn collect_sensitive_changes<'a>(
+    target: &FrameTarget,
+    event: &'a mut AgentEvent,
     home: Option<&Path>,
-    held: &mut Option<G>,
-    load: &mut impl FnMut() -> G,
+    held: &mut Option<(Redactions, u64)>,
+    owners: Option<ResolveOwner<'_>>,
+    changes: &mut Vec<BriefChange<'a>>,
 ) {
-    let _ = visit_sensitive_event(event, &mut |field| {
-        let held = held.get_or_insert_with(&mut *load);
+    let _ = visit_sensitive_event(event, None, &mut |field| {
+        let (held, _) = held.get_or_insert_with(crate::session::held_with_generation);
         match field {
             SensitiveEvent::Todos(items) => scrub_todos(items, home, held),
             SensitiveEvent::Hook(audit) => {
                 audit.scrub(home, held);
             }
+            SensitiveEvent::Brief {
+                path,
+                id,
+                text,
+                spans,
+            } => match owners {
+                Some(resolve) => {
+                    if let Some(owner) = resolve(path.as_ref()) {
+                        if matches!(
+                            owner.project(id, text, spans, home, held),
+                            brief_owner::Projection::Revise
+                        ) {
+                            changes.push(BriefChange {
+                                frame: target.frame,
+                                opened: target.opened,
+                                reply: target.reply.clone(),
+                                path,
+                                owner: Some(owner),
+                                id,
+                                text,
+                                spans,
+                            });
+                        }
+                    } else if scrub_checklist_spans(text, spans, home, held) {
+                        changes.push(BriefChange {
+                            frame: target.frame,
+                            opened: target.opened,
+                            reply: target.reply.clone(),
+                            path,
+                            owner: None,
+                            id,
+                            text,
+                            spans,
+                        });
+                    }
+                }
+                None => {
+                    scrub_checklist_spans(text, spans, home, held);
+                }
+            },
         }
         ControlFlow::Continue(())
     });
 }
 
-fn with_scrubbed_event_with<G: std::ops::Deref<Target = Redactions>, R>(
-    mut event: AgentEvent,
-    home: Option<&Path>,
-    mut load: impl FnMut() -> G,
-    publish: impl FnOnce(AgentEvent) -> R,
-) -> R {
-    let mut guard = None;
-    scrub_event_with(&mut event, home, &mut guard, &mut load);
-    let result = publish(event);
-    drop(guard);
-    result
-}
-
-fn with_scrubbed_link_frames_with<G: std::ops::Deref<Target = Redactions>, R>(
-    frames: &mut [wisp_protocol::link::ToClient],
-    home: Option<&Path>,
-    mut load: impl FnMut() -> G,
-    publish: impl FnOnce(&[wisp_protocol::link::ToClient]) -> R,
-) -> R {
+fn frame_targets_mut(frame: &mut wisp_protocol::link::ToClient) -> (bool, &mut [AgentEvent]) {
     use wisp_protocol::link::ToClient;
 
-    let mut guard = None;
-    for frame in frames.iter_mut() {
-        match frame {
-            ToClient::Opened { view, .. } => {
-                for event in &mut view.events {
-                    scrub_event_with(event, home, &mut guard, &mut load);
-                }
-            }
-            ToClient::Event(event) => {
-                scrub_event_with(event, home, &mut guard, &mut load);
-            }
-            ToClient::Welcome(_)
-            | ToClient::Refused { .. }
-            | ToClient::Taken
-            | ToClient::WindowOpen
-            | ToClient::Restarting
-            | ToClient::Ended { .. } => {}
-        }
+    match frame {
+        ToClient::Opened { view, .. } => (true, &mut view.events),
+        ToClient::Event(event) => (false, std::slice::from_mut(event.as_mut())),
+        ToClient::Welcome(_)
+        | ToClient::Refused { .. }
+        | ToClient::Taken
+        | ToClient::WindowOpen
+        | ToClient::Restarting
+        | ToClient::Ended { .. } => (false, &mut []),
     }
-    let result = publish(frames);
-    drop(guard);
-    result
 }
 
 pub fn with_scrubbed_link_frames<R>(
     frames: &mut [wisp_protocol::link::ToClient],
     home: Option<&Path>,
-    publish: impl FnOnce(&[wisp_protocol::link::ToClient]) -> R,
-) -> R {
-    with_scrubbed_link_frames_with(frames, home, crate::session::read_held, publish)
+    owners: Option<&BriefOwners>,
+    mut publish: impl FnOnce(&[wisp_protocol::link::ToClient]) -> R,
+) -> Option<R> {
+    use wisp_protocol::link::ToClient;
+
+    let resolve =
+        owners.map(|owners| move |path: Option<&wisp_protocol::AgentPath>| owners.resolve(path));
+    let mut replacements: Vec<(usize, Vec<ToClient>)> = Vec::new();
+    loop {
+        let mut changes = Vec::new();
+        let mut held = None;
+        for (idx, frame) in frames.iter_mut().enumerate() {
+            if replacements
+                .iter()
+                .any(|(suppressed, _)| *suppressed == idx)
+            {
+                continue;
+            }
+            let (opened, events) = frame_targets_mut(frame);
+            for event in events {
+                let target = FrameTarget {
+                    frame: idx,
+                    opened,
+                    reply: (!opened).then(|| snapshot_reply(event)).flatten(),
+                };
+                collect_sensitive_changes(
+                    &target,
+                    event,
+                    home,
+                    &mut held,
+                    resolve.as_ref().map(|r| r as &_),
+                    &mut changes,
+                );
+            }
+        }
+        if changes.is_empty() {
+            let out;
+            let slice = if replacements.is_empty() {
+                &*frames
+            } else {
+                let mut rebuilt = Vec::with_capacity(frames.len());
+                for (idx, frame) in frames.iter().enumerate() {
+                    if let Some((_, extra)) = replacements.iter().find(|(i, _)| *i == idx) {
+                        rebuilt.extend(extra.iter().cloned());
+                    } else {
+                        rebuilt.push(frame.clone());
+                    }
+                }
+                out = rebuilt;
+                out.as_slice()
+            };
+            let Some((_, generation)) = held else {
+                return Some(publish(slice));
+            };
+            match crate::session::send_if_generation_current(generation, slice, publish) {
+                Ok(result) => return Some(result),
+                Err((_, retry)) => {
+                    publish = retry;
+                    continue;
+                }
+            }
+        }
+        for change in changes {
+            let frame_idx = change.frame;
+            if replacements.iter().any(|(i, _)| *i == frame_idx) {
+                continue;
+            }
+            let opened = change.opened;
+            let reply = change.reply.clone();
+            let path = change.path.clone();
+            if let brief_owner::Projection::Suppress(failure) = change.persist(home) {
+                if opened {
+                    return None;
+                }
+                let mut extra = Vec::new();
+                if let Some(reason) = failure {
+                    extra.push(ToClient::event(at_agent(
+                        path,
+                        AgentEvent::LogDisabled { reason },
+                    )));
+                }
+                if let Some((reply_path, request)) = reply {
+                    extra.push(ToClient::event(at_agent(
+                        reply_path,
+                        AgentEvent::refused(request, "couldn't persist a checklist brief revision"),
+                    )));
+                }
+                replacements.push((frame_idx, extra));
+            }
+        }
+    }
+}
+
+fn snapshot_reply(mut event: &AgentEvent) -> Option<(Option<wisp_protocol::AgentPath>, RequestId)> {
+    let mut path: Option<&wisp_protocol::AgentPath> = None;
+    loop {
+        match event {
+            AgentEvent::SessionSnapshot { answers, .. } => return Some((path.cloned(), *answers)),
+            AgentEvent::Agent {
+                agent,
+                event: inner,
+            } => {
+                path = Some(agent);
+                event = inner;
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn at_agent(path: Option<wisp_protocol::AgentPath>, event: AgentEvent) -> AgentEvent {
+    match path {
+        Some(agent) => AgentEvent::Agent {
+            agent,
+            event: Box::new(event),
+        },
+        None => event,
+    }
 }
 
 pub(crate) async fn send_scrubbed(
     events: &mpsc::Sender<AgentEvent>,
-    event: AgentEvent,
+    mut event: AgentEvent,
     home: Option<&Path>,
+    resolve: impl Fn(Option<&wisp_protocol::AgentPath>) -> Option<BriefOwner>,
 ) {
-    let Ok(permit) = events.reserve().await else {
-        return;
-    };
-    with_scrubbed_event_with(event, home, crate::session::read_held, |event| {
-        permit.send(event);
-    });
+    loop {
+        let Ok(permit) = events.reserve().await else {
+            return;
+        };
+        let target = FrameTarget {
+            frame: 0,
+            opened: false,
+            reply: snapshot_reply(&event),
+        };
+        let mut changes = Vec::new();
+        let mut held = None;
+        collect_sensitive_changes(
+            &target,
+            &mut event,
+            home,
+            &mut held,
+            Some(&resolve),
+            &mut changes,
+        );
+        if changes.is_empty() {
+            let Some((_, generation)) = held else {
+                permit.send(event);
+                return;
+            };
+            match crate::session::send_if_generation_current(
+                generation,
+                (permit, event),
+                |(permit, event)| permit.send(event),
+            ) {
+                Ok(()) => return,
+                Err(((permit, unsent), _)) => {
+                    drop(permit);
+                    event = unsent;
+                    continue;
+                }
+            }
+        }
+        drop(permit);
+        for change in changes {
+            let path = change.path.clone();
+            let reply = change.reply.clone();
+            if let brief_owner::Projection::Suppress(failure) = change.persist(home) {
+                if let Some(reason) = failure {
+                    emit(events, at_agent(path, AgentEvent::LogDisabled { reason })).await;
+                }
+                if let Some((reply_path, request)) = reply {
+                    emit(
+                        events,
+                        at_agent(
+                            reply_path,
+                            AgentEvent::refused(
+                                request,
+                                "couldn't persist a checklist brief revision",
+                            ),
+                        ),
+                    )
+                    .await;
+                }
+                return;
+            }
+        }
+    }
+}
+
+type StepStream = BoxStream<'static, Result<ProviderEvent, ProviderError>>;
+
+struct StepRequest<'a> {
+    session: &'a SessionConfig,
+    tools: &'a [crate::tool::ToolSpec],
+    server_tools: &'a [ServerToolSpec],
+    features: Features,
+    options: RequestOptions,
+    key: epoch::PrefixKey,
+}
+
+impl<'a> StepRequest<'a> {
+    fn logical(
+        &'a self,
+        agent: &'a Agent,
+        messages: &'a [Message],
+        rendering: &'a Rendering,
+    ) -> Request<'a> {
+        Request {
+            session: self.session,
+            tools: self.tools,
+            deferred: tool_changes::deferred_for(&agent.deferred, self.features),
+            by_value: tool_changes::by_value_for(&agent.deferred, self.features),
+            server_tools: self.server_tools,
+            messages,
+            previous_response_id: agent
+                .last
+                .as_ref()
+                .filter(|last| last.endpoint == agent.endpoint)
+                .and_then(|last| last.response_id.as_deref()),
+            features: self.features,
+            options: self.options,
+            rendering,
+            compaction: None,
+        }
+    }
+}
+
+async fn next_stream(
+    stream: &mut Option<StepStream>,
+) -> Option<Result<ProviderEvent, ProviderError>> {
+    match stream {
+        Some(stream) => stream.next().await,
+        None => std::future::pending().await,
+    }
 }
 
 type Stagger = std::pin::Pin<Box<dyn std::future::Future<Output = crate::warmth::Ticket> + Send>>;
@@ -6527,11 +7538,20 @@ fn block_kind(block: &ContentBlock, toolbox: &Toolbox) -> BlockKind {
 }
 
 pub struct AgentTask {
+    pub(crate) brief_owner: BriefOwner,
+    pub(crate) owner_tree: Option<crate::agents::AgentsService>,
     pub handle: tokio::task::JoinHandle<()>,
     pub worst: tokio::sync::watch::Receiver<Duration>,
 }
 
 impl AgentTask {
+    pub fn brief_owners(&self) -> BriefOwners {
+        BriefOwners {
+            root: Some(self.brief_owner.clone()),
+            tree: self.owner_tree.clone(),
+        }
+    }
+
     pub fn limit(&self) -> Duration {
         *self.worst.borrow() + QUIT_MARGIN
     }
@@ -6572,10 +7592,20 @@ pub fn spawn(
     let (cmd_tx, mut cmd_rx) = mpsc::channel(16);
     let (ev_tx, ev_rx) = mpsc::channel(256);
     let worst = agent.queue_watch();
+    let brief_owner = agent.brief_owner();
     let handle = tokio::spawn(async move {
         agent.serve(&mut cmd_rx, &ev_tx).await;
     });
-    (cmd_tx, ev_rx, AgentTask { handle, worst })
+    (
+        cmd_tx,
+        ev_rx,
+        AgentTask {
+            handle,
+            worst,
+            brief_owner,
+            owner_tree: None,
+        },
+    )
 }
 
 #[cfg(test)]

@@ -372,7 +372,7 @@ impl Agent {
                 return Err("resuming a session needs its log".to_owned());
             };
             let providers = |name: Option<&str>| Some(self.provider_for(name));
-            recover(lines, log.store(), &providers)?
+            recover(lines, log.lock().store(), &providers)?
         };
         if recovered.fresh() {
             return Ok(self.start_over(&recovered));
@@ -417,7 +417,7 @@ impl Agent {
                     return Err("resuming a session needs its log".to_owned());
                 };
                 let providers = |name: Option<&str>| Some(self.provider_for(name));
-                recover(lines, log.store(), &providers)?
+                recover(lines, log.lock().store(), &providers)?
             };
             if recovered.fresh() {
                 let (agent, _) = self.start_over(&recovered).with_start_sections().await;
@@ -456,9 +456,13 @@ impl Agent {
         };
         let rebuild = || {
             let notes = lost_notes(records, &recovered.lost);
-            rebuild_checked(log.store(), &with_notes(records, &notes), recovered.start)
-                .map_err(|e| e.error.to_string())?
-                .ok_or_else(|| "the log's compaction can't be rebuilt".to_owned())
+            rebuild_checked(
+                log.lock().store(),
+                &with_notes(records, &notes),
+                recovered.start,
+            )
+            .map_err(|e| e.error.to_string())?
+            .ok_or_else(|| "the log's compaction can't be rebuilt".to_owned())
         };
         let rebuilt = match rebuilt {
             Some(rebuilt) => {
@@ -955,7 +959,7 @@ impl Agent {
         }
         let text = dropped_text(&self.session_id, fell_back);
         let (log, _) = self.log.as_mut()?;
-        match log.write_dropped(fell_back.seq, &text) {
+        match log.lock().write_dropped(fell_back.seq, &text) {
             Ok(Some(path)) => Some(path.display().to_string()),
             Ok(None) | Err(_) => None,
         }

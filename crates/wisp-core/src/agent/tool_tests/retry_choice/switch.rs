@@ -579,6 +579,7 @@ fn report(id: &str) -> (crate::agent::Mail, String) {
         kind: wisp_protocol::MailKind::Report,
         wake: true,
         text: format!("child finished {id}"),
+        checklist_spans: Vec::new(),
     };
     let shown = crate::agent::render_mail(&report.from, report.kind, &report.text);
     (report, shown)

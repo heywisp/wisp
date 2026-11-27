@@ -1143,6 +1143,7 @@ impl Agent {
             held: false,
             front: false,
             from: None,
+            checklist_spans: Vec::new(),
         };
         if !self.emit(accepted).await {
             return false;
@@ -1255,6 +1256,7 @@ impl Agent {
                 wake: true,
                 plugin: None,
             }),
+            checklist_spans: Vec::new(),
         };
         self.emit(accepted).await.then_some(id)
     }

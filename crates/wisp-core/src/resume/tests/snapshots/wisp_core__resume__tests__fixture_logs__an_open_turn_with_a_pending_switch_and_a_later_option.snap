@@ -163,6 +163,7 @@ Ok(
                         text: "message 2",
                         images: [],
                         note: None,
+                        checklist_spans: [],
                     },
                 ],
                 lead: TurnLead {
@@ -170,6 +171,7 @@ Ok(
                 },
                 ends: [],
                 replied: true,
+                opening_committed: true,
                 delivered: [],
                 committed: {},
                 usage: Some(

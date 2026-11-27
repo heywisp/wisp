@@ -47,6 +47,8 @@ fn typed(id: &str, text: &str) -> Input {
         arrival: None,
         from: None,
         note: None,
+        checklist_spans: Vec::new(),
+        revision_unlogged: false,
     }
 }
 
@@ -629,6 +631,7 @@ async fn esc_during_a_steers_hook_withdraws_it_turn_stopped_and_sends_nothing() 
         kind: wisp_protocol::agents::MailKind::Message,
         wake: true,
         text: "a letter".into(),
+        checklist_spans: Vec::new(),
     })
     .unwrap();
     settle().await;

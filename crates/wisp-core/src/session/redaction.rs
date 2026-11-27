@@ -13,7 +13,9 @@ use wisp_protocol::{
 use super::{RedactionKind, Redactions, scrub_json_strings};
 use crate::plugin::hooks::BLOCKED_BY;
 use crate::plugin::hooks::strategy::STRATEGY_REFUSED;
-use crate::secrets::scan::{os_detection_home, scrub_field, scrub_todo_fields};
+use crate::secrets::scan::{
+    os_detection_home, scrub_checklist_spans, scrub_field, scrub_todo_fields,
+};
 
 struct Scrub<'a> {
     held: &'a Redactions,
@@ -257,15 +259,27 @@ fn scrub_formatted_reason(text: &mut String, scrub: &impl Fn(&str) -> String) {
     };
 }
 
+fn has_checklist_todos(event: &LogEvent) -> bool {
+    wisp_protocol::todos::listed(event).is_some_and(|items| !items.is_empty())
+}
+
+fn has_checklist_spans(event: &LogEvent) -> bool {
+    matches!(event, LogEvent::InputAccepted { checklist_spans, .. } if !checklist_spans.is_empty())
+}
+
+pub(crate) fn log_needs_home(event: &mut LogEvent) -> bool {
+    has_checklist_todos(event) || has_checklist_spans(event) || log_hook_audit(event).is_some()
+}
+
 pub(super) fn scrub(redactions: &Redactions, mut event: LogEvent, home: Option<&Path>) -> LogEvent {
-    let has_todos = wisp_protocol::todos::listed(&event).is_some_and(|items| !items.is_empty());
+    let has_checklist = has_checklist_todos(&event) || has_checklist_spans(&event);
     let audit = log_hook_audit(&mut event);
-    let fallback = (home.is_none() && (has_todos || audit.is_some()))
+    let fallback = (home.is_none() && (has_checklist || audit.is_some()))
         .then(os_detection_home)
         .flatten();
     let home = home.or(fallback.as_deref());
     let hook_audited = audit.is_some_and(|audit| audit.scrub(home, redactions));
-    if !redactions.is_empty() || has_todos {
+    if !redactions.is_empty() || has_checklist {
         event.redact(&Scrub {
             held: redactions,
             home,
@@ -332,11 +346,16 @@ content!(LogEvent, redactions, {
         tool_message: _, images: _, endpoint_name: _, input_id: _, inputs: _, cache_ttl: _, debug_cache: _,
         refusal_fallback: _, binding_controls: _, retry_of: _, kept_tools_sha256: _,
     } => [],
-    Self::InputAccepted { turn: _, id: _, mode: _, text: _, images: _, replaces: _, held: _, from: _ } => [],
+    Self::InputAccepted { turn: _, id: _, mode: _, text, images: _, replaces: _, held: _, from: _, checklist_spans } => [] {
+        if !checklist_spans.is_empty() {
+            scrub_checklist_spans(text, checklist_spans, redactions.home, redactions.held);
+        }
+    },
     Self::InputHeld { turn: _, ids: _, by } => [by],
     Self::InputUnheld { turn: _, ids: _ } => [],
     Self::ReturnedTaken { ids: _ } => [],
     Self::InputCommitted { turn: _, step: _, inputs: _ } => [],
+    Self::InputRevised { turn: _, inputs: _ } => [],
     Self::InputWithdrawn { turn: _, ids: _, by: _ } => [],
     Self::InputDelivered { turn: _, step: _, ids: _ } => [],
     Self::Retrying {

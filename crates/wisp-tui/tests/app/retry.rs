@@ -676,6 +676,7 @@ async fn with_held_messages_enter_acts_on_the_choice_and_after_esc_releases_them
             replaces: None,
             held: true,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         a.key(KeyCode::Esc);
@@ -696,6 +697,7 @@ async fn with_held_messages_enter_acts_on_the_choice_and_after_esc_releases_them
             replaces: None,
             held: true,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         a.key(KeyCode::Enter);
@@ -933,6 +935,7 @@ async fn with_held_messages_enter_acts_on_the_choice_and_after_esc_releases_them
                 replaces: None,
                 held: true,
                 from: None,
+                checklist_spans: Vec::new(),
             })
             .await;
         }
@@ -1074,6 +1077,7 @@ async fn a_resent_message_is_tagged_retried() {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         a.emit(AgentEvent::retry_started(2, 1, Some(request))).await;

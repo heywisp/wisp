@@ -6,13 +6,13 @@ use wisp_protocol::log::{LogEvent, LogRecord, LoggedBlock, LoggedInput, LoggedMe
 use wisp_protocol::settings::{LoggedChange, Owner};
 use wisp_protocol::{
     AgentEvent, BlockKind, CacheEffect, ContentBlock, DeliveryMode, ErrorKind, Feature, InputId,
-    RebuildReason, RetryOffer, Role, TodoItem, TurnOutcome,
+    RebuildReason, RetryOffer, Role, TextSpan, TodoItem, TurnOutcome,
 };
 
 use super::{FeatureFact, feature_state, opening_of};
 use crate::agent::state_event;
 use crate::provider::{forms, quiet_end};
-use crate::secrets::scan::{os_detection_home, scrub_todos};
+use crate::secrets::scan::{os_detection_home, scrub_checklist_spans, scrub_todos};
 use crate::session::mirror::live_event;
 use crate::session::{
     REDACTED, Redactions, compaction_terminal_message, held, hook_compaction_error_kind,
@@ -27,6 +27,45 @@ pub(crate) fn replayed(event: &LogEvent) -> Option<(u64, AgentEvent)> {
         | LogEvent::QuestionClosed { turn, .. }
         | LogEvent::ToolCallFinished { turn, .. } => Some((*turn, live_event(event)?)),
         _ => None,
+    }
+}
+
+pub(crate) type LatestBriefs = BTreeMap<InputId, (String, Vec<TextSpan>)>;
+
+pub(crate) fn latest_spanned_mail(records: &[LogRecord]) -> LatestBriefs {
+    let mut latest = LatestBriefs::new();
+    for record in records {
+        let inputs = match &record.event {
+            LogEvent::TurnStarted { inputs, .. }
+            | LogEvent::InputRevised { inputs, .. }
+            | LogEvent::InputCommitted { inputs, .. } => inputs,
+            _ => continue,
+        };
+        for input in inputs
+            .iter()
+            .filter(|input| !input.checklist_spans.is_empty())
+        {
+            latest.insert(
+                input.id.clone(),
+                (input.text.clone(), input.checklist_spans.clone()),
+            );
+        }
+    }
+    latest
+}
+
+pub(crate) fn apply_latest_spanned_mail(event: &mut AgentEvent, latest: &LatestBriefs) {
+    if let AgentEvent::InputAccepted {
+        id,
+        text,
+        checklist_spans,
+        ..
+    } = event
+        && !checklist_spans.is_empty()
+        && let Some((latest_text, latest_spans)) = latest.get(id)
+    {
+        text.clone_from(latest_text);
+        checklist_spans.clone_from(latest_spans);
     }
 }
 
@@ -58,6 +97,7 @@ impl Inputs {
                     text,
                     images,
                     from,
+                    checklist_spans,
                     ..
                 } => {
                     let input = LoggedInput {
@@ -65,6 +105,7 @@ impl Inputs {
                         text: text.clone(),
                         images: images.clone(),
                         note: None,
+                        checklist_spans: checklist_spans.clone(),
                     };
                     inputs.known.insert(id.clone(), (*mode, input));
                     if let Some(from) = from {
@@ -124,6 +165,7 @@ impl Inputs {
 
 struct Replay<'a> {
     inputs: Inputs,
+    latest_mail: &'a LatestBriefs,
     offer: Option<(u64, RetryOffer)>,
     out: Vec<AgentEvent>,
     turn: u64,
@@ -163,11 +205,19 @@ impl<'a> Replay<'a> {
             return;
         }
         if let Some((mode, input)) = self.inputs.known.get(id) {
+            let (mut text, mut checklist_spans) = self
+                .latest_mail
+                .get(id)
+                .filter(|_| !input.checklist_spans.is_empty())
+                .cloned()
+                .unwrap_or_else(|| (input.text.clone(), input.checklist_spans.clone()));
+            scrub_checklist_spans(&mut text, &mut checklist_spans, self.home, &self.redactions);
             self.out.push(AgentEvent::InputAccepted {
                 opening: false,
                 id: input.id.clone(),
                 mode: *mode,
-                text: input.text.clone(),
+                text,
+                checklist_spans,
                 images: input.images.clone(),
                 replaces: None,
                 held: false,
@@ -691,6 +741,7 @@ impl<'a> Replay<'a> {
             }
             LogEvent::SessionStarted { .. }
             | LogEvent::InputAccepted { .. }
+            | LogEvent::InputRevised { .. }
             | LogEvent::InputHeld { .. }
             | LogEvent::InputUnheld { .. }
             | LogEvent::Retrying { .. }
@@ -828,7 +879,7 @@ pub fn transcript(
     toolbox: &Toolbox,
     offer: Option<(u64, RetryOffer)>,
 ) -> Vec<AgentEvent> {
-    transcript_with_home(records, toolbox, offer, os_detection_home().as_deref())
+    super::transcript_with_home(records, toolbox, offer, os_detection_home().as_deref())
 }
 
 pub(crate) fn transcript_with_home(
@@ -837,8 +888,20 @@ pub(crate) fn transcript_with_home(
     offer: Option<(u64, RetryOffer)>,
     home: Option<&Path>,
 ) -> Vec<AgentEvent> {
+    let latest = latest_spanned_mail(records);
+    transcript_with_latest(records, &latest, toolbox, offer, home)
+}
+
+pub(crate) fn transcript_with_latest(
+    records: &[LogRecord],
+    latest: &LatestBriefs,
+    toolbox: &Toolbox,
+    offer: Option<(u64, RetryOffer)>,
+    home: Option<&Path>,
+) -> Vec<AgentEvent> {
     Replay {
         inputs: Inputs::read(run_of(records, 0)),
+        latest_mail: latest,
         offer,
         out: Vec::new(),
         turn: 0,

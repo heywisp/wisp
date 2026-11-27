@@ -3134,3 +3134,101 @@ async fn the_model_list_url_uses_the_codex_client_version_only_for_subscriptions
     .unwrap();
     assert!(gateway.client_version.is_none());
 }
+
+#[tokio::test]
+async fn subscription_401_refresh_rebuilds_scrubbed_body_and_preserves_one_refresh_limit() {
+    use crate::agent::testing::{brief_turn, checklist_mail, prime_brief};
+    use crate::agent::{Agent, IMPLICIT_ENDPOINT};
+    use crate::lanes::Lanes;
+    use crate::session::{MemoryStore, SessionLog};
+    use wisp_protocol::{ErrorKind, TurnOutcome};
+
+    struct RefreshingOpenAi {
+        provider: OpenAiProvider,
+        profile: PathBuf,
+        url: String,
+    }
+    impl Provider for RefreshingOpenAi {
+        fn stream(
+            &self,
+            request: &Request<'_>,
+        ) -> BoxStream<'static, Result<ProviderEvent, ProviderError>> {
+            self.provider
+                .stream_refreshing(request, refresh_at(self.profile.clone(), self.url.clone()))
+        }
+
+        fn cache_prefix(&self, request: &Request<'_>) -> Option<String> {
+            self.provider.cache_prefix(request)
+        }
+    }
+
+    for succeeds in [false, true] {
+        crate::session::reset_held_for_test();
+        let canary = format!("synthetic-new-access-CANARY-{succeeds}");
+        let response = if succeeds {
+            stream_reply("200 OK", &[], &data(&[created(), completed(&[message()])]))
+        } else {
+            stream_reply("401 Unauthorized", &[], "{}")
+        };
+        let (_folder, profile, provider, server) =
+            refreshing_subscription(vec![stream_reply("401 Unauthorized", &[], "{}"), response])
+                .await;
+        let token_server = http::serve(vec![http::Reply::Send(http::json("200 OK", &json!({"access_token":canary,"refresh_token":"synthetic-refresh-CANARY","expires_in":3600}).to_string()))]).await;
+        let provider = Arc::new(RefreshingOpenAi {
+            provider,
+            profile,
+            url: token_server.url.clone(),
+        });
+        let lanes = Lanes::new([(IMPLICIT_ENDPOINT.to_owned(), Some(1))].into(), None);
+        let store = MemoryStore::default();
+        let mut agent = Agent::new(provider, session())
+            .with_lanes(lanes.clone())
+            .with_log(
+                SessionLog::new(Box::new(store.clone()), "s1"),
+                crate::agent::LogContext {
+                    endpoint_name: IMPLICIT_ENDPOINT.into(),
+                    ..log_context()
+                },
+            );
+        prime_brief(
+            &mut agent,
+            checklist_mail("refresh", "Review the code", &[&canary]),
+        )
+        .await;
+        let (outcome, events) = brief_turn(&mut agent).await;
+        if succeeds {
+            assert!(
+                matches!(outcome, TurnOutcome::Completed { .. }),
+                "{outcome:?}"
+            );
+        } else {
+            assert!(
+                matches!(outcome, TurnOutcome::Error { kind: ErrorKind::Auth, message, .. } if message.contains("sign in again with /account"))
+            );
+        }
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, wisp_protocol::AgentEvent::Retrying { .. }))
+        );
+        assert_eq!(asked(&token_server), 1);
+        let requests = server.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(http::body(&requests[0]).contains(&canary));
+        let second = http::body(&requests[1]);
+        assert!(
+            second.contains("Review the code")
+                && second.contains("[redacted]")
+                && !second.contains(&canary)
+        );
+        assert!(lanes.enter(IMPLICIT_ENDPOINT, 0).is_ok());
+        assert!(
+            crate::test_guard::log_events(&store)
+                .iter()
+                .any(|e| matches!(
+                    e,
+                    wisp_protocol::log::LogEvent::InputRevised { turn: Some(1), .. }
+                ))
+        );
+    }
+}

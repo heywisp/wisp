@@ -513,6 +513,7 @@ async fn steer_mail_and_process_end_reach_the_agent_while_a_question_is_open() {
         kind: MailKind::Report,
         wake: true,
         text: "child report arrived".into(),
+        checklist_spans: Vec::new(),
     })
     .unwrap();
     live.turn_end().await;
@@ -1484,4 +1485,48 @@ mod with_bash {
         live.turn_end().await;
         let _ = live.finish().await;
     }
+}
+
+#[tokio::test]
+async fn answered_posted_question_crash_after_system_commit_does_not_reopen_question() {
+    let (env, store, _, mut live) = logged_live(
+        "ask-user-late-system",
+        vec![uses(&[ask("q1")]), done("waiting"), done("answered")],
+    );
+    live.turn("first", "ask").await;
+    live.send(answer("q1", vec![Answer::choose(0)])).await;
+    let events = live.turn_end().await;
+    assert_eq!(closings(&events), [answered("q1", 0)]);
+    let _ = live.finish().await;
+    let mut saved = records(&store);
+    let reply_at = saved.iter().position(|row| matches!(&row.event, LogEvent::MessageCommitted { turn: 2, message, .. } if message.role == Role::Assistant)).unwrap();
+    let late_system = serde_json::from_value(json!({"type":"message_committed","turn":2,"message":{"role":"system","content":[{"type":"text","text":"Synthetic late system marker"}]}})).unwrap();
+    saved[reply_at].event = late_system;
+    saved.truncate(reply_at + 1);
+    let (again, _, resumed) = resumed_agent(&env, &saved, Vec::new());
+    assert!(resumed.posted_event().is_none());
+    let live = Live::start(resumed);
+    let Live {
+        commands,
+        mut events,
+        task,
+    } = live;
+    drop(commands);
+    while let Some(event) = events.recv().await {
+        assert!(!matches!(event, AgentEvent::QuestionAsked { .. }));
+    }
+    let resumed = task.await.unwrap();
+    assert_eq!(
+        resumed
+            .history()
+            .iter()
+            .filter(|message| user_text(message).contains(KEEP))
+            .count(),
+        1
+    );
+    assert!(
+        records(&again)[saved.len()..]
+            .iter()
+            .all(|row| !matches!(row.event, LogEvent::QuestionAsked { .. }))
+    );
 }

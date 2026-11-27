@@ -48,7 +48,10 @@ pub use repair::{
     Context as RepairContext, NOT_RUN, RepairedCall, UNKNOWN, recovered_text, repair_calls,
 };
 pub use transcript::transcript;
-pub(crate) use transcript::{replayed, transcript_with_home};
+pub(crate) use transcript::transcript_with_home;
+pub(crate) use transcript::{
+    LatestBriefs, apply_latest_spanned_mail, latest_spanned_mail, replayed, transcript_with_latest,
+};
 
 pub const STILL_OPEN_MINUTES: i64 = 10;
 const COMPACTION_SCHEMA: u16 = 19;
@@ -232,6 +235,7 @@ pub struct LastTurn {
     pub lead: TurnLead,
     pub ends: Vec<ReportedEnd>,
     pub replied: bool,
+    pub opening_committed: bool,
     pub delivered: Vec<InputId>,
     pub committed: BTreeSet<InputId>,
     pub usage: Option<Usage>,
@@ -316,6 +320,7 @@ pub(crate) fn opening_of(event: &LogEvent) -> Vec<LoggedInput> {
         text: text.clone(),
         images: images.clone(),
         note: None,
+        checklist_spans: Vec::new(),
     }]
 }
 
@@ -1047,6 +1052,14 @@ impl Fold {
                     self.undelivered.remove(id);
                     self.out.open_inputs.retain(|open| open != id);
                 }
+                for input in inputs
+                    .iter()
+                    .filter(|input| !input.checklist_spans.is_empty())
+                {
+                    if let Some(accepted) = self.out.accepted.get_mut(&input.id) {
+                        accepted.input = input.clone();
+                    }
+                }
                 let mail = inputs
                     .iter()
                     .map(|i| &i.id)
@@ -1067,6 +1080,7 @@ impl Fold {
                     lead: lead.clone(),
                     ends: ends.clone(),
                     replied: false,
+                    opening_committed: false,
                     delivered: Vec::new(),
                     committed: BTreeSet::new(),
                     usage: None,
@@ -1140,6 +1154,17 @@ impl Fold {
                 model,
                 ..
             } => {
+                if self.opening_mail.0 == *turn {
+                    let mail = std::mem::take(&mut self.opening_mail.1);
+                    self.out.waiting_mail.retain(|id| !mail.contains(id));
+                }
+                if let Some(last) = self.out.last_turn.as_mut().filter(|t| t.open(Some(*turn))) {
+                    last.opening_committed = true;
+                    if message.role == Role::Assistant {
+                        last.replied = true;
+                        last.committed_steps += 1;
+                    }
+                }
                 if message.role == Role::Assistant {
                     if !masked
                         && message
@@ -1158,15 +1183,6 @@ impl Fold {
                         self.out.thinking_tools = Some(self.turn_tools.clone());
                     }
                     self.reply = Some((index, model.clone(), self.mark.clone()));
-                    if self.opening_mail.0 == *turn {
-                        let mail = std::mem::take(&mut self.opening_mail.1);
-                        self.out.waiting_mail.retain(|id| !mail.contains(id));
-                    }
-                    if let Some(last) = self.out.last_turn.as_mut().filter(|t| t.open(Some(*turn)))
-                    {
-                        last.replied = true;
-                        last.committed_steps += 1;
-                    }
                 }
             }
             LogEvent::StepEnded {
@@ -1676,6 +1692,7 @@ impl Fold {
                 mode,
                 text,
                 from: Some(from),
+                checklist_spans,
                 ..
             } => {
                 if !self.out.waiting_mail.contains(id) {
@@ -1690,6 +1707,7 @@ impl Fold {
                             text: text.clone(),
                             images: Vec::new(),
                             note: None,
+                            checklist_spans: checklist_spans.clone(),
                         },
                         from: Some(from.clone()),
                     },
@@ -1719,6 +1737,7 @@ impl Fold {
                             text: text.clone(),
                             images: images.clone(),
                             note: None,
+                            checklist_spans: Vec::new(),
                         },
                         from: None,
                     },
@@ -1735,6 +1754,27 @@ impl Fold {
             LogEvent::InputUnheld { .. } => self.lapse(Lapse::SentAfter),
             LogEvent::ReturnedTaken { ids } => {
                 self.out.ended_inputs.retain(|id| !ids.contains(id));
+            }
+            LogEvent::InputRevised { turn, inputs } => {
+                for input in inputs {
+                    if input.checklist_spans.is_empty() {
+                        continue;
+                    }
+                    if let Some(accepted) = self.out.accepted.get_mut(&input.id) {
+                        accepted.input = input.clone();
+                    }
+                    if let Some(last) = self.out.last_turn.as_mut().filter(|last| {
+                        !last.opening_committed
+                            && !last.replied
+                            && turn.is_none_or(|n| n == last.turn)
+                    }) && let Some(opening) = last
+                        .opening
+                        .iter_mut()
+                        .find(|opening| opening.id == input.id)
+                    {
+                        *opening = input.clone();
+                    }
+                }
             }
             LogEvent::InputCommitted { inputs, .. } => {
                 for input in inputs {

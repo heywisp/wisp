@@ -933,6 +933,7 @@ impl Provider for AnthropicProvider {
             send_request(ctx),
             move |response| open(opening, response),
             self.waits,
+            request.rendering.redactions_generation,
         )
         .map(move |result| {
             result

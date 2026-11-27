@@ -68,6 +68,7 @@ fn the_mail_wire_types_match_their_fixtures() {
             held: false,
             front: false,
             from: Some(from()),
+            checklist_spans: Vec::new(),
         },
     );
     golden(
@@ -119,6 +120,7 @@ fn the_mail_wire_types_match_their_fixtures() {
                     mail: MailId("m4".into()),
                     ..from()
                 }),
+                checklist_spans: Vec::new(),
             },
         ),
     );
@@ -175,6 +177,7 @@ fn a_mail_turn_rebuilds_its_inputs_as_its_user_blocks() {
             text: BLOCK.into(),
             images: Vec::new(),
             note: None,
+            checklist_spans: Vec::new(),
         }]
     );
 }
@@ -265,4 +268,144 @@ fn a_version_27_reader_sees_the_mail_turn_as_newer_and_could_not_parse_it() {
             origin: Some(OriginAt27::ProcessExit)
         }
     ));
+}
+
+#[test]
+fn input_accepted_checklist_spans_round_trip_and_omit_when_empty() {
+    let span = json!([{"start": 0, "end": 4}]);
+    let mut live = json!({"type": "input_accepted", "id": "mail-m3", "mode": "steer", "text": "café", "held": false});
+    let mut log = json!({"schema_version": 43, "seq": 0, "at": "2026-10-28T12:00:00Z", "type": "input_accepted", "turn": null, "id": "mail-m3", "mode": "steer", "text": "café"});
+    let mut input = json!({"id": "mail-m3", "text": "café"});
+    fn round_trip<T: serde::de::DeserializeOwned + serde::Serialize>(value: &serde_json::Value) {
+        let decoded: T = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(&serde_json::to_value(decoded).unwrap(), value);
+    }
+    round_trip::<AgentEvent>(&live);
+    round_trip::<LogRecord>(&log);
+    round_trip::<LoggedInput>(&input);
+    live["checklist_spans"] = span.clone();
+    log["schema_version"] = json!(44);
+    log["checklist_spans"] = span.clone();
+    input["checklist_spans"] = span;
+    round_trip::<AgentEvent>(&live);
+    round_trip::<LogRecord>(&log);
+    round_trip::<LoggedInput>(&input);
+    round_trip::<LogEvent>(&json!({"type": "input_revised", "inputs": [input.clone()]}));
+    round_trip::<LogEvent>(&json!({"type": "input_revised", "turn": 1, "inputs": [input]}));
+}
+
+#[test]
+fn input_revised_updates_opening_brief_without_materializing_or_affecting_steers() {
+    use wisp_protocol::log::rebuild_log_with;
+
+    let brief = |id, text: &str| json!({"id": id, "text": text, "checklist_spans": [{"start": 0, "end": text.len()}]});
+    let image = json!({"sha256": "ab".repeat(32), "media_type": "image/png", "bytes": 3, "width": 1, "height": 1});
+    let marker = wisp_protocol::EffortMarker {
+        level: wisp_protocol::Effort::Low,
+        rendered: true,
+    };
+    for version in [0, 43, LOG_SCHEMA_VERSION] {
+        let rows = [
+            json!({"type": "turn_started", "turn": 1, "effort_marker": marker, "tool_message": [{"type": "text", "text": "tools"}], "inputs": [brief("mail-opening", "opening"), {"id": "typed", "text": "typed", "images": [image]}]}),
+            json!({"type": "input_committed", "turn": 1, "step": 2, "inputs": [{"note": "steer note", "id": "mail-steer", "text": "steer", "checklist_spans": [{"start": 0, "end": 5}]}]}),
+            json!({"type": "input_revised", "turn": 1, "inputs": [brief("mail-opening", "latest"), brief("typed", "must not replace typed"), brief("mail-steer", "must not replace steer")]}),
+            json!({"type": "input_revised", "turn": 2, "inputs": [brief("mail-opening", "other turn")]}),
+            json!({"type": "input_revised", "inputs": [brief("mail-opening", "waiting mail")]}),
+            json!({"type": "input_revised", "turn": 1, "inputs": [{"id": "mail-opening", "text": "notes excluded", "note": "note", "checklist_spans": [{"start": 0, "end": 14}]}]}),
+            json!({"type": "input_revised", "turn": 1, "inputs": [{"id": "mail-opening", "text": "image excluded", "images": [image], "checklist_spans": [{"start": 0, "end": 14}]}]}),
+            json!({"type": "message_committed", "turn": 1, "message": {"role": "assistant", "content": [{"type": "text", "text": "reply"}]}}),
+            json!({"type": "input_revised", "turn": 1, "inputs": [brief("mail-opening", "already committed")]}),
+        ];
+        let records: Vec<_> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(index, row)| {
+                let mut record = record(
+                    u64::try_from(index).unwrap(),
+                    serde_json::from_value(row).unwrap(),
+                );
+                record.schema_version = version;
+                record
+            })
+            .collect();
+        assert!(
+            rebuild_log_with(&records[..7], wisp_protocol::log::ImagesOnly(no_images))
+                .unwrap()
+                .messages
+                .is_empty()
+        );
+        let rebuilt = rebuild_log_with(
+            &records,
+            wisp_protocol::log::ImagesOnly(|r: &wisp_protocol::log::ImageRef| {
+                assert_eq!(r.sha256, image["sha256"].as_str().unwrap());
+                Ok("AAAA".to_owned())
+            }),
+        )
+        .unwrap();
+        assert_eq!(rebuilt.messages[1].effort_marker(), Some(marker));
+        assert_eq!(
+            rebuilt.messages[0].content[1],
+            ContentBlock::image(wisp_protocol::ImageType::Png, "AAAA".to_owned())
+        );
+        assert_eq!(rebuilt.messages.len(), 4);
+        let text: Vec<_> = rebuilt
+            .messages
+            .iter()
+            .flat_map(|message| &message.content)
+            .filter_map(|block| match block {
+                ContentBlock::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let opening = if version == 43 { "opening" } else { "latest" };
+        assert_eq!(
+            text,
+            [opening, "typed", "tools", "steer", "steer note", "reply"]
+        );
+    }
+}
+
+#[test]
+fn render_mail_spans_shifts_offsets_to_match_rendered_text() {
+    use wisp_protocol::{TextSpan, render_mail, render_mail_spans, shift_spans};
+
+    let text = "é\nfirst\n- [ ] multiline\n";
+    let spans = [
+        TextSpan {
+            start: 0,
+            end: 'é'.len_utf8(),
+        },
+        TextSpan {
+            start: 3,
+            end: text.len() - 1,
+        },
+        TextSpan {
+            start: text.len(),
+            end: text.len(),
+        },
+    ];
+    let from = AgentPath::new("/réview");
+    let (rendered, shifted) = render_mail_spans(&from, MailKind::Task, text, &spans);
+    assert_eq!(rendered, render_mail(&from, MailKind::Task, text));
+    let shifted = shifted.unwrap();
+    for (before, after) in spans.iter().zip(shifted) {
+        assert_eq!(
+            &text[before.start..before.end],
+            &rendered[after.start..after.end]
+        );
+        assert_eq!(after.start - before.start, rendered.find(text).unwrap());
+    }
+    let corrupt = [
+        spans[0],
+        TextSpan {
+            start: 0,
+            end: usize::MAX,
+        },
+    ];
+    assert!(
+        render_mail_spans(&from, MailKind::Task, text, &corrupt)
+            .1
+            .is_none()
+    );
+    assert_eq!(shift_spans(&[], usize::MAX), Some(Vec::new()));
 }

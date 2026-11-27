@@ -45,10 +45,17 @@ pub mod voice;
 pub use view::{NextTurn, Now, Pair, Returned, ReturnedImage, SessionView};
 
 pub use adapted::HistoryChange;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextSpan {
+    pub start: usize,
+    pub end: usize,
+}
 pub use agents::{
     Activity, AgentAction, AgentEntry, AgentPath, AgentState, ContextFill, HoldReason, IdleOutcome,
     KeepWarm, MailFrom, MailId, MailKind, ParentLink, PresetChange, QueueReason, ReportOutcome,
-    SpawnChoices, SpawnRequest, WakeSource, mail_body, render_mail, report_parts, report_text,
+    SpawnChoices, SpawnRequest, WakeSource, mail_body, render_mail, render_mail_spans,
+    report_parts, report_text, shift_spans,
 };
 pub use cache::{MissCause, RefreshOutcome};
 pub use compaction::{
@@ -1134,6 +1141,8 @@ pub enum AgentEvent {
         front: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from: Option<agents::MailFrom>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        checklist_spans: Vec<TextSpan>,
     },
     InputHeld {
         ids: Vec<InputId>,

@@ -1751,3 +1751,52 @@ async fn an_automatic_fallback_between_steps_counts_the_steer_against_kept_turns
     assert!(completed(&outcome), "{outcome:?}");
     assert!(!led, "kept turns chosen though the steer leaves no room");
 }
+
+#[tokio::test]
+async fn a_cutoff_compaction_does_not_thaw_an_accepted_starting_brief() {
+    use crate::agent::testing::checklist_mail;
+    use wisp_protocol::AgentPath;
+
+    let store = MemoryStore::default();
+    let gate = Arc::new(Semaphore::new(0));
+    let opening = "cutoff-opening-CANARY";
+    let steer = "cutoff-steer-CANARY";
+    let mut steer_mail = checklist_mail("cutoff-steer", "Steer prose", &[steer]);
+    steer_mail.wake = false;
+    let provider = scripted(vec![
+        answer("One.", 1_000),
+        cut_off_thinking(2_000)
+            .gated(&gate)
+            .run(move || crate::session::register_secrets([opening.to_owned(), steer.to_owned()]))
+            .mail(steer_mail),
+        compaction(SUMMARY),
+        answer("Done.", 900),
+    ]);
+    let agent = off(&provider, &store).with_path(AgentPath::new("/child"));
+    let mail = agent.mail_sender();
+    provider.mail_to(mail.clone());
+    let mut live = Live::start(agent);
+    assert!(completed(&live.turn("u1", "first").await));
+    let mut letter = checklist_mail("cutoff-opening", "Opening prose", &[opening]);
+    letter.wake = false;
+    mail.send(letter).unwrap();
+    live.until(|event| matches!(event, AgentEvent::InputAccepted { id, .. } if id.as_str() == "mail-cutoff-opening")).await;
+    live.send(send("u2", "the turn's own words")).await;
+    assert!(until(|| provider.sent().len() == 2).await);
+    gate.add_permits(1);
+    live.until(|e| matches!(e, AgentEvent::TurnEnded { .. }))
+        .await;
+    let (agent, _) = live.close().await;
+    let first = body_text(&provider.sent()[1].body());
+    let next = body_text(&provider.sent()[3].body());
+    assert!(first.contains(opening) && next.contains(opening), "{next}");
+    assert!(
+        next.contains(SUMMARY)
+            && next.contains("Steer prose")
+            && next.contains("[redacted]")
+            && !next.contains(steer),
+        "{next}"
+    );
+    assert!(!log_events(&store).iter().any(|event| matches!(event, LogEvent::InputRevised { inputs, .. } if inputs.iter().any(|input| input.id.as_str() == "mail-cutoff-opening"))));
+    assert_rebuilds(&store, &agent);
+}

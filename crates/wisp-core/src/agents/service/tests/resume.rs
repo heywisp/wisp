@@ -1180,6 +1180,7 @@ pub(super) fn sibling_mail(run: &Run, to: &str, from: &str, id: &str, text: &str
             replaces: None,
             held: false,
             from: Some(mail),
+            checklist_spans: Vec::new(),
         };
         records.insert(at, record);
         for (seq, record) in records.iter_mut().enumerate() {

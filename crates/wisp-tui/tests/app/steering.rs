@@ -107,6 +107,7 @@ impl Agent {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         id.clone()
@@ -834,6 +835,7 @@ async fn an_idle_wait_outlasts_refusals_while_a_message_waits_and_ends_when_none
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         let lines = a.settle().await;

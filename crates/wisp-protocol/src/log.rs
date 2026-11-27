@@ -11,13 +11,13 @@ use crate::{
     FileSlice, HookChange, HookOutcome, ImageType, InputId, InputTransformation,
     InstructionsSource, MediaSource, Message, MessageTime, NeedsInputKind, Placement, ProcessEnd,
     Question, QuestionEnd, RejectKind, RenderingForm, ReportedEnd, Resend, Role, SearchAction,
-    SearchEnd, SourceInfo, StopReason, SwitchCompaction, TermSize, ToolDisplay, ToolOutcome,
-    ToolOutputView, TurnOrigin, TurnOutcome, TurnStats, Typed, UnfinishedReason, Usage,
-    WithdrawnBy, WorkspaceChange,
+    SearchEnd, SourceInfo, StopReason, SwitchCompaction, TermSize, TextSpan, ToolDisplay,
+    ToolOutcome, ToolOutputView, TurnOrigin, TurnOutcome, TurnStats, Typed, UnfinishedReason,
+    Usage, WithdrawnBy, WorkspaceChange,
 };
 use crate::{Dropped, MissCause, RewindPoint, RewindReason, SourceChange};
 
-pub const LOG_SCHEMA_VERSION: u16 = 43;
+pub const LOG_SCHEMA_VERSION: u16 = 44;
 
 pub const PROVISIONAL_SINCE: u16 = 15;
 
@@ -35,6 +35,8 @@ pub struct LoggedInput {
     pub images: Vec<ImageRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checklist_spans: Vec<TextSpan>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -713,6 +715,8 @@ pub enum LogEvent {
         held: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from: Option<crate::agents::MailFrom>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        checklist_spans: Vec<TextSpan>,
     },
     InputHeld {
         turn: Option<u64>,
@@ -729,6 +733,11 @@ pub enum LogEvent {
     InputCommitted {
         turn: u64,
         step: u32,
+        inputs: Vec<LoggedInput>,
+    },
+    InputRevised {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        turn: Option<u64>,
         inputs: Vec<LoggedInput>,
     },
     InputWithdrawn {
@@ -1769,6 +1778,8 @@ impl RequestList {
 }
 
 struct Part<'a> {
+    id: Option<&'a InputId>,
+    opening_brief: bool,
     images: &'a [ImageRef],
     text: &'a str,
     note: Option<&'a str>,
@@ -1934,15 +1945,18 @@ fn part_blocks(
     Ok(blocks)
 }
 
-fn parts(inputs: &[LoggedInput]) -> Vec<Part<'_>> {
-    inputs
-        .iter()
-        .map(|i| Part {
-            images: &i.images,
-            text: &i.text,
-            note: i.note.as_deref(),
-        })
-        .collect()
+fn part(input: &LoggedInput, opening: bool) -> Part<'_> {
+    Part {
+        id: Some(&input.id),
+        opening_brief: opening && !input.checklist_spans.is_empty(),
+        images: &input.images,
+        text: &input.text,
+        note: input.note.as_deref(),
+    }
+}
+
+fn parts(inputs: &[LoggedInput], opening: bool) -> Vec<Part<'_>> {
+    inputs.iter().map(|input| part(input, opening)).collect()
 }
 
 fn append_user(history: &mut Vec<Message>, blocks: Vec<ContentBlock>) {
@@ -2296,6 +2310,7 @@ fn rebuild_versioned<'a>(
                 lead,
                 effort_marker,
                 tool_message: tools,
+                input_id,
                 images,
                 inputs,
                 endpoint_name,
@@ -2349,15 +2364,19 @@ fn rebuild_versioned<'a>(
                     continue;
                 }
                 let mut parts = match (inputs.is_empty(), lead.replays()) {
-                    (false, _) => parts(inputs),
+                    (false, _) => parts(inputs, true),
                     (true, true) if text.is_empty() && images.is_empty() => Vec::new(),
                     (true, _) => vec![Part {
+                        id: input_id.as_ref(),
+                        opening_brief: false,
                         images,
                         text,
                         note: None,
                     }],
                 };
                 parts.extend(lead.tail().map(|text| Part {
+                    id: None,
+                    opening_brief: false,
                     images: &[],
                     text,
                     note: None,
@@ -2379,13 +2398,18 @@ fn rebuild_versioned<'a>(
             }
             LogEvent::InputCommitted { turn, inputs, .. } => match pending.as_mut() {
                 Some(user) if marker.is_some() || !tool_message.is_empty() => {
-                    user.after.extend(parts(inputs));
+                    user.after.extend(parts(inputs, false));
                 }
-                Some(user) => user.parts.extend(parts(inputs)),
+                Some(user) => user.parts.extend(parts(inputs, false)),
                 None => {
                     let mut withdrawals = Withdrawals::new(std::mem::take(&mut deferred));
-                    let blocks =
-                        part_blocks(*turn, &parts(inputs), &mut blobs, &mut withdrawals, &lost)?;
+                    let blocks = part_blocks(
+                        *turn,
+                        &parts(inputs, false),
+                        &mut blobs,
+                        &mut withdrawals,
+                        &lost,
+                    )?;
                     withdrawals.finish()?;
                     append_after(&mut history, blocks, boundary);
                     let origin = Origin {
@@ -2397,6 +2421,22 @@ fn rebuild_versioned<'a>(
                     open_tail = None;
                 }
             },
+            LogEvent::InputRevised { turn, inputs } if version == UNVERSIONED || version >= 44 => {
+                if let Some(user) = pending.as_mut().filter(|user| Some(user.turn) == *turn) {
+                    for input in inputs {
+                        if !input.checklist_spans.is_empty()
+                            && input.images.is_empty()
+                            && input.note.is_none()
+                            && let Some(existing) = user
+                                .parts
+                                .iter_mut()
+                                .find(|part| part.opening_brief && part.id == Some(&input.id))
+                        {
+                            existing.text = &input.text;
+                        }
+                    }
+                }
+            }
             LogEvent::MessageCommitted {
                 turn,
                 message,

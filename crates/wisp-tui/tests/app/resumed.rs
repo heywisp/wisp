@@ -44,6 +44,7 @@ pub(super) fn turn(n: u64, text: &str) -> Vec<AgentEvent> {
             held: false,
             front: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         AgentEvent::InputDelivered {
             ids: vec![id],
@@ -629,6 +630,7 @@ async fn waiting_messages_go_out_before_an_empty_window_execs_or_a_draft_window_
                         replaces: None,
                         held: false,
                         from: None,
+                        checklist_spans: Vec::new(),
                     })
                     .await
                     .unwrap();
@@ -715,6 +717,7 @@ async fn waiting_messages_go_out_before_an_empty_window_execs_or_a_draft_window_
                     replaces: None,
                     held: false,
                     from: None,
+                    checklist_spans: Vec::new(),
                 }).await;
                 a.key(KeyCode::Enter);
                 assert!(matches!(a.next().await, ClientCommand::Send { text, .. } if text == "unsent draft"));
@@ -976,6 +979,7 @@ fn accepted_as(id: &str, n: u64, text: &str) -> Vec<AgentEvent> {
             held: false,
             front: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         AgentEvent::InputDelivered {
             ids: vec![id],

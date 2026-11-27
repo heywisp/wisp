@@ -12,7 +12,7 @@ mod tests;
 
 const LIFE: SignedDuration = SignedDuration::from_mins(5);
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub(super) struct Threads {
     head: Option<Head>,
     dropped: BTreeSet<usize>,
@@ -20,7 +20,7 @@ pub(super) struct Threads {
     logged: Option<(ThreadSend, Option<String>)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Head {
     id: String,
     endpoint: usize,

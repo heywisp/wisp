@@ -427,6 +427,7 @@ async fn a_send_naming_a_stopped_turn_is_returned_or_held_and_starts_no_turn() {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         }
     );
     assert_eq!(

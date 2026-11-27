@@ -164,12 +164,13 @@ fn replay_scrubs_terminal_compaction_refusals_even_without_a_visible_failure() {
     }];
     crate::session::register_secrets([late_at_open.to_owned()]);
     expected[6] = "Compaction stopped: [redacted]".to_owned();
-    crate::agent::with_scrubbed_link_frames(&mut frames, None, |frames| {
+    crate::agent::with_scrubbed_link_frames(&mut frames, None, None, |frames| {
         let [ToClient::Opened { view, .. }] = frames else {
             panic!("expected opening replay frame")
         };
         assert_eq!(messages(&view.events), expected);
-    });
+    })
+    .unwrap();
     assert_eq!(serde_json::to_string(&logs).unwrap(), original);
 }
 
@@ -302,6 +303,7 @@ fn messages_that_never_went_out_are_not_shown() {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         LogEvent::InputWithdrawn {
             turn: Some(1),
@@ -334,6 +336,7 @@ fn a_queued_message_is_accepted_where_the_log_accepted_it() {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         LogEvent::TurnEnded {
             turn: 1,
@@ -1477,4 +1480,50 @@ fn a_cited_openai_reply_replays_each_mark_after_its_span() {
         "[https://example.com/x]",
     ];
     assert_eq!(shown, expected);
+}
+
+#[test]
+fn transcript_scrubs_starting_brief_checklist_spans_fails_closed_and_prefers_revised_brief() {
+    crate::session::reset_held_for_test();
+    assert!(held().is_empty());
+    let canary = "transcript-opaque-CANARY";
+    let raw = format!("task prose\n- [ ] {canary}");
+    let safe = "task prose\n- [ ] [redacted]";
+    let input = |text: &str| json!({"id":"mail-brief", "text":text, "checklist_spans":[{"start":"task prose\n- [ ] ".len(),"end":text.len()}]});
+    let accepted = |input: serde_json::Value| {
+        let mut row = input;
+        row["type"] = json!("input_accepted");
+        row["mode"] = json!("steer");
+        row["from"] = json!({"agent":"/","kind":"task","mail":"brief"});
+        serde_json::from_value(row).unwrap()
+    };
+    let log = records(vec![
+        accepted(input(&raw)),
+        started(json!({"turn":1,"inputs":[input(&raw),{"id":"tui-1","text":"run A"}]})),
+        LogEvent::TurnEnded { turn: 1, outcome: TurnOutcome::Cancelled { usage: None, cost: None, committed_steps: 0 }, stats: TurnStats::default(), partial_output: None },
+        serde_json::from_value(json!({"type":"session_resumed","wisp_version":"test","endpoint":"test","endpoint_name":"test","gap_ms":null})).unwrap(),
+        serde_json::from_value(json!({"type":"input_revised","inputs":[input(safe)]})).unwrap(),
+        started(json!({"turn":2,"retry_of":1,"inputs":[input(safe),{"id":"tui-1","text":"run B"},{"id":"mail-corrupt","text":canary,"checklist_spans":[{"start":100,"end":99}]}]})),
+    ]);
+    let before = serde_json::to_vec(&log).unwrap();
+    let events = transcript_with_home(&log, &Toolbox::default(), None, None);
+    let texts: Vec<_> =
+        pick!(&events, AgentEvent::InputAccepted { id, text, .. } => (id.as_str(),text.as_str()));
+    assert_eq!(
+        texts
+            .iter()
+            .filter_map(|(id, text)| (*id == "mail-brief").then_some(*text))
+            .collect::<Vec<_>>(),
+        [safe, safe]
+    );
+    assert_eq!(
+        texts
+            .iter()
+            .filter_map(|(id, text)| (*id == "tui-1").then_some(*text))
+            .collect::<Vec<_>>(),
+        ["run A", "run B"]
+    );
+    assert!(texts.contains(&("mail-corrupt", "[redacted]")));
+    assert!(!serde_json::to_string(&events).unwrap().contains(canary));
+    assert_eq!(serde_json::to_vec(&log).unwrap(), before);
 }

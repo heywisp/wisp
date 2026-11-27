@@ -421,10 +421,12 @@ panic cannot overwrite these lines. A clean end removes the file.
 `Host::with_outbound` keeps `wispd` independent of the kernel. `Host::send`
 invokes the callback synchronously for opening, replay, live and restart-drain
 batches, but not for `Shutdown::finish`'s direct `Restarting` and `Ended` controls.
-Callbacks edit payloads in place, preserving frame variants and order. They call
-`publish` once for synchronous enqueue, holding any secret registry read guard
-without re-entering the registry or waiting for dependent work. Extra calls are
-ignored; omitting `publish` closes the peer.
+Callbacks edit payloads in place or omit/replace a suppressed checklist-brief
+`ToClient::Event` (with `LogDisabled` and/or a snapshot `Rejected`), preserving
+unaffected frames' variants and order; omitting `publish` (such as on a
+suppressed `ToClient::Opened`) closes the peer. They call `publish` once for
+synchronous enqueue, holding any secret registry read guard without re-entering
+the registry or waiting for dependent work; extra calls are ignored.
 
 A host still depends on the computer keeping it alive. A login service that
 kills user processes at logout ends hosts, just as it ends tmux. Windows

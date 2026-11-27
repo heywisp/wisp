@@ -63,12 +63,22 @@ struct Running {
 }
 
 impl Running {
-    fn start(mut agent: Agent, text: &str) -> Self {
+    fn start(agent: Agent, text: &str) -> Self {
+        Self::start_with(agent, Some(text.to_owned()))
+    }
+
+    fn start_brief(agent: Agent) -> Self {
+        Self::start_with(agent, None)
+    }
+
+    fn start_with(mut agent: Agent, text: Option<String>) -> Self {
         let (commands, mut inbox) = mpsc::channel(4);
         let (sink, events) = mpsc::channel(4_096);
-        let text = text.to_owned();
         let task = tokio::spawn(async move {
-            let outcome = agent.run_turn(text, &mut inbox, &sink).await;
+            let outcome = match text {
+                Some(text) => agent.run_turn(text, &mut inbox, &sink).await,
+                None => crate::agent::testing::run_brief_turn(&mut agent, &mut inbox, &sink).await,
+            };
             (agent, outcome)
         });
         Self {
@@ -308,4 +318,75 @@ async fn a_busy_wait_lets_the_next_agent_in() {
     assert!(committed(&outcome), "{outcome:?}");
     assert_eq!(timeline(&[("a", &first), ("b", &second)]), ["a", "b", "a"]);
     assert!(queued(&events).is_empty(), "{:?}", queued(&events));
+}
+
+#[tokio::test(start_paused = true)]
+async fn queued_starting_brief_refreshes_after_account_lane_wait_and_rebuilds_byte_identically() {
+    use crate::agent::testing::{checklist_mail, prime_brief};
+    use crate::test_guard::{continued, records};
+
+    let lanes = limited(1);
+    let gate = Arc::new(Semaphore::new(0));
+    let first = Fake::new(vec![held("first", &gate)]);
+    let second = Fake::new(vec![ends("second")]);
+    let alone = Fake::new(vec![ends("second")]);
+    let later = Fake::new(vec![ends("continued")]);
+    let store = MemoryStore::default();
+    let a = Running::start(agent(first, &lanes), "hello");
+    let mut b = agent(second.clone(), &lanes).with_log(
+        SessionLog::new(Box::new(store.clone()), "s1"),
+        LogContext {
+            endpoint_name: IMPLICIT_ENDPOINT.into(),
+            ..log_context()
+        },
+    );
+    let canary = "CANARYOpaqueAtAccountLane";
+    let post_commit = "CANARYFirstRecognizedAfterCommit";
+    let letter = checklist_mail("lanes", "Review task", &[canary, post_commit]);
+    b.session.context_note = false;
+    prime_brief(&mut b, letter.clone()).await;
+    let mut b = Running::start_brief(b);
+    assert_eq!(b.queued().await, 0);
+    assert!(second.sent().is_empty());
+    assert!(log_events(&store).iter().any(|event| matches!(event, LogEvent::TurnStarted { inputs, .. } if inputs.iter().any(|input| input.text.contains(canary)))));
+    crate::session::register_secrets([canary.to_owned()]);
+    gate.add_permits(1);
+    assert!(committed(&a.finish().await.1));
+    let (live, outcome, _) = b.finish().await;
+    assert!(committed(&outcome));
+    let mut baseline = agent(alone.clone(), &Lanes::default());
+    baseline.session.context_note = false;
+    prime_brief(&mut baseline, letter).await;
+    assert!(committed(&Running::start_brief(baseline).finish().await.1));
+    assert_eq!(second.texts(), alone.texts());
+    let body = second.body(0);
+    assert!(body.to_string().contains("[redacted]") && !body.to_string().contains(canary));
+    let rows = records(&store);
+    let revised = rows.iter().position(|row| matches!(&row.event, LogEvent::InputRevised { turn: Some(1), inputs } if inputs[0].text.contains("[redacted]"))).unwrap();
+    let committed_at = rows
+        .iter()
+        .position(|row| matches!(row.event, LogEvent::MessageCommitted { .. }))
+        .unwrap();
+    assert!(revised < committed_at);
+    let committed_history = live.history().into_owned();
+    assert!(body.to_string().contains(post_commit));
+    crate::session::register_secrets([post_commit.to_owned()]);
+    assert_eq!(&*live.history(), committed_history.as_slice());
+    let (_, log) = continued(&rows);
+    let resumed = agent(later.clone(), &Lanes::default())
+        .with_log(
+            log,
+            LogContext {
+                endpoint_name: IMPLICIT_ENDPOINT.into(),
+                ..log_context()
+            },
+        )
+        .resume(&rows, 0)
+        .unwrap();
+    assert_eq!(resumed.history(), live.history());
+    let (after, outcome, _) = Running::start(resumed, "continue").finish().await;
+    assert!(committed(&outcome));
+    assert!(after.history().starts_with(&committed_history));
+    assert!(later.body(0).to_string().contains(post_commit));
+    crate::test_guard::prefix::assert_prefix_stable(&[body, later.body(0)], None);
 }

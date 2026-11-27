@@ -1594,6 +1594,7 @@ async fn a_rewind_to_a_turn_that_took_mail_along_cancels_a_command_sent_after_th
         kind: wisp_protocol::agents::MailKind::Message,
         wake: false,
         text: "a letter".into(),
+        checklist_spans: Vec::new(),
     })
     .unwrap();
     live.until(

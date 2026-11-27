@@ -165,6 +165,8 @@ pub(super) struct Call {
 }
 
 pub(super) struct Service {
+    brief_owner: Option<crate::agent::BriefOwner>,
+    owner_tree: Option<crate::agents::AgentsService>,
     voice: Arc<Voice>,
     agent: Option<mpsc::Sender<ClientCommand>>,
     client: mpsc::Sender<AgentEvent>,
@@ -187,9 +189,13 @@ impl Service {
         client: mpsc::Sender<AgentEvent>,
         up: mpsc::Receiver<AudioFrame>,
         down: mpsc::Sender<AudioFrame>,
+        brief_owner: Option<crate::agent::BriefOwner>,
+        owner_tree: Option<crate::agents::AgentsService>,
     ) -> Self {
         let earlier = std::mem::take(&mut voice.earlier);
         Self {
+            brief_owner,
+            owner_tree,
             voice: Arc::new(voice),
             agent: Some(agent),
             client,
@@ -510,7 +516,13 @@ impl Service {
             return;
         }
         self.read(&event).await;
-        crate::agent::send_scrubbed(&self.client, event, None).await;
+        crate::agent::send_scrubbed(&self.client, event, None, |target| {
+            target.map_or_else(
+                || self.brief_owner.clone(),
+                |path| self.owner_tree.as_ref()?.brief_owner(path),
+            )
+        })
+        .await;
     }
 
     async fn read(&mut self, event: &AgentEvent) {

@@ -1070,6 +1070,7 @@ fn the_notice_rebuilds_after_the_context_note_and_before_the_input() {
                         text: (*t).into(),
                         images: Vec::new(),
                         note: None,
+                        checklist_spans: Vec::new(),
                     })
                     .collect(),
             ),

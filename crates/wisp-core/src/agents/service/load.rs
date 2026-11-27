@@ -1030,6 +1030,9 @@ impl AgentsService {
         }
         for (path, child, command_rx) in children {
             let bound = child.queue_watch();
+            if let Some(entry) = self.tree().get_mut(&path.borrow()) {
+                entry.brief_owner = Some(child.brief_owner());
+            }
             let handles = self.run_child(path, child, command_rx, root_events.clone());
             self.tree().handles.extend(handles);
             self.watch_bound(bound);

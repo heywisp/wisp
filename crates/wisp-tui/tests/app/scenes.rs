@@ -335,6 +335,7 @@ impl Stage {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         id
@@ -358,6 +359,7 @@ impl Stage {
             replaces: Some(old.clone()),
             held,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         self.event(AgentEvent::InputWithdrawn {
@@ -2786,6 +2788,7 @@ async fn waiting(s: Stage) {
         replaces: None,
         held: false,
         from: None,
+        checklist_spans: Vec::new(),
     })
     .await;
     s.queue("and open an MR for it").await;

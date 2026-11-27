@@ -459,6 +459,7 @@ async fn a_childs_mail_that_arrives_while_an_in_turn_compaction_runs_opens_the_n
         kind: wisp_protocol::MailKind::Message,
         wake: false,
         text: "a note from the child".into(),
+        checklist_spans: Vec::new(),
     })
     .unwrap();
     accepted_while_compacting(&mut live, &summary, "mail-m1").await;

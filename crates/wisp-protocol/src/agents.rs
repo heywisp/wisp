@@ -9,7 +9,7 @@ mod tree;
 
 pub use mail::{
     AgentAction, AgentPath, HoldReason, MAIL_OPEN, MailFrom, MailId, MailKind, ROOT_PATH,
-    WakeSource, mail_body, render_mail, report_parts, report_text,
+    WakeSource, mail_body, render_mail, render_mail_spans, report_parts, report_text, shift_spans,
 };
 pub use tree::{
     Activity, AgentEntry, AgentState, ContextFill, IdleOutcome, KeepWarm, ParentLink, PresetChange,

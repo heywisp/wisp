@@ -315,6 +315,11 @@ impl CompactionState {
         self.said.iter().map(|s| s.text.as_str()).collect()
     }
 
+    #[cfg(test)]
+    pub(super) fn opening_texts(&self) -> Vec<&str> {
+        self.opening.iter().map(|s| s.text.as_str()).collect()
+    }
+
     pub(super) fn rewound_to(
         &mut self,
         turn: u64,
@@ -849,7 +854,7 @@ impl Agent {
     }
 
     pub(super) fn logged_seq(&self) -> Option<u64> {
-        self.log.as_ref().map(|(log, _)| log.next_seq())
+        self.log.as_ref().map(|(log, _)| log.lock().next_seq())
     }
 
     pub(super) fn note_opening(&mut self, turn: u64, texts: Vec<String>, seq: Option<u64>) {
@@ -1001,7 +1006,7 @@ impl Agent {
 
     fn log_pointer(&self) -> Option<String> {
         let (log, _) = self.log.as_ref()?;
-        let path = log.location()?;
+        let path = log.lock().location()?;
         Some(self.shown(&path).unwrap_or_else(|| {
             let name = path
                 .file_name()
@@ -1903,13 +1908,17 @@ impl Agent {
         } && !leading;
         if kept {
             let mut rest = pending.user.take().unwrap_or_default();
-            if pending.continue_note {
-                rest.drain(..pending.opening.min(rest.len()));
-            }
+            let drained = if pending.continue_note {
+                pending.opening.min(rest.len())
+            } else {
+                0
+            };
+            rest.drain(..drained);
             let mut user = vec![ContentBlock::Text {
                 text: CONTINUE_NOTE.to_owned(),
             }];
             pending.opening = user.len();
+            pending.shift_user_briefs(drained, user.len());
             user.extend(rest);
             pending.user = Some(user);
             pending.continue_note = true;
@@ -1928,7 +1937,9 @@ impl Agent {
             && pending.has_system()
             && let Some(user) = pending.user.as_mut()
         {
-            let steers = user.split_off(pending.opening.min(user.len()));
+            let cut = pending.opening.min(user.len());
+            let steers = user.split_off(cut);
+            pending.split_user_briefs_to_after(cut, steers.len());
             pending.after.splice(0..0, steers);
         }
     }
@@ -1940,6 +1951,7 @@ impl Agent {
             pending.late_tools = !pending.tools.is_empty();
         }
         if !pending.has_system() && pending.user.is_none() && !pending.after.is_empty() {
+            pending.move_after_briefs_to_user();
             pending.user = Some(std::mem::take(&mut pending.after));
         }
     }

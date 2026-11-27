@@ -34,6 +34,7 @@ fn waiting(text: &str, held: bool) -> AgentEvent {
         held,
         front: false,
         from: None,
+        checklist_spans: Vec::new(),
     }
 }
 
@@ -154,6 +155,7 @@ async fn reopening_mid_turn_agrees_with_the_window_there_from_the_start() {
             held: false,
             front: false,
             from: None,
+            checklist_spans: Vec::new(),
         }),
         child(AgentEvent::turn_started(1)),
         child(AgentEvent::StepStarted { step: 1 }),
@@ -292,6 +294,7 @@ async fn opening_acceptance_does_not_change_the_window_that_typed_it() {
                     held: false,
                     front: false,
                     from: None,
+                    checklist_spans: Vec::new(),
                 })
                 .await;
             assert_eq!(agent.settle().await, before);

@@ -3,6 +3,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::TextSpan;
+
 pub const ROOT_PATH: &str = "/";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -175,7 +177,33 @@ pub const MAIL_OPEN: &str = "<wisp:message";
 const MAIL_CLOSE: &str = "</wisp:message>";
 
 pub fn render_mail(from: &AgentPath, kind: MailKind, text: &str) -> String {
-    format!("{MAIL_OPEN} from=\"{from}\" kind=\"{kind}\">\n{text}\n{MAIL_CLOSE}")
+    render_mail_spans(from, kind, text, &[]).0
+}
+
+pub fn shift_spans(spans: &[TextSpan], offset: usize) -> Option<Vec<TextSpan>> {
+    spans
+        .iter()
+        .map(|span| {
+            Some(TextSpan {
+                start: span.start.checked_add(offset)?,
+                end: span.end.checked_add(offset)?,
+            })
+        })
+        .collect()
+}
+
+pub fn render_mail_spans(
+    from: &AgentPath,
+    kind: MailKind,
+    text: &str,
+    spans: &[TextSpan],
+) -> (String, Option<Vec<TextSpan>>) {
+    let mut rendered = format!("{MAIL_OPEN} from=\"{from}\" kind=\"{kind}\">\n");
+    let offset = rendered.len();
+    rendered.push_str(text);
+    rendered.push('\n');
+    rendered.push_str(MAIL_CLOSE);
+    (rendered, shift_spans(spans, offset))
 }
 
 pub fn mail_body(text: &str) -> &str {

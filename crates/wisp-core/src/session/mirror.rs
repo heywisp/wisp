@@ -116,7 +116,7 @@ mirror! {
         SearchNotRun => WebSearchNotRun { endpoint_name, model }
     }
     logged_only {
-        InputAccepted { id, mode, text, images, replaces, held, from }
+        InputAccepted { id, mode, text, images, replaces, held, from, checklist_spans }
         InputUnheld { ids }
         EndpointSaved { name, store, check }
         EndpointNotSaved { name, why }
