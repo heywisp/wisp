@@ -72,14 +72,14 @@ The flag is per thread, which is where a panic hook runs, so a panic on another 
 
 ## Attaching images in the TUI
 
-The full-screen TUI attaches images in two ways (plan M3.1 §10.1). Both run on a worker thread (`term::clipboard::reader`), so the UI never waits on a child process or a file.
+The full-screen TUI attaches images in two ways (plan M3.1 §10.1). Both run on a worker thread (`term::clipboard::reader`), so the UI never waits on a child process or a file. On WSL, both image and text reads use only the Windows clipboard, even when `WAYLAND_DISPLAY` or `DISPLAY` is set.
 
 **Alt-V, and Ctrl-V where the terminal passes it through.** Wisp asks the operating system for the clipboard's image:
 
 | Platform | What runs |
 |---|---|
 | SSH (`SSH_CONNECTION` or `SSH_TTY`, checked first) | Nothing. The status row says `Paste the image's path: no clipboard over SSH.` |
-| WSL | `powershell.exe -NoProfile -NonInteractive -Sta -EncodedCommand <script>`, found on `PATH` or at `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`. The fixed script (`WSL_READ_SCRIPT`) prints `image:` and the PNG in base64, `file:` and a path per line for a copied file list, or `none`. Listed files go through `wslpath -u`. Then the Wayland and X11 readers, when their displays are set |
+| WSL | `powershell.exe -NoProfile -NonInteractive -Sta -EncodedCommand <script>`, found on `PATH` or at `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`. The fixed script (`WSL_READ_SCRIPT`) prints `image:` and the PNG in base64, `file:` and a path per line for a copied file list, or `none`. Listed files go through `wslpath -u`. |
 | Wayland | `wl-paste --list-types`, then `wl-paste --type <type>` for the first of `image/png`, `image/jpeg`, `image/webp`, `image/gif` and `image/bmp` on offer |
 | X11 | `xclip -selection clipboard -t TARGETS -o`, then `-t <type> -o` |
 | macOS (best effort) | `osascript -e 'the clipboard as «class PNGf»'`, whose hex output is decoded, then `pngpaste -`. An `osascript` that times out or passes the cap stops the read with its own sentence; one that only finds no PNG falls through to `pngpaste` |

@@ -18,6 +18,50 @@ fn host(pairs: &[(&str, &str)]) -> Host {
     Host::of(&env(pairs), None, false)
 }
 
+pub(super) fn wslg_host(extra: &[(&str, &str)]) -> Host {
+    let mut pairs = vec![
+        ("WSL_DISTRO_NAME", "Ubuntu"),
+        ("WAYLAND_DISPLAY", "w"),
+        ("DISPLAY", ":0"),
+    ];
+    pairs.extend_from_slice(extra);
+    host(&pairs)
+}
+
+pub(super) fn read_file(root: &Path, file: &str) -> String {
+    std::fs::read_to_string(root.join(file)).unwrap_or_default()
+}
+
+pub(super) fn recorded_args(root: &Path, tool: &str) -> Vec<Vec<String>> {
+    let all = read_file(root, &format!("{tool}.args"));
+    let mut calls: Vec<&str> = all.split("--\n").collect();
+    calls.pop();
+    calls
+        .into_iter()
+        .map(|c| c.lines().map(str::to_owned).collect())
+        .collect()
+}
+
+pub(super) fn assert_unused(root: &Path, tools: &[&str], context: &str) {
+    for tool in tools {
+        assert!(
+            root.join(tool).exists(),
+            "{context}: fake {tool} wasn't installed"
+        );
+        assert!(
+            recorded_args(root, tool).is_empty(),
+            "{context}: ran {tool}"
+        );
+    }
+}
+
+fn display_writers() -> Vec<&'static str> {
+    [Native::Wayland, Native::X11]
+        .into_iter()
+        .flat_map(|native| writers(native).iter().map(|writer| writer.program))
+        .collect()
+}
+
 struct Fakes {
     dir: ScratchDir,
 }
@@ -93,7 +137,7 @@ impl Fakes {
     }
 
     fn read(&self, file: &str) -> String {
-        std::fs::read_to_string(self.dir.root.join(file)).unwrap_or_default()
+        read_file(&self.dir.root, file)
     }
 
     fn touch(&self, file: &str, body: &str) {
@@ -101,13 +145,7 @@ impl Fakes {
     }
 
     fn args(&self, tool: &str) -> Vec<Vec<String>> {
-        let all = self.read(&format!("{tool}.args"));
-        let mut calls: Vec<&str> = all.split("--\n").collect();
-        calls.pop();
-        calls
-            .into_iter()
-            .map(|c| c.lines().map(str::to_owned).collect())
-            .collect()
+        recorded_args(&self.dir.root, tool)
     }
 }
 
@@ -232,13 +270,22 @@ fn ssh_outside_tmux_sends_to_the_terminal_and_everything_else_stays_local() {
         ])),
         local(&[], true)
     );
-    let wsl = Host {
-        wsl: true,
-        ..host(&[("WAYLAND_DISPLAY", "w"), ("DISPLAY", ":0")])
-    };
+    assert_eq!(route(&wslg_host(&[])), local(&[Native::Windows], false));
     assert_eq!(
-        route(&wsl),
-        local(&[Native::Windows, Native::Wayland, Native::X11], false)
+        route(&wslg_host(&[("TMUX", "t")])),
+        local(&[Native::Windows], true)
+    );
+    assert_eq!(
+        route(&wslg_host(&[("SSH_TTY", "/dev/pts/1"), ("TMUX", "t")])),
+        local(&[], true)
+    );
+    assert_eq!(
+        route(&wslg_host(&[("SSH_TTY", "/dev/pts/1")])),
+        Route::Terminal
+    );
+    assert_eq!(
+        route(&host(&[("WAYLAND_DISPLAY", "w"), ("DISPLAY", ":0")])),
+        local(&[Native::Wayland, Native::X11], false)
     );
     let mac = Host {
         macos: true,
@@ -722,9 +769,12 @@ fn windows_copier(fakes: &Fakes, timeout: Duration) -> Copier {
         &fakes.dir.root.join(POWERSHELL),
         include_str!("../../../tests/support/windows-clipboard.sh"),
     );
+    let Route::Local { tmux, natives } = route(&wslg_host(&[])) else {
+        panic!("WSLg should use a local writer");
+    };
     Copier::new(
-        false,
-        vec![Native::Windows],
+        tmux,
+        natives,
         Tools {
             timeout,
             ..fakes.tools()
@@ -782,8 +832,9 @@ fn windows_copier_starts_early_and_reuses_its_helper_for_framed_copies() {
 
 #[test]
 fn windows_copier_falls_back_on_eof_bad_ack_and_timeout() {
+    let display_writers = display_writers();
     for mode in ["dead", "bad", "hold", "fail"] {
-        let fakes = Fakes::new(mode, &[]);
+        let fakes = Fakes::new(mode, &display_writers);
         fakes.touch(mode, "");
         if mode == "fail" {
             fakes.touch("bad", "");
@@ -811,6 +862,7 @@ fn windows_copier_falls_back_on_eof_bad_ack_and_timeout() {
             );
         }
         assert_eq!(fakes.read("fallback"), text, "{mode}");
+        assert_unused(&fakes.dir.root, &display_writers, mode);
         assert!(
             !alive(old),
             "{mode}: failed helper wasn't reaped before fallback"
@@ -917,15 +969,15 @@ fn the_writer_summary_names_found_tools_or_what_is_missing() {
         tools.writer(&Route::Terminal, None),
         "OSC 52, sent to your terminal"
     );
-    let windows = route(&host(&[
-        ("WSL_DISTRO_NAME", "Ubuntu"),
-        ("TERM_PROGRAM", "vscode"),
-        ("TERM_PROGRAM_VERSION", "1.146.0"),
-        ("WAYLAND_DISPLAY", "w"),
-    ]));
+    let windows = route(&wslg_host(&[]));
     assert_eq!(
         tools.writer(&windows, Some(&fakes.dir.root)),
-        "~/powershell.exe, ~/wl-copy"
+        "~/powershell.exe"
+    );
+    let no_windows = Fakes::new("summary-wslg", &display_writers());
+    assert_eq!(
+        no_windows.tools().writer(&windows, None),
+        "none: powershell.exe wasn't found"
     );
     assert!(Path::new(POWERSHELL_FALLBACK).is_absolute());
     assert_eq!(
@@ -1013,4 +1065,58 @@ fn copy_once_follows_the_route_and_stops_with_its_running() {
     let stopped = copy_once(&local, link, &mut written, &running);
     assert!(matches!(stopped, Outcome::Failed(_)), "{stopped:?}");
     assert_eq!(fakes.read("wl-copy.in"), link.repeat(2));
+}
+
+#[test]
+fn wslg_never_falls_back_to_display_writers_and_keeps_tmux_forwarding() {
+    let display_writers = display_writers();
+    let mut tools = display_writers.clone();
+    tools.push("tmux");
+    let fakes = Fakes::new("wslg-copy", &tools);
+    let mut clipboard = Clipboard {
+        route: route(&wslg_host(&[])),
+        tools: fakes.tools(),
+    };
+    let text = "x".repeat(114_000);
+    let running = Running::default();
+    let mut written = Vec::new();
+    let mut copy = |clipboard: &Clipboard| copy_once(clipboard, &text, &mut written, &running);
+    assert_eq!(
+        copy(&clipboard),
+        Outcome::Failed("powershell.exe wasn't found".to_owned())
+    );
+
+    let local_tmux = wslg_host(&[("TMUX", "t")]);
+    let ssh_tmux = wslg_host(&[("SSH_TTY", "/dev/pts/1"), ("TMUX", "t")]);
+    let forwarding = Destination::Tmux { forwards: true };
+    for host in [local_tmux, ssh_tmux] {
+        clipboard.route = route(&host);
+        assert_eq!(copy(&clipboard), Outcome::Copied(vec![forwarding]));
+    }
+
+    clipboard.route = route(&local_tmux);
+    fakes.touch("setclip", "off\n");
+    let buffer = Destination::Tmux { forwards: false };
+    assert_eq!(copy(&clipboard), Outcome::Copied(vec![buffer]));
+
+    fake_tool::install(&fakes.dir.root.join(POWERSHELL), RECORD);
+    assert_eq!(
+        copy(&clipboard),
+        Outcome::Copied(vec![buffer, Destination::Native(Native::Windows)])
+    );
+    let loads: Vec<_> = fakes
+        .args("tmux")
+        .into_iter()
+        .filter(|args| args.first().is_some_and(|arg| arg == "load-buffer"))
+        .collect();
+    let forward = vec!["load-buffer", "-w", "-t", "/dev/pts/7", "-"];
+    let load = vec!["load-buffer", "-"];
+    assert_eq!(loads, vec![forward.clone(), forward, load.clone(), load]);
+    assert_eq!(fakes.read("tmux.in"), text.repeat(4));
+    assert_eq!(fakes.read("powershell.exe.in"), text);
+    assert!(
+        written.is_empty(),
+        "tmux and native copies don't write direct OSC 52"
+    );
+    assert_unused(&fakes.dir.root, &display_writers, "wslg-copy");
 }
