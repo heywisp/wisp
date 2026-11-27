@@ -1,6 +1,8 @@
 use wisp_plugin_api::host::Size;
 use wisp_plugin_api::types::NamedKey;
 
+pub const FOLD_SOURCES: &[&str] = &["·", "−", "—", "…", "→", "←", "✓"];
+
 pub const DEFAULT_SIZE: Size = Size {
     cols: 100,
     rows: 30,

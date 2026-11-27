@@ -13,6 +13,8 @@ pub struct FakePrivateFiles(Arc<Mutex<State>>);
 struct State {
     files: BTreeMap<String, File>,
     failed_change: Option<Error>,
+    lists: usize,
+    reads: usize,
 }
 
 enum File {
@@ -24,6 +26,11 @@ enum File {
 impl FakePrivateFiles {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn read_counts(&self) -> (usize, usize) {
+        let state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        (state.lists, state.reads)
     }
 
     pub fn seed(&self, path: &str, bytes: Vec<u8>) {
@@ -76,7 +83,9 @@ fn direct<'a>(path: &str, full: &'a str) -> Option<&'a str> {
 
 impl PrivateFiles for FakePrivateFiles {
     fn list(&self, path: &str, max_entries: u32) -> Result<Vec<Entry>, Error> {
-        let files = &self.0.lock().unwrap_or_else(PoisonError::into_inner).files;
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        state.lists += 1;
+        let files = &state.files;
         if !path.is_empty() {
             components(path)?;
             check_dirs(files, path)?;
@@ -115,7 +124,9 @@ impl PrivateFiles for FakePrivateFiles {
 
     fn read(&self, path: &str, max_bytes: u32) -> Result<Vec<u8>, Error> {
         components(path)?.last().ok_or(Error::InvalidPath)?;
-        let files = &self.0.lock().unwrap_or_else(PoisonError::into_inner).files;
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        state.reads += 1;
+        let files = &state.files;
         check_dirs(files, path)?;
         match files.get(path) {
             Some(File::Bytes(bytes)) if bytes.len() as u64 <= u64::from(max_bytes) => {

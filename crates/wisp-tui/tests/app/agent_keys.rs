@@ -1348,7 +1348,11 @@ async fn the_agents_model_and_effort_change_from_its_chat() {
 }
 
 fn done(answers: RequestId, outcome: CommandOutcome) -> AgentEvent {
-    AgentEvent::CommandDone { answers, outcome }
+    AgentEvent::CommandDone {
+        answers,
+        outcome,
+        args_safe_to_echo: false,
+    }
 }
 
 fn report(request: RequestId) -> AgentEvent {

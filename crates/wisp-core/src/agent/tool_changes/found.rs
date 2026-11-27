@@ -52,11 +52,14 @@ impl Agent {
     }
 
     pub(in crate::agent) fn found_hits(&mut self, run: &mut Finished) {
-        if run.outcome.is_error() || self.found_use().is_none() {
+        if run.outcome.is_error()
+            || !run.hits.iter().any(|hit| hit.kind == Kind::Tool)
+            || self.found_use().is_none()
+        {
             return;
         }
         let Some(host) = &self.hooks.host else { return };
-        let entries = host.index_entries();
+        let entries = host.index_tool_entries();
         let allowed = self.permitted_tools().unwrap_or_default();
         let mut changes = std::collections::BTreeMap::new();
         for hit in &run.hits {

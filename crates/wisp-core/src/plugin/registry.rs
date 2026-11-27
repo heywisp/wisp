@@ -802,18 +802,22 @@ impl Registry {
         &self,
         instances: &BTreeMap<String, Arc<dyn Plugin>>,
         off: &BTreeSet<String>,
-    ) -> BTreeMap<String, Arc<dyn Plugin>> {
-        instances
-            .iter()
-            .filter(|(id, _)| {
-                !off.contains(*id)
-                    && self
-                        .plugins
-                        .get(*id)
-                        .is_some_and(|loaded| loaded.manifest.index)
-            })
-            .map(|(id, plugin)| (id.clone(), plugin.clone()))
-            .collect()
+    ) -> super::host::IndexSources {
+        let mut sources = super::host::IndexSources::default();
+        for (id, plugin) in instances {
+            let Some(loaded) = self.plugins.get(id) else {
+                continue;
+            };
+            if !off.contains(id) && loaded.manifest.index {
+                let sources = if loaded.manifest.live_documents {
+                    &mut sources.live
+                } else {
+                    &mut sources.cached
+                };
+                sources.insert(id.clone(), plugin.clone());
+            }
+        }
+        sources
     }
 
     pub(crate) fn dynamic(&self, name: &str) -> bool {
@@ -858,6 +862,16 @@ impl Registry {
                 .iter()
                 .any(|tool| tool.name == name && tool.held)
         })
+    }
+
+    pub(crate) fn lookup_tool(&self, name: &str) -> Option<bool> {
+        self.plugins
+            .values()
+            .chain(self.removed.values())
+            .flat_map(|loaded| &loaded.manifest.tools)
+            .filter(|tool| tool.name == name)
+            .map(|tool| crate::tool::is_lookup_tool(tool.forwards, &tool.provides))
+            .max()
     }
 
     pub(crate) fn forwards(&self, name: &str) -> bool {
@@ -945,7 +959,7 @@ impl Registry {
         snapshot.facts.capabilities = toolbox.capabilities();
         host.publish(snapshot);
         let index_problems = host
-            .gather_index(
+            .gather_index_sources(
                 &toolbox,
                 &allowed,
                 self.index_sources(&instances, &self.config.switches.off),
@@ -1480,12 +1494,12 @@ async fn describe_one(
         {
             continue;
         }
-        let family = loaded
+        let declared = loaded
             .manifest
             .tools
             .iter()
-            .find(|tool| tool.name == def.name)
-            .and_then(|tool| tool.native.as_ref());
+            .find(|tool| tool.name == def.name);
+        let family = declared.and_then(|tool| tool.native.as_ref());
         let runner = matches!(def.kind, ToolKind::Client(_))
             .then_some(family)
             .flatten();
@@ -1522,6 +1536,7 @@ async fn describe_one(
             def.context_line,
             id,
             provides,
+            declared.is_some_and(|tool| tool.forwards),
             plugin.clone(),
             host.clone(),
         );

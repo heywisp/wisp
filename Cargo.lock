@@ -6199,6 +6199,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "jiff",
+ "regex",
  "serde",
  "serde_json",
  "wisp-index",

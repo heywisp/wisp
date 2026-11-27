@@ -918,7 +918,7 @@ async fn describe_sees_no_agent_in_the_root_a_child_spawned_inside_its_call_or_t
 }
 
 #[tokio::test(start_paused = true)]
-async fn the_empty_caller_alone_keeps_the_tree_from_a_build_doctor_or_prepare_inside_a_call() {
+async fn prepare_preserves_caller_identity_but_build_and_doctor_do_not() {
     use crate::plugin::caller::Caller;
     let kernels = Kernels::default();
     let mut run = start(
@@ -988,7 +988,7 @@ async fn the_empty_caller_alone_keeps_the_tree_from_a_build_doctor_or_prepare_in
     assert_eq!(
         prepared.display().action,
         wisp_protocol::ToolAction::Other {
-            name: SEES_NOTHING.to_owned()
+            name: "current /a; tree [/a, /b] | current /a; tree [/a, /b]".into()
         }
     );
     let rows = Caller::call(token.clone(), None)
@@ -2518,6 +2518,7 @@ async fn a_plugin_command_sees_the_root_and_its_tree_before_and_inside_its_futur
     let AgentEvent::CommandDone {
         answers,
         outcome: wisp_protocol::CommandOutcome::Note { text },
+        ..
     } = done
     else {
         panic!("{done:?}");
@@ -2537,11 +2538,84 @@ async fn a_plugin_command_sees_the_root_and_its_tree_before_and_inside_its_futur
     let Some(AgentEvent::CommandDone {
         answers,
         outcome: wisp_protocol::CommandOutcome::Note { text },
+        ..
     }) = inner(&done, "/w")
     else {
         panic!("{done:?}");
     };
     assert_eq!(*answers, request);
     assert!(text.starts_with("current /w;"), "{text}");
+    run.quit().await;
+}
+
+#[tokio::test]
+async fn root_and_child_use_resolve_live_memory_without_sharing_user_notes() {
+    use crate::plugin::caller::Caller;
+    use wisp_plugin_api::index::Kind;
+
+    const NAME: &str = "memory.user.tiling";
+    const FACT: &str = "The fixture tile has a round corner.";
+    let script = |id| {
+        vec![
+            uses(&[call(id, "use", json!({"name": NAME}))]),
+            done("Done."),
+        ]
+    };
+    let kernels = Kernels::default();
+    let built = rooted(
+        "live-note-visibility",
+        Setup {
+            plugins: vec!["search", "use", "remember"],
+            notes_fixture: true,
+            kernels: kernels.clone(),
+            ..Setup::default()
+        },
+        vec![
+            ("/", script("root-open")),
+            ("/worker", script("child-open")),
+        ],
+    )
+    .await;
+    let dir = built.env.root.join("plugin-data/memory/user");
+    crate::secrets::create_folder(&dir).unwrap();
+    fs::write(
+        dir.join("tiling.md"),
+        format!("---\nname: tiling\ndescription: {FACT}\nsaved: 2000-01-01\n---\n"),
+    )
+    .unwrap();
+    let mut run = serve(built);
+    run.say("Read the note.").await;
+    let root = run.until("root document lookup", |event| matches!(event, AgentEvent::ToolCallRequested { call_id, .. } if call_id == "root-open")).await;
+    assert!(
+        matches!(root, AgentEvent::ToolCallRequested { display, .. } if display.target == NAME && display.verbs.as_ref().is_some_and(|verbs| verbs.doing == "Reading document"))
+    );
+    run.root_ended().await;
+    assert!(run.requests("/").last().unwrap().all_text().contains(FACT));
+    run.spawn(spawn_request("worker", "Read the note.")).await;
+    let child = run.until("child document lookup", |event| matches!(inner(event, "/worker"), Some(AgentEvent::ToolCallRequested { call_id, .. }) if call_id == "child-open")).await;
+    assert!(
+        matches!(inner(&child, "/worker"), Some(AgentEvent::ToolCallRequested { display, .. }) if display.target == "entry")
+    );
+    let opened = run.until("child refusal", |event| matches!(inner(event, "/worker"), Some(AgentEvent::ToolCallFinished { call_id, .. }) if call_id == "child-open")).await;
+    assert!(
+        matches!(inner(&opened, "/worker"), Some(AgentEvent::ToolCallFinished { result: Some(result), .. }) if result == "entry not found")
+    );
+    let mut checked = std::collections::BTreeSet::new();
+    for host in kernels.lock().unwrap().iter() {
+        Caller::read_only_agent().sync_scope(|| {
+            let plugin = crate::plugin::PluginHost::new("memory", "0.4.0", &[], host.clone());
+            if let Some(caller) = tree::Agent::current_agent(&plugin) {
+                assert_eq!(
+                    host.index_kind(NAME),
+                    caller.parent.is_none().then_some(Kind::Document)
+                );
+                checked.insert(caller.path);
+            }
+        });
+    }
+    assert_eq!(
+        checked,
+        ["/".to_owned(), "/worker".to_owned()].into_iter().collect()
+    );
     run.quit().await;
 }

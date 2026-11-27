@@ -10,7 +10,7 @@ expression: text(&rows)
    linear  needs sign-in              —
    sentry  failed                     —
            it couldn't start: npx isn't
-           installed
+         ↳ installed
 
    sign in: /mcp sign-in linear
 
@@ -18,7 +18,7 @@ expression: text(&rows)
    https://mcp.example.invalid/mcp
 
    linear added · sign in with /mcp
-   sign-in linear
+ ↳ sign-in linear
 
  › /mcp sign-in linear
 
@@ -29,8 +29,8 @@ expression: text(&rows)
    tried your browser
 
    If the browser ends on a page that
-   can't load, copy that page's address
-   and type:
+ ↳ can't load, copy that page's address
+ ↳ and type:
    /mcp sign-in linear <address>
 
  › /mcp sign-in linear

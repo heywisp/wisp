@@ -17,7 +17,7 @@ expression: shown
  › /mcp add notes npx -y notes-server --token CANA******0011
 
    notes not added: a key can't be saved here; when an agent adds the server with the key's name in keys, Wisp asks the
-   user for it
+ ↳ user for it
 
  › /mcp remove github
 

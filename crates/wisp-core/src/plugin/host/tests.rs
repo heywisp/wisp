@@ -1913,8 +1913,9 @@ async fn index_entries_sort_by_kind_and_name_and_leave_out_an_off_tool() {
             .collect::<BTreeMap<_, _>>()
     };
     let allowed = ["echo".to_owned(), "gone".to_owned()].into_iter().collect();
+    let retained = sources(&["aa", &owner]);
     let problems = kernel
-        .gather_index(&toolbox, &allowed, sources(&["aa", &owner]))
+        .gather_index(&toolbox, &allowed, retained.clone())
         .await;
     assert!(problems.is_empty(), "{problems:?}");
     assert!(plugin_host(&[], &kernel).index().entries().is_empty());
@@ -2046,7 +2047,7 @@ async fn opening_an_index_entry_routes_to_its_owning_source() {
     assert_eq!(host.index().open("two").await.unwrap(), "bb: two");
     assert_eq!(
         host.index().open("missing").await.unwrap_err(),
-        "nothing named `missing` was found"
+        "entry not found"
     );
     let entries = Arc::new(Mutex::new(vec![index_entry(Kind::Skill, "retained")]));
     let source = crate::plugin::testing::index_source("source", entries, false);
@@ -2061,9 +2062,23 @@ async fn opening_an_index_entry_routes_to_its_owning_source() {
         host.index().open("retained").await.unwrap(),
         "source: retained"
     );
+    let search_host =
+        PluginHost::new("search", "0.4.0", &[], kernel.clone()).origin(Origin::Bundled);
+    let search = (wisp_plugin_search::bundled().instantiate)(Arc::new(search_host));
+    let preview = || search.prepare("use", r#"{"name":"retained"}"#);
+    assert_eq!(preview().await.unwrap().display().target, "retained");
     drop(started);
     assert!(source.upgrade().is_none());
     assert!(host.index().open("retained").await.is_err());
+    assert!(
+        !host
+            .index()
+            .entries()
+            .iter()
+            .any(|entry| entry.name == "retained")
+    );
+    assert_eq!(preview().await.unwrap().display().target, "entry");
+    drop(search);
     let weak = Arc::downgrade(&kernel);
     drop(host);
     drop(kernel);
@@ -2074,7 +2089,7 @@ async fn opening_an_index_entry_routes_to_its_owning_source() {
 async fn a_panicking_index_source_is_left_out_with_a_problem() {
     use wisp_plugin_api::index::Kind;
     let kernel = Arc::new(KernelHost::new());
-    let sources = [
+    let sources: BTreeMap<_, _> = [
         (
             "aa".to_owned(),
             entry_source("aa", vec![index_entry(Kind::Skill, "missing")], true),
@@ -2087,7 +2102,11 @@ async fn a_panicking_index_source_is_left_out_with_a_problem() {
     .into_iter()
     .collect();
     let problems = kernel
-        .gather_index(&crate::tool::Toolbox::default(), &BTreeSet::new(), sources)
+        .gather_index(
+            &crate::tool::Toolbox::default(),
+            &BTreeSet::new(),
+            sources.clone(),
+        )
         .await;
     assert_eq!(problems.len(), 1);
     assert_eq!(problems[0].plugin, "aa");
@@ -2294,7 +2313,7 @@ async fn index_changed_leaves_the_current_snapshot_until_the_next_gathering() {
     let on = BTreeSet::new();
     let gather = |off| registry.index_sources(&started.hooks.plugins, off);
     kernel
-        .gather_index(
+        .gather_index_sources(
             &crate::tool::Toolbox::default(),
             &BTreeSet::new(),
             gather(&on),
@@ -2306,7 +2325,7 @@ async fn index_changed_leaves_the_current_snapshot_until_the_next_gathering() {
     assert!(kernel.index_dirty());
     assert_eq!(host.index().entries()[0].name, "before");
     kernel
-        .gather_index(
+        .gather_index_sources(
             &crate::tool::Toolbox::default(),
             &BTreeSet::new(),
             gather(&on),
@@ -2315,7 +2334,7 @@ async fn index_changed_leaves_the_current_snapshot_until_the_next_gathering() {
     assert!(!kernel.index_dirty());
     assert_eq!(host.index().entries()[0].name, "after");
     kernel
-        .gather_index(
+        .gather_index_sources(
             &crate::tool::Toolbox::default(),
             &BTreeSet::new(),
             gather(&config.switches.off),
@@ -2324,7 +2343,7 @@ async fn index_changed_leaves_the_current_snapshot_until_the_next_gathering() {
     assert!(host.index().entries().is_empty());
     assert!(host.index().open("after").await.is_err());
     kernel
-        .gather_index(
+        .gather_index_sources(
             &crate::tool::Toolbox::default(),
             &BTreeSet::new(),
             gather(&on),
@@ -2387,7 +2406,7 @@ async fn the_secret_box_and_index_open_are_refused_to_an_installed_plugin() {
         };
         assert_eq!(host.type_into(secret_ask(), &ctx).await, secret);
         let error = if bundled {
-            "nothing named `missing` was found"
+            "entry not found"
         } else {
             "an installed plugin can't open index entries"
         };
@@ -3461,4 +3480,222 @@ async fn questions_interface_needs_world_0_4_0_and_a_running_call() {
         Posted::Unavailable
     );
     assert!(!current.questions().withdraw(&ctx).await);
+}
+
+#[tokio::test]
+async fn live_documents_are_weak_fresh_and_direct_open_does_not_enumerate() {
+    use std::sync::atomic::AtomicUsize;
+    use wisp_plugin_api::index::{Entry, Kind};
+    use wisp_plugin_api::private_files::{ChangeAction, Expected, PrivateFileError};
+
+    struct Live {
+        host: PluginHost,
+        current: Mutex<&'static str>,
+        lists: AtomicUsize,
+    }
+    impl Plugin for Live {
+        fn entries(&self) -> BoxFuture<'_, Vec<Entry>> {
+            self.lists.fetch_add(1, Ordering::Relaxed);
+            assert!(self.host.index().entries().is_empty());
+            assert!(Caller::current().sees_agents());
+            assert_eq!(
+                self.host.chat().rename("Fixture".into()).unwrap_err(),
+                wisp_tool_text::chat::OUTSIDE
+            );
+            assert_eq!(
+                self.host.private_files().change(
+                    "sample",
+                    Expected::Absent,
+                    ChangeAction::Write(vec![]),
+                    None
+                ),
+                Err(PrivateFileError::Unavailable)
+            );
+            let name = *locked(&self.current);
+            match name {
+                "pending" => Box::pin(std::future::pending()),
+                "panic" => Box::pin(async { panic!("invented fixture panic") }),
+                "changed-home" => {
+                    self.host
+                        .kernel
+                        .set_fallback_home(Some(std::env::temp_dir().join("fixture-home")));
+                    Box::pin(std::future::ready(vec![index_entry(Kind::Document, name)]))
+                }
+                _ => Box::pin(std::future::ready(vec![index_entry(Kind::Document, name)])),
+            }
+        }
+        fn open_entry<'a>(&'a self, name: &'a str) -> BoxFuture<'a, Result<String, String>> {
+            let current = *locked(&self.current);
+            assert!(!Caller::current().allows_private_write);
+            if name == "pending" {
+                return Box::pin(std::future::pending());
+            }
+            Box::pin(std::future::ready(if name == current {
+                Ok("Read live.".into())
+            } else {
+                Err("Unlisted.".into())
+            }))
+        }
+    }
+    let kernel = Arc::new(KernelHost::new());
+    let source = Arc::new(Live {
+        host: PluginHost::new("live-fixture", "0.4.0", &[], kernel.clone()).origin(Origin::Bundled),
+        current: Mutex::new("sample"),
+        lists: AtomicUsize::new(0),
+    });
+    let cached = entry_source("zz", vec![index_entry(Kind::Document, "sample")], false);
+    kernel
+        .gather_index_sources(
+            &crate::tool::Toolbox::default(),
+            &BTreeSet::new(),
+            IndexSources {
+                cached: BTreeMap::from([("zz".into(), cached.clone())]),
+                live: BTreeMap::from([("aa".into(), source.clone() as Arc<dyn Plugin>)]),
+            },
+        )
+        .await;
+    let host = index_host(&kernel);
+    let caller = Caller::read_only_agent();
+    assert_eq!(source.lists.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        caller
+            .clone()
+            .scope(host.index().open("sample"))
+            .await
+            .unwrap(),
+        "Read live."
+    );
+    *locked(&source.current) = "new-sample";
+    assert_eq!(
+        caller
+            .clone()
+            .scope(host.index().open("new-sample"))
+            .await
+            .unwrap(),
+        "Read live."
+    );
+    assert_eq!(
+        caller
+            .clone()
+            .scope(host.index().open("sample"))
+            .await
+            .unwrap(),
+        "zz: sample"
+    );
+    assert_eq!(source.lists.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        caller
+            .clone()
+            .sync_scope(|| kernel.index_kind("new-sample")),
+        Some(Kind::Document)
+    );
+    for unavailable in ["pending", "panic", "changed-home"] {
+        *locked(&source.current) = unavailable;
+        assert!(
+            caller
+                .clone()
+                .sync_scope(|| kernel.index_kind(unavailable))
+                .is_none()
+        );
+    }
+    assert!(kernel.take_renames().is_empty());
+    assert!(
+        caller
+            .clone()
+            .scope(host.index().open("pending"))
+            .await
+            .is_err()
+    );
+    kernel.index_turned_off(BTreeSet::from(["aa".into()]));
+    assert_eq!(
+        caller
+            .clone()
+            .scope(host.index().open("sample"))
+            .await
+            .unwrap(),
+        "zz: sample"
+    );
+    drop(source);
+    assert_eq!(caller.sync_scope(|| host.index().entries()).len(), 1);
+}
+
+#[tokio::test]
+async fn direct_index_open_refuses_unsafely_named_targets_before_diagnostics() {
+    const HELD: &str = "CANARY-direct-open-held-target";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let kernel = Arc::new(KernelHost::new());
+    kernel.index_turned_off(BTreeSet::from([HELD.into()]));
+    assert_eq!(
+        index_host(&kernel).index().open(HELD).await.unwrap_err(),
+        wisp_tool_text::index::INVALID_TARGET
+    );
+}
+
+#[tokio::test]
+async fn a_late_live_source_stamp_change_discards_prior_rows_and_stops_open_fallthrough() {
+    use std::sync::atomic::AtomicUsize;
+    use wisp_plugin_api::index::{Entry, Kind};
+    const HELD: &str = "CANARY-live-open-stamp-change";
+    struct Source {
+        kernel: Arc<KernelHost>,
+        invalidates: bool,
+        opened: AtomicUsize,
+        present: bool,
+    }
+    impl Plugin for Source {
+        fn entries(&self) -> BoxFuture<'_, Vec<Entry>> {
+            if self.invalidates {
+                let home = self
+                    .kernel
+                    .secret_check_home()
+                    .unwrap_or_default()
+                    .join("fixture-home");
+                self.kernel.set_fallback_home(Some(home));
+            }
+            std::future::ready(vec![index_entry(Kind::Document, HELD)]).boxed()
+        }
+        fn open_entry<'a>(&'a self, _: &'a str) -> BoxFuture<'a, Result<String, String>> {
+            self.opened.fetch_add(1, Ordering::Relaxed);
+            let answer = if self.invalidates {
+                crate::session::register_secrets([HELD.to_owned()]);
+                Err("No entry.".into())
+            } else if self.present {
+                Ok("Read fixture.".into())
+            } else {
+                Err("No entry.".into())
+            };
+            std::future::ready(answer).boxed()
+        }
+    }
+    let kernel = Arc::new(KernelHost::new());
+    let open_source = |invalidates, present| {
+        Arc::new(Source {
+            kernel: kernel.clone(),
+            invalidates,
+            present,
+            opened: AtomicUsize::new(0),
+        })
+    };
+    let first = open_source(false, false);
+    let invalidates = open_source(true, false);
+    let last = open_source(false, true);
+    let cached = entry_source("zz", vec![index_entry(Kind::Document, HELD)], false);
+    let sources = IndexSources {
+        cached: BTreeMap::from([("zz".into(), cached.clone())]),
+        live: BTreeMap::from([
+            ("aa".into(), first.clone() as Arc<dyn Plugin>),
+            ("bb".into(), invalidates.clone() as Arc<dyn Plugin>),
+            ("cc".into(), last.clone() as Arc<dyn Plugin>),
+        ]),
+    };
+    kernel
+        .gather_index_sources(&crate::tool::Toolbox::default(), &BTreeSet::new(), sources)
+        .await;
+    assert!(kernel.index_entries().is_empty());
+    assert!(kernel.index_kind(HELD).is_none());
+    assert_eq!(
+        index_host(&kernel).index().open(HELD).await.unwrap_err(),
+        wisp_tool_text::index::INVALID_TARGET
+    );
+    assert_eq!(last.opened.load(Ordering::Relaxed), 0);
 }

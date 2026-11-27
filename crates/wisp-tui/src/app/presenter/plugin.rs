@@ -1,14 +1,14 @@
 use std::time::Duration;
 
 use wisp_protocol::plugin::CommandOutcome;
-use wisp_protocol::{AgentEvent, AgentPath, ClientCommand};
+use wisp_protocol::{AgentEvent, AgentPath, ClientCommand, RequestId, Secret};
 use wisp_render::transcript::copy;
 
 use super::Presenter;
 use crate::app::commands::{PluginCommand, plugin_commands};
 
 impl Presenter {
-    pub(super) fn run_plugin(&mut self, name: String, args: String, at: Duration) -> bool {
+    fn run_plugin(&mut self, name: String, args: String, at: Duration) -> Option<RequestId> {
         let request = self.next_request();
         let arrival = self.shown_parts().inputs.arrive();
         let command = ClientCommand::RunPluginCommand {
@@ -20,9 +20,9 @@ impl Presenter {
             let parts = self.shown_parts();
             parts.transcript.command_asked(request, &name);
             parts.runs.insert(request, arrival);
-            true
+            Some(request)
         } else {
-            false
+            None
         }
     }
 
@@ -30,12 +30,12 @@ impl Presenter {
         &mut self,
         command: &PluginCommand,
         base: &str,
+        spelling: &str,
         args: &str,
         busy: bool,
         at: Duration,
     ) -> bool {
-        let text = self.shown_composer_mut().text();
-        let Some(echo) = wisp_protocol::masked_command(&text) else {
+        let Some(masked) = wisp_protocol::masked_command(args) else {
             self.shown_composer_mut().clear();
             self.suggest.reset();
             self.hint(copy::KEY_SHAPED_COMMAND, at);
@@ -45,15 +45,19 @@ impl Presenter {
             self.hint(hint, at);
             return false;
         }
-        self.shown_composer_mut()
-            .remember(&crate::widgets::composer::Saved::from_text(&echo));
         self.shown_composer_mut().clear();
-        if self.run_plugin(command.full(base), args.to_owned(), at) {
-            self.shown_parts().transcript.echo_command(&echo);
-            true
+        let Some(request) = self.run_plugin(command.full(base), args.to_owned(), at) else {
+            return false;
+        };
+        let mut parts = self.shown_parts();
+        let command = format!("/{spelling}");
+        if args.is_empty() {
+            echo_command(&mut parts, &command);
         } else {
-            false
+            let echo = Secret::new(format!("{command} {masked}"));
+            parts.plugin_echo.insert(request, (command, echo));
         }
+        true
     }
 
     pub(super) fn commanding(&self) -> bool {
@@ -82,9 +86,23 @@ impl Presenter {
     }
 
     pub(super) fn plugin_answered(&mut self, agent: Option<&AgentPath>, event: &AgentEvent) {
-        let parts = self.parts_mut(agent);
+        let mut parts = self.parts_mut(agent);
         match event {
-            AgentEvent::CommandDone { answers, outcome } => {
+            AgentEvent::CommandDone {
+                answers,
+                outcome,
+                args_safe_to_echo,
+            } => {
+                if let Some((base, echo)) = parts.plugin_echo.remove(answers) {
+                    echo_command(
+                        &mut parts,
+                        if *args_safe_to_echo {
+                            echo.expose()
+                        } else {
+                            &base
+                        },
+                    );
+                }
                 let arrival = parts.runs.remove(answers);
                 if let (Some(arrival), CommandOutcome::Sent { input }) = (arrival, outcome) {
                     parts.inputs.place_reply(input, arrival);
@@ -95,8 +113,18 @@ impl Presenter {
                 ..
             } => {
                 parts.runs.remove(request);
+                if let Some((base, _)) = parts.plugin_echo.remove(request) {
+                    echo_command(&mut parts, &base);
+                }
             }
             _ => {}
         }
     }
+}
+
+fn echo_command(parts: &mut super::Parts<'_>, echo: &str) {
+    parts
+        .composer
+        .remember(&crate::widgets::composer::Saved::from_text(echo));
+    parts.transcript.echo_command(echo);
 }

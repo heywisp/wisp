@@ -1562,3 +1562,125 @@ async fn a_server_card_and_its_answer_never_join_the_compaction_head() {
         assert!(!head.contains("Private server question") && !head.contains("Private typed words"));
     }
 }
+
+#[tokio::test]
+async fn a_fresh_compaction_head_rechecks_manifest_lookup_targets_after_switch_off_and_replay() {
+    use crate::plugin::{PluginConfig, PluginSwitches, Registry};
+    use wisp_plugin_api::manifest::Origin;
+    const HELD: &str = "CANARY-late-compaction-lookup-target";
+    let scratch = crate::test_guard::ScratchDir::new("wisp-ledger-", "lookup");
+    let workspace = scratch.workspace();
+    let path = workspace
+        .home
+        .as_ref()
+        .unwrap()
+        .join("fixture.txt")
+        .display()
+        .to_string();
+    let new_agent =
+        || Agent::new(scripted(vec![]), default_session()).with_workspace(workspace.clone());
+    let bundle = wisp_plugin_search::bundled();
+    let (registry, problems) = Registry::new(
+        vec![bundle, wisp_plugin_view_file::bundled()],
+        &PluginConfig::default(),
+    );
+    assert!(problems.is_empty());
+    let registry = Arc::new(registry);
+    let mut agent = new_agent();
+    agent.hooks.registry = Some(registry.clone());
+    let kernel = Arc::new(crate::plugin::KernelHost::new());
+    let host =
+        crate::plugin::PluginHost::new("search", "0.4.0", &[], kernel).origin(Origin::Bundled);
+    let search = (bundle.instantiate)(Arc::new(host));
+    let query = json!({"query": HELD});
+    let prepared = search.prepare("search", &query.to_string()).await.unwrap();
+    let search_display = crate::plugin::convert::display(prepared.display()).unwrap();
+    let mut open_display = crate::tool::fallback_display("use", &Value::Null);
+    open_display.target = HELD.into();
+    let mut file_display = crate::tool::fallback_display("view_file", &Value::Null);
+    file_display.target = path.clone();
+    let records = [
+        ("fixture-search", "search", query.clone(), search_display),
+        ("fixture-open", "use", json!({"name": HELD}), open_display),
+        (
+            "fixture-file",
+            "view_file",
+            json!({"path":path}),
+            file_display,
+        ),
+    ]
+    .map(
+        |(call_id, tool, input, display)| LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 0,
+            call_id: call_id.into(),
+            tool: tool.into(),
+            input,
+            display,
+        },
+    );
+    let record = |agent: &mut Agent, records: &[LogEvent]| {
+        for (seq, event) in records.iter().enumerate() {
+            let (_, event) = crate::resume::replayed(event).unwrap();
+            agent.note_event(&event, Some(seq as u64));
+        }
+    };
+    record(&mut agent, &records);
+    assert_eq!(
+        wisp_layout(&agent, (1, (1, 1)), None).matches(HELD).count(),
+        2
+    );
+    agent.hooks.registry = None;
+    assert!(
+        agent
+            .target_of("fixture-search", "search", &query)
+            .contains(HELD)
+    );
+    assert!(!agent.lookup_is_safe(&path));
+    let check = |agent: &Agent| {
+        let head = wisp_layout(agent, (2, (1, 1)), None);
+        assert!(!head.contains(HELD));
+        assert_eq!(
+            head.matches(wisp_tool_text::index::INVALID_TARGET).count(),
+            2
+        );
+        assert!(head.contains(&path));
+    };
+    let config = PluginConfig {
+        switches: PluginSwitches {
+            removed: ["search".to_owned()].into_iter().collect(),
+            ..Default::default()
+        },
+        ..PluginConfig::default()
+    };
+    let (removed, problems) =
+        Registry::new(vec![bundle, wisp_plugin_view_file::bundled()], &config);
+    assert!(problems.is_empty());
+    let mut resumed = new_agent();
+    resumed.hooks.registry = Some(Arc::new(removed));
+    record(&mut resumed, &records);
+    let (without_lookup, problems) = Registry::new(
+        vec![wisp_plugin_view_file::bundled()],
+        &PluginConfig::default(),
+    );
+    assert!(problems.is_empty());
+    assert_eq!(without_lookup.lookup_tool("search"), None);
+    assert_eq!(without_lookup.lookup_tool("use"), None);
+    let mut absent = new_agent();
+    absent.hooks.registry = Some(Arc::new(without_lookup));
+    record(&mut absent, &records);
+    let tools = crate::tool::testkit::bundled_exact(&["view_file", "search", "use"]);
+    assert_eq!(tools.lookup_tool("search"), Some(true));
+    assert_eq!(tools.lookup_tool("use"), Some(true));
+    assert_eq!(tools.lookup_tool("view_file"), Some(false));
+    let mut toolbox_only =
+        Agent::new(scripted(vec![]), default_session()).with_tools(tools, workspace.clone());
+    record(&mut toolbox_only, &records);
+    assert!(absent.lookup_is_safe(HELD));
+    crate::session::register_secrets([HELD.to_owned()]);
+    assert!(!absent.lookup_is_safe(HELD));
+    for view in [&agent, &resumed, &absent, &toolbox_only] {
+        check(view);
+    }
+}

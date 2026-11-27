@@ -2,7 +2,6 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use wisp_plugin_api::hooks::{Event, ToolCall, ToolResult};
 use wisp_protocol::{AgentEvent, ClientCommand, HookChange, NotRunReason, ToolOutcome};
-use wisp_tool_text::output::invalid_input_text;
 
 use super::super::{Agent, Finished, not_run_text};
 use crate::plugin::hooks::points::{AFTER_TOOL, BEFORE_TOOL};
@@ -99,14 +98,9 @@ impl Agent {
         };
         match prepared {
             Ok(prepared) => Before::Run(input, prepared),
-            Err(e) => {
-                let message = format!("{last} rewrote the input: {}", e.message);
-                let text = invalid_input_text(&message);
-                Before::Settled(Finished::synthetic(
-                    ToolOutcome::InvalidInput { message },
-                    text,
-                ))
-            }
+            Err(e) => Before::Settled(
+                self.invalid_tool_input(format!("{last} rewrote the input: {}", e.message)),
+            ),
         }
     }
 

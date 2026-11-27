@@ -50,7 +50,7 @@ The tests reuse the real tool-definition fixtures rather than keeping a copy.
 
 ## Search and use
 
-The bundled `search` plugin ranks the host's snapshot with this crate.
+The bundled `search` plugin ranks the host's merged index with this crate. It checks queries, lookup targets and returned text against the current held credentials and private identity data.
 `search` is on by default and `use` follows it. `search` accepts a query,
 optional kind and optional limit, and returns one line per hit plus a `hits` fact.
 The transcript formats the fact's three counts; an empty result says `nothing found`.
@@ -61,13 +61,13 @@ read them with `use`; that tool asks the live owner for the entry's text.
 A `use` of a tool is unwrapped by the kernel before preparation and runs with
 that tool's row, timeout, hooks and gate, while history keeps the original call.
 
-The kernel gathers entries at start, then at a turn opening or after a completed,
+The kernel gathers cached entries at start, then at a turn opening or after a completed,
 uncancelled tool call when a source marks them changed. Gathering refreshes the
 searchable index, not provider declarations or the cached system prefix. Off tools are excluded. Duplicate
 names keep the first kind (tool, skill, document), then the first source in stable
 plugin-name order, and the other entry produces a problem. A source's tool entry counts only for
 a held tool, and the owning plugin's entry replaces the one built from its definition. A source that panics
-while listing is left out of that gathering with a problem. No ranking runs in
+while listing is left out of that gathering with a problem. Draft live document sources are consulted at lookup, not cached; only immediately ready documents with an unchanged held-credential and home stamp participate. An expired owner no longer advertises a name. No ranking runs in
 the kernel, and no new tool definition is put into the request by search yet.
 
 ## Turning tools and skills off and on

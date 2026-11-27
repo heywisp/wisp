@@ -70,7 +70,9 @@ impl Agent {
                 registry.index_sources(&self.hooks.engine.plugins(), &self.hooks.switches.off)
             })
             .unwrap_or_default();
-        let problems = host.gather_index(&self.toolbox, &allowed, sources).await;
+        let problems = host
+            .gather_index_sources(&self.toolbox, &allowed, sources)
+            .await;
         if !problems.is_empty() {
             self.log_reloaded(
                 &super::reload::Reloaded {
@@ -108,6 +110,16 @@ impl Agent {
             .is_some_and(|host| host.mcp().entry_name_hidden(name))
     }
 
+    pub(super) fn lookup_is_safe(&self, text: &str) -> bool {
+        crate::plugin::host::lookup_is_safe(
+            text,
+            self.hooks.host.as_deref(),
+            self.tools
+                .as_ref()
+                .and_then(|env| env.workspace.home.as_deref()),
+        )
+    }
+
     pub(super) fn forward_call(
         &self,
         name: &str,
@@ -129,6 +141,9 @@ impl Agent {
             .get("name")
             .and_then(Value::as_str)
             .ok_or_else(|| "name must be a string".to_owned())?;
+        if !self.lookup_is_safe(target) {
+            return Err(wisp_tool_text::index::INVALID_TARGET.to_owned());
+        }
         let Some(host) = &self.hooks.host else {
             return Ok(None);
         };
@@ -143,13 +158,16 @@ impl Agent {
             if self.turned_off(&self.settings.session).contains(target) {
                 return Err(wisp_tool_text::manage::turned_off(target));
             }
-            if host
-                .index_kind(target)
-                .is_some_and(|kind| kind != wisp_plugin_api::index::Kind::Tool)
+            let dynamic =
+                self.runnable_tool(target).is_none() && self.dynamic_plugin(target).is_some();
+            if (dynamic || registry.knows_tool(target))
+                && host
+                    .index_kind(target)
+                    .is_some_and(|kind| kind != wisp_plugin_api::index::Kind::Tool)
             {
                 return Ok(None);
             }
-            if self.runnable_tool(target).is_none() && self.dynamic_plugin(target).is_some() {
+            if dynamic {
                 return Ok(Some((
                     target.to_owned(),
                     object.get("input").cloned().unwrap_or_else(|| json!({})),

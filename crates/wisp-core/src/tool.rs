@@ -221,6 +221,7 @@ pub struct PluginTool {
     context_line: Option<String>,
     id: String,
     provides: Vec<String>,
+    forwards: bool,
     plugin: Arc<dyn Plugin>,
     host: Arc<KernelHost>,
 }
@@ -260,6 +261,7 @@ impl ToolEntry {
         context_line: Option<String>,
         id: &str,
         provides: Vec<String>,
+        forwards: bool,
         plugin: Arc<dyn Plugin>,
         host: Arc<KernelHost>,
     ) -> Self {
@@ -270,6 +272,7 @@ impl ToolEntry {
             context_line,
             id: id.to_owned(),
             provides,
+            forwards,
             plugin,
             host,
         }))
@@ -318,7 +321,12 @@ impl ToolEntry {
                 Err(_) => Err(InvalidInput::new(panicked(id))),
             }
         };
-        Caller::default().scope(prepared).await
+        Caller {
+            read_agent: Caller::current().sees_agents(),
+            ..Caller::default()
+        }
+        .scope(prepared)
+        .await
     }
 
     pub fn context_line(&self) -> Option<String> {
@@ -520,6 +528,31 @@ impl Toolbox {
 
     pub fn held_specs(&self) -> Vec<ToolSpec> {
         self.held.iter().map(|t| t.spec().clone()).collect()
+    }
+
+    fn metadata_entry(&self, name: &str) -> Option<&ToolEntry> {
+        self.get(name).or_else(|| self.held_tool(name)).or_else(|| {
+            self.runners
+                .iter()
+                .map(|(_, tool)| tool)
+                .find(|entry| entry.spec().name == name)
+        })
+    }
+
+    pub(crate) fn lookup_tool(&self, name: &str) -> Option<bool> {
+        self.metadata_entry(name)
+            .map(|entry| is_lookup_tool(entry.0.forwards, &entry.0.provides))
+            .or_else(|| {
+                self.natives
+                    .iter()
+                    .any(|native| native.name == name)
+                    .then_some(false)
+            })
+    }
+
+    pub(crate) fn forwards(&self, name: &str) -> bool {
+        self.metadata_entry(name)
+            .is_some_and(|entry| entry.0.forwards)
     }
 
     pub fn definition(&self, name: &str) -> Option<&ToolSpec> {
@@ -974,6 +1007,10 @@ pub fn tools_sha256(
 }
 
 pub use wisp_plugin_api::index::SEARCH_CAPABILITY;
+
+pub(crate) fn is_lookup_tool(forwards: bool, provides: &[String]) -> bool {
+    forwards || provides.iter().any(|cap| cap == SEARCH_CAPABILITY)
+}
 
 pub const SHELL: &str = "shell";
 

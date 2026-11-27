@@ -24,7 +24,7 @@ expression: text(&rows)
    tried your browser
 
    If the browser ends on a page that can't load, copy that page's address and
-   type:
+ | type:
    /mcp sign-in linear <address>
 
  > /mcp sign-in linear http://127.0.0.1:8123/oauth-callback?placeholder

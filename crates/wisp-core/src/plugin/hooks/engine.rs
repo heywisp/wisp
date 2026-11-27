@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -559,6 +560,7 @@ pub struct Fire {
     pub room: Option<u64>,
     pub refusal: Option<&'static str>,
     pub plugins: Option<BTreeSet<String>>,
+    pub(crate) command_workspace_home: Option<PathBuf>,
 }
 
 impl Fire {
@@ -575,6 +577,7 @@ impl Fire {
             room: None,
             refusal: None,
             plugins: None,
+            command_workspace_home: None,
         }
     }
 
@@ -1028,12 +1031,13 @@ impl Engine {
                 fire.cancel.clone()
             };
             let caller = Caller::call(cancel, Some(deadline)).hook(fire.depth, fire.at.clone());
-            let run = run_one(
+            let run = self.run_one(
                 plugin.clone(),
                 name.clone(),
                 Payload::Hook(event),
                 deadline,
                 caller,
+                fire.command_workspace_home.clone(),
             );
             if background {
                 drop(self.spawn_background(full, &fire.point, &fire.at, run));
@@ -1322,12 +1326,13 @@ impl Engine {
             };
             let deadline = Instant::now() + timeout;
             let caller = Caller::call(CancellationToken::new(), Some(deadline)).hook(1, at.clone());
-            let run = run_one(
+            let run = self.run_one(
                 plugin.clone(),
                 name.clone(),
                 payload.clone(),
                 deadline,
                 caller,
+                None,
             );
             let task = self.spawn_background(name.to_string(), point, &at, run);
             if !hook.background {
@@ -1384,6 +1389,7 @@ impl Engine {
                 room: None,
                 refusal: None,
                 plugins: None,
+                command_workspace_home: None,
             };
             let mut progress = Progress::default();
             self.fire_unboxed(fire, &mut progress).await;
@@ -1409,38 +1415,54 @@ impl Engine {
         }
         .boxed()
     }
-}
 
-fn run_one(
-    plugin: Arc<dyn Plugin>,
-    name: Name,
-    payload: Payload,
-    deadline: Instant,
-    caller: Caller,
-) -> BoxFuture<'static, Result<Reply, Fail>> {
-    caller
-        .scope(async move {
-            let hook = name.hook.clone();
-            let called = contain(|| match payload {
-                Payload::Hook(event) => plugin.on_hook(&hook, event),
-                Payload::Tree(event) => plugin
-                    .on_agent_hook(&hook, event)
-                    .map(|()| Reply::None)
-                    .boxed(),
-            });
-            let Ok(future) = called else {
-                return Err(Fail::Panicked(panicked(&name.plugin)));
-            };
-            tokio::select! {
-                biased;
-                done = Contained::new(future) => match done {
-                    Ok(reply) => Ok(reply),
-                    Err(_) => Err(Fail::Panicked(panicked(&name.plugin))),
-                },
-                () = tokio::time::sleep_until(deadline) => Err(Fail::TimedOut),
-            }
-        })
-        .boxed()
+    fn run_one(
+        &self,
+        plugin: Arc<dyn Plugin>,
+        name: Name,
+        payload: Payload,
+        deadline: Instant,
+        caller: Caller,
+        workspace_home: Option<PathBuf>,
+    ) -> BoxFuture<'static, Result<Reply, Fail>> {
+        let host = if matches!(&payload, Payload::Hook(Event::Command(_))) {
+            self.host.clone()
+        } else {
+            None
+        };
+        caller
+            .scope(async move {
+                if let Payload::Hook(Event::Command(info)) = &payload
+                    && !crate::plugin::host::lookup_is_safe(
+                        &info.args,
+                        host.as_deref(),
+                        workspace_home.as_deref(),
+                    )
+                {
+                    return Ok(Reply::None);
+                }
+                let hook = name.hook.clone();
+                let called = contain(|| match payload {
+                    Payload::Hook(event) => plugin.on_hook(&hook, event),
+                    Payload::Tree(event) => plugin
+                        .on_agent_hook(&hook, event)
+                        .map(|()| Reply::None)
+                        .boxed(),
+                });
+                let Ok(future) = called else {
+                    return Err(Fail::Panicked(panicked(&name.plugin)));
+                };
+                tokio::select! {
+                    biased;
+                    done = Contained::new(future) => match done {
+                        Ok(reply) => Ok(reply),
+                        Err(_) => Err(Fail::Panicked(panicked(&name.plugin))),
+                    },
+                    () = tokio::time::sleep_until(deadline) => Err(Fail::TimedOut),
+                }
+            })
+            .boxed()
+    }
 }
 
 #[cfg(test)]

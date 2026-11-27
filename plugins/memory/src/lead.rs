@@ -171,7 +171,7 @@ pub(super) fn render(host: &dyn Host, prior: Prior, target: Option<&str>) -> Ren
             .notes
             .iter()
             .filter_map(|id| match store.inspect(id.scope, &id.name) {
-                NoteStatus::Valid(note) if &note.id == id => Some(note),
+                NoteStatus::Valid(file) if &file.note.id == id => Some(file.note),
                 _ => None,
             })
             .collect();

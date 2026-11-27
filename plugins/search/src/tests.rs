@@ -21,6 +21,7 @@ fn host() -> FakeHost {
     })
     .collect();
     FakeHost {
+        secret_check: Some(Arc::new(|_| Verdict::Safe)),
         entries,
         opened: vec![
             (
@@ -524,4 +525,57 @@ fn skill_add_and_remove_reuse_the_rows_without_sending_paths_to_the_host() {
     }
     assert!(source.join("SKILL.md").exists());
     assert!(managed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn an_unsafe_lookup_never_builds_a_display_and_changed_verdicts_never_return_results() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    const HELD: &str = "CANARY-late-search-lookup";
+    let held = Arc::new(AtomicBool::new(false));
+    let mut fixture = host();
+    fixture.entries.push(Entry {
+        kind: Kind::Document,
+        name: HELD.into(),
+        summary: "Sample.".into(),
+        text: "Test word.".into(),
+    });
+    fixture.secret_check = Some(Arc::new({
+        let held = held.clone();
+        move |text| {
+            if held.load(Ordering::Relaxed) && text.contains(HELD) {
+                Verdict::Refused
+            } else {
+                Verdict::Safe
+            }
+        }
+    }));
+    let plugin = Search {
+        host: Arc::new(fixture),
+    };
+    for (tool, key) in [("use", "name"), ("search", "query")] {
+        let input = json!({(key): HELD}).to_string();
+        held.store(false, Ordering::Relaxed);
+        let prepared = block_on(plugin.prepare(tool, &input)).unwrap();
+        assert!(prepared.display().target.contains(HELD));
+        held.store(true, Ordering::Relaxed);
+        let reply = block_on(plugin.run(prepared, &FakeCall::default()));
+        assert!(
+            matches!(reply.outcome, Outcome::Failed(Failure { message, .. }) if message == INVALID_TARGET)
+        );
+        assert!(reply.result.is_none() && reply.facts.is_empty());
+        assert_eq!(
+            block_on(plugin.prepare(tool, &input)).err().unwrap(),
+            INVALID_TARGET
+        );
+        for rejected in [&input, &json!({(HELD):true}).to_string()] {
+            assert!(
+                !block_on(plugin.rejected_display(tool, rejected))
+                    .unwrap()
+                    .target
+                    .contains(HELD)
+            );
+        }
+    }
+    let prepared = block_on(plugin.prepare("use", r#"{"name":"missing"}"#)).unwrap();
+    assert_eq!(prepared.display().target, "entry");
 }

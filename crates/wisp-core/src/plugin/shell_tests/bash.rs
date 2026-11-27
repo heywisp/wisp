@@ -707,7 +707,7 @@ fn jobs_doctor_rows_name_setsid_and_the_output_directory() {
 }
 
 #[tokio::test]
-async fn the_tools_doctor_rows_name_bash_first_then_setsid_and_the_output_directory() {
+async fn the_tools_doctor_includes_unavailable_memory_before_bash_and_jobs() {
     let (registry, problems) = crate::plugin::Registry::new(
         wisp_plugins::bundled(),
         &crate::plugin::PluginConfig::default(),
@@ -719,12 +719,22 @@ async fn the_tools_doctor_rows_name_bash_first_then_setsid_and_the_output_direct
         .collect();
     let redactions = crate::session::Redactions::default();
     let rows = one_cell(
-        crate::plugin::doctor_rows(&registry, &on, crate::mcp::Service::default(), &redactions)
-            .await,
+        crate::plugin::doctor_rows(
+            &registry,
+            &on,
+            crate::mcp::Service::default(),
+            &redactions,
+            crate::plugin::DoctorWorkspace::default(),
+        )
+        .await,
     );
     let keys: Vec<&str> = rows.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(keys, ["bash", "setsid", "setsid --ctty", "tool output"]);
-    let bash = &rows[0].1;
+    assert_eq!(
+        keys,
+        ["memory", "bash", "setsid", "setsid --ctty", "tool output"]
+    );
+    assert_eq!(rows[0].1, "unavailable");
+    let bash = &rows[1].1;
     let found = exec::find_program("bash");
     match found {
         Some(path) => {
@@ -742,11 +752,12 @@ async fn the_tools_doctor_rows_name_bash_first_then_setsid_and_the_output_direct
             &BTreeSet::new(),
             crate::mcp::Service::default(),
             &redactions,
+            crate::plugin::DoctorWorkspace::default(),
         )
         .await,
     );
     let keys: Vec<&str> = off.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(keys, ["setsid", "setsid --ctty", "tool output"]);
+    assert_eq!(keys, ["memory", "setsid", "setsid --ctty", "tool output"]);
 }
 
 type Reply = Box<dyn Fn(&[Message]) -> Vec<ProviderEvent> + Send + Sync>;

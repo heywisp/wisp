@@ -29,6 +29,8 @@ pub struct Caller {
     pub quiet_jobs: bool,
     pub describing: bool,
     pub allows_private_write: bool,
+    pub read_agent: bool,
+    pub(crate) reading_live_index: bool,
     pub(crate) gather_checked: Option<Arc<AtomicBool>>,
 }
 
@@ -77,6 +79,13 @@ impl Caller {
         }
     }
 
+    pub fn read_only_agent() -> Self {
+        Self {
+            read_agent: true,
+            ..Self::default()
+        }
+    }
+
     pub fn describing() -> Self {
         Self {
             describing: true,
@@ -96,7 +105,7 @@ impl Caller {
         match self.render {
             Some(Render::Slot) => true,
             Some(_) => false,
-            None => self.cancel.is_some(),
+            None => self.cancel.is_some() || self.read_agent,
         }
     }
 

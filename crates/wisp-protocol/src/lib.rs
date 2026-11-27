@@ -1704,6 +1704,8 @@ pub enum AgentEvent {
     CommandDone {
         answers: RequestId,
         outcome: CommandOutcome,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        args_safe_to_echo: bool,
     },
     CommandDeferred {
         request: RequestId,

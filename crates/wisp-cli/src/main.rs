@@ -1022,12 +1022,8 @@ fn doctor(
         variables.as_ref().map_err(String::as_str),
         home.as_deref(),
     );
-    let mcp = match start::mcp_service(
-        &sources,
-        std::env::current_dir().unwrap_or_default(),
-        keychain,
-        false,
-    ) {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let mcp = match start::mcp_service(&sources, cwd.clone(), keychain, false) {
         Ok(mcp) => mcp,
         Err(err) => {
             eprintln!("wisp: {err}");
@@ -1040,8 +1036,12 @@ fn doctor(
     let held = sources.held_redactions(endpoints.as_ref());
     let (hook_rows, hooks_broken) = hooks_report(&tools::registry().0);
     let loaded = context::load(sources.config_path.as_deref()).with_flags(&resolved.flags);
+    let workspace = wisp_core::plugin::DoctorWorkspace {
+        cwd,
+        plugin_data: JsonlStore::default_plugin_data_dir(xdg_data_home(), home_dir()),
+    };
     let mut written = wisp_tui::term::doctor::run(&mut out, &display_of(setup, &sources))
-        .and_then(|()| tools_doctor(&mut out, mcp, &held))
+        .and_then(|()| tools_doctor(&mut out, mcp, &held, &workspace))
         .and_then(|()| {
             out.write_all(rows_text("hooks", &hook_rows).as_bytes())?;
             out.write_all(rows_text("plugins", &plugin_rows(home.as_deref())).as_bytes())?;
@@ -1374,12 +1374,17 @@ fn doctor_lines(rows: Vec<wisp_protocol::DoctorRow>, key: usize) -> String {
 fn tools_rows(
     mcp: wisp_core::mcp::Service,
     redactions: &wisp_core::session::Redactions,
+    workspace: &wisp_core::plugin::DoctorWorkspace,
 ) -> std::io::Result<Vec<wisp_protocol::DoctorRow>> {
     let (registry, _) = tools::registry();
     let on = registry.default_on();
     let runtime = wisp_core::runtime::build(&mut tokio::runtime::Builder::new_multi_thread())?;
     let rows = runtime.block_on(wisp_core::plugin::doctor_rows(
-        &registry, &on, mcp, redactions,
+        &registry,
+        &on,
+        mcp,
+        redactions,
+        workspace.clone(),
     ));
     runtime.shutdown_timeout(start::SHUTDOWN_WAIT);
     Ok(rows)
@@ -1390,10 +1395,11 @@ fn tools_doctor(
     out: &mut impl std::io::Write,
     mcp: wisp_core::mcp::Service,
     redactions: &wisp_core::session::Redactions,
+    workspace: &wisp_core::plugin::DoctorWorkspace,
 ) -> std::io::Result<()> {
     let text = format!(
         "\ntools\n{}",
-        doctor_lines(tools_rows(mcp, redactions)?, 18)
+        doctor_lines(tools_rows(mcp, redactions, workspace)?, 18)
     );
     out.write_all(text.as_bytes())?;
     out.flush()
@@ -1404,6 +1410,7 @@ fn tools_doctor(
     _out: &mut impl std::io::Write,
     _mcp: wisp_core::mcp::Service,
     _redactions: &wisp_core::session::Redactions,
+    _workspace: &wisp_core::plugin::DoctorWorkspace,
 ) -> std::io::Result<()> {
     Ok(())
 }
@@ -3027,19 +3034,35 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_tools_section_keeps_its_one_cell_rows_as_they_were() {
+        let scratch = tempfile::tempdir().unwrap();
+        let workspace = wisp_core::plugin::DoctorWorkspace {
+            cwd: scratch.path().to_owned(),
+            plugin_data: Some(scratch.path().join("plugin-data")),
+        };
         let mut out = Vec::new();
         let redactions = wisp_core::session::Redactions::default();
-        tools_doctor(&mut out, wisp_core::mcp::Service::default(), &redactions).unwrap();
+        tools_doctor(
+            &mut out,
+            wisp_core::mcp::Service::default(),
+            &redactions,
+            &workspace,
+        )
+        .unwrap();
         let text = String::from_utf8(out).unwrap();
         let mut expected = String::from("\ntools\n");
-        for row in tools_rows(wisp_core::mcp::Service::default(), &redactions).unwrap() {
+        for row in tools_rows(wisp_core::mcp::Service::default(), &redactions, &workspace).unwrap()
+        {
             let [wisp_protocol::DoctorCell::Text { text }] = row.cells.as_slice() else {
                 panic!("{} has more than one cell", row.key);
             };
             let text = wisp_tui::term::doctor::clean(text);
             expected.push_str(&format!("  {:<18} {text}\n", row.key));
         }
-        assert!(text.starts_with("\ntools\n  bash  "), "{text}");
+        if cfg!(any(target_os = "linux", target_os = "macos")) {
+            assert!(text.starts_with("\ntools\n  bash  "), "{text}");
+        } else {
+            assert!(text.starts_with("\ntools\n  memory"), "{text}");
+        }
         assert_eq!(text, expected);
     }
 

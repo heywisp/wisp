@@ -240,3 +240,83 @@ fn notes_between_hunks_are_not_copied() {
     let body: Vec<StyledLine> = rows.into_iter().skip(1).collect();
     assert_eq!(text(&whole(&body), WidthMode::Normal, 3), "-a\n+b\n-y\n+z");
 }
+
+#[test]
+fn memory_show_copies_physical_lines_and_both_kinds_of_soft_wrap() {
+    use std::time::Duration;
+    use wisp_protocol::slot::{SlotSpan, SlotTone};
+    use wisp_protocol::{AgentEvent, CommandLine, CommandOutcome, RequestId};
+    use wisp_render::theme::glyphs::Glyphs;
+    use wisp_render::transcript::{Config, Detail, Transcript};
+
+    let encoded = [
+        "---",
+        "name: sample-tiles-for-the-board-with-square-corners",
+        "description: 青いタイル。",
+        "saved: 2000-01-01",
+        "---",
+        "",
+        r"\sKeep\s\sthe long edge of the sample tile at the top.\t\r",
+        r"\ No final newline",
+    ];
+    let lines = encoded
+        .iter()
+        .map(|line| CommandLine::Text {
+            spans: vec![SlotSpan::Text {
+                text: (*line).into(),
+                tone: SlotTone::Text,
+                bold: false,
+            }],
+        })
+        .collect();
+    let request = RequestId(1);
+    let event = AgentEvent::CommandDone {
+        answers: request,
+        outcome: CommandOutcome::Lines { lines },
+        args_safe_to_echo: true,
+    };
+    for glyphs in [GlyphSet::Unicode, GlyphSet::Ascii] {
+        for width in [40, 80, 120] {
+            let mut transcript = Transcript::new(Config {
+                provider: "fixture".into(),
+                cache_ttl: wisp_protocol::CacheTtl::OneHour,
+                logging: false,
+            });
+            transcript.command_asked(request, "memory:memory");
+            transcript.apply(&event, Duration::ZERO);
+            let render = Renderer::new(Layout::new(width, glyphs));
+            let rows = transcript.rows(&render, Detail::Scrollback);
+            let copied = text(&whole(&rows), glyphs.into(), 3);
+            assert_eq!(copied, encoded.join("\n"));
+            let decoded = copied
+                .strip_suffix("\n\\ No final newline")
+                .unwrap()
+                .replace(r"\s", " ")
+                .replace(r"\t", "\t")
+                .replace(r"\r", "\r");
+            assert_eq!(
+                decoded,
+                "---\nname: sample-tiles-for-the-board-with-square-corners\ndescription: 青いタイル。\nsaved: 2000-01-01\n---\n\n Keep  the long edge of the sample tile at the top.\t\r"
+            );
+            if width == 40 {
+                for space in [true, false] {
+                    let glyph = Glyphs::of(glyphs).wrap;
+                    let lead = if space {
+                        format!(" {glyph} ")
+                    } else {
+                        format!("  {glyph}")
+                    };
+                    assert!(rows.iter().any(|row| {
+                        row.joined.is_some_and(|j| j.space == space && j.lead == 3)
+                            && row
+                                .spans
+                                .iter()
+                                .map(|span| span.text.as_str())
+                                .collect::<String>()
+                                .starts_with(&lead)
+                    }));
+                }
+            }
+        }
+    }
+}

@@ -20,12 +20,36 @@ pub(super) enum Scope {
 }
 
 impl Scope {
-    pub(super) fn key(self, name: &str) -> String {
-        let scope = match self {
+    pub(super) const ALL: [Self; 2] = [Self::Project, Self::You];
+
+    pub(super) fn cli(self) -> &'static str {
+        match self {
             Self::Project => "project",
+            Self::You => "you",
+        }
+    }
+
+    fn key_scope(self) -> &'static str {
+        match self {
+            Self::Project => self.cli(),
             Self::You => "user",
-        };
-        format!("memory.{scope}.{name}")
+        }
+    }
+
+    pub(super) fn parse_cli(label: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|scope| scope.cli() == label)
+    }
+
+    pub(super) fn split_key(key: &str) -> Option<(Self, &str)> {
+        let (key_scope, name) = key.strip_prefix("memory.")?.split_once('.')?;
+        let scope = Self::ALL
+            .into_iter()
+            .find(|scope| scope.key_scope() == key_scope)?;
+        Some((scope, name))
+    }
+
+    pub(super) fn key(self, name: &str) -> String {
+        format!("memory.{}.{name}", self.key_scope())
     }
 
     pub(super) fn label(self) -> &'static str {

@@ -167,6 +167,8 @@ impl Agent {
         arrival: u64,
         events: &mpsc::Sender<AgentEvent>,
     ) {
+        let args_safe_to_echo =
+            !args.expose().trim().is_empty() && self.safe_command_args(args.expose()).is_some();
         let Some(command) = self.hooks.commands.find(&name) else {
             let removed = self.catalog.plugins.iter().find(|p| {
                 !p.installed
@@ -187,6 +189,7 @@ impl Agent {
                 AgentEvent::CommandDone {
                     answers: request,
                     outcome,
+                    args_safe_to_echo,
                 },
             )
             .await;
@@ -199,6 +202,7 @@ impl Agent {
                 AgentEvent::CommandDone {
                     answers: request,
                     outcome,
+                    args_safe_to_echo,
                 },
             )
             .await;
@@ -215,6 +219,7 @@ impl Agent {
                 AgentEvent::CommandDone {
                     answers: request,
                     outcome,
+                    args_safe_to_echo,
                 },
             )
             .await;
@@ -435,6 +440,8 @@ impl Agent {
         let done = AgentEvent::CommandDone {
             answers: asked.request,
             outcome,
+            args_safe_to_echo: !asked.args.expose().trim().is_empty()
+                && self.safe_command_args(asked.args.expose()).is_some(),
         };
         self.emit(events, done).await;
         if started {
@@ -442,8 +449,13 @@ impl Agent {
         }
     }
 
+    fn safe_command_args(&self, args: &str) -> Option<String> {
+        let masked = wisp_protocol::masked_command(args)?;
+        self.lookup_is_safe(&masked).then_some(masked)
+    }
+
     pub(in crate::agent) fn defer_command(&mut self, name: String, args: String) {
-        let Some(args) = wisp_protocol::masked_command(&args) else {
+        let Some(args) = self.safe_command_args(&args) else {
             return;
         };
         self.defer(COMMAND, Event::Command(CommandInfo { name, args }));
@@ -503,6 +515,7 @@ impl Agent {
             let done = AgentEvent::CommandDone {
                 answers: request,
                 outcome: CommandOutcome::Cancelled,
+                args_safe_to_echo: false,
             };
             self.emit(events, done).await;
         }

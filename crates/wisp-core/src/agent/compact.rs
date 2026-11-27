@@ -247,6 +247,7 @@ pub(super) struct LoggedCall {
     call_id: String,
     turn: u64,
     tool: String,
+    lookup: bool,
     target: String,
     cwd: Option<String>,
     status: Option<String>,
@@ -895,6 +896,13 @@ impl Agent {
                     call_id: call_id.clone(),
                     turn,
                     tool: tool.clone(),
+                    lookup: self
+                        .hooks
+                        .registry
+                        .as_ref()
+                        .and_then(|registry| registry.lookup_tool(tool))
+                        .or_else(|| self.toolbox.lookup_tool(tool))
+                        .unwrap_or(true),
                     target: display.target.clone(),
                     cwd: None,
                     status: None,

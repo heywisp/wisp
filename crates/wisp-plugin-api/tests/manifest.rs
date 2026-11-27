@@ -1106,3 +1106,25 @@ dynamic_tools = "mcp__"
             .is_none()
     );
 }
+
+#[test]
+fn live_documents_requires_a_draft_index_source() {
+    let manifest = |world, fields| {
+        Manifest::parse(
+            &format!(
+                "id = \"fixture\"\nversion = \"1.0.0\"\nworld = \"{world}\"\nsummary = \"Lists documents\"\n{fields}"
+            ),
+            Origin::External,
+        )
+    };
+    assert!(!manifest("0.4.0", "index = true").unwrap().live_documents);
+    assert!(
+        manifest("0.4.0", "index = true\nlive_documents = true")
+            .unwrap()
+            .live_documents
+    );
+    assert!(manifest("0.4.0", "live_documents = true").is_err());
+    for world in ["0.1.0", "0.2.0", "0.3.0"] {
+        assert!(manifest(world, "index = true\nlive_documents = true").is_err());
+    }
+}

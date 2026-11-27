@@ -56,7 +56,7 @@ async fn the_board_component_serves_its_tools_through_the_host() {
     assert!(plugin.entries().await.is_empty());
     assert_eq!(
         plugin.open_entry("missing").await,
-        Err("nothing named `missing` was found".to_owned())
+        Err("entry not found".to_owned())
     );
     let defs = plugin.describe(&build()).await;
     let metas: Vec<(&str, Effect, bool, bool, bool, u64)> = defs

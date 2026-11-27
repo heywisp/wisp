@@ -36,10 +36,8 @@ pub trait Index: Send + Sync {
         Vec::new()
     }
 
-    fn open<'a>(&'a self, name: &'a str) -> crate::BoxFuture<'a, Result<String, String>> {
-        Box::pin(std::future::ready(Err(format!(
-            "nothing named `{name}` was found"
-        ))))
+    fn open<'a>(&'a self, _name: &'a str) -> crate::BoxFuture<'a, Result<String, String>> {
+        Box::pin(std::future::ready(Err("entry not found".to_owned())))
     }
 
     fn changed(&self) {}

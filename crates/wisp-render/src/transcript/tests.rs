@@ -4853,6 +4853,7 @@ mod plugin_commands {
 
     fn done(outcome: CommandOutcome) -> AgentEvent {
         AgentEvent::CommandDone {
+            args_safe_to_echo: false,
             answers: ASKED,
             outcome,
         }
@@ -5027,7 +5028,7 @@ mod plugin_commands {
                     format!("   {clipped}  41"),
                     format!("   sentry  failed{}{}", " ".repeat(21), dash),
                     "           it couldn't start: npx isn't".to_owned(),
-                    "           installed".to_owned(),
+                    format!("         {} installed", Glyphs::of(glyphs).wrap),
                     String::new(),
                     "   sign in: /mcp sign-in linear".to_owned(),
                 ],
@@ -5930,6 +5931,7 @@ fn mcp_command_echoes_match_the_approved_frames_at_each_size_and_glyph_set() {
                 transcript.command_asked(request, "mcp:mcp");
                 transcript.apply(
                     &AgentEvent::CommandDone {
+                        args_safe_to_echo: false,
                         answers: request,
                         outcome: CommandOutcome::Lines {
                             lines: vec![wisp_protocol::CommandLine::Text {
@@ -6066,6 +6068,7 @@ fn mcp_sign_in_frames_match_c2_c3_and_c4_at_every_width_and_glyph_set() {
                 }
                 transcript.apply(
                     &AgentEvent::CommandDone {
+                        args_safe_to_echo: false,
                         answers: request,
                         outcome: if pasted {
                             CommandOutcome::None
