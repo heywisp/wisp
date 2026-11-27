@@ -27,7 +27,7 @@ pub enum Display {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Generation(u64);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct GuardStamp(u64);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,15 +85,28 @@ struct Entry {
     listeners: BTreeMap<String, Listener>,
 }
 
+impl Entry {
+    fn current(&self, generation: Generation) -> bool {
+        self.valid && self.generation == generation
+    }
+
+    fn bound_to(&self, provider: &Arc<dyn Provider>) -> bool {
+        self.valid && Arc::ptr_eq(&self.provider, provider)
+    }
+}
+
 struct HeldWindow {
     window: UsageWindow,
     stamp: GuardStamp,
 }
 
 impl HeldWindow {
-    fn guards(&self, model: &str) -> bool {
-        self.window.is_retry_guard()
-            && matches!(&self.window.scope, UsageScope::Model(id) if id == model)
+    fn has_recoverable_scope(&self) -> bool {
+        matches!(self.window.scope, UsageScope::Model(_) | UsageScope::All)
+    }
+
+    fn clears_on_success(&self, model: &str) -> bool {
+        self.has_recoverable_scope() && self.window.scope.applies_to(model)
     }
 }
 
@@ -135,8 +148,7 @@ impl PlanUsageCache {
     pub fn bind(&self, alias: &str, provider: Arc<dyn Provider>) -> Option<Generation> {
         let mut table = self.table();
         if let Some(entry) = table.entries.get(alias) {
-            return (entry.valid && Arc::ptr_eq(&entry.provider, &provider))
-                .then_some(entry.generation);
+            return entry.bound_to(&provider).then_some(entry.generation);
         }
         Some(self.replace(&mut table, alias, provider))
     }
@@ -144,8 +156,7 @@ impl PlanUsageCache {
     pub fn rebind(&self, alias: &str, provider: Arc<dyn Provider>) -> Generation {
         let mut table = self.table();
         if let Some(entry) = table.entries.get(alias)
-            && entry.valid
-            && Arc::ptr_eq(&entry.provider, &provider)
+            && entry.bound_to(&provider)
         {
             return entry.generation;
         }
@@ -297,13 +308,13 @@ impl PlanUsageCache {
         let Some(entry) = table
             .entries
             .get_mut(alias)
-            .filter(|entry| entry.valid && entry.generation == generation)
+            .filter(|entry| entry.current(generation))
         else {
             return;
         };
         entry
             .held
-            .retain(|old| !old.window.is_retry_guard() || live(&old.window, window.observed_at));
+            .retain(|old| live(&old.window, window.observed_at));
         let held = HeldWindow {
             window: window.clone(),
             stamp,
@@ -313,9 +324,7 @@ impl PlanUsageCache {
                 && old.window.is_retry_guard() == window.is_retry_guard()
         }) {
             if old.window.observed_at > window.observed_at {
-                if window.is_retry_guard() {
-                    old.stamp = stamp;
-                }
+                old.stamp = stamp;
                 return;
             }
             *old = held;
@@ -331,14 +340,17 @@ impl PlanUsageCache {
         generation: Generation,
         model: &str,
     ) -> Option<GuardStamp> {
-        self.table()
+        let table = self.table();
+        let entry = table
             .entries
             .get(alias)
-            .filter(|entry| entry.valid && entry.generation == generation)?
+            .filter(|entry| entry.current(generation))?;
+        entry
             .held
             .iter()
-            .find(|held| held.guards(model))
+            .filter(|held| held.clears_on_success(model))
             .map(|held| held.stamp)
+            .max()
     }
 
     pub(crate) fn succeeded(
@@ -352,12 +364,12 @@ impl PlanUsageCache {
             .table()
             .entries
             .get_mut(alias)
-            .filter(|entry| entry.valid && entry.generation == generation)
+            .filter(|entry| entry.current(generation))
         {
             let before = entry.held.len();
             entry
                 .held
-                .retain(|held| held.stamp != sent_at || !held.guards(model));
+                .retain(|held| held.stamp > sent_at || !held.clears_on_success(model));
             if entry.held.len() != before {
                 self.wake();
             }
@@ -422,7 +434,7 @@ impl PlanUsageCache {
         let entry = table
             .entries
             .get(alias)
-            .filter(|entry| entry.valid && entry.generation == generation)?;
+            .filter(|entry| entry.current(generation))?;
         let kind = entry.provider.kind();
         used_up(reading(entry, now), now)
             .filter(|w| !entry.unconfirmed.contains(&w.key) && w.observed_at <= now && w.valid())
@@ -439,7 +451,7 @@ impl PlanUsageCache {
         self.table()
             .entries
             .get(alias)
-            .is_some_and(|entry| entry.valid && entry.generation == generation)
+            .is_some_and(|entry| entry.current(generation))
     }
 
     pub(crate) fn model(&self, alias: &str, client: &str, model: &str, now: impl FnOnce() -> i64) {
@@ -463,8 +475,7 @@ impl PlanUsageCache {
         model: &str,
     ) {
         if let Some(entry) = self.table().entries.get_mut(alias)
-            && entry.valid
-            && entry.generation == generation
+            && entry.current(generation)
         {
             if let Some(listener) = entry.listeners.get_mut(client) {
                 listener.model = model.to_owned();
@@ -519,7 +530,7 @@ impl PlanUsageCache {
         let Some(entry) = table
             .entries
             .get_mut(alias)
-            .filter(|e| e.valid && e.generation == generation)
+            .filter(|e| e.current(generation))
         else {
             return;
         };
@@ -593,10 +604,11 @@ impl PlanUsageCache {
             .and_then(|folder| record::read(folder, alias));
         let mut table = self.table();
         let held = !table.holders.is_empty();
+        let lookup_stamp = GuardStamp(table.next);
         let Some(entry) = table
             .entries
             .get_mut(alias)
-            .filter(|e| e.valid && e.generation == generation)
+            .filter(|e| e.current(generation))
         else {
             return;
         };
@@ -679,13 +691,13 @@ impl PlanUsageCache {
                 let Some(entry) = table
                     .entries
                     .get_mut(&task_alias)
-                    .filter(|e| e.valid && e.generation == generation && e.flight == flight)
+                    .filter(|e| e.current(generation) && e.flight == flight)
                 else {
                     return;
                 };
                 entry.task = None;
                 let shareable = !matches!(result, Ok(None) | Err(PlanUsageError::Disabled));
-                finish(entry, result, revision, now);
+                finish(entry, result, revision, lookup_stamp, now);
                 publish(&task_alias, entry, now, &cache.changed);
                 shareable.then(|| to_record(entry))
             };
@@ -709,7 +721,7 @@ impl PlanUsageCache {
         if let Some(entry) = table
             .entries
             .get_mut(alias)
-            .filter(|e| e.valid && e.generation == generation && e.flight == flight)
+            .filter(|e| e.current(generation) && e.flight == flight)
         {
             entry.task = None;
             if let Some(stored) = stored {
@@ -724,14 +736,17 @@ fn finish(
     entry: &mut Entry,
     result: Result<Option<PlanUsage>, PlanUsageError>,
     revision: u64,
+    lookup_stamp: GuardStamp,
     now: i64,
 ) {
     entry.checked = now;
     match result {
         Ok(Some(snapshot)) => {
+            let confirmed = lookup_confirmed_holds(&entry.held, &snapshot, lookup_stamp, now);
             merge_full(entry, snapshot, revision, ReadingOrigin::Local);
             entry.observed = Some(now);
             entry.error = None;
+            clear_held_limits(entry, &confirmed, now);
             entry.failures = 0;
             entry.retry_at = now.saturating_add(600);
         }
@@ -764,6 +779,49 @@ fn finish(
             }
         }
     }
+}
+
+fn lookup_confirmed_holds(
+    held: &[HeldWindow],
+    lookup: &PlanUsage,
+    lookup_stamp: GuardStamp,
+    now: i64,
+) -> BTreeSet<GuardStamp> {
+    let unconfirmed = BTreeSet::new();
+    held.iter()
+        .filter(|held| {
+            held.stamp <= lookup_stamp
+                && held.has_recoverable_scope()
+                && !held.window.is_retry_guard()
+                && exact_scope_shows_room(lookup, &unconfirmed, &held.window, now)
+        })
+        .map(|held| held.stamp)
+        .collect()
+}
+
+fn clear_held_limits(entry: &mut Entry, confirmed: &BTreeSet<GuardStamp>, now: i64) {
+    let Some(snapshot) = entry.snapshot.as_ref() else {
+        return;
+    };
+    entry.held.retain(|held| {
+        !confirmed.contains(&held.stamp)
+            || !exact_scope_shows_room(snapshot, &entry.unconfirmed, &held.window, now)
+    });
+}
+
+fn exact_scope_shows_room(
+    snapshot: &PlanUsage,
+    unconfirmed: &BTreeSet<String>,
+    limit: &UsageWindow,
+    now: i64,
+) -> bool {
+    snapshot.availability != Some(Availability::Limited)
+        && windows_show_room(
+            unconfirmed,
+            snapshot.windows.iter().filter(|w| w.scope == limit.scope),
+            limit,
+            now,
+        )
 }
 
 fn adopt(entry: &mut Entry, stored: Record) {
@@ -921,19 +979,32 @@ fn room_after(
     now: i64,
 ) -> bool {
     let kind = entry.provider.kind();
-    let mut covering = reading.windows.iter().filter(|w| applies(kind, w, model));
+    windows_show_room(
+        &entry.unconfirmed,
+        reading.windows.iter().filter(|w| applies(kind, w, model)),
+        guard,
+        now,
+    )
+}
+
+fn windows_show_room<'a>(
+    unconfirmed: &BTreeSet<String>,
+    mut windows: impl Iterator<Item = &'a UsageWindow>,
+    held: &UsageWindow,
+    now: i64,
+) -> bool {
     let has_room = |w: &UsageWindow| {
         !w.is_retry_guard()
             && !matches!(w.source, UsageSource::RetryAfter | UsageSource::ErrorBody)
             && w.valid()
             && !w.stale(now)
-            && !entry.unconfirmed.contains(&w.key)
-            && guard.observed_at < w.observed_at
+            && !unconfirmed.contains(&w.key)
+            && held.observed_at < w.observed_at
             && w.observed_at <= now
             && w.used_percent
                 .is_some_and(|percent| percent.value() < 100.0)
     };
-    covering.next().is_some_and(has_room) && covering.all(has_room)
+    windows.next().is_some_and(has_room) && windows.all(has_room)
 }
 
 fn used_up(reading: Option<&PlanUsage>, now: i64) -> impl Iterator<Item = &UsageWindow> {
@@ -1181,6 +1252,26 @@ mod tests {
         )
     }
 
+    fn typed_limit(scope: UsageScope, now: i64) -> UsageWindow {
+        use wisp_protocol::{ErrorDetail, FailurePhase, FailureSource, RetryClass};
+
+        let mut detail = ErrorDetail::new(
+            FailurePhase::Response,
+            FailureSource::Endpoint,
+            RetryClass::Never,
+        );
+        crate::provider::limit::reached(
+            &mut detail,
+            now,
+            Some(now + 3600),
+            UsageSource::ErrorBody,
+            None,
+        );
+        let mut window = *detail.limit_reached.unwrap();
+        window.scope = scope;
+        window
+    }
+
     #[test]
     fn a_held_limit_holds_its_scope_until_it_resets() {
         let now = 1_800_000_000;
@@ -1188,14 +1279,8 @@ mod tests {
         let mut generation = cache.bind("alias", fake(now)).unwrap();
         assert_eq!(cache.room("unread", "model", now), Room::Open);
         assert_eq!(cache.room("alias", "model", now), Room::Open);
-        let mut limit = snapshot(now, 100.0).windows.remove(0);
-        limit.scope = UsageScope::Model("model".into());
-        limit.used_percent = None;
-        limit.source = UsageSource::ErrorBody;
+        let mut limit = typed_limit(UsageScope::Model("model".into()), now);
         cache.reached("alias", generation, &limit);
-        cache.reached("alias", generation, &retry_guard("model", now, now + 7200));
-        let sent_at = cache.guard_stamp("alias", generation, "model").unwrap();
-        cache.succeeded("alias", generation, "model", sent_at);
         assert_eq!(
             cache.room("alias", "model", now),
             used(Some("model"), Some(now + 3600))
@@ -1207,15 +1292,24 @@ mod tests {
         );
         assert_eq!(cache.room("alias", "model", now + 3600), Room::Open);
 
+        let guard = retry_guard("model", now, now + 7200);
+        cache.reached("alias", generation, &guard);
+        let sent_at = cache.guard_stamp("alias", generation, "model").unwrap();
+        cache.succeeded("alias", generation, "other", sent_at);
+        assert_eq!(held_windows(&cache, "alias"), [limit.clone(), guard]);
+        cache.succeeded("alias", generation, "model", sent_at);
+        assert_eq!(cache.room("alias", "model", now), Room::Open);
+
+        cache.reached("alias", generation, &limit);
         let mut newer = limit.clone();
         newer.observed_at += 1;
         newer.resets_at = Some(now + 7200);
-        cache.reached("alias", generation, &newer);
-        cache.reached("alias", generation, &limit);
-        assert_eq!(
-            cache.room("alias", "model", now + 1),
-            used(Some("model"), Some(now + 7200))
-        );
+        for refusal in [&newer, &limit] {
+            let sent_at = cache.guard_stamp("alias", generation, "model").unwrap();
+            cache.reached("alias", generation, refusal);
+            cache.succeeded("alias", generation, "model", sent_at);
+            assert_eq!(held_windows(&cache, "alias"), [newer.clone()]);
+        }
         let mut account = limit.clone();
         account.scope = UsageScope::All;
         cache.reached("alias", generation, &account);
@@ -1232,6 +1326,10 @@ mod tests {
             cache.room("alias", "model", now),
             used(Some("model"), Some(now + 7200))
         );
+        let sent_at = cache.guard_stamp("alias", generation, "other").unwrap();
+        cache.succeeded("alias", generation, "other", sent_at);
+        assert_eq!(cache.room("alias", "other", now), Room::Open);
+        assert_eq!(held_windows(&cache, "alias"), [newer]);
         generation = cache.rebind("alias", fake(now));
         assert_eq!(cache.room("alias", "model", now), Room::Open);
 
@@ -1321,6 +1419,11 @@ mod tests {
             let reading = fable(now, 100.0);
             if held {
                 cache.reached("example", generation, &reading.windows[0]);
+                assert!(cache.guard_stamp("example", generation, FABLE).is_none());
+                cache.reached("example", generation, &typed_limit(UsageScope::All, now));
+                let sent_at = cache.guard_stamp("example", generation, FABLE).unwrap();
+                cache.succeeded("example", generation, FABLE, sent_at);
+                assert_eq!(held_windows(&cache, "example"), reading.windows);
             } else {
                 cache.observe("example", generation, Ok(reading), now);
             }
@@ -1361,6 +1464,100 @@ mod tests {
             duration_seconds: None,
             source: UsageSource::RetryAfter,
             ..snapshot(now, 0.0).windows.remove(0)
+        }
+    }
+
+    #[test]
+    fn only_a_fresh_exact_scope_lookup_clears_a_typed_hold() {
+        let now = 1_800_000_000;
+        let done = now + USAGE_MAX_AGE + 1;
+        let no_room = Some(Percent::try_from(100.0).unwrap());
+        for scope in [UsageScope::Model("model".into()), UsageScope::All] {
+            let cache = PlanUsageCache::default();
+            let generation = cache.bind("alias", fake(now)).unwrap();
+            let limit = typed_limit(scope.clone(), now);
+            cache.reached("alias", generation, &limit);
+            let stamp = || GuardStamp(cache.table().next);
+            let settle = |snapshot, stamp, at| {
+                let mut table = cache.table();
+                let entry = table.entries.get_mut("alias").unwrap();
+                let revision = entry.revision;
+                finish(entry, Ok(Some(snapshot)), revision, stamp, at);
+            };
+            let assert_held = |snapshot, stamp, held: &UsageWindow, at, case: &str| {
+                settle(snapshot, stamp, at);
+                assert_eq!(
+                    held_windows(&cache, "alias").as_slice(),
+                    std::slice::from_ref(held),
+                    "{case}"
+                );
+                cache.reset_lookup("alias", at);
+            };
+            let mut exact = snapshot(now + 2, 33.0);
+            exact.windows[0].scope = scope.clone();
+            if scope != UsageScope::All {
+                assert_held(snapshot(now + 2, 33.0), stamp(), &limit, done, "aggregate");
+            }
+            let mut same_second = exact.clone();
+            same_second.windows[0].observed_at = now;
+            assert_held(same_second, stamp(), &limit, now + 2, "same second");
+            type ReadingChange = fn(&mut UsageWindow);
+            let cases: &[(&str, ReadingChange)] = &[
+                ("wrong model", |w| {
+                    w.scope = UsageScope::Model("other".into())
+                }),
+                ("partial", |w| w.used_percent = None),
+                ("stale", |w| w.observed_at -= 1),
+                ("future", |w| w.observed_at += USAGE_MAX_AGE + 1),
+                ("error body", |w| w.source = UsageSource::ErrorBody),
+                ("retry after", |w| w.source = UsageSource::RetryAfter),
+            ];
+            for (case, change) in cases {
+                let mut invalid = exact.clone();
+                change(&mut invalid.windows[0]);
+                assert_held(invalid, stamp(), &limit, done, case);
+            }
+            let mut limited = exact.clone();
+            limited.availability = Some(Availability::Limited);
+            assert_held(limited, stamp(), &limit, done, "limited availability");
+
+            let mut exhausted = exact.windows[0].clone();
+            exhausted.key = "codex.secondary".into();
+            exhausted.used_percent = no_room;
+            let mut mixed = exact.clone();
+            mixed.windows.push(exhausted.clone());
+            assert_held(mixed, stamp(), &limit, done, "one exact window exhausted");
+
+            let mut newer = limit.clone();
+            newer.observed_at += 1;
+            newer.resets_at = Some(done + 3600);
+            for refusal in [&newer, &limit] {
+                let lookup_stamp = stamp();
+                cache.reached("alias", generation, refusal);
+                assert_held(
+                    exact.clone(),
+                    lookup_stamp,
+                    &newer,
+                    done,
+                    "refusal during lookup",
+                );
+            }
+            if scope == UsageScope::All {
+                exact.availability = Some(Availability::Allowed);
+                exhausted.scope = UsageScope::Model("other".into());
+                exact.windows.push(exhausted);
+            }
+            settle(exact, stamp(), done);
+            assert!(held_windows(&cache, "alias").is_empty(), "{scope:?}");
+            assert_eq!(cache.room("alias", "model", done), Room::Open);
+            if scope == UsageScope::All {
+                assert_eq!(
+                    cache.room("alias", "other", done),
+                    used(Some("other"), Some(now + 3602))
+                );
+            }
+            cache.reset_lookup("alias", done);
+            assert_eq!(cache.room("alias", "model", done), Room::Open);
         }
     }
 
@@ -1471,13 +1668,8 @@ mod tests {
         guard.resets_at = Some(later + 61);
         cache.reached("example", generation, &guard);
         assert_eq!(held_windows(&cache, "example"), [guard.clone()]);
-        let limit = UsageWindow {
-            key: "subscription-limit".into(),
-            label: "Subscription limit".into(),
-            resets_at: Some(later + 61),
-            source: UsageSource::ErrorBody,
-            ..guard.clone()
-        };
+        let mut limit = typed_limit(UsageScope::Model(OPUS.into()), later);
+        limit.resets_at = Some(later + 61);
         cache.reached("example", generation, &limit);
         assert_eq!(held_windows(&cache, "example"), [guard, limit]);
         assert_eq!(
@@ -2183,8 +2375,19 @@ mod tests {
         assert!(cache.model_limit("example", first, FABLE, now).is_none());
 
         let later = now + 508_200;
-        cache.reached("example", current, &retry_guard(FABLE, now, later));
-        let fresh = fable(now + 1, 0.0);
+        let guard = retry_guard(FABLE, now, later);
+        let model = typed_limit(UsageScope::Model(OPUS.into()), now);
+        let account = typed_limit(UsageScope::All, now);
+        for hold in [&guard, &model, &account] {
+            cache.reached("example", current, hold);
+        }
+        let mut fresh = snapshot(now + 1, 0.0);
+        fresh.windows.extend(fable(now + 1, 0.0).windows);
+        fresh.windows.push(UsageWindow {
+            key: "opus".into(),
+            scope: model.scope.clone(),
+            ..fresh.windows[0].clone()
+        });
         record::write(
             folder.path(),
             "example",
@@ -2208,6 +2411,9 @@ mod tests {
             cache.room("example", FABLE, now + 1),
             reason(Some(FABLE), Some(later), Cause::Retry)
         );
+        assert_eq!(held_windows(&cache, "example"), [guard, model, account]);
+        let sent_at = cache.guard_stamp("example", current, OPUS).unwrap();
+        cache.succeeded("example", current, OPUS, sent_at);
         cache.observe("example", current, Ok(fresh), now + 1);
         assert_eq!(cache.room("example", FABLE, now + 1), Room::Open);
     }
@@ -2333,6 +2539,92 @@ mod tests {
         tokio::task::yield_now().await;
         assert!(answer.send(Ok(Some(snapshot(now, 100.0)))).is_err());
         assert!(cache.table().entries["alias"].snapshot.is_none());
+    }
+
+    #[tokio::test]
+    async fn refresh_requires_its_own_room_and_no_newer_conflicting_observation() {
+        let now = 1_800_000_000;
+        let clock = Arc::new(ShiftedClock::at(Timestamp::from_second(now).unwrap(), None));
+        let provider = Arc::new(Delayed {
+            calls: AtomicUsize::new(0),
+            started: tokio::sync::Notify::new(),
+            answer: Mutex::new(None),
+        });
+        let cache = PlanUsageCache::default();
+        let generation = cache.bind("alias", provider.clone()).unwrap();
+        cache.hold("chat");
+        let limit = typed_limit(UsageScope::All, now + 1);
+        for (i, (case, lookup, passive)) in [
+            ("refusal during lookup", Some(33.0), None),
+            ("carried forward passive room", None, Some((0, 33.0))),
+            (
+                "same-second passive room replaces exhaustion",
+                Some(100.0),
+                Some((0, 33.0)),
+            ),
+            (
+                "newer passive exhaustion replaces room",
+                Some(33.0),
+                Some((1, 100.0)),
+            ),
+            ("confirmed lookup room", Some(33.0), None),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let started = now + i as i64 * 60;
+            clock.set(Timestamp::from_second(started).unwrap());
+            let (answer, wait) = tokio::sync::oneshot::channel();
+            *provider.answer.lock().unwrap() = Some(wait);
+            cache.refresh("alias", generation, clock.clone(), true);
+            within("the lookup's start", provider.started.notified()).await;
+            if i == 0 {
+                cache.reached("alias", generation, &limit);
+            }
+            let observed = started + 2;
+            let done = observed + 1;
+            clock.set(Timestamp::from_second(done).unwrap());
+            if let Some((lag, percent)) = passive {
+                let mut reading = snapshot(observed + lag, percent);
+                reading.windows[0].source = UsageSource::ResponseEvent;
+                cache.observe("alias", generation, Ok(reading), done);
+            }
+            let mut reply = snapshot(observed, lookup.unwrap_or(0.0));
+            if lookup.is_none() {
+                reply.availability = Some(Availability::Allowed);
+                reply.windows.clear();
+            }
+            let mut changes = cache.changes();
+            answer.send(Ok(Some(reply))).unwrap();
+            within("the lookup's completion", changes.changed())
+                .await
+                .unwrap();
+            let state = cache.state("alias", done).unwrap();
+            assert!(!state.loading, "{case}");
+            let [window] = state.snapshot.unwrap().windows.try_into().unwrap();
+            let (source, percent) = passive.map_or_else(
+                || (UsageSource::UsageEndpoint, lookup.unwrap()),
+                |(_, percent)| (UsageSource::ResponseEvent, percent),
+            );
+            assert_eq!(window.source, source, "{case}");
+            assert_eq!(window.used_percent.unwrap().value(), percent, "{case}");
+            if i < 4 {
+                assert_eq!(
+                    held_windows(&cache, "alias").as_slice(),
+                    std::slice::from_ref(&limit),
+                    "{case}"
+                );
+                assert!(
+                    matches!(cache.room("alias", "model", done), Room::Used { .. }),
+                    "{case}"
+                );
+            } else {
+                assert!(held_windows(&cache, "alias").is_empty(), "{case}");
+                assert_eq!(cache.room("alias", "model", done), Room::Open, "{case}");
+                cache.reset_lookup("alias", done);
+                assert_eq!(cache.room("alias", "model", done), Room::Open, "{case}");
+            }
+        }
     }
 
     #[tokio::test]
