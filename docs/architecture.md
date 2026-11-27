@@ -1142,13 +1142,13 @@ These sections are brief; the detail is in the research.
   - Tool output is bounded when recorded and spills to blobs.
   - Compaction is an overlay with a ledger of files and artifacts [HL §7.1 #15–16].
   - Jarvis and coordinators compact while idle, just before their cache would expire [PC §5.4].
-- **Memory.** Scopes, kernel-written provenance and write rules are in §10.5 (P40).
+- **Saved notes.** The bundled `memory` plugin restores notes in each context window and appends changes on later turns. See §10.5 and [Plugins](plugins.md#saved-notes).
 
 ### 9.3 Tools and hooks
 
 - **`Tool` metadata.** Name, canonical schema, **effect class**, `read_only`, resource locks, capability tags (`reversible`, `irreversible`, `external_message` [PS §8.2], `reads_untrusted` [PRO §5.7]) and timeout.
 - **Core tools (M5):** `read`, `edit`, `write`, `glob`, `grep`, `shell`.
-- **Kernel tools:** bus, board, routing, `project_status` and `memory`. For proactivity: `intent_*`, `routine_propose` and `notify` (§10).
+- **Kernel tools:** bus, board, routing and `project_status`. The bundled `memory` plugin supplies `remember` and `/memory`. For proactivity: `intent_*`, `routine_propose` and `notify` (§10).
 - **Proactivity roles:** `triage` (small and isolated) and `reader` (no tools, strict schema) (§10.3, §10.4). Both run on the session's model, like every role (§6.1).
 - **Coordinator tool set (P31).** This is our reading of D2's "no write tools". Like Jarvis, the coordinator also gets no `reads_untrusted` tools (P39).
   - **Allowed:**
@@ -1156,7 +1156,7 @@ These sections are brief; the detail is in the research.
     - board list, read and publish (its own Plan, Brief, Items and Note artifacts);
     - the down tools: `assign`, `steer`, `pause`, `resume`, `cancel`, `broadcast`;
     - the up tools: `report`, `escalate`, `request_approval`, `progress`;
-    - `start_run`, `propose_flow`, `project_status`, and project `memory`.
+    - `start_run`, `propose_flow` and `project_status`; project notes are available read-only to workers.
   - **Not allowed:** `write`, `edit`, or `shell`. Proposed: no shell at all. The alternative is a sandboxed read-only shell for things like `git log`.
 - **Execution.** Read-only calls run in parallel, and results are published in order [HL §7.1 #21].
 - **Hooks** follow the Claude Code schema, run sandboxed, and only narrow.
@@ -1380,29 +1380,24 @@ These rules follow [PRO §5.4 R7].
 
 ### 10.5 Memory (P40)
 
-These scopes follow [PRO §5.3 R8–R9].
+**Shipped saved notes** live in the bundled [`memory` plugin](plugins.md#saved-notes)
+(`plugins/memory`), not in a kernel memory tool. `remember` saves, replaces or
+forgets a note on request. `/memory` lists, shows or deletes notes locally.
+The root sees notes for **you** across chats and notes for **this project**
+across worktrees. Workers see project notes only and cannot change them.
 
-| Scope | Holds | Loaded |
-|---|---|---|
-| Global user profile (`home/profile/`) | Stable preferences and facts, plus a proactive-preferences file (topics wanted and unwanted) | As a snapshot in Jarvis's preamble; changes arrive as `ContextDelta` |
-| Jarvis memory (`home/memory/`, git) | Facts, decisions, minimal notes on people | Small index plus search |
-| Project memory (`projects/<id>/memory/`) | Project facts and conventions | Project preamble index plus search. Projects never see Jarvis memory |
-| Prospective memory | Intents, routines, watches | **Kernel state**, not files |
-| Episodic memory | What happened | **The event log itself**, searched with SQLite FTS5 |
+Notes are restored in the conversation lead at each new context window,
+including after compaction. Changes arrive as an appended update, not as a
+rewrite of the accepted prefix. Search can find notes by name beyond the
+injected list. Forgetting changes future injection, not earlier history.
 
-- **Provenance is written by the kernel, not the model.**
-  - Recorded fields: the origin (`user`, `agent`, `untrusted` or `kernel`; unknown never counts as `user`), source event references, validity dates and sensitivity.
-  - Agents change memory only through the kernel `memory` tool. The sandbox never mounts memory directories.
-- **Write paths.**
-  - What you state in a turn that isn't report-bearing may be auto-accepted by the named policy `memory-user-stated` (P48). A turn is report-bearing only when it ingested untrusted-origin content (§10.4).
-  - Background consolidation runs nightly on the session's model, like every role (§6.1), under the Background budget. It only **proposes**, into the review inbox. This closes O9.
-  - **Trigger, heartbeat, routine and tainted runs, and report-bearing turns, never write memory directly; they can only propose.**
-- **Sensitive topics are opt-in:** health, sex life, religion and politics, precise location, finances, and private details about third parties.
-- **"Forget" is a real purge.**
-  - It removes the entry, its git history, derived blobs, and everything provenance links to it.
-  - It leaves a `MemoryForgotten` tombstone.
-  - The event log is append-only and may still hold the original text, so the purge mechanism is the new **O18**. P50 proposes crypto-shredding as the default.
-- **Incognito threads** neither read nor write memory, and create no intents.
+**Future memory** follows [PRO §5.3 R8–R9]. Prospective memory (intents,
+routines and watches) belongs in kernel state; episodic memory is the event
+log itself, with searchable history still planned. Proactive preferences,
+provenance and sensitivity rules, and background consolidation that only
+proposes notes for review are future work. Stronger forgetting for old log
+entries and derived data is O18 (P50 proposes crypto-shredding); incognito
+threads that neither read nor write memory are also future work.
 
 ### 10.6 Notifications (P41)
 

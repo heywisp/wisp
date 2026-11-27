@@ -57,6 +57,30 @@ fn messages_of(body: &str) -> &str {
     &body[at + r#""messages":"#.len()..body.len() - 1]
 }
 
+fn assert_accepted_refresh(turn: &str, refresh: &str, heads: &[String]) -> Value {
+    assert_eq!(
+        without(refresh, &["max_tokens"]),
+        without(turn, &["max_tokens", "fallbacks"])
+    );
+    let refresh_value: Value = serde_json::from_str(refresh).unwrap();
+    assert_eq!(refresh_value["max_tokens"], 1);
+    assert!(refresh_value.get("fallbacks").is_none());
+    let betas = |head: &str| -> Vec<String> {
+        header(head, "anthropic-beta")
+            .split(',')
+            .filter(|b| !b.is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    let turn_betas: Vec<String> = betas(&heads[0])
+        .into_iter()
+        .filter(|b| b != "server-side-fallback-2026-07-01")
+        .collect();
+    assert_eq!(betas(&heads[1]), turn_betas);
+    assert_eq!(messages_of(refresh), messages_of(turn));
+    refresh_value
+}
+
 #[tokio::test]
 async fn keep_warm_refresh() {
     let setup = Setup {
@@ -92,25 +116,7 @@ async fn keep_warm_refresh() {
     let [turn, refresh, next] = seen.bodies.as_slice() else {
         panic!("{} requests", seen.bodies.len());
     };
-    assert_eq!(
-        without(refresh, &["max_tokens"]),
-        without(turn, &["max_tokens", "fallbacks"])
-    );
-    let refresh_value: Value = serde_json::from_str(refresh).unwrap();
-    assert_eq!(refresh_value["max_tokens"], 1);
-    assert!(refresh_value.get("fallbacks").is_none());
-    let betas = |head: &str| -> Vec<String> {
-        header(head, "anthropic-beta")
-            .split(',')
-            .filter(|b| !b.is_empty())
-            .map(str::to_owned)
-            .collect()
-    };
-    let turn_betas: Vec<String> = betas(&seen.heads[0])
-        .into_iter()
-        .filter(|b| b != "server-side-fallback-2026-07-01")
-        .collect();
-    assert_eq!(betas(&seen.heads[1]), turn_betas);
+    let refresh_value = assert_accepted_refresh(turn, refresh, &seen.heads);
     let open = messages_of(refresh).strip_suffix(']').unwrap();
     assert!(messages_of(next).starts_with(open));
     let (refresh_value, next_value): (Value, Value) =
@@ -164,4 +170,82 @@ async fn keep_warm_refresh() {
         .count();
     assert_eq!(steps, 2);
     rig.assert_rebuilds(&agent);
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn memory_edit_waits_for_a_real_turn_not_the_keep_warm_refresh() {
+    use super::sections::{assert_cache_order, memory::saved_note};
+    use crate::agent::compact::tests::memory::{Session, tools};
+
+    let server = Server::start(vec![
+        says("msg_turn", 400, "Done."),
+        refreshes_read("msg_refresh", 400),
+        says("msg_next", 520, "Again."),
+    ])
+    .await;
+    let mut tree = crate::test_support::rooted::tree();
+    tree.keep_warm_main = true;
+    let mut live = Session::new_seeded(
+        server.provider(),
+        tools(true),
+        ModelSettings::default(),
+        Default::default(),
+        (false, true),
+        Some(("fixture-note.md", &saved_note("The fixture dye is blue."))),
+        tree,
+    )
+    .await;
+    live.turn("u1", "Name a shape.").await;
+    let edited = "The fixture dye is mauve.";
+    fs::write(
+        live.data.join("memory/user/fixture-note.md"),
+        saved_note(edited),
+    )
+    .unwrap();
+    let before = records(&live.store);
+    an_hour_later().await;
+    let refreshed = live
+        .until(|e| matches!(e, AgentEvent::CacheRefreshed { .. }))
+        .await;
+    assert!(matches!(
+        refreshed,
+        AgentEvent::CacheRefreshed {
+            outcome: wisp_protocol::RefreshOutcome::Read,
+            ..
+        }
+    ));
+    let idle = records(&live.store);
+    let added = &idle[before.len()..];
+    assert_eq!(
+        added
+            .iter()
+            .filter(|r| matches!(r.event, LogEvent::CacheRefresh { .. }))
+            .count(),
+        1
+    );
+    assert!(!added.iter().any(|r| matches!(
+        r.event,
+        LogEvent::MessageCommitted { .. } | LogEvent::StepEnded { .. }
+    )));
+    live.turn("u2", "Name another shape.").await;
+    live.finish().await;
+    let seen = server.seen();
+    let [turn, refresh, next] = seen.bodies.as_slice() else {
+        panic!("expected a refresh between two turns")
+    };
+    assert!(turn.contains("<memory>") && turn.contains("fixture dye is blue"));
+    assert_accepted_refresh(turn, refresh, &seen.heads);
+    super::sections::memory::assert_raw_prefix(turn, refresh);
+    for body in [turn, refresh, next] {
+        assert_cache_order(&without(body, &[]));
+    }
+    assert!(!refresh.contains("<memory-update>") && !refresh.contains(edited));
+    assert!(next.contains("<memory-update>") && next.contains(edited));
+    let prefix = messages_of(refresh).strip_suffix(']').unwrap();
+    assert!(
+        messages_of(next)
+            .strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.starts_with(','))
+    );
 }

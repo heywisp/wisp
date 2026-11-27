@@ -30,11 +30,16 @@ fn calling(id: &str, name: &str, input: Value, tokens: u64) -> Step {
 }
 
 pub(in crate::agent) fn tools(memory: bool) -> Tools {
+    tools_with(memory, None)
+}
+
+pub(in crate::agent) fn tools_with(memory: bool, extra: Option<(&str, &str)>) -> Tools {
     let bundles = wisp_plugins::bundled()
         .into_iter()
         .filter(|bundle| {
             bundle.manifest == wisp_plugin_compaction::MANIFEST
                 || (memory && bundle.manifest == wisp_plugin_memory::MANIFEST)
+                || extra.is_some_and(|(manifest, _)| bundle.manifest == manifest)
         })
         .chain([wisp_plugin_testkit::bundled()]);
     let (registry, problems) = Registry::new(bundles.collect(), &PluginConfig::default());
@@ -42,6 +47,7 @@ pub(in crate::agent) fn tools(memory: bool) -> Tools {
     let on = ["echo"]
         .into_iter()
         .chain(memory.then_some("remember"))
+        .chain(extra.map(|(_, tool)| tool))
         .map(str::to_owned)
         .collect();
     Tools::new(Arc::new(registry), on)
@@ -74,17 +80,19 @@ impl Session {
             start_layers,
             (auto, user_input),
             None,
+            rooted::tree(),
         )
         .await
     }
 
-    async fn new_seeded(
+    pub(in crate::agent) async fn new_seeded(
         provider: Arc<dyn Provider>,
         tools: Tools,
         model_settings: ModelSettings,
         start_layers: crate::settings::host::StartLayers,
         (auto, user_input): (bool, bool),
         user_note: Option<(&str, &str)>,
+        tree: crate::agents::TreeSetup,
     ) -> Self {
         let scratch = ScratchDir::new("wisp-memory-fixture-", "rooted");
         let data = scratch.root.join("plugin-data");
@@ -94,6 +102,12 @@ impl Session {
             fs::write(dir.join(name), raw).unwrap();
         }
         let store = MemoryStore::default();
+        let start = "2000-06-05T01:00:00Z".parse().unwrap();
+        let clock = if tree.keep_warm_main {
+            ShiftedClock::paused(start, None)
+        } else {
+            ShiftedClock::at(start, None)
+        };
         let inputs = Inputs {
             connect: rooted::single_provider(provider, log_context()),
             tools: Arc::new(tools),
@@ -104,16 +118,13 @@ impl Session {
             log_context: log_context(),
             workspace: scratch.workspace(),
             plugin_data: Some(data.clone()),
-            clock: Arc::new(ShiftedClock::at(
-                "2000-06-05T01:00:00Z".parse().unwrap(),
-                None,
-            )),
+            clock: Arc::new(clock),
             models: model_settings,
             start_layers,
             auto_compact: auto,
             user_input,
         };
-        Self::open(inputs, scratch, store, crate::kit::Start::Fresh).await
+        Self::open(inputs, scratch, store, crate::kit::Start::Fresh, tree).await
     }
 
     async fn open(
@@ -121,6 +132,7 @@ impl Session {
         scratch: ScratchDir,
         store: MemoryStore,
         start: crate::kit::Start<'_>,
+        tree: crate::agents::TreeSetup,
     ) -> Self {
         let session = default_session();
         let spec = crate::kit::Spec {
@@ -134,7 +146,7 @@ impl Session {
             })
         };
         let data = inputs.plugin_data.clone().unwrap();
-        let built = Rooted::build(inputs.clone().kit(), spec, rooted::tree())
+        let built = Rooted::build(inputs.clone().kit(), spec, tree)
             .await
             .unwrap();
         assert!(
@@ -176,7 +188,7 @@ impl Session {
             logged: Some(&logged),
             rebuilt,
         });
-        Self::open(inputs, scratch, store, start).await
+        Self::open(inputs, scratch, store, start, rooted::tree()).await
     }
 
     pub(in crate::agent) fn repository(&self) {
@@ -975,6 +987,7 @@ async fn rooted_show_uses_the_local_transcript_without_provider_calls() {
         Default::default(),
         (false, true),
         Some(("sample.md", raw)),
+        rooted::tree(),
     )
     .await;
     let request = wisp_protocol::RequestId(1);

@@ -44,14 +44,14 @@ fn overloaded() -> Reply {
     }
 }
 
-fn section_entries(records: &[LogRecord]) -> Vec<(u64, Option<String>)> {
+fn section_entries(records: &[LogRecord], section: &str) -> Vec<(u64, Option<String>)> {
     records
         .iter()
         .filter_map(|r| match &r.event {
             LogEvent::TurnStarted { turn, lead, .. } => lead
                 .entries
                 .iter()
-                .find(|e| e.by == "bb/notes")
+                .find(|e| e.by == section)
                 .map(|e| (*turn, e.snapshot.clone())),
             _ => None,
         })
@@ -82,7 +82,7 @@ async fn a_section_sends_its_text_only_on_the_turns_it_changes() {
         [(1, 0), (1, 0), (1, 1)]
     );
     assert_eq!(
-        section_entries(&records(&rig.store)),
+        section_entries(&records(&rig.store), "bb/notes"),
         [(1, Some("v1".into())), (3, Some("v2".into()))]
     );
     let turns = CALLS.sections_at(At::Turn);
@@ -290,13 +290,41 @@ async fn a_rewind_after_a_resume_restores_the_committed_snapshot() {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-mod memory {
+pub(super) fn assert_cache_order(request: &Value) {
+    let contents = |name: &str| request[name].as_array().into_iter().flatten();
+    let marker = |b: &Value| {
+        b.get("cache_control")
+            .map(|c| c["ttl"].as_str() == Some("1h"))
+    };
+    let fixed: Vec<_> = contents("tools")
+        .chain(contents("system"))
+        .filter_map(marker)
+        .collect();
+    assert!(!fixed.is_empty() && fixed.iter().all(|hour| *hour));
+    let mut five_minute = false;
+    for hour in contents("messages")
+        .flat_map(|m| m["content"].as_array().into_iter().flatten())
+        .filter_map(marker)
+        .chain(marker(request))
+    {
+        assert!(!hour || !five_minute, "a 1h marker follows a 5m marker");
+        five_minute |= !hour;
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn count_section_entries(store: &MemoryStore, section: &str) -> usize {
+    section_entries(&records(store), section).len()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(super) mod memory {
     use wisp_protocol::settings::{SettingChange, SettingValue};
 
     use super::*;
     use crate::agent::compact::tests::memory::{Session, tools};
 
-    fn saved_note(fact: &str) -> String {
+    pub(in super::super) fn saved_note(fact: &str) -> String {
         format!("---\nname: fixture-note\ndescription: {fact}\nsaved: 2000-01-02\n---\n")
     }
 
@@ -315,6 +343,12 @@ mod memory {
         system: &'a serde_json::value::RawValue,
         #[serde(borrow)]
         tools: &'a serde_json::value::RawValue,
+    }
+
+    pub(in super::super) fn assert_raw_prefix(a: &str, b: &str) {
+        let [a, b] = [a, b].map(|body| serde_json::from_str::<RawPrefix<'_>>(body).unwrap());
+        assert_eq!(a.system.get(), b.system.get());
+        assert_eq!(a.tools.get(), b.tools.get());
     }
 
     async fn apply(live: &mut Session, id: u64, key: &str, value: SettingValue) {
@@ -385,6 +419,7 @@ mod memory {
         assert_eq!(seen.len(), 9);
         let first: RawPrefix<'_> = serde_json::from_str(&bodies[0]).unwrap();
         for (body, wire) in seen.iter().zip(&bodies) {
+            assert_cache_order(body);
             assert_eq!(body["tools"], seen[0]["tools"]);
             assert_eq!(body["system"], seen[0]["system"]);
             let prefix: RawPrefix<'_> = serde_json::from_str(wire).unwrap();
@@ -413,6 +448,30 @@ mod memory {
                 "request {i}"
             );
         }
+        let summary = &seen[6];
+        assert!(summary.get("cache_control").is_none());
+        let messages = summary["messages"].as_array().unwrap();
+        let anchor = seen[5]["messages"].as_array().unwrap().len() - 1;
+        let marked: Vec<_> = messages
+            .iter()
+            .enumerate()
+            .filter(|(_, message)| {
+                message["content"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|block| block.get("cache_control").is_some())
+            })
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(marked, [anchor]);
+        assert_eq!(
+            summary["messages"]
+                .to_string()
+                .matches("cache_control")
+                .count(),
+            1
+        );
         assert!(bodies[7].contains("Hand-edited fixture fact."));
         for (case, window) in [("rooted memory", 0..6), ("rooted memory after head", 7..9)] {
             assert_extends(case, &bodies[window.clone()]);
@@ -505,6 +564,153 @@ mod memory {
         assert!(after.contains("The current fixture fact.") && after.contains("Use remember"));
         live.finish().await;
     }
+
+    pub(super) async fn memory_command(live: &mut Session, id: u64, args: &str, expected: &str) {
+        let request = RequestId(id);
+        live.send(ClientCommand::RunPluginCommand {
+            name: "memory:memory".into(),
+            args: wisp_protocol::Secret::new(args),
+            request,
+        })
+        .await;
+        let event = live
+            .until(|e| matches!(e, AgentEvent::CommandDone { answers, .. } if *answers == request))
+            .await;
+        assert!(matches!(event, AgentEvent::CommandDone {
+            outcome: wisp_protocol::CommandOutcome::Lines { lines }, ..
+        } if serde_json::to_string(&lines).unwrap().contains(expected)));
+    }
+
+    #[tokio::test]
+    async fn distinct_same_role_workers_share_prefix_and_see_only_project_notes() {
+        use crate::agent::compact::tests::memory::tools_with;
+        use wisp_protocol::agents::SpawnRequest;
+
+        const SAVE_CALL: &str = "toolu_worker_save";
+        const SAVE_NOTE: &str = "worker-note";
+        let workers = [
+            ("worker-a", "Check the fixture circle.", "toolu_circle"),
+            ("worker-b", "Check the fixture square.", "toolu_square"),
+        ];
+        let server = Server::answering(Box::new(move |_, body| {
+            if body.contains(workers[0].1) && !body.contains(SAVE_CALL) {
+                return calls("msg_worker_save", 500, vec![call(SAVE_CALL, "remember", json!({
+                    "action":"save", "scope":"project", "name":SAVE_NOTE, "fact":"The fixture stripe is white."
+                }))]).response;
+            }
+            for (name, task, id) in workers {
+                if body.contains(task) && !body.contains(id) {
+                    return calls(name, 500, vec![call(id, "report", json!({"text":"Done."}))])
+                        .response;
+                }
+            }
+            says("msg_done", 500, "Done.").response
+        }))
+        .await;
+        let personal = "The personal rosette is cobalt.";
+        let project = "The project rosette is ivory.";
+        let mut live = Session::new_seeded(
+            server.provider(),
+            tools_with(true, Some((wisp_plugin_agents::MANIFEST, "spawn_agent"))),
+            models(WISP),
+            Default::default(),
+            (false, true),
+            Some(("fixture-note.md", &saved_note(personal))),
+            crate::test_support::rooted::tree(),
+        )
+        .await;
+        live.repository();
+        let work = live.data.parent().unwrap().join("work");
+        let key = crate::workspace::project_key(&work, &live.data).unwrap();
+        let dir = live.data.join("memory/projects").join(key);
+        crate::secrets::create_folder(&dir).unwrap();
+        fs::write(dir.join("fixture-note.md"), saved_note(project)).unwrap();
+        let mut paths = Vec::new();
+        for (i, (name, task, _)) in workers.into_iter().enumerate() {
+            live.send(ClientCommand::SpawnAgent {
+                request: RequestId(i as u64 + 1),
+                spawn: SpawnRequest {
+                    name: name.into(),
+                    task: task.into(),
+                    ..Default::default()
+                },
+            })
+            .await;
+            let spawned = live
+                .until(|e| match e {
+                    AgentEvent::AgentSpawned { agent, .. } => agent.name == name,
+                    AgentEvent::Rejected { .. } => panic!("worker spawn failed: {e:?}"),
+                    _ => false,
+                })
+                .await;
+            let AgentEvent::AgentSpawned { agent, config, .. } = spawned else {
+                unreachable!()
+            };
+            assert_eq!(config.preset, None);
+            if i == 0 {
+                let refused = live.until(|e| matches!(e, AgentEvent::Agent { agent: path, event }
+                    if path == &agent.path && matches!(event.as_ref(), AgentEvent::ToolCallFinished { call_id, .. } if call_id == SAVE_CALL))).await;
+                assert!(
+                    matches!(&refused, AgentEvent::Agent { event, .. }
+                    if matches!(event.as_ref(), AgentEvent::ToolCallFinished { outcome, result: Some(result), .. }
+                        if outcome.is_error() && result == "Suggest the note in your report.")),
+                    "{refused:?}"
+                );
+                assert!(!dir.join(format!("{SAVE_NOTE}.md")).exists());
+            }
+            let ended = live
+                .until(|e| {
+                    matches!(e, AgentEvent::Agent { agent: path, event }
+                if path == &agent.path && matches!(event.as_ref(), AgentEvent::TurnEnded { .. }))
+                })
+                .await;
+            assert!(
+                matches!(&ended, AgentEvent::Agent { event, .. }
+                if matches!(event.as_ref(), AgentEvent::TurnEnded { outcome: TurnOutcome::Completed { .. }, .. })),
+                "{ended:?}"
+            );
+            paths.push(agent.path);
+        }
+        assert_ne!(paths[0], paths[1]);
+        live.finish().await;
+        let seen = server.seen();
+        let [a, b] = workers.map(|(_, task, id)| {
+            let mut requests = seen.bodies.iter().filter(|body| {
+                body.contains(task) && !body.contains(id) && !body.contains(SAVE_CALL)
+            });
+            let body = requests.next().expect("missing worker request");
+            assert!(
+                requests.next().is_none(),
+                "more than one request for {task}"
+            );
+            body
+        });
+        assert_raw_prefix(a, b);
+        for body in [a, b] {
+            let request: Value = serde_json::from_str(body).unwrap();
+            assert_cache_order(&request);
+            assert!(
+                request["tools"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|tool| tool["name"] == "remember")
+            );
+            assert!(
+                body.contains(project),
+                "worker request missed the project note"
+            );
+            assert!(
+                !body.contains(personal),
+                "worker request exposed the user note"
+            );
+            let (_, tail) = body
+                .split_once("<memory>")
+                .expect("worker request lacks a memory lead");
+            let (lead, _) = tail.split_once("</memory>").unwrap();
+            assert!(lead.contains(project) && !lead.contains("Use remember"));
+        }
+    }
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -531,10 +737,24 @@ async fn rooted_memory_keeps_accepted_section_bytes_on_resume_and_rewind() {
     .await;
     live.turn("seed", "Please save a fixture note.").await;
     live.turn("full", "Use the saved note.").await;
+    memory::memory_command(&mut live, 1, "", "fixture-note").await;
+    memory::memory_command(&mut live, 2, "show you fixture-note", "rosette cobalt").await;
+    assert_eq!(server.seen().bodies.len(), 3);
+    let file = live.data.join("memory/user/fixture-note.md");
+    fs::write(&file, memory::saved_note("The fixture rosette is amber.")).unwrap();
     live.turn("before-close", "Continue before closing.").await;
+    let before = count_section_entries(&live.store, "memory/list");
+    memory::memory_command(&mut live, 3, "delete you fixture-note", "Deleted.").await;
+    assert!(!file.exists());
+    assert_eq!(server.seen().bodies.len(), 4);
+    assert_eq!(count_section_entries(&live.store, "memory/list"), before);
     let mut live = live.resume().await;
     live.turn("after-resume", "Continue after opening again.")
         .await;
+    assert_eq!(
+        count_section_entries(&live.store, "memory/list"),
+        before + 1
+    );
     live.send(ClientCommand::Rewind {
         to: RewindPoint::Turn { turn: 3 },
         request: RequestId(5),
@@ -567,6 +787,12 @@ async fn rooted_memory_keeps_accepted_section_bytes_on_resume_and_rewind() {
             .0
             .to_owned()
     };
+    for body in &bodies {
+        assert_cache_order(&serde_json::from_str(body).unwrap());
+    }
+    assert!(bodies[3].contains("<memory-update>") && bodies[3].contains("rosette is amber"));
+    assert_eq!(bodies[4].matches("<memory-update>").count(), 2);
+    assert!(bodies[4].contains("Removed from this list: You: fixture-note."));
     let original = note_bytes(&bodies[2]);
     assert_eq!(note_bytes(&bodies[4]), original);
     assert_eq!(note_bytes(&bodies[5]), original);
