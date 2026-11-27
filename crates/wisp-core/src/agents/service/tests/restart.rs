@@ -157,6 +157,7 @@ async fn cancelling_getting_ready_preserves_request_bytes_and_live_tail_input_ho
                     kind: MailKind::Message,
                     wake: true,
                     text: "Waiting mail.".into(),
+                    checklist_spans: Vec::new(),
                 })
                 .unwrap();
             }
@@ -272,6 +273,7 @@ async fn user_messages_mail_spawns_and_typed_compaction_wait_for_cancel() {
                     kind: MailKind::Message,
                     wake: true,
                     text: "Waiting mail.".into(),
+                    checklist_spans: Vec::new(),
                 })
                 .unwrap(),
             "spawn" => {
@@ -433,6 +435,7 @@ async fn mail_and_a_childs_report_wait_while_parked_and_survive_cancel_or_stop_a
             kind: MailKind::Message,
             wake: true,
             text: "Waiting message.".into(),
+            checklist_spans: Vec::new(),
         })
         .unwrap();
         report_gate.add_permits(1);
@@ -1051,6 +1054,7 @@ async fn waking_mail_while_getting_ready_is_not_held_for_the_running_limit() {
         kind: MailKind::Message,
         wake: true,
         text: "Waiting mail.".into(),
+        checklist_spans: Vec::new(),
     })
     .unwrap();
     tokio::time::sleep(Duration::from_secs(30)).await;

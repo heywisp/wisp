@@ -2189,6 +2189,7 @@ fn logged(id: &str, text: &str, images: Vec<ImageRef>) -> LoggedInput {
         text: text.into(),
         images,
         note: None,
+        checklist_spans: Vec::new(),
     }
 }
 
@@ -2226,6 +2227,7 @@ fn steering_commands_and_events_match_their_fixtures() {
                 replaces: None,
                 held: false,
                 from: None,
+                checklist_spans: Vec::new(),
             },
         ),
         (
@@ -2240,6 +2242,7 @@ fn steering_commands_and_events_match_their_fixtures() {
                 replaces: None,
                 held: false,
                 from: None,
+                checklist_spans: Vec::new(),
             },
         ),
         (
@@ -2254,6 +2257,7 @@ fn steering_commands_and_events_match_their_fixtures() {
                 replaces: Some(input_id("tui-3")),
                 held: true,
                 from: None,
+                checklist_spans: Vec::new(),
             },
         ),
         (
@@ -2268,6 +2272,7 @@ fn steering_commands_and_events_match_their_fixtures() {
                 held: false,
                 front: true,
                 from: None,
+                checklist_spans: Vec::new(),
             },
         ),
         (
@@ -2353,6 +2358,7 @@ fn steering_log_records_match_their_fixtures() {
                 replaces: None,
                 held: false,
                 from: None,
+                checklist_spans: Vec::new(),
             },
         ),
         (
@@ -2366,6 +2372,7 @@ fn steering_log_records_match_their_fixtures() {
                 replaces: Some(input_id("tui-3")),
                 held: true,
                 from: None,
+                checklist_spans: Vec::new(),
             },
         ),
         (
@@ -2614,6 +2621,7 @@ fn a_queued_turn_rebuilds_its_inputs_in_order_and_waiting_records_change_nothing
         replaces: None,
         held,
         from: None,
+        checklist_spans: Vec::new(),
     };
     let events = [
         turn_started(1, "go", None),

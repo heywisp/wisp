@@ -234,7 +234,7 @@ impl Agent {
     }
 
     fn retry_inputs(&self, logged: &LoggedSession, last: &LastTurn) -> Option<Resend> {
-        let (opening, lead, ends) = if last.replied {
+        let (opening, lead, ends) = if last.replied || last.opening_committed {
             (Vec::new(), Vec::new(), Vec::new())
         } else {
             (
@@ -358,7 +358,12 @@ impl Agent {
                 let accepted = logged.accepted.get(&input.id);
                 let mode = accepted.map_or(DeliveryMode::Steer, |a| a.mode);
                 let from = accepted.and_then(|a| a.from.clone());
-                self.input_of(input, mode, from)
+                let canonical = accepted.filter(|a| {
+                    a.from.is_some()
+                        && !a.input.checklist_spans.is_empty()
+                        && logged.waiting_mail.contains(&input.id)
+                });
+                self.input_of(canonical.map_or(input, |a| &a.input), mode, from)
             })
             .collect()
     }
@@ -386,12 +391,13 @@ impl Agent {
             .images
             .iter()
             .map(|image| {
-                log.image(image)
+                log.lock()
+                    .image(image)
                     .ok()
                     .map(|data| ContentBlock::image(image.media_type, data))
             })
             .collect::<Option<Vec<_>>>()?;
-        Some(Input {
+        let mut built = Input {
             id: input.id.clone(),
             mode,
             text: input.text.clone(),
@@ -401,14 +407,25 @@ impl Agent {
             from: from.map(|from| self.letter(from)),
             arrival: None,
             note: input.note.clone(),
-        })
+            checklist_spans: input.checklist_spans.clone(),
+            revision_unlogged: false,
+        };
+        if !built.checklist_spans.is_empty()
+            && !crate::secrets::scan::valid_checklist_spans(&built.text, &built.checklist_spans)
+        {
+            crate::secrets::scan::suppress_checklist_brief(
+                &mut built.text,
+                &mut built.checklist_spans,
+            );
+        }
+        Some(built)
     }
 
     pub(super) fn returned_input(&self, input: &LoggedInput) -> ReturnedInput {
         let mut images = Vec::new();
         let mut missing = Vec::new();
         for (ordinal, image) in (1..).zip(&input.images) {
-            match self.log.as_ref().map(|(log, _)| log.image(image)) {
+            match self.log.as_ref().map(|(log, _)| log.lock().image(image)) {
                 Some(Ok(data)) => images.push(ReturnedImage {
                     image: image.clone(),
                     data: ImageData {
@@ -518,7 +535,7 @@ impl Agent {
         let mut content = vec![ContentBlock::Text { text }];
         for attachment in &call.attachments {
             let loaded = match &self.log {
-                Some((log, _)) => log.media(&attachment.blob()),
+                Some((log, _)) => log.lock().media(&attachment.blob()),
                 None => Err(NO_LOG.to_owned()),
             };
             content.push(match loaded {

@@ -291,7 +291,7 @@ async fn a_steer_during_a_tool_reply_lands_after_both_results_with_no_stamp() {
         .collect();
     assert!(matches!(
         committed[2],
-        LogEvent::InputCommitted { step: 2, inputs, .. } if inputs == &[LoggedInput { id: id("also this"), text: "also this".into(), images: Vec::new(), note: Some(STEER_NOTE.into()) }]
+        LogEvent::InputCommitted { step: 2, inputs, .. } if inputs == &[LoggedInput { id: id("also this"), text: "also this".into(), images: Vec::new(), note: Some(STEER_NOTE.into()) , checklist_spans: Vec::new(), }]
     ));
     assert!(matches!(committed[3], LogEvent::MessageCommitted { .. }));
 }
@@ -1738,4 +1738,105 @@ async fn a_refused_steer_after_the_effort_marker_withdraws_only_its_own_image() 
     let records = records(&h.store);
     let rebuilt = rebuild_checked(&h.store, &records, None).unwrap().unwrap();
     assert_eq!(rebuilt.messages, *history);
+}
+
+#[tokio::test]
+async fn accepted_brief_stays_frozen_across_uncommittable_reply_and_new_steer() {
+    use crate::agent::testing::{checklist_mail, prime_brief};
+    let old = "first-accepted-brief-CANARY";
+    let later = "newly-placed-brief-CANARY";
+    let mut next = checklist_mail("fresh", "Fresh task", &[later]);
+    next.wake = false;
+    let mut h = harness(vec![
+        reply(&[B::Text("   ")], StopReason::StopSequence)
+            .mail(next)
+            .run(move || crate::session::register_secrets([old.to_owned(), later.to_owned()]))
+            .then(steer("continue")),
+        uses(&[steps("paired-brief-call", &["write:one\n"])]),
+        done("done"),
+        done("extended"),
+    ]);
+    h.agent = h.agent.with_path(wisp_protocol::AgentPath::new("/child"));
+    h.provider.mail_to(h.agent.mail_sender());
+    let mut letter = checklist_mail("frozen", "First task", &[old]);
+    letter.wake = false;
+    prime_brief(&mut h.agent, letter).await;
+    h.run(vec![steer("go")], 1).await;
+    let sent = h.provider.sent();
+    let bodies = [sent[0].body(), sent[1].body()];
+    let first = bodies[0].to_string();
+    let second = bodies[1].to_string();
+    assert!(first.contains(old) && second.contains(old));
+    assert!(
+        second.contains("Fresh task") && second.contains("[redacted]") && !second.contains(later)
+    );
+    assert_bodies_extend(&h.provider, &[(0, 1)]);
+    let finished = h.provider.body(2);
+    let ordered_blocks: Vec<_> = finished["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|message| message["content"].as_array().unwrap())
+        .collect();
+    let call = ordered_blocks
+        .iter()
+        .position(|block| block["type"] == "tool_use" && block["id"] == "paired-brief-call")
+        .unwrap();
+    let results: Vec<_> = ordered_blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| {
+            block["type"] == "tool_result" && block["tool_use_id"] == "paired-brief-call"
+        })
+        .collect();
+    assert_eq!(results.len(), 1);
+    assert!(call < results[0].0);
+    assert_bodies_extend(&h.provider, &[(1, 2)]);
+    h.run(vec![steer("new turn")], 1).await;
+    crate::test_guard::prefix::assert_prefix_stable(&[finished, h.provider.body(3)], None);
+    h.assert_rebuilds();
+}
+
+#[tokio::test]
+async fn withdraw_and_restore_keep_scrubbed_brief_aligned_across_two_refusals() {
+    use crate::agent::testing::{checklist_mail, prime_brief};
+    let canary = "opaque-withdrawal-CANARY-and-padding";
+    let mut h = harness(vec![
+        attachment_refused().run(move || crate::session::register_secrets([canary.to_owned()])),
+        Step::from(vec![Err(classified(
+            ErrorKind::Server,
+            "temporary test failure",
+            FailurePhase::Response,
+            RetryClass::Transient,
+        ))]),
+        attachment_refused(),
+        done("ok"),
+    ]);
+    prime_brief(
+        &mut h.agent,
+        checklist_mail("withdraw", "Task stays", &[canary, "second step stays"]),
+    )
+    .await;
+    h.run(vec![red("go", DeliveryMode::Steer, None)], 1).await;
+    let requests = h.requests();
+    assert_eq!(requests.len(), 4);
+    assert_eq!(
+        requests
+            .iter()
+            .map(|message| image_count(message))
+            .collect::<Vec<_>>(),
+        [1, 0, 1, 0]
+    );
+    for request in &requests[1..] {
+        let text = request
+            .iter()
+            .flat_map(texts)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("Task stays") && text.contains("[redacted]\n- [ ] second step stays")
+        );
+        assert!(!text.contains(canary));
+    }
+    h.assert_rebuilds();
 }

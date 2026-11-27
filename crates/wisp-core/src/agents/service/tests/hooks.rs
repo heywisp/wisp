@@ -2189,6 +2189,7 @@ async fn a_mail_delivered_twice_fires_one_agent_mail() {
             kind: MailKind::Message,
             wake: false,
             text: "Twice.".to_owned(),
+            checklist_spans: Vec::new(),
         };
         service.deliver(&path("/a"), mail).unwrap();
         tokio::time::sleep(Duration::from_secs(1)).await;

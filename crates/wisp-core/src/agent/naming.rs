@@ -102,7 +102,7 @@ impl Agent {
     pub(super) fn no_rename(&self) -> Option<&'static str> {
         if self.is_child() {
             Some(wisp_tool_text::chat::NOT_MAIN)
-        } else if self.log.as_ref().is_none_or(|(log, _)| !log.is_on()) {
+        } else if self.log.as_ref().is_none_or(|(log, _)| !log.lock().is_on()) {
             Some(wisp_tool_text::chat::NOT_SAVED)
         } else {
             None

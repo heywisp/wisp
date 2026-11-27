@@ -40,14 +40,31 @@ fn preset(name: &str, description: &str) -> Preset {
 
 #[test]
 fn the_brief_holds_the_task_and_the_checklist() {
-    assert_eq!(brief("  Review the change.\n", &[]), "Review the change.");
     assert_eq!(
-        brief(
-            "Plan it.",
-            &["Read the report".into(), "Write the plan".into()]
-        ),
-        "Plan it.\n\nChecklist:\n- [ ] Read the report\n- [ ] Write the plan"
+        brief("  Review the change.\n", &[]),
+        ("Review the change.".to_owned(), Vec::new())
     );
+    let (text, spans) = brief(
+        " Review the change. ",
+        &[
+            " check types ".into(),
+            "read café\n- [ ] still one step".into(),
+            " ".into(),
+            "".into(),
+        ],
+    );
+    assert_eq!(
+        text,
+        "Review the change.\n\nChecklist:\n- [ ] check types\n- [ ] read café\n- [ ] still one step\n- [ ] \n- [ ] "
+    );
+    assert_eq!(
+        spans
+            .iter()
+            .map(|span| &text[span.start..span.end])
+            .collect::<Vec<_>>(),
+        ["check types", "read café\n- [ ] still one step", "", ""]
+    );
+    assert!(spans.windows(2).all(|pair| pair[0].end < pair[1].start));
 }
 
 #[test]

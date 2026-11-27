@@ -480,6 +480,7 @@ async fn a_compaction_after_a_failure_still_ends_the_offer_after_resume() {
             replaces: None,
             held: true,
             from: None,
+            checklist_spans: Vec::new(),
         },
         ..last
     });

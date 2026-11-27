@@ -26,6 +26,7 @@ fn letter(id: &str, from: &str, wake: bool) -> Mail {
         kind: MailKind::Message,
         wake,
         text: format!("note {id}"),
+        checklist_spans: Vec::new(),
     }
 }
 
@@ -1155,6 +1156,7 @@ async fn unrelated_stops_senders_own_letters_and_refused_retries_never_restart_o
                 plugin: Some("mcp".into()),
             },
             "notice".into(),
+            Vec::new(),
             &ev_tx,
         )
         .await;

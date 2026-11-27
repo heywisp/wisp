@@ -1268,7 +1268,8 @@ pub fn start(built: Built) -> Started {
     let (commands, events, task) = wisp_core::agents::start_root(kit, tree, agent);
     let (commands, events, lane) = match voice {
         Some(voice) => {
-            let (commands, events, lane) = wisp_core::voice::attach(commands, events, voice);
+            let (commands, events, lane) =
+                wisp_core::voice::attach_with_task(commands, events, voice, Some(&task));
             (commands, events, Some(lane))
         }
         None => (commands, events, None),

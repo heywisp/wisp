@@ -477,7 +477,13 @@ async fn same_configuration_spawns_wait_for_the_first_request_to_stream() {
     .await;
     spawned(&mut run, "a").await;
     sent_once(&run, "/a").await;
-    spawned(&mut run, "b").await;
+    let canary = "CANARYOpaqueInStaggeredBrief";
+    run.spawn(SpawnRequest {
+        todos: vec![canary.into()],
+        ..spawn_request("b", "Work.")
+    })
+    .await;
+    spawn_seen(&mut run, "/b").await;
     spawned(&mut run, "c").await;
     for agent in ["/b", "/c"] {
         run.until("a staggered spawn", |e| {
@@ -493,6 +499,7 @@ async fn same_configuration_spawns_wait_for_the_first_request_to_stream() {
     tokio::time::sleep(Duration::from_secs(2)).await;
     let timeline = run.providers.timeline();
     assert_eq!(timeline.len(), 1, "{timeline:?}");
+    crate::session::register_secrets([canary.to_owned()]);
     gate.add_permits(1);
     for agent in ["/a", "/b", "/c"] {
         run.child_ended(agent).await;
@@ -529,12 +536,62 @@ async fn same_configuration_spawns_wait_for_the_first_request_to_stream() {
         .collect();
     assert_eq!(prefixes[0], prefixes[1]);
     assert_eq!(prefixes[0], prefixes[2]);
+    let a = &run.requests("/a")[0];
+    let b = &run.requests("/b")[0];
+    let a_body = a.body();
+    let b_body = b.body();
+    assert!(b_body.to_string().contains("Work."));
+    assert!(b_body.to_string().contains("[redacted]"));
+    assert!(!b_body.to_string().contains(canary));
+    for key in ["model", "tools", "system", "cache_control"] {
+        assert_eq!(a_body[key], b_body[key], "{key}");
+    }
+    let print = crate::provider::anthropic::wire_print(&b.request()).unwrap();
+    let first = crate::provider::anthropic::wire_print(&a.request()).unwrap();
+    assert_eq!(print.pinned, first.pinned);
+    assert_eq!(print.betas, first.betas);
+    assert_ne!(print.messages[0], first.messages[0]);
+    let mut stale = b.clone();
+    for block in &mut stale.messages[0].content {
+        if let ContentBlock::Text { text } = block {
+            *text = text.replace("[redacted]", canary);
+        }
+    }
+    let stale = crate::provider::anthropic::wire_print(&stale.request()).unwrap();
+    assert_eq!(stale.pinned, print.pinned);
+    assert_eq!(stale.betas, print.betas);
+    assert_ne!(stale.messages[0], print.messages[0]);
     let states = state_changes(&run.seen, "/b");
     let at = states
         .iter()
         .position(|(s, ..)| *s == queued(QueueReason::Stagger))
         .unwrap();
     assert_eq!(states[at + 1].0, AgentState::Running, "{states:?}");
+    let mut run = super::resume::resume(
+        run,
+        Setup {
+            prints: Some(Prints::Real),
+            ..Setup::default()
+        },
+        vec![
+            (
+                "/",
+                vec![
+                    uses(&[send_call("followup", "/b", "Continue the task.")]),
+                    done("noted"),
+                    done("received"),
+                ],
+            ),
+            ("/b", vec![uses(&[report_call("r2", "b followed up")])]),
+        ],
+    )
+    .await
+    .run;
+    run.say("Follow up with b").await;
+    super::resume::reported(&mut run, "/b").await;
+    let next = run.requests("/b").last().unwrap().body();
+    crate::test_guard::prefix::assert_prefix_stable(&[b_body, next], None);
+    run.quit().await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -1723,4 +1780,105 @@ async fn a_stopped_idle_child_retasked_and_queued_refuses_end() {
     );
     let run = run.quit().await;
     assert!(super::messages::ended_in(&run, "/").is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn queued_child_refreshes_starting_brief_across_worker_permit_and_restart_with_todos_off() {
+    use super::resume::resume;
+    let setup = || Setup {
+        plugins: vec!["write_todos"],
+        limits: Limits {
+            max_running: Some(1),
+            ..Limits::default()
+        },
+        ..Setup::default()
+    };
+    let queued_brief = |canary: &str| SpawnRequest {
+        todos: vec![
+            format!("one step\n- [ ] same step: {canary}"),
+            "safe next step".into(),
+        ],
+        tools_off: vec!["write_todos".into()],
+        ..spawn_request("b", "Give this unique task.")
+    };
+    for restart in [false, true] {
+        let canary = format!("CANARYOpaqueWorkerPermit-{restart}");
+        let gate = Arc::new(Semaphore::new(0));
+        let worker = |report| vec![uses(&[report_call("r1", report)])];
+        let mut run = start(
+            "brief-worker-wait",
+            setup(),
+            vec![
+                (
+                    "/a",
+                    vec![gated(uses(&[report_call("r1", "blocker")]), &gate)],
+                ),
+                ("/b", worker("worker done")),
+                ("/", vec![done("noted"); 4]),
+            ],
+        )
+        .await;
+        spawned(&mut run, "a").await;
+        sent_once(&run, "/a").await;
+        run.spawn(queued_brief(&canary)).await;
+        spawn_seen(&mut run, "/b").await;
+        run.until("worker queued", |event| matches!(event, AgentEvent::AgentStateChanged { agent, state, .. } if agent.as_str() == "/b" && *state == queued(QueueReason::Concurrency))).await;
+        assert!(run.requests("/b").is_empty());
+        if restart {
+            let old = run.quit().await;
+            crate::session::register_secrets([canary.clone()]);
+            let blocker = Arc::new(Semaphore::new(0));
+            let mut again = resume(
+                old,
+                setup(),
+                vec![
+                    (
+                        "/a",
+                        vec![gated(uses(&[report_call("r1", "blocker")]), &blocker)],
+                    ),
+                    ("/b", worker("worker done")),
+                    ("/", vec![done("noted"); 4]),
+                ],
+            )
+            .await
+            .run;
+            again.until("revised waiting brief", |event| matches!(inner(event, "/b"), Some(AgentEvent::InputAccepted { text, .. }) if text.contains("[redacted]") && !text.contains(&canary))).await;
+            let old = again.quit().await;
+            assert!(old.records("/b").iter().any(|event| matches!(event, LogEvent::InputRevised { turn: None, inputs } if !inputs[0].text.contains(&canary))));
+            let accepted = old
+                .records("/b")
+                .into_iter()
+                .find(|event| matches!(event, LogEvent::InputAccepted { .. }))
+                .unwrap();
+            assert!(
+                matches!(accepted, LogEvent::InputAccepted { text, .. } if text.contains(&canary))
+            );
+            crate::session::reset_held_for_test();
+            assert!(crate::session::held().is_empty());
+            run = resume(
+                old,
+                setup(),
+                vec![
+                    ("/a", worker("blocker done")),
+                    ("/b", worker("worker done")),
+                    ("/", vec![done("noted"); 4]),
+                ],
+            )
+            .await
+            .run;
+        } else {
+            crate::session::register_secrets([canary.clone()]);
+            gate.add_permits(1);
+        }
+        sent_once(&run, "/b").await;
+        run.until("worker report", |event| matches!(event, AgentEvent::InputAccepted { text, .. } if text.contains("worker done"))).await;
+        let body = run.requests("/b")[0].body().to_string();
+        assert!(
+            body.contains("Give this unique task.")
+                && body.contains("[redacted]")
+                && body.contains("safe next step")
+        );
+        assert!(!body.contains(&canary));
+        run.quit().await;
+    }
 }

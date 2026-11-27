@@ -273,6 +273,7 @@ fn a_retry_that_resends_steers_rebuilds_them_after_the_committed_results() {
                 text: "also check src".into(),
                 images: Vec::new(),
                 note: None,
+                checklist_spans: Vec::new(),
             }],
         },
         committed(2, text(Role::Assistant, "done")),

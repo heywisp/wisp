@@ -1092,6 +1092,7 @@ fn restarting_window(home: &Home, server: &Server) -> RestartWindow {
             replaces: None,
             held: true,
             from: None,
+            checklist_spans: Vec::new(),
         },
         AgentEvent::InputWithdrawn {
             ids: vec![id],

@@ -423,6 +423,8 @@ impl Agent {
             from: None,
             arrival: Some(arrival),
             note: self.track.is_some().then(|| STEER_NOTE.to_owned()),
+            checklist_spans: Vec::new(),
+            revision_unlogged: false,
         };
         let front = self.inbox.has_front();
         self.announce(&input, None, front, events).await;

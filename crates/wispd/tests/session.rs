@@ -41,6 +41,7 @@ async fn opening_orders_view_state_since_cut_and_live_and_preserves_an_input_bef
         held: false,
         front: false,
         from: None,
+        checklist_spans: Vec::new(),
     };
     for event in [accepted.clone(), AgentEvent::turn_started(2), text("since")] {
         script.events.send(event).await.unwrap();

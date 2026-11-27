@@ -84,6 +84,8 @@ fn typed(id: &str, mode: wisp_protocol::DeliveryMode, arrival: u64) -> super::In
         from: None,
         arrival: Some(arrival),
         note: None,
+        checklist_spans: Vec::new(),
+        revision_unlogged: false,
     }
 }
 

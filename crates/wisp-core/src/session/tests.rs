@@ -304,7 +304,7 @@ fn renumbered(lines: &[String]) -> String {
 }
 
 #[test]
-fn v42_log_opens_appends_v43_slice_and_rebuilds() {
+fn v42_log_opens_appends_a_current_slice_and_rebuilds() {
     use wisp_protocol::FileSlice;
     use wisp_protocol::log::{LoggedBlock, LoggedMessage};
 
@@ -347,7 +347,7 @@ fn v42_log_opens_appends_v43_slice_and_rebuilds() {
     assert!(text.as_bytes().starts_with(&prefix));
     let parsed = parse_jsonl(&text).unwrap();
     assert_eq!(parsed[..3], old);
-    assert_eq!(parsed[3].schema_version, 43);
+    assert_eq!(parsed[3].schema_version, LOG_SCHEMA_VERSION);
     assert!(
         matches!(&parsed[2].event, LogEvent::MessageCommitted {message, ..} if matches!(message.content.as_slice(), [LoggedBlock::Media {slice: None, ..}]))
     );
@@ -600,7 +600,7 @@ fn log_lines_escape_del_and_c1_controls() {
 
 #[test]
 fn both_logged_checklists_scrub_unregistered_values_without_a_registry() {
-    use wisp_protocol::{AgentPath, ParentLink, TodoItem, TodoStatus};
+    use wisp_protocol::{AgentPath, DeliveryMode, InputId, ParentLink, TodoItem, TodoStatus};
 
     let safe = TodoItem {
         text: "Verify the build".into(),
@@ -617,6 +617,17 @@ fn both_logged_checklists_scrub_unregistered_values_without_a_registry() {
         status: TodoStatus::InProgress,
         section: Some(r"line\n-I/Users/CANARY/inc".into()),
     };
+    let steps = [
+        sensitive.text.clone(),
+        sensitive.section.clone().unwrap(),
+        attached
+            .section
+            .as_deref()
+            .unwrap()
+            .strip_prefix(r"line\n")
+            .unwrap()
+            .to_owned(),
+    ];
     let items = vec![safe.clone(), sensitive, attached];
     let update = LogEvent::TodosUpdated {
         turn: 1,
@@ -653,6 +664,88 @@ fn both_logged_checklists_scrub_unregistered_values_without_a_registry() {
     for record in store.read("typed-checklists").unwrap() {
         assert_scrubbed(&record.event);
     }
+    let task = "Keep the literal task prose CANARY-in-task";
+    let mut text = task.to_owned();
+    let mut spans = Vec::new();
+    for step in &steps {
+        text.push_str("\n- [ ] ");
+        let start = text.len();
+        text.push_str(step);
+        spans.push(wisp_protocol::TextSpan {
+            start,
+            end: text.len(),
+        });
+    }
+    let accepted = |checklist_spans| LogEvent::InputAccepted {
+        turn: None,
+        id: InputId("mail-spans".into()),
+        mode: DeliveryMode::Steer,
+        text: text.clone(),
+        images: Vec::new(),
+        replaces: None,
+        held: false,
+        from: None,
+        checklist_spans,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let mut disk = JsonlStore::open(dir.path()).unwrap();
+    let id = new_session_id();
+    let mut legacy = record(0, started());
+    legacy.schema_version = 43;
+    disk.append(&id, &legacy).unwrap();
+    let path = disk.path(&id);
+    let prefix = fs::read(&path).unwrap();
+    drop(disk);
+    let mut disk = JsonlStore::open(dir.path()).unwrap();
+    let reopened = disk.reopen(&id, ResumeLock::Optional).unwrap();
+    let mut log = SessionLog::continuing(Box::new(disk), &id, reopened.next_seq);
+    assert_eq!(log.record(accepted(spans)), None);
+    assert_eq!(
+        log.record(accepted(vec![wisp_protocol::TextSpan {
+            start: 1,
+            end: usize::MAX
+        }])),
+        None
+    );
+    assert_eq!(log.sync(), None);
+    let raw = fs::read_to_string(path).unwrap();
+    assert!(raw.as_bytes().starts_with(&prefix));
+    let parsed = parse_jsonl(&raw).unwrap();
+    assert_eq!(parsed[0], legacy);
+    assert!(
+        parsed[1..]
+            .iter()
+            .all(|r| r.schema_version == LOG_SCHEMA_VERSION)
+    );
+    let [
+        LogEvent::InputAccepted {
+            text: safe,
+            checklist_spans: spans,
+            ..
+        },
+        LogEvent::InputAccepted {
+            text: suppressed, ..
+        },
+    ] = [&parsed[1].event, &parsed[2].event]
+    else {
+        panic!("unexpected rows");
+    };
+    assert_eq!(
+        safe,
+        &format!("{task}\n- [ ] [redacted]\n- [ ] [redacted]\n- [ ] [redacted]")
+    );
+    assert!(
+        spans
+            .iter()
+            .all(|span| &safe[span.start..span.end] == REDACTED)
+    );
+    assert_eq!(suppressed, REDACTED);
+    assert!(steps.iter().all(|step| !raw.contains(step.as_str())));
+    assert!(
+        rebuild_checked(log.store(), &parsed, None)
+            .unwrap()
+            .is_none_or(|rebuilt| rebuilt.messages.is_empty())
+    );
 }
 
 #[test]
@@ -2443,6 +2536,7 @@ fn masked_rule(event: &LogEvent) -> &'static str {
         LogEvent::InputUnheld { .. } => "kept",
         LogEvent::ReturnedTaken { .. } => "kept",
         LogEvent::InputCommitted { .. } => "kept",
+        LogEvent::InputRevised { .. } => "kept",
         LogEvent::InputWithdrawn { .. } => "kept",
         LogEvent::InputDelivered { .. } => "kept",
         LogEvent::QuestionAsked { .. } => "dropped",
@@ -3061,6 +3155,7 @@ fn one_of_every_event() -> Vec<LogEvent> {
             replaces: Some(InputId("tui-1".into())),
             held: true,
             from: None,
+            checklist_spans: Vec::new(),
         },
         LogEvent::InputHeld {
             turn: Some(1),
@@ -3082,6 +3177,17 @@ fn one_of_every_event() -> Vec<LogEvent> {
                 text: "also this".into(),
                 images: Vec::new(),
                 note: None,
+                checklist_spans: Vec::new(),
+            }],
+        },
+        LogEvent::InputRevised {
+            turn: Some(1),
+            inputs: vec![LoggedInput {
+                id: InputId("mail-CANARY".into()),
+                text: "[redacted]".into(),
+                images: Vec::new(),
+                note: None,
+                checklist_spans: vec![wisp_protocol::TextSpan { start: 0, end: 10 }],
             }],
         },
         LogEvent::InputWithdrawn {
@@ -4306,5 +4412,320 @@ fn hashing_while_serialising_equals_hashing_the_serialised_bytes() {
     assert_eq!(
         sha256_json_hex(&"").as_deref(),
         Some("12ae32cb1ec02d01eda3581b127c1fee3b0dc53572ed6baf239721a03d82e126")
+    );
+}
+
+#[test]
+fn a_stale_journal_generation_neither_appends_nor_allocates_a_sequence() {
+    use wisp_protocol::{DeliveryMode, HookChange, InputId, TextSpan};
+
+    let store = MemoryStore::default();
+    let mut log = SessionLog::new(Box::new(store.clone()), "checked-record");
+    let (_, stale) = held_with_generation();
+    register_secrets(["CANARYOpaqueForStaleJournalSequence".into()]);
+    assert_eq!(
+        log.record_if_generation_current(stale, started(), None),
+        Err(())
+    );
+    assert_eq!(log.next_seq(), 0);
+    assert!(store.list().unwrap().is_empty());
+
+    let (_, current) = held_with_generation();
+    assert_eq!(
+        log.record_if_generation_current(current, started(), None),
+        Ok(None)
+    );
+    assert_eq!(log.next_seq(), 1);
+
+    let home = Path::new("/opt/wisp-test-home");
+    let home_field = "/opt/wisp-test-home/notes";
+    let hook_event = LogEvent::HookApplied {
+        hook: "aa/h".into(),
+        point: "before-tool".into(),
+        turn: None,
+        step: None,
+        call_id: None,
+        input_id: None,
+        change: HookChange::Input {
+            before: json!({"path": home_field}),
+            after: json!({"path": "ok"}),
+        },
+    };
+    let prose = "Task prose\n- [ ] ";
+    let brief_text = format!("{prose}{home_field}");
+    let brief_event = LogEvent::InputAccepted {
+        turn: None,
+        id: InputId("mail-home".into()),
+        mode: DeliveryMode::Steer,
+        text: brief_text.clone(),
+        images: Vec::new(),
+        replaces: None,
+        held: false,
+        from: None,
+        checklist_spans: vec![TextSpan {
+            start: prose.len(),
+            end: brief_text.len(),
+        }],
+    };
+    assert_eq!(
+        log.record_if_generation_current(stale, hook_event.clone(), Some(home)),
+        Err(())
+    );
+    assert_eq!(log.next_seq(), 1);
+    assert_eq!(
+        log.record_if_generation_current(current, hook_event, Some(home)),
+        Ok(None)
+    );
+    assert_eq!(
+        log.record_if_generation_current(current, brief_event, Some(home)),
+        Ok(None)
+    );
+    assert_eq!(log.next_seq(), 3);
+    let rows = store.read("checked-record").unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].seq, 0);
+    assert_eq!(rows[1].seq, 1);
+    assert_eq!(rows[2].seq, 2);
+    assert!(matches!(
+        &rows[1].event,
+        LogEvent::HookApplied {
+            change: HookChange::Input { before, .. },
+            ..
+        } if before == &json!({"path": REDACTED})
+    ));
+    assert!(matches!(
+        &rows[2].event,
+        LogEvent::InputAccepted { text, .. } if text == &format!("{prose}{REDACTED}")
+    ));
+}
+
+#[test]
+fn record_if_generation_current_excludes_secret_registration_across_append_and_drops_guard_before_sync()
+ {
+    use std::sync::{Arc, Mutex};
+    use wisp_protocol::{InputId, TextSpan};
+
+    struct ProbeStore {
+        memory: MemoryStore,
+        at_append: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        probed: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+        append_blocked: Arc<std::sync::atomic::AtomicBool>,
+        sync_blocked: Arc<std::sync::atomic::AtomicBool>,
+    }
+
+    impl SessionStore for ProbeStore {
+        fn append(&mut self, session: &str, row: &LogRecord) -> std::io::Result<()> {
+            self.append_blocked.store(
+                secrets_write_blocked(),
+                std::sync::atomic::Ordering::Release,
+            );
+            if let Some(tx) = self.at_append.lock().unwrap().take() {
+                tx.send(()).unwrap();
+            }
+            if let Some(rx) = self.probed.lock().unwrap().take() {
+                rx.recv().unwrap();
+            }
+            self.memory.append(session, row)
+        }
+
+        fn sync(&mut self, session: &str) -> std::io::Result<()> {
+            self.sync_blocked.store(
+                secrets_write_blocked(),
+                std::sync::atomic::Ordering::Release,
+            );
+            self.memory.sync(session)
+        }
+
+        fn read(&self, session: &str) -> std::io::Result<Vec<LogRecord>> {
+            self.memory.read(session)
+        }
+
+        fn list(&self) -> std::io::Result<Vec<String>> {
+            self.memory.list()
+        }
+
+        fn put_blob(
+            &mut self,
+            sha256: &str,
+            media_type: &Mime,
+            bytes: &[u8],
+        ) -> std::io::Result<()> {
+            self.memory.put_blob(sha256, media_type, bytes)
+        }
+
+        fn get_blob(&self, sha256: &str, media_type: &Mime) -> std::io::Result<Blob> {
+            self.memory.get_blob(sha256, media_type)
+        }
+    }
+
+    reset_held_for_test();
+    let canary = "CANARYOpaqueOrderedAcrossCheckedAppend";
+    let prose = "Task prose\n- [ ] ";
+    let text = format!("{prose}{canary}");
+    let event = LogEvent::InputRevised {
+        turn: None,
+        inputs: vec![wisp_protocol::log::LoggedInput {
+            id: InputId("mail-ordered".into()),
+            text: text.clone(),
+            images: Vec::new(),
+            note: None,
+            checklist_spans: vec![TextSpan {
+                start: prose.len(),
+                end: text.len(),
+            }],
+        }],
+    };
+    let memory = MemoryStore::default();
+    let append_blocked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let sync_blocked = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let (at_append_tx, at_append_rx) = std::sync::mpsc::channel();
+    let (probed_tx, probed_rx) = std::sync::mpsc::channel();
+    let store = ProbeStore {
+        memory: memory.clone(),
+        at_append: Mutex::new(Some(at_append_tx)),
+        probed: Mutex::new(Some(probed_rx)),
+        append_blocked: append_blocked.clone(),
+        sync_blocked: sync_blocked.clone(),
+    };
+    let mut log = SessionLog::new(Box::new(store), "probe");
+    let (_, current) = held_with_generation();
+    let worker = std::thread::spawn(move || {
+        at_append_rx.recv().unwrap();
+        let blocked = secrets_write_blocked();
+        probed_tx.send(()).unwrap();
+        register_secrets([canary.to_owned()]);
+        blocked
+    });
+    assert_eq!(
+        log.record_if_generation_current(current, event, None),
+        Ok(None)
+    );
+    let worker_blocked = worker.join().unwrap();
+    assert_eq!(log.sync(), None);
+    assert!(worker_blocked);
+    assert!(append_blocked.load(std::sync::atomic::Ordering::Acquire));
+    assert!(!sync_blocked.load(std::sync::atomic::Ordering::Acquire));
+    let saved = memory.read("probe").unwrap();
+    assert_eq!(saved.len(), 1);
+    assert!(matches!(
+        &saved[0].event,
+        LogEvent::InputRevised { inputs, .. } if inputs[0].text.contains(canary)
+    ));
+}
+
+#[tokio::test]
+async fn send_scrubbed_handles_hook_audit_and_spanned_brief_together_without_deadlock_or_double_mangling()
+ {
+    use wisp_protocol::{
+        AgentEvent, ErrorKind, HookChange, RequestId, SessionView, TurnOutcome, TurnStats,
+    };
+
+    let canary = "CANARYOpaqueCombinedAuditBrief";
+    let store = MemoryStore::default();
+    let mut agent = crate::agent::Agent::new(
+        crate::agent::testing::Fake::new(Vec::new()),
+        crate::agent::default_session(),
+    )
+    .with_log(
+        SessionLog::new(Box::new(store.clone()), "combined"),
+        crate::test_guard::log_context(),
+    );
+    let primed = crate::agent::testing::prime_brief(
+        &mut agent,
+        crate::agent::testing::checklist_mail("combined", "Keep task", &[canary]),
+    )
+    .await
+    .into_iter()
+    .find(|event| matches!(event, AgentEvent::InputAccepted { .. }))
+    .unwrap();
+    let owner = agent.brief_owner();
+    register_secrets([canary.into()]);
+    let AgentEvent::SessionSnapshot { now, .. } = serde_json::from_str(include_str!(
+        "../../../wisp-protocol/tests/fixtures/event_session_snapshot.json"
+    ))
+    .unwrap() else {
+        panic!("expected a session snapshot fixture");
+    };
+    let hook_event = AgentEvent::HookApplied {
+        hook: "aa/h".into(),
+        point: "before-tool".into(),
+        turn: None,
+        step: None,
+        call_id: None,
+        input_id: None,
+        change: HookChange::Input {
+            before: json!({"k": canary}),
+            after: json!({"k": canary, (REDACTED): "kept"}),
+        },
+    };
+    let terminal_event = AgentEvent::TurnEnded {
+        outcome: TurnOutcome::Error {
+            kind: ErrorKind::InvalidResponse,
+            message: compaction_terminal_message(canary.to_owned()),
+            usage: None,
+            cost: None,
+            committed_steps: 0,
+            detail: None,
+            attempts: 1,
+            gave_up: None,
+            offer: None,
+        },
+        stats: TurnStats::default(),
+    };
+    let snapshot = AgentEvent::SessionSnapshot {
+        answers: RequestId(9),
+        view: SessionView {
+            events: vec![hook_event, terminal_event, primed],
+            ..SessionView::default()
+        },
+        now,
+        state: Vec::new(),
+    };
+    let (relay, mut received) = tokio::sync::mpsc::channel(1);
+    crate::test_guard::within(
+        "combined hook audit and spanned brief send_scrubbed",
+        crate::agent::send_scrubbed(&relay, snapshot, None, |_| Some(owner.clone())),
+    )
+    .await;
+    let AgentEvent::SessionSnapshot { view, .. } = received.try_recv().unwrap() else {
+        panic!("expected snapshot");
+    };
+    assert!(received.try_recv().is_err());
+    let [
+        AgentEvent::HookApplied {
+            change: HookChange::Input { before, after },
+            ..
+        },
+        AgentEvent::TurnEnded {
+            outcome: TurnOutcome::Error { message, .. },
+            ..
+        },
+        AgentEvent::InputAccepted {
+            text,
+            checklist_spans,
+            ..
+        },
+    ] = view.events.as_slice()
+    else {
+        panic!("{:#?}", view.events);
+    };
+    assert_eq!(before, &json!({"k": REDACTED}));
+    assert_eq!(after, &json!({"k": REDACTED, (REDACTED): "kept"}));
+    assert_eq!(message, "Compaction stopped: [redacted]");
+    assert!(
+        text.contains("Keep task") && !text.contains(canary),
+        "{text}"
+    );
+    assert_eq!(checklist_spans.len(), 1);
+    assert_eq!(
+        &text[checklist_spans[0].start..checklist_spans[0].end],
+        REDACTED
+    );
+    assert!(
+        store
+            .read("combined")
+            .unwrap()
+            .iter()
+            .any(|row| matches!(&row.event, LogEvent::InputRevised { turn: None, inputs } if inputs[0].text == *text))
     );
 }

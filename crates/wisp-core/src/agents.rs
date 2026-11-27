@@ -23,7 +23,7 @@ use crate::models::in_order;
 use crate::settings::{Current, Layer, Layers, resolve_one};
 use endpoints::{EndpointView, plain};
 
-mod brief;
+pub(crate) mod brief;
 pub mod endpoints;
 pub mod fold;
 mod guarantee;

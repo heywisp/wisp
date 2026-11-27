@@ -5,7 +5,7 @@ use wisp_protocol::log::{ImageRef, LoggedInput, input_blocks};
 use wisp_protocol::{
     ALREADY_COMPACTING, AgentEvent, AgentPath, COMPACT_BETWEEN_TURNS, ClientCommand, ContentBlock,
     DeliveryMode, ImageData, InputId, MailFrom, NOTHING_HELD, NOTHING_TO_COMPACT, NOTHING_TO_STEER,
-    RejectKind, WakeSource, WithdrawnBy, answer_refusal, process_refusal,
+    RejectKind, TextSpan, WakeSource, WithdrawnBy, answer_refusal, process_refusal,
 };
 use wisp_tool_text::STEER_NOTE;
 
@@ -27,6 +27,8 @@ pub(super) struct Input {
     pub(super) from: Option<Letter>,
     pub(super) arrival: Option<u64>,
     pub(super) note: Option<String>,
+    pub(super) checklist_spans: Vec<TextSpan>,
+    pub(super) revision_unlogged: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +82,7 @@ impl Input {
             text: self.text.clone(),
             images: self.refs.clone(),
             note: self.note.clone(),
+            checklist_spans: self.checklist_spans.clone(),
         }
     }
 
@@ -100,6 +103,7 @@ impl Input {
             held,
             front,
             from,
+            checklist_spans: self.checklist_spans.clone(),
         }
     }
 }
@@ -289,11 +293,9 @@ impl Inbox {
         taken
     }
 
-    pub(super) fn take_mail_id(&mut self, id: &InputId) -> bool {
-        let Some(position) = self.mail.iter().position(|i| &i.id == id) else {
-            return false;
-        };
-        self.mail.remove(position).is_some()
+    pub(super) fn take_mail_id(&mut self, id: &InputId) -> Option<Input> {
+        self.mail
+            .remove(self.mail.iter().position(|i| &i.id == id)?)
     }
 
     pub(super) fn has_waking_above(&self) -> bool {
@@ -340,6 +342,20 @@ impl Inbox {
 
     pub(super) fn waiting_mail(&self) -> impl Iterator<Item = &Input> {
         self.mail.iter()
+    }
+
+    pub(super) fn waiting_mail_len(&self) -> usize {
+        self.mail.len()
+    }
+
+    pub(super) fn waiting_mail_cloned(&self, index: usize) -> Option<Input> {
+        self.mail.get(index).cloned()
+    }
+
+    pub(super) fn update_waiting_mail(&mut self, updated: Input) {
+        if let Some(input) = self.mail.iter_mut().find(|input| input.id == updated.id) {
+            *input = updated;
+        }
     }
 
     #[cfg(test)]
@@ -759,6 +775,8 @@ impl Agent {
             from: None,
             arrival: sent.arrival,
             note: (self.track.is_some() && !held).then(|| STEER_NOTE.to_owned()),
+            checklist_spans: Vec::new(),
+            revision_unlogged: false,
         }
     }
 

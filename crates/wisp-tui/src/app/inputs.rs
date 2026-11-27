@@ -520,6 +520,7 @@ impl Inputs {
                 held,
                 front,
                 from: None,
+                checklist_spans: _,
             } => {
                 if *opening && self.tracked_by(id).is_some() {
                     return applied;

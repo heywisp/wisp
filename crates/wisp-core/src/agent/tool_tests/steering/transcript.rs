@@ -524,7 +524,7 @@ async fn a_large_detached_description_does_not_hold_commands_or_turns_and_keeps_
     ));
     let (release, gate) = std::sync::mpsc::channel();
     let mut release = Some(release);
-    let seq = h.agent.log.as_ref().unwrap().0.next_seq();
+    let seq = h.agent.log.as_ref().unwrap().0.lock().next_seq();
     h.agent = h.agent.with_log(
         SessionLog::continuing(
             Box::new(RecordingStore {
@@ -593,4 +593,128 @@ async fn a_large_detached_description_does_not_hold_commands_or_turns_and_keeps_
     assert_eq!(captured_state, &state);
     assert_eq!(started(&view.events), [1]);
     assert_eq!(started(&seen), [2]);
+}
+
+#[tokio::test]
+async fn session_snapshot_applies_post_cut_brief_revisions_to_history_and_waiting_mail() {
+    use crate::agent::testing::{brief_announcements, checklist_mail, prime_brief};
+    use crate::session::SessionStore;
+
+    for disk_backed in [false, true] {
+        let canary = format!("CANARYOpaqueAtViewCut-{disk_backed}");
+        let mut h = harness(Vec::new());
+        prime_brief(
+            &mut h.agent,
+            checklist_mail("cut", "Task at cut", &[&canary]),
+        )
+        .await;
+        let opening = h.agent.inbox.waiting_mail_cloned(0).unwrap();
+        let (events, mut received) = mpsc::channel(16);
+        let row = serde_json::from_value(
+            json!({"type":"turn_started","turn":1,"inputs":[opening.logged()]}),
+        )
+        .unwrap();
+        h.agent.log(&events, row).await;
+        h.agent.cut_view();
+        let before = records(&h.store);
+        if disk_backed {
+            let mut disk =
+                crate::session::JsonlStore::open(h._env.work.join("cut-snapshot")).unwrap();
+            for row in &before {
+                disk.append("aa", row).unwrap();
+            }
+            h.agent = h.agent.with_log(
+                SessionLog::continuing(Box::new(disk), "aa", before.last().unwrap().seq + 1),
+                log_context(),
+            );
+        }
+        crate::session::register_secrets([canary.clone()]);
+        brief_announcements(&mut h.agent).await;
+        h.agent.brief_owner.lock().waiting.remove(&opening.id);
+        crate::session::reset_held_for_test();
+        assert!(crate::session::held().is_empty());
+        h.agent.describe(RequestId(8), &events).await;
+        if disk_backed {
+            let done = h.agent.queue.done().await;
+            h.agent.finish(done, &events).await;
+        }
+        let AgentEvent::SessionSnapshot { view, .. } = received.recv().await.unwrap() else {
+            panic!("missing snapshot");
+        };
+        let texts: Vec<_> = pick!(&view.events, AgentEvent::InputAccepted { id, text, .. } => (id.as_str(), text.as_str())).into_iter().filter_map(|(id,text)| (id == "mail-cut").then_some(text)).collect();
+        assert_eq!(texts.len(), 2, "{:?}", view.events);
+        assert!(
+            texts
+                .iter()
+                .all(|text| text.contains("[redacted]") && !text.contains(&canary))
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_blocked_snapshot_is_published_only_after_its_first_brief_revision_is_durable() {
+    use crate::agent::testing::{
+        BriefFailStore, assert_resumed_brief, checklist_mail, prime_brief,
+    };
+
+    for point in ["persist", "append"] {
+        let canary = format!("CANARYOpaqueAtSnapshotCapacity-{point}");
+        let task = "Keep the snapshot task prose";
+        let mut h = harness(Vec::new());
+        h.agent = h.agent.with_log(
+            SessionLog::new(Box::new(BriefFailStore::new(h.store.clone(), point)), "s1"),
+            log_context(),
+        );
+        prime_brief(&mut h.agent, checklist_mail("snapshot", task, &[&canary])).await;
+        h.agent.cut_view();
+        let before = records(&h.store);
+        let (events, mut received) = mpsc::channel(1);
+        events
+            .try_send(AgentEvent::LogDisabled {
+                reason: "test capacity".into(),
+            })
+            .unwrap();
+        let mut snapshot = std::pin::pin!(h.agent.describe(RequestId(48), &events));
+        assert!(futures::poll!(snapshot.as_mut()).is_pending());
+        assert_eq!(records(&h.store), before);
+        crate::session::register_secrets([canary.clone()]);
+        assert!(matches!(
+            received.try_recv(),
+            Ok(AgentEvent::LogDisabled { .. })
+        ));
+        if point == "persist" {
+            snapshot.await;
+            let rows = records(&h.store);
+            assert_eq!(rows.len(), before.len() + 1);
+            assert!(
+                matches!(&rows.last().unwrap().event, LogEvent::InputRevised { turn: None, inputs } if inputs.len() == 1 && inputs[0].text.contains("[redacted]") && !inputs[0].text.contains(&canary))
+            );
+            let AgentEvent::SessionSnapshot {
+                answers: RequestId(48),
+                view,
+                ..
+            } = received.try_recv().unwrap()
+            else {
+                panic!("snapshot was not the first observer");
+            };
+            assert!(view.events.iter().any(|event| matches!(event, AgentEvent::InputAccepted { text, .. } if text.contains(task) && text.contains("[redacted]") && !text.contains(&canary))));
+            assert_resumed_brief(&rows, task, &canary).await;
+        } else {
+            assert!(futures::poll!(snapshot.as_mut()).is_pending());
+            assert!(matches!(
+                received.try_recv(),
+                Ok(AgentEvent::LogDisabled { .. })
+            ));
+            snapshot.await;
+            assert_eq!(records(&h.store), before);
+            assert!(matches!(
+                received.try_recv(),
+                Ok(AgentEvent::Rejected {
+                    request: Some(RequestId(48)),
+                    ..
+                })
+            ));
+        }
+        assert!(received.try_recv().is_err());
+    }
 }

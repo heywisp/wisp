@@ -10,11 +10,12 @@ use jiff::SignedDuration;
 use serde_json::{Value, json};
 use tokio::sync::{Notify, Semaphore, mpsc};
 use tokio::time::Instant;
+use wisp_protocol::log::{LogEvent, LogRecord};
 use wisp_protocol::plan_usage::{PlanUsage, PlanUsageError};
 use wisp_protocol::{
     AgentEvent, Billing, CacheTtl, ClientCommand, ContentBlock, ErrorDetail, ErrorKind,
     FailurePhase, FailureSource, HistoryChange, ImageData, InputTransformation, Message,
-    RetryClass, SessionConfig, StopReason, TodoItem, TodoStatus, TurnOutcome, Usage,
+    RetryClass, Role, SessionConfig, StopReason, TodoItem, TodoStatus, TurnOutcome, Usage,
     WithdrawnAttachment,
 };
 
@@ -1240,6 +1241,7 @@ async fn a_step_plays_sending_the_wait_its_events_its_actions_its_error_then_han
         kind: wisp_protocol::MailKind::Message,
         wake: false,
         text: "note".into(),
+        checklist_spans: Vec::new(),
     };
     let error = failure(ErrorKind::Server, RetryClass::Never, false);
     let step = Step::from(vec![Ok(ProviderEvent::MessageStop), Err(error.clone())])
@@ -1293,4 +1295,214 @@ async fn a_step_plays_sending_the_wait_its_events_its_actions_its_error_then_han
     assert_eq!(taken.available_permits(), 0);
     drop(fake.plan_usage());
     assert_eq!(fake.plan_usage_calls(), 1);
+}
+
+pub(crate) fn checklist_mail(id: &str, task: &str, steps: &[&str]) -> Mail {
+    let steps: Vec<_> = steps.iter().map(|step| (*step).to_owned()).collect();
+    let (text, checklist_spans) = crate::agents::brief::brief(task, &steps);
+    Mail {
+        id: wisp_protocol::MailId(id.to_owned()),
+        from: wisp_protocol::AgentPath::root(),
+        to: wisp_protocol::AgentPath::new("/child"),
+        kind: wisp_protocol::MailKind::Task,
+        wake: true,
+        text,
+        checklist_spans,
+    }
+}
+
+pub(crate) async fn prime_brief(agent: &mut Agent, letter: Mail) -> Vec<AgentEvent> {
+    agent.mail_sender().send(letter).unwrap();
+    let (events, mut received) = mpsc::channel(32);
+    agent.accept_mail(&events).await;
+    std::iter::from_fn(|| received.try_recv().ok()).collect()
+}
+
+pub(crate) async fn brief_announcements(agent: &mut Agent) -> Vec<AgentEvent> {
+    let (events, mut received) = mpsc::channel(32);
+    agent.announce_waiting_mail(&events).await;
+    std::iter::from_fn(|| received.try_recv().ok()).collect()
+}
+
+impl Agent {
+    pub(crate) async fn disable_brief_test_log(&mut self, events: &mpsc::Sender<AgentEvent>) {
+        let mut message = Message::user_text("Unrelated test change");
+        message.role = Role::System;
+        self.commit_record(message, None, None, events).await;
+        assert!(!self.log_is_on());
+    }
+
+    pub(crate) fn clear_test_log(&mut self) {
+        self.log = None;
+        let mut owner = self.brief_owner.lock();
+        owner.log = None;
+        owner.configured_log = false;
+    }
+}
+
+pub(crate) async fn assert_resumed_brief(
+    rows: &[wisp_protocol::log::LogRecord],
+    task: &str,
+    canary: &str,
+) {
+    use crate::session::Line;
+    crate::session::reset_held_for_test();
+    let (_store, log) = test_guard::continued(rows);
+    let provider = Fake::new(vec![done(&[B::Text("done")])]);
+    let mut agent = Agent::new(provider.clone(), crate::agent::default_session())
+        .with_log(log, test_guard::log_context())
+        .resume_lines(
+            rows.iter()
+                .cloned()
+                .map(Box::new)
+                .map(Line::Record)
+                .collect(),
+            0,
+        )
+        .unwrap();
+    assert_brief_announcement(&mut agent, task, canary).await;
+    assert!(matches!(
+        brief_turn(&mut agent).await.0,
+        TurnOutcome::Completed { .. }
+    ));
+    let texts = provider.texts();
+    let [sent] = texts.as_slice() else {
+        panic!("{texts:?}")
+    };
+    assert!(
+        sent.contains(task) && sent.contains(REDACTED) && !sent.contains(canary),
+        "{sent}"
+    );
+}
+
+pub(crate) async fn assert_brief_announcement(agent: &mut Agent, task: &str, canary: &str) {
+    let shown = brief_announcements(agent).await;
+    let text = shown
+        .iter()
+        .find_map(|event| match event {
+            AgentEvent::InputAccepted { text, .. } => Some(text),
+            _ => None,
+        })
+        .unwrap();
+    assert!(
+        text.contains(task) && text.contains(REDACTED) && !text.contains(canary),
+        "{text}"
+    );
+}
+
+pub(crate) async fn run_brief_turn(
+    agent: &mut Agent,
+    commands: &mut mpsc::Receiver<ClientCommand>,
+    events: &mpsc::Sender<AgentEvent>,
+) -> Option<wisp_protocol::TurnOutcome> {
+    let inputs = agent.inbox.take_mail(false);
+    assert!(!inputs.is_empty());
+    agent
+        .run_inputs(
+            inputs,
+            None,
+            Some(wisp_protocol::TurnOrigin::Mail),
+            commands,
+            events,
+        )
+        .await
+}
+
+pub(crate) async fn brief_turn(agent: &mut Agent) -> (wisp_protocol::TurnOutcome, Vec<AgentEvent>) {
+    let (_commands, mut commands) = mpsc::channel(4);
+    let (events, mut received) = mpsc::channel(1024);
+    let outcome = within(
+        "the brief's turn",
+        run_brief_turn(agent, &mut commands, &events),
+    )
+    .await
+    .unwrap();
+    let mut seen = Vec::new();
+    while let Ok(event) = received.try_recv() {
+        seen.push(event);
+    }
+    (outcome, seen)
+}
+
+#[derive(Clone)]
+pub(crate) struct BriefFailStore {
+    memory: MemoryStore,
+    point: &'static str,
+    target: fn(&LogEvent) -> bool,
+    targeted: bool,
+    syncs: Arc<AtomicUsize>,
+}
+
+impl BriefFailStore {
+    pub(crate) fn new(memory: MemoryStore, point: &'static str) -> Self {
+        Self {
+            memory,
+            point,
+            target: |event| matches!(event, LogEvent::InputRevised { .. }),
+            targeted: false,
+            syncs: Arc::default(),
+        }
+    }
+
+    pub(crate) fn targeting(mut self, target: fn(&LogEvent) -> bool) -> Self {
+        self.target = target;
+        self
+    }
+
+    pub(crate) fn sync_counter(&self) -> Arc<AtomicUsize> {
+        self.syncs.clone()
+    }
+}
+
+impl SessionStore for BriefFailStore {
+    fn append(&mut self, session: &str, row: &LogRecord) -> std::io::Result<()> {
+        self.targeted = (self.target)(&row.event);
+        if self.targeted && self.point == "append"
+            || self.point == "delivered"
+                && matches!(
+                    row.event,
+                    LogEvent::InputDelivered {
+                        turn: 2,
+                        step: 2,
+                        ..
+                    }
+                )
+            || self.point == "disabled" && matches!(row.event, LogEvent::TurnStarted { .. })
+            || self.point == "unrelated"
+                && matches!(&row.event, LogEvent::MessageCommitted { message, .. } if message.role == Role::System)
+        {
+            return Err(std::io::Error::other("test store stopped"));
+        }
+        self.memory.append(session, row)
+    }
+
+    fn sync(&mut self, session: &str) -> std::io::Result<()> {
+        self.syncs.fetch_add(1, Ordering::Relaxed);
+        if self.targeted && self.point == "sync" {
+            return Err(std::io::Error::other("test sync stopped"));
+        }
+        self.memory.sync(session)
+    }
+
+    fn list(&self) -> std::io::Result<Vec<String>> {
+        self.memory.list()
+    }
+    fn read(&self, session: &str) -> std::io::Result<Vec<LogRecord>> {
+        self.memory.read(session)
+    }
+    fn put_blob(
+        &mut self,
+        sha: &str,
+        ty: &wisp_protocol::Mime,
+        bytes: &[u8],
+    ) -> std::io::Result<()> {
+        self.memory.put_blob(sha, ty, bytes)
+    }
+    fn get_blob(
+        &self,
+        sha: &str,
+        ty: &wisp_protocol::Mime,
+    ) -> std::io::Result<crate::session::Blob> {
+        self.memory.get_blob(sha, ty)
+    }
 }

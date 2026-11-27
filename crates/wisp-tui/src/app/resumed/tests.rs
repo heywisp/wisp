@@ -32,6 +32,7 @@ fn accepted(n: &str, text: &str, images: Vec<ImageRef>) -> AgentEvent {
         held: false,
         front: false,
         from: None,
+        checklist_spans: Vec::new(),
     }
 }
 

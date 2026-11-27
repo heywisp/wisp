@@ -331,13 +331,14 @@ impl State<'_> {
             LogEvent::InputCommitted { inputs, .. } => {
                 self.committed(inputs.iter().map(|i| i.id.clone()));
             }
-            LogEvent::MessageCommitted { turn, message, .. } if message.role == Role::Assistant => {
+            LogEvent::MessageCommitted { turn, message, .. } => {
                 if self.opening.0 == *turn {
                     let opening = std::mem::take(&mut self.opening.1);
                     self.committed(opening);
                 }
-                if let Some(text) =
-                    reply_text(message.content.iter().filter_map(LoggedBlock::as_inline))
+                if message.role == Role::Assistant
+                    && let Some(text) =
+                        reply_text(message.content.iter().filter_map(LoggedBlock::as_inline))
                 {
                     self.turn.last_text = text;
                 }

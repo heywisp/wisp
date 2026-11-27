@@ -17,7 +17,7 @@ use wisp_protocol::voice::{AudioFrame, CallId};
 use crate::provider::ProviderError;
 
 pub use self::webrtc::{default_ip, legs};
-pub use attach::{AudioLane, attach};
+pub use attach::{AudioLane, attach, attach_with_task};
 pub use earlier::Earlier;
 pub use service::{CallRecord, QUIET, Voice};
 

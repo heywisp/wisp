@@ -920,19 +920,24 @@ impl Provider for GeminiProvider {
             ..Carries::default()
         };
         let search_only = request.rendering.search_only;
-        self.send(model, built.body, carries)
-            .map(move |event| {
-                event.map_err(|mut error| {
-                    if search_only
-                        && matches!(error.detail.status, Some(400..=499))
-                        && error.detail.status != Some(401)
-                    {
-                        error.refused = Some(super::Refused::NativeSearch);
-                    }
-                    error
-                })
+        self.send(
+            model,
+            built.body,
+            carries,
+            request.rendering.redactions_generation,
+        )
+        .map(move |event| {
+            event.map_err(|mut error| {
+                if search_only
+                    && matches!(error.detail.status, Some(400..=499))
+                    && error.detail.status != Some(401)
+                {
+                    error.refused = Some(super::Refused::NativeSearch);
+                }
+                error
             })
-            .boxed()
+        })
+        .boxed()
     }
 }
 
@@ -942,6 +947,7 @@ impl GeminiProvider {
         model: String,
         body: Value,
         carries: Carries,
+        redactions_generation: Option<u64>,
     ) -> BoxStream<'static, Result<ProviderEvent, ProviderError>> {
         let sent = malformed::Sent::from_body(&body);
         let sending = self.clone();
@@ -997,7 +1003,7 @@ impl GeminiProvider {
             (Vec::new(), Ok((response, decoder)))
         };
         search::real_addresses(
-            super::sse::drive(call, open, self.waits),
+            super::sse::drive(call, open, self.waits, redactions_generation),
             self.client.clone(),
             self.redirects.clone(),
             search::FOLLOW_WAIT,
@@ -2196,6 +2202,95 @@ pub(crate) mod tests {
         crate::secrets::write_atomic(&profile, &serde_json::to_vec(&payload).unwrap(), 0o600)
             .unwrap();
         profile
+    }
+
+    #[tokio::test]
+    async fn antigravity_pre_send_redaction_change_rebuilds_brief_and_keeps_gemini_prefix_stable() {
+        use crate::agent::Agent;
+        use crate::agent::testing::{brief_turn, checklist_mail, prime_brief, turn};
+        use crate::session::{MemoryStore, SessionLog};
+        use crate::test_guard::{continued, log_context, records};
+        use std::sync::Mutex;
+        use wisp_protocol::log::LogEvent;
+        use wisp_protocol::{AgentEvent, TurnOutcome};
+
+        let canary = "CANARYOpaqueAtGeminiCredentialLookup";
+        let dir = tempfile::tempdir().unwrap();
+        let profile = antigravity_profile(&dir.path().join("creds"), None);
+        let posted = Arc::new(Mutex::new(Vec::new()));
+        let received = posted.clone();
+        let base = http::gateway(move |request| {
+            let received = received.clone();
+            async move {
+                if request.starts_with("POST /v1internal:loadCodeAssist") {
+                    crate::session::register_secrets([canary.to_owned()]);
+                    return http::Reply::Send(http::json("200 OK", r#"{"cloudaicompanionProject":"fixture-project"}"#));
+                }
+                assert!(request.starts_with("POST /v1internal:streamGenerateContent"));
+                received.lock().unwrap().push(serde_json::from_str::<Value>(http::body(&request)).unwrap());
+                http::Reply::Send(http::sse(&format!("data: {}\n\n", json!({"response":{"candidates":[{"content":{"role":"model","parts":[{"text":"Pong"}]},"finishReason":"STOP"}]}}))))
+            }
+        }).await;
+        let provider = Arc::new(
+            GeminiProvider::from_endpoint(&endpoint(
+                Credential::Subscription {
+                    kind: SubscriptionKind::Antigravity,
+                    secret: ANTIGRAVITY_TOKEN.into(),
+                    profile: Some(profile),
+                },
+                &base,
+            ))
+            .unwrap(),
+        );
+        let store = MemoryStore::default();
+        let mut agent = Agent::new(provider.clone(), test_session()).with_log(
+            SessionLog::new(Box::new(store.clone()), "s1"),
+            log_context(),
+        );
+        prime_brief(
+            &mut agent,
+            checklist_mail("project", "Synthetic project task", &[canary]),
+        )
+        .await;
+        let (outcome, events) = brief_turn(&mut agent).await;
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "{outcome:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, AgentEvent::Retrying { .. }))
+        );
+        let rows = records(&store);
+        assert!(rows.iter().any(|row| matches!(&row.event, LogEvent::InputRevised { turn: Some(1), inputs } if inputs[0].text.contains("[redacted]"))));
+        assert_eq!(posted.lock().unwrap().len(), 1);
+        let (_, log) = continued(&rows);
+        let mut resumed = Agent::new(provider, test_session())
+            .with_log(log, log_context())
+            .resume(&rows, 0)
+            .unwrap();
+        let (outcome, _) = turn(&mut resumed, "continue", &[]).await;
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "{outcome:?}"
+        );
+        let bodies = posted.lock().unwrap();
+        assert_eq!(bodies.len(), 2);
+        assert!(bodies.iter().all(|body| {
+            let body = body.to_string();
+            body.contains("Synthetic project task")
+                && body.contains("[redacted]")
+                && !body.contains(canary)
+        }));
+        if bodies[0].get("request").is_some() {
+            crate::test_guard::prefix::assert_gemini_prefix_stable(&[
+                bodies[0]["request"].clone(),
+                bodies[1]["request"].clone(),
+            ]);
+        } else {
+            crate::test_guard::prefix::assert_gemini_prefix_stable(&bodies);
+        }
     }
 
     #[tokio::test]

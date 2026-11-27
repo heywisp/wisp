@@ -375,7 +375,7 @@ impl Agent {
     ) -> bool {
         match command {
             None => {
-                self.closed = true;
+                self.set_closed(true);
                 self.window_gone(events, true).await;
                 true
             }

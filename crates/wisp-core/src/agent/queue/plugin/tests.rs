@@ -22,6 +22,7 @@ fn accepted(seq: u64, id: &str) -> LogRecord {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
     }
 }

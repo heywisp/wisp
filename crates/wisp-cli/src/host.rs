@@ -171,6 +171,7 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
             build: build(),
         },
         secret_home,
+        Some(started.task.brief_owners()),
     );
     let _ = ready(Ready::Socket { path: path.clone() });
     let null = std::fs::OpenOptions::new()
@@ -218,9 +219,18 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
     Ok(())
 }
 
-fn build_host(session: wispd::Session, secret_home: Option<PathBuf>) -> wispd::Host {
+fn build_host(
+    session: wispd::Session,
+    secret_home: Option<PathBuf>,
+    owners: Option<wisp_core::agent::BriefOwners>,
+) -> wispd::Host {
     wispd::Host::new(session).with_outbound(move |frames, publish| {
-        wisp_core::agent::with_scrubbed_link_frames(frames, secret_home.as_deref(), publish);
+        let _ = wisp_core::agent::with_scrubbed_link_frames(
+            frames,
+            secret_home.as_deref(),
+            owners.as_ref(),
+            publish,
+        );
     })
 }
 

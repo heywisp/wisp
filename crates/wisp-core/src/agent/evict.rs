@@ -83,7 +83,7 @@ fn put_back(history: &mut [Message], (message, slot): (usize, usize), restored: 
 
 impl Agent {
     pub(super) fn evict_media(&mut self) {
-        let Some((log, _)) = self.log.as_ref().filter(|(log, _)| log.is_on()) else {
+        let Some((log, _)) = self.log.as_ref().filter(|(log, _)| log.lock().is_on()) else {
             return;
         };
         let upto = self.view_from().min(self.history.len());
@@ -92,7 +92,7 @@ impl Agent {
                 if self.evicted.contains_key(&(index, slot)) {
                     continue;
                 }
-                if let Some(kept) = evicted(log.store(), media.block) {
+                if let Some(kept) = evicted(log.lock().store(), media.block) {
                     self.evicted.insert((index, slot), kept);
                 }
             }
@@ -108,7 +108,7 @@ impl Agent {
                     let name = blob_name(&kept.blob.sha256, &kept.blob.media_type);
                     return Err(format!("there is no session log to read {name} from"));
                 };
-                let restored = reloaded(log.store(), &kept.blob)?;
+                let restored = reloaded(log.lock().store(), &kept.blob)?;
                 put_back(&mut self.history, at, restored);
             }
             self.evicted.remove(&at);
@@ -122,7 +122,7 @@ impl Agent {
         };
         let mut history = self.history.clone();
         for (at, kept) in &self.evicted {
-            if let Ok(restored) = reloaded(log.store(), &kept.blob) {
+            if let Ok(restored) = reloaded(log.lock().store(), &kept.blob) {
                 put_back(&mut history, *at, restored);
             }
         }

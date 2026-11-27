@@ -544,21 +544,18 @@ async fn the_checklist_follows_the_tool_providing_todos_whatever_its_name() {
     );
 }
 
-#[test]
-fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per_batch() {
-    use std::cell::Cell;
+#[tokio::test]
+async fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per_batch() {
     use wisp_protocol::SessionView;
     use wisp_protocol::link::{CONTRACT, ToClient, Welcome};
 
+    use crate::session::{count_held_loads, register_secrets, reset_held_for_test};
+
+    reset_held_for_test();
     let canary = "CANARYOpaqueInChecklistBatch";
+    register_secrets([canary.to_owned()]);
     let home = Path::new("/opt/wisp-test-home");
     let home_field = "/opt/wisp-test-home/notes";
-    let redactions = Redactions::new([canary.to_owned()]);
-    let loads = Cell::new(0);
-    let load = || {
-        loads.set(loads.get() + 1);
-        &redactions
-    };
     let delta = AgentEvent::TextDelta {
         index: 0,
         text: canary.into(),
@@ -570,6 +567,30 @@ fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per
     let checklist = |items| AgentEvent::TodosUpdated {
         call_id: Some("t1".into()),
         items,
+    };
+    let brief = |step: &str, spanned: bool| {
+        let prose = format!("Keep prose {canary}\n- [ ] ");
+        let text = format!("{prose}{step}");
+        let checklist_spans = if spanned {
+            vec![wisp_protocol::TextSpan {
+                start: prose.len(),
+                end: text.len(),
+            }]
+        } else {
+            Vec::new()
+        };
+        AgentEvent::InputAccepted {
+            opening: false,
+            id: wisp_protocol::InputId("mail-brief".into()),
+            mode: wisp_protocol::DeliveryMode::Steer,
+            text,
+            images: Vec::new(),
+            replaces: None,
+            held: false,
+            front: false,
+            from: None,
+            checklist_spans,
+        }
     };
     let AgentEvent::SessionSnapshot { now, .. } = serde_json::from_str(include_str!(
         "../../../../wisp-protocol/tests/fixtures/event_session_snapshot.json"
@@ -586,6 +607,7 @@ fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per
         state,
         now: now.clone(),
     };
+    let (tx, mut rx) = mpsc::channel(16);
     for event in [
         delta.clone(),
         AgentEvent::ThinkingDelta {
@@ -598,13 +620,26 @@ fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per
         },
         child(delta.clone()),
         checklist(vec![]),
-        snapshot(vec![delta.clone()], vec![child(checklist(vec![]))]),
+        brief(canary, false),
+        snapshot(
+            vec![delta.clone(), brief(canary, false)],
+            vec![child(checklist(vec![])), child(brief(canary, false))],
+        ),
     ] {
-        assert_eq!(
-            with_scrubbed_event_with(event.clone(), Some(home), load, std::convert::identity),
-            event
-        );
-        assert_eq!(loads.get(), 0);
+        let (polled, snapshots, reads) = count_held_loads(|| {
+            use std::future::Future;
+            let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+            let mut fut = std::pin::pin!(crate::agent::send_scrubbed(
+                &tx,
+                event.clone(),
+                Some(home),
+                |_| None,
+            ));
+            fut.as_mut().poll(&mut cx)
+        });
+        assert!(polled.is_ready());
+        assert_eq!(rx.try_recv().unwrap(), event);
+        assert_eq!((snapshots, reads), (0, 0));
     }
 
     let opening: Box<wisp_protocol::Opening> = serde_json::from_str(include_str!(
@@ -634,7 +669,7 @@ fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per
             contract: CONTRACT,
             wisp: "test".into(),
         },
-        opened(vec![checklist(vec![])]),
+        opened(vec![checklist(vec![]), brief(canary, false)]),
         ToClient::event(delta.clone()),
         ToClient::Taken,
         ToClient::WindowOpen,
@@ -642,10 +677,13 @@ fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per
         ToClient::Ended { saved: true },
     ];
     let unchanged = controls.clone();
-    with_scrubbed_link_frames_with(&mut controls, Some(home), load, |frames| {
-        assert_eq!(frames, &unchanged)
+    let (published, snapshots, reads) = count_held_loads(|| {
+        with_scrubbed_link_frames(&mut controls, Some(home), None, |frames| {
+            assert_eq!(frames, &unchanged);
+        })
     });
-    assert_eq!(loads.get(), 0);
+    assert!(published.is_some());
+    assert_eq!((snapshots, reads), (0, 0));
 
     let safe = TodoItem {
         section: Some("Next".into()),
@@ -671,26 +709,40 @@ fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per
             vec![child(event)],
         )
     };
-    let actual = with_scrubbed_event_with(
-        nested(raw.clone()),
-        Some(home),
-        load,
-        std::convert::identity,
-    );
-    assert_eq!(actual, nested(scrubbed.clone()));
-    assert_eq!(loads.replace(0), 1);
+    let (polled, snapshots, reads) = count_held_loads(|| {
+        use std::future::Future;
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        let mut fut = std::pin::pin!(crate::agent::send_scrubbed(
+            &tx,
+            nested(raw.clone()),
+            Some(home),
+            |_| None,
+        ));
+        fut.as_mut().poll(&mut cx)
+    });
+    assert!(polled.is_ready());
+    assert_eq!(rx.try_recv().unwrap(), nested(scrubbed.clone()));
+    assert_eq!((snapshots, reads), (1, 2));
 
-    let batch = |event: AgentEvent| {
+    let batch = |event: AgentEvent, accepted: AgentEvent| {
         [
-            opened(vec![event.clone()]),
+            opened(vec![event.clone(), accepted.clone()]),
             ToClient::event(child(event)),
+            ToClient::event(child(accepted)),
             ToClient::event(delta.clone()),
         ]
     };
-    with_scrubbed_link_frames_with(&mut batch(raw), Some(home), load, |frames| {
-        assert_eq!(frames, &batch(scrubbed));
+    let mut frames = batch(raw, brief(home_field, true));
+    let (published, snapshots, reads) = count_held_loads(|| {
+        with_scrubbed_link_frames(&mut frames, Some(home), None, |frames| {
+            assert_eq!(
+                frames,
+                &batch(scrubbed, brief(crate::session::REDACTED, true))
+            );
+        })
     });
-    assert_eq!(loads.get(), 1);
+    assert!(published.is_some());
+    assert_eq!((snapshots, reads), (1, 2));
 }
 
 #[test]
@@ -699,7 +751,7 @@ fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue(
     use std::sync::atomic::AtomicBool;
     use wisp_protocol::link::ToClient;
 
-    use crate::session::{REDACTED, read_held, register_secrets, secrets_write_blocked};
+    use crate::session::{REDACTED, register_secrets, secrets_write_blocked};
 
     let canary = "CANARYOpaqueRegisteredDuringChecklistPublish";
     let safe = item("Read the plan", TodoStatus::Completed);
@@ -740,10 +792,35 @@ fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue(
             stats: TurnStats::default(),
         })
     };
+    let brief = |step: &str, spanned: bool| {
+        let prose = format!("Keep prose {canary}\n- [ ] ");
+        let text = format!("{prose}{step}");
+        let checklist_spans = if spanned {
+            vec![wisp_protocol::TextSpan {
+                start: prose.len(),
+                end: text.len(),
+            }]
+        } else {
+            Vec::new()
+        };
+        AgentEvent::InputAccepted {
+            opening: false,
+            id: wisp_protocol::InputId("mail-brief".into()),
+            mode: wisp_protocol::DeliveryMode::Steer,
+            text,
+            images: Vec::new(),
+            replaces: None,
+            held: false,
+            front: false,
+            from: None,
+            checklist_spans,
+        }
+    };
     let cached = [
         ToClient::event(checklist(canary)),
         child_audit(canary),
         terminal(canary),
+        ToClient::event(brief(canary, true)),
     ];
     let in_publish = Barrier::new(2);
     let probed = Barrier::new(2);
@@ -759,13 +836,14 @@ fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue(
             assert!(blocked, "checklist publish did not hold off a writer");
             assert!(ordered, "registration finished before enqueue");
         });
-        let line = with_scrubbed_link_frames(&mut outbound, None, |frames| {
+        let line = with_scrubbed_link_frames(&mut outbound, None, None, |frames| {
             in_publish.wait();
             probed.wait();
             let line = wisp_protocol::jsonl::line(&frames[0]).unwrap();
             enqueued.store(true, Ordering::Release);
             line
-        });
+        })
+        .unwrap();
         worker.join().unwrap();
         line
     });
@@ -774,16 +852,18 @@ fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue(
         "the first publish preceded registration"
     );
     let mut replay = cached;
-    with_scrubbed_link_frames(&mut replay, None, |frames| {
+    with_scrubbed_link_frames(&mut replay, None, None, |frames| {
         assert_eq!(
             frames,
             &[
                 ToClient::event(checklist(REDACTED)),
                 child_audit(REDACTED),
-                terminal(REDACTED)
+                terminal(REDACTED),
+                ToClient::event(brief(REDACTED, true)),
             ]
         );
-    });
+    })
+    .unwrap();
 
     let delta = AgentEvent::TextDelta {
         index: 0,
@@ -797,19 +877,52 @@ fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue(
             probed.wait();
             assert!(!blocked, "delta publish acquired the registry lock");
         });
-        with_scrubbed_link_frames(&mut frames, None, |_| {
+        with_scrubbed_link_frames(&mut frames, None, None, |_| {
             in_publish.wait();
             probed.wait();
-        });
+        })
+        .unwrap();
         worker.join().unwrap();
     });
 
-    with_scrubbed_event_with(checklist(canary), None, read_held, |event| {
-        assert!(secrets_write_blocked());
-        assert_eq!(event, checklist(REDACTED));
-    });
-    with_scrubbed_event_with(delta.clone(), None, read_held, |event| {
-        assert!(!secrets_write_blocked());
-        assert_eq!(event, delta);
-    });
+    with_scrubbed_link_frames(
+        &mut [ToClient::event(checklist(canary))],
+        None,
+        None,
+        |frames| {
+            assert!(secrets_write_blocked());
+            assert_eq!(frames, &[ToClient::event(checklist(REDACTED))]);
+        },
+    )
+    .unwrap();
+    with_scrubbed_link_frames(
+        &mut [ToClient::event(delta.clone())],
+        None,
+        None,
+        |frames| {
+            assert!(!secrets_write_blocked());
+            assert_eq!(frames, &[ToClient::event(delta)]);
+        },
+    )
+    .unwrap();
+    with_scrubbed_link_frames(
+        &mut [ToClient::event(brief(canary, true))],
+        None,
+        None,
+        |frames| {
+            assert!(secrets_write_blocked());
+            assert_eq!(frames, &[ToClient::event(brief(REDACTED, true))]);
+        },
+    )
+    .unwrap();
+    with_scrubbed_link_frames(
+        &mut [ToClient::event(brief(canary, false))],
+        None,
+        None,
+        |frames| {
+            assert!(!secrets_write_blocked());
+            assert_eq!(frames, &[ToClient::event(brief(canary, false))]);
+        },
+    )
+    .unwrap();
 }

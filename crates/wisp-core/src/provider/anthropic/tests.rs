@@ -3784,3 +3784,49 @@ fn anthropic_encode_rejects_foreign_provider_models() {
     assert_eq!(err.kind, ErrorKind::InvalidRequest);
     assert!(encode(&req, &layout(&req), marks_for(&req), Profile::Api, false).is_ok());
 }
+
+#[tokio::test]
+async fn stream_aborts_before_http_send_when_redactions_generation_changes() {
+    for after_sending in [false, true] {
+        let (base, seen) = mock_server(vec![json_reply("200 OK", &[], "")]).await;
+        let provider = AnthropicProvider::new(&api_key("test-CANARY"), &base).unwrap();
+        let session = session(Some("sys"), CacheTtl::OneHour);
+        let messages = [Message::user_text("hi")];
+        let rendering = Rendering {
+            redactions_generation: Some(crate::session::held_generation()),
+            ..Rendering::default()
+        };
+        let mut stream = provider.stream(&Request {
+            session: &session,
+            tools: &[],
+            deferred: &[],
+            by_value: &[],
+            server_tools: &[],
+            messages: &messages,
+            previous_response_id: None,
+            features: Features::default(),
+            options: Default::default(),
+            rendering: &rendering,
+            compaction: None,
+        });
+        if after_sending {
+            assert!(matches!(
+                stream.next().await,
+                Some(Ok(ProviderEvent::Sending))
+            ));
+        }
+        crate::session::register_secrets([format!(
+            "anthropic-send-boundary-CANARY-{after_sending}"
+        )]);
+        let error = stream.next().await.unwrap().unwrap_err();
+        assert_eq!(
+            error.refused,
+            Some(Refused::StaleRequest {
+                after_auth_refresh: false
+            })
+        );
+        assert!(!error.possibly_billed);
+        assert!(seen.lock().unwrap().is_empty());
+        assert!(stream.next().await.is_none());
+    }
+}

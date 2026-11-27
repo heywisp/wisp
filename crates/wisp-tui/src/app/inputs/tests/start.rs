@@ -11,6 +11,7 @@ fn front(id: &InputId, mode: DeliveryMode, text: &str) -> AgentEvent {
         replaces: None,
         held: false,
         from: None,
+        checklist_spans: Vec::new(),
     }
 }
 

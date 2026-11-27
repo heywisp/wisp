@@ -272,7 +272,8 @@ impl Agent {
         for image in prepared {
             let failure = match &mut self.log {
                 Some((log, _)) => {
-                    log.put_blob(&image.sha256, &Mime::from(image.media_type), &image.bytes)
+                    log.lock()
+                        .put_blob(&image.sha256, &Mime::from(image.media_type), &image.bytes)
                 }
                 None => None,
             };

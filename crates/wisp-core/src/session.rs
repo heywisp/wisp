@@ -20,7 +20,7 @@ mod redaction;
 
 pub(crate) use redaction::{
     HookAudit, agent_hook_audit, compaction_terminal_message, hook_blocked_tool_fields,
-    hook_compaction_error_kind, log_hook_audit, scrub_hook_failure, turn_hook_audit,
+    hook_compaction_error_kind, log_needs_home, scrub_hook_failure, turn_hook_audit,
 };
 
 use crate::runtime::in_parallel;
@@ -1510,7 +1510,40 @@ pub fn register_secrets(items: impl IntoIterator<Item = String>) {
     register(&Redactions::new(items));
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static HELD_SNAPSHOT_LOADS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    static HELD_READ_LOCKS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn count_held_loads<R>(run: impl FnOnce() -> R) -> (R, usize, usize) {
+    struct Reset(Option<usize>, Option<usize>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            HELD_SNAPSHOT_LOADS.set(self.0);
+            HELD_READ_LOCKS.set(self.1);
+        }
+    }
+    let _reset = Reset(
+        HELD_SNAPSHOT_LOADS.replace(Some(0)),
+        HELD_READ_LOCKS.replace(Some(0)),
+    );
+    let result = run();
+    (
+        result,
+        HELD_SNAPSHOT_LOADS.get().unwrap_or(0),
+        HELD_READ_LOCKS.get().unwrap_or(0),
+    )
+}
+
 pub(crate) fn read_held() -> std::sync::RwLockReadGuard<'static, Redactions> {
+    #[cfg(test)]
+    HELD_READ_LOCKS.with(|count| {
+        if let Some(n) = count.get() {
+            count.set(Some(n + 1));
+        }
+    });
     process_secrets()
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1523,6 +1556,41 @@ pub fn held() -> Redactions {
 #[cfg(test)]
 pub(crate) fn secrets_write_blocked() -> bool {
     process_secrets().try_write().is_err()
+}
+
+pub(crate) fn held_with_generation() -> (Redactions, u64) {
+    #[cfg(test)]
+    HELD_SNAPSHOT_LOADS.with(|count| {
+        if let Some(n) = count.get() {
+            count.set(Some(n + 1));
+        }
+    });
+    let secrets = read_held();
+    (secrets.clone(), held_generation())
+}
+
+pub(crate) fn send_if_generation_current<T, F, R>(
+    generation: u64,
+    value: T,
+    send: F,
+) -> Result<R, (T, F)>
+where
+    F: FnOnce(T) -> R,
+{
+    let _secrets = read_held();
+    if held_generation() != generation {
+        return Err((value, send));
+    }
+    Ok(send(value))
+}
+
+#[cfg(test)]
+pub(crate) fn reset_held_for_test() {
+    let mut secrets = process_secrets()
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    *secrets = Redactions::default();
+    SECRETS_GENERATION.fetch_add(1, Ordering::Release);
 }
 
 pub(crate) fn without_registered_secrets(text: &str) -> String {
@@ -2105,6 +2173,10 @@ pub(crate) fn scrub_json_strings(value: &mut serde_json::Value, scrub: &impl Fn(
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    pub(crate) static BEFORE_CHECKED_RECORD: std::cell::Cell<Option<fn()>> = const { std::cell::Cell::new(None) };
+}
 pub struct SessionLog {
     store: Box<dyn SessionStore>,
     id: String,
@@ -2175,7 +2247,38 @@ impl SessionLog {
         if self.failed {
             return None;
         }
-        let event = redaction::scrub(&held(), event, home);
+        self.append_redacted(event, &held(), home)
+    }
+
+    pub(crate) fn record_if_generation_current(
+        &mut self,
+        generation: u64,
+        event: LogEvent,
+        home: Option<&Path>,
+    ) -> Result<Option<String>, ()> {
+        if self.failed {
+            return Ok(None);
+        }
+        #[cfg(test)]
+        if let Some(before) = BEFORE_CHECKED_RECORD.take() {
+            before();
+        }
+        let guard = read_held();
+        if held_generation() != generation {
+            return Err(());
+        }
+        let failure = self.append_redacted(event, &guard, home);
+        drop(guard);
+        Ok(failure)
+    }
+
+    fn append_redacted(
+        &mut self,
+        event: LogEvent,
+        redactions: &Redactions,
+        home: Option<&Path>,
+    ) -> Option<String> {
+        let event = redaction::scrub(redactions, event, home);
         let record = LogRecord {
             schema_version: LOG_SCHEMA_VERSION,
             seq: self.seq,

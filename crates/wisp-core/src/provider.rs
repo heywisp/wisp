@@ -203,6 +203,8 @@ pub struct Rendering {
     pub tools_point: usize,
     pub array: BTreeSet<String>,
     pub inline_search: bool,
+    pub redactions_generation: Option<u64>,
+    pub auth_refresh_spent: bool,
 }
 
 pub static UNRENDERED: Rendering = Rendering {
@@ -219,6 +221,8 @@ pub static UNRENDERED: Rendering = Rendering {
     tools_point: 0,
     array: BTreeSet::new(),
     inline_search: false,
+    redactions_generation: None,
+    auth_refresh_spent: false,
 };
 
 fn added_by_value(block: &ContentBlock) -> Option<&str> {
@@ -707,6 +711,22 @@ pub enum Refused {
     CompactionBlock,
     CompactionUnavailable,
     Thread,
+    StaleRequest { after_auth_refresh: bool },
+}
+
+pub(crate) fn stale_redactions(after_auth_refresh: bool) -> ProviderError {
+    ProviderError::new(ErrorKind::Other, "request redactions changed before send")
+        .refusing(Refused::StaleRequest { after_auth_refresh })
+}
+
+pub(crate) fn ensure_fresh_redactions(
+    generation: Option<u64>,
+    after_auth_refresh: bool,
+) -> Result<(), ProviderError> {
+    if generation.is_some_and(|seen| crate::session::held_generation() != seen) {
+        return Err(stale_redactions(after_auth_refresh));
+    }
+    Ok(())
 }
 
 impl ProviderError {

@@ -8,6 +8,7 @@ fn mail(n: usize, from: &str, kind: MailKind) -> Mail {
         kind,
         wake: true,
         text: format!("note {n}"),
+        checklist_spans: Vec::new(),
     }
 }
 

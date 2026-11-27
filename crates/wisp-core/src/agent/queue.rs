@@ -521,7 +521,17 @@ impl Agent {
                 |()| AgentEvent::refused(request, "couldn't read the session log"),
                 |event| *event,
             );
-            super::send_scrubbed(events, event, self.secret_check_home().as_deref()).await;
+            let owner = self.brief_owner();
+            let agents = self.agents.clone();
+            super::send_scrubbed(
+                events,
+                event,
+                self.secret_check_home().as_deref(),
+                |target| {
+                    target.map_or_else(|| Some(owner.clone()), |path| agents.brief_owner(path))
+                },
+            )
+            .await;
             return;
         }
         if let Done::Auth(mut event) = done {

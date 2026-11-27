@@ -2333,3 +2333,181 @@ fn search_switched_off_and_search_on_follow_in_chat_settings() {
 }
 
 mod listing;
+
+#[test]
+fn damaged_log_recovery_excludes_orphaned_spanned_brief_from_returned_and_dropped_file() {
+    use crate::agent::testing::Fake;
+    use crate::agent::{Agent, default_session};
+    use crate::session::{SessionLog, SessionStore};
+    use crate::test_guard::log_context;
+
+    let canary = "CANARYOpaqueOrphanedBrief";
+    for damaged_acceptance in [false, true] {
+        let mut events = vec![started()];
+        events.extend(full_turn(1, 0.1));
+        let acceptance = events.len();
+        events.push(json!({"type":"input_accepted","id":"mail-brief","mode":"steer","text":canary,"checklist_spans":[{"start":0,"end":canary.len()}],"from":{"agent":"/","kind":"task","mail":"brief"}}));
+        let mut opening = turn(2);
+        opening["inputs"] = json!([{"id":"mail-brief","text":canary,"checklist_spans":[{"start":0,"end":canary.len()}]}, {"id":"tui-2","text":"ordinary returned text"}]);
+        events.push(opening);
+        events.push(json!({"type":"input_revised","turn":2,"inputs":[{"id":"mail-brief","text":"[redacted]","checklist_spans":[{"start":0,"end":10}]}]}));
+        let lost = events.len();
+        events.extend([said(2, "assistant"), step(2, 1, 2000, true), ended(2, 0.2)]);
+        let damaged = if damaged_acceptance {
+            vec![acceptance, lost]
+        } else {
+            vec![lost]
+        };
+        let lines = damaged_at(&events, &damaged);
+        let first = recovered(&lines);
+        let fallback = first.fell_back.as_ref().unwrap();
+        assert!(
+            fallback
+                .returned
+                .iter()
+                .any(|input| input.text == "ordinary returned text")
+        );
+        for inputs in [&fallback.returned, &first.dropped_inputs] {
+            assert!(
+                inputs
+                    .iter()
+                    .all(|input| !input.text.contains(canary) && input.id.as_str() != "mail-brief")
+            );
+        }
+        assert!(first.records.iter().any(|row| matches!(&row.event, LogEvent::InputRevised { inputs, .. } if inputs[0].text == "[redacted]")));
+
+        let folder = tempfile::tempdir().unwrap();
+        let mut store = JsonlStore::open(folder.path()).unwrap();
+        for line in &lines {
+            if let Line::Record(row) = line {
+                store.append(ID, row).unwrap();
+            }
+        }
+        let seq = u64::try_from(lines.len()).unwrap();
+        let agent = Agent::new(Fake::new(Vec::new()), default_session())
+            .with_log(
+                SessionLog::continuing(Box::new(store), ID, seq),
+                log_context(),
+            )
+            .resume_lines(lines, 0)
+            .unwrap();
+        assert!(
+            agent
+                .returned_inputs()
+                .iter()
+                .any(|input| input.text == "ordinary returned text")
+        );
+        assert!(
+            agent
+                .returned_inputs()
+                .iter()
+                .all(|input| input.id.as_str() != "mail-brief" && !input.text.contains(canary))
+        );
+        let dropped = fs::read_to_string(
+            folder
+                .path()
+                .join(format!("{ID}.dropped-{}.md", fallback.seq)),
+        )
+        .unwrap();
+        assert!(dropped.contains("ordinary returned text"));
+        assert!(!dropped.contains(canary) && !dropped.contains("mail-brief"));
+    }
+}
+
+#[tokio::test]
+async fn recovery_keeps_the_carried_revision_when_the_actual_opening_is_dropped() {
+    use crate::agent::testing::{
+        B, Fake, assert_brief_announcement, brief_turn, checklist_mail, done, prime_brief,
+        turn as run_turn,
+    };
+    use crate::agent::{Agent, default_session};
+    use crate::session::{
+        SessionLog, SessionStore, read_lines, register_secrets, reset_held_for_test,
+    };
+    use crate::test_guard::log_context;
+
+    let canary = "CANARYOpaqueBeforeDiscardedOpening";
+    let task = "Keep the recovered task prose";
+    let folder = tempfile::tempdir().unwrap();
+    let disk = JsonlStore::open(folder.path()).unwrap();
+    let provider = Fake::new(vec![
+        done(&[B::Text("baseline")]),
+        done(&[B::Text("later")]),
+    ]);
+    let mut agent = Agent::new(provider.clone(), default_session())
+        .with_log(SessionLog::new(Box::new(disk), ID), log_context());
+    assert!(matches!(
+        run_turn(&mut agent, "baseline", &[]).await.0,
+        wisp_protocol::TurnOutcome::Completed { .. }
+    ));
+    assert!(prime_brief(&mut agent, checklist_mail("recovery", task, &[canary])).await.iter().any(|event| matches!(event, wisp_protocol::AgentEvent::InputAccepted { text, .. } if text.contains(canary))));
+    register_secrets([canary.to_owned()]);
+    assert!(matches!(
+        brief_turn(&mut agent).await.0,
+        wisp_protocol::TurnOutcome::Completed { .. }
+    ));
+    assert!(!provider.texts()[1].contains(canary));
+    drop(agent);
+    let disk = JsonlStore::open(folder.path()).unwrap();
+    let rows = disk.read(ID).unwrap();
+    let opening = rows
+        .iter()
+        .position(|row| matches!(row.event, LogEvent::TurnStarted { turn: 2, .. }))
+        .unwrap();
+    let carried = &rows[opening - 1];
+    assert!(
+        matches!(&carried.event, LogEvent::InputRevised { turn: None, inputs } if inputs.len() == 1 && inputs[0].text.contains("[redacted]") && !inputs[0].text.contains(canary))
+    );
+    let damage = rows
+        .iter()
+        .position(|row| matches!(row.event, LogEvent::MessageCommitted { turn: 2, .. }))
+        .unwrap();
+    let bytes = disk.read_bytes(ID).unwrap();
+    let mut parts = bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .collect::<Vec<_>>();
+    parts[damage] = b"unreadable test row\n";
+    fs::write(disk.path(ID), parts.concat()).unwrap();
+    reset_held_for_test();
+    let lines = read_lines(&disk.read_bytes(ID).unwrap()).lines;
+    let after = recovered(&lines);
+    assert!(after.fell_back.is_some());
+    assert!(
+        !after
+            .records
+            .iter()
+            .any(|row| matches!(row.event, LogEvent::TurnStarted { turn: 2, .. }))
+    );
+    assert!(after.records.iter().any(|row| matches!(&row.event, LogEvent::InputRevised { turn: None, inputs } if inputs.len() == 1 && inputs[0].text.contains("[redacted]"))));
+    let (events, _received) = tokio::sync::mpsc::channel(64);
+    let no_requests = Fake::new(Vec::new());
+    let mut first = Agent::new(no_requests.clone(), default_session())
+        .with_log(
+            SessionLog::continuing(Box::new(disk), ID, lines.len() as u64),
+            log_context(),
+        )
+        .resume_lines(lines, 0)
+        .unwrap();
+    first.start_log(&events).await;
+    assert_brief_announcement(&mut first, task, canary).await;
+    assert!(no_requests.sent().is_empty());
+    drop(first);
+    reset_held_for_test();
+    let disk = JsonlStore::open(folder.path()).unwrap();
+    let lines = read_lines(&disk.read_bytes(ID).unwrap()).lines;
+    let provider = Fake::new(vec![done(&[B::Text("after recovery")])]);
+    let mut again = Agent::new(provider.clone(), default_session())
+        .with_log(
+            SessionLog::continuing(Box::new(disk), ID, lines.len() as u64),
+            log_context(),
+        )
+        .resume_lines(lines, 0)
+        .unwrap();
+    assert_brief_announcement(&mut again, task, canary).await;
+    assert!(matches!(
+        brief_turn(&mut again).await.0,
+        wisp_protocol::TurnOutcome::Completed { .. }
+    ));
+    let body = provider.texts().pop().unwrap();
+    assert!(body.contains(task) && body.contains("[redacted]") && !body.contains(canary));
+}

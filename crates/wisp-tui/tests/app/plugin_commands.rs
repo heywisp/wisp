@@ -213,6 +213,7 @@ async fn a_sent_reply_waits_between_the_steers_typed_before_and_after_its_comman
                 replaces: None,
                 held: false,
                 from: None,
+                checklist_spans: Vec::new(),
             })
             .await;
             done(

@@ -314,6 +314,12 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
         "sk-CANARY-stamped-child-checklist-fixture".into(),
         "-iframework/Users/CANARY/Frameworks".into(),
     ];
+    let assert_brief = |run: &Run| {
+        let body = run.requests("/a")[0].body().to_string();
+        assert!(body.contains("Plan it.") && body.contains("Read the plan"));
+        assert_eq!(body.matches("[redacted]").count(), 3);
+        assert!(todos[1..].iter().all(|step| !body.contains(step)));
+    };
     let pending = |text: &str| TodoItem {
         text: text.to_owned(),
         status: TodoStatus::Pending,
@@ -401,6 +407,7 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
         })
     );
     let run = run.quit().await;
+    assert_brief(&run);
     let records = run.store.read(&session_name("/a")).unwrap();
     let Some(LogEvent::SessionStarted {
         parent: Some(parent),
@@ -415,12 +422,16 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
 
     let mut run = start(
         "plugin-no-todos",
-        Setup::default(),
+        Setup {
+            plugins: vec!["write_todos"],
+            ..Setup::default()
+        },
         vec![("/a", vec![uses(&[report_call("r1", "ok")])])],
     )
     .await;
     run.spawn(SpawnRequest {
-        todos,
+        todos: todos.clone(),
+        tools_off: vec!["write_todos".into()],
         ..spawn_request("a", "Plan it.")
     })
     .await;
@@ -435,6 +446,7 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
     assert_eq!(agent.checklist, None);
     run.child_ended("/a").await;
     let run = run.quit().await;
+    assert_brief(&run);
     assert!(
         !run.seen
             .iter()
@@ -484,7 +496,8 @@ async fn a_child_forwarder_refreshes_nested_todos_after_waiting_for_root_capacit
         reason: "test capacity".into(),
     })
     .unwrap();
-    let mut forward = std::pin::pin!(service.forward_child(watch, child, Some(root.clone()), None));
+    let mut forward =
+        std::pin::pin!(service.forward_child(watch, child, Some(root.clone()), None, None));
     assert!(futures::poll!(forward.as_mut()).is_pending());
     assert_eq!(sent.capacity(), 1);
     assert_eq!(root.capacity(), 0);
@@ -956,4 +969,559 @@ async fn an_unpriced_child_reads_not_priced_and_main_shows_no_spend_on_any_endpo
         assert!(!line.contains("not priced"), "{line}");
     }
     let _ = run.quit().await;
+}
+
+#[tokio::test]
+async fn child_forwarding_checks_waiting_brief_durability_after_root_capacity_returns() {
+    use crate::agent::testing::{
+        BriefFailStore, assert_resumed_brief, checklist_mail, prime_brief,
+    };
+    use crate::session::register_secrets;
+    use crate::test_guard::{log_events, records};
+
+    for point in ["persist", "disabled", "append", "logless", "ended"] {
+        let canary = format!("CANARYOpaqueAtRootCapacity-{point}");
+        let task = "Keep the forwarded task prose";
+        let Rooted { kit, tree, .. } =
+            rooted("brief-child-forward", Setup::default(), Vec::new()).await;
+        let store = MemoryStore::default();
+        let mut agent = Agent::new(Fake::new(Vec::new()), agent::default_session());
+        if point != "logless" {
+            agent = agent.with_log(
+                SessionLog::new(
+                    Box::new(BriefFailStore::new(
+                        store.clone(),
+                        if point == "disabled" {
+                            "unrelated"
+                        } else {
+                            point
+                        },
+                    )),
+                    "s1",
+                ),
+                log_context(),
+            );
+        }
+        let event = prime_brief(&mut agent, checklist_mail("forward", task, &[&canary]))
+            .await
+            .into_iter()
+            .find(|event| matches!(event, AgentEvent::InputAccepted { .. }))
+            .unwrap();
+        assert!(matches!(&event, AgentEvent::InputAccepted { text, .. } if text.contains(&canary)));
+        let (root, mut received) = mpsc::channel(1);
+        let service = AgentsService::new(Arc::new(kit), tree, root.clone(), false);
+        let (sent, child) = mpsc::channel(1);
+        let (_path, watch) = tokio::sync::watch::channel(path("/a"));
+        sent.try_send(event).unwrap();
+        root.try_send(AgentEvent::LogDisabled {
+            reason: "test capacity".into(),
+        })
+        .unwrap();
+        let mut forward = std::pin::pin!(service.forward_child(
+            watch,
+            child,
+            Some(root),
+            None,
+            Some(agent.brief_owner())
+        ));
+        assert!(futures::poll!(forward.as_mut()).is_pending());
+        assert_eq!(sent.capacity(), 1);
+        let registered = || register_secrets([canary.clone()]);
+        let (events, _received) = mpsc::channel(8);
+        match point {
+            "ended" => {
+                agent.end_log(&events).await;
+                assert!(matches!(
+                    records(&store).last().map(|row| &row.event),
+                    Some(LogEvent::SessionEnded { .. })
+                ));
+            }
+            "disabled" => agent.disable_brief_test_log(&events).await,
+            _ => {}
+        }
+        registered();
+        assert!(matches!(
+            received.try_recv(),
+            Ok(AgentEvent::LogDisabled { .. })
+        ));
+        drop(sent);
+        forward.await;
+        let event = received.try_recv();
+        match point {
+            "logless" | "persist" => {
+                assert!(
+                    matches!(inner(&event.unwrap(), "/a"), Some(AgentEvent::InputAccepted { text, .. }) if text.contains(task) && text.contains("[redacted]") && !text.contains(&canary))
+                );
+                if point == "persist" {
+                    let rows = records(&store);
+                    assert!(
+                        matches!(&rows.last().unwrap().event, LogEvent::InputRevised { turn: None, inputs } if inputs.len() == 1 && inputs[0].text.contains("[redacted]") && !inputs[0].text.contains(&canary))
+                    );
+                    assert_resumed_brief(&rows, task, &canary).await;
+                }
+            }
+            "append" => assert!(matches!(
+                inner(&event.unwrap(), "/a"),
+                Some(AgentEvent::LogDisabled { .. })
+            )),
+            "disabled" | "ended" => assert!(event.is_err()),
+            _ => unreachable!(),
+        }
+        if point == "ended" {
+            let events = log_events(&store);
+            assert!(matches!(events.last(), Some(LogEvent::SessionEnded { .. })));
+            assert!(
+                !events
+                    .iter()
+                    .any(|event| matches!(event, LogEvent::InputRevised { .. }))
+            );
+        }
+        assert!(received.try_recv().is_err());
+    }
+}
+
+#[tokio::test]
+async fn hosted_link_frames_persist_late_brief_revisions_via_brief_owners_and_keep_materialized_view_only()
+ {
+    use wisp_protocol::link::ToClient;
+
+    use crate::agent::testing::{
+        assert_resumed_brief, brief_turn, checklist_mail, done, prime_brief,
+    };
+    use crate::agent::{BriefOwners, with_scrubbed_link_frames};
+    use crate::session::{REDACTED, register_secrets, reset_held_for_test};
+    use crate::test_guard::records;
+
+    reset_held_for_test();
+    let canary = "CANARYOpaqueRegisteredAfterCoreBeforeHostSend";
+    let open_canary = "CANARYOpaqueRegisteredBeforeHostOpen";
+    let task = "Keep hosted brief prose";
+
+    let Rooted {
+        mut agent,
+        tree,
+        kit,
+        ..
+    } = rooted("hosted-brief-owners", Setup::default(), Vec::new()).await;
+    let (root_tx, _) = mpsc::channel(4);
+    let service = AgentsService::new(Arc::new(kit), tree, root_tx, false);
+    let root_store = MemoryStore::default();
+    let mut root_agent = Agent::new(Fake::new(Vec::new()), agent::default_session()).with_log(
+        SessionLog::new(Box::new(root_store.clone()), "s1"),
+        log_context(),
+    );
+    let root_brief = prime_brief(
+        &mut root_agent,
+        checklist_mail("root-open", task, &[open_canary]),
+    )
+    .await
+    .into_iter()
+    .find(|event| matches!(event, AgentEvent::InputAccepted { .. }))
+    .unwrap();
+
+    let child_store = MemoryStore::default();
+    agent = agent.with_log(
+        SessionLog::new(Box::new(child_store.clone()), "s1"),
+        log_context(),
+    );
+    let child_brief = prime_brief(&mut agent, checklist_mail("hosted-child", task, &[canary]))
+        .await
+        .into_iter()
+        .find(|event| matches!(event, AgentEvent::InputAccepted { .. }))
+        .unwrap();
+    service.set_test_brief_owner(path("/a"), agent.brief_owner());
+    let owners = BriefOwners::for_test(Some(root_agent.brief_owner()), Some(service.clone()));
+
+    register_secrets([canary.to_owned()]);
+    let todo_frame = ToClient::event(AgentEvent::TodosUpdated {
+        call_id: None,
+        items: vec![TodoItem {
+            text: canary.to_owned(),
+            section: Some("Next".into()),
+            status: TodoStatus::InProgress,
+        }],
+    });
+    let hook_frame = ToClient::event(AgentEvent::HookApplied {
+        hook: "aa/h".into(),
+        point: "before-tool".into(),
+        turn: None,
+        step: None,
+        call_id: None,
+        input_id: None,
+        change: wisp_protocol::HookChange::Input {
+            before: json!({"k": canary}),
+            after: json!({"k": canary}),
+        },
+    });
+    let mut frames = vec![
+        ToClient::event(AgentEvent::Agent {
+            agent: path("/a"),
+            event: Box::new(child_brief),
+        }),
+        todo_frame,
+        hook_frame,
+    ];
+    let published = with_scrubbed_link_frames(&mut frames, None, Some(&owners), |out| {
+        assert!(crate::session::secrets_write_blocked());
+        out.to_vec()
+    })
+    .unwrap();
+    let mut delta = [ToClient::event(AgentEvent::TextDelta {
+        index: 0,
+        text: "plain".into(),
+    })];
+    with_scrubbed_link_frames(&mut delta, None, Some(&owners), |_| {
+        assert!(!crate::session::secrets_write_blocked());
+    })
+    .unwrap();
+    assert_eq!(published.len(), 3);
+    assert!(matches!(
+        &published[0],
+        ToClient::Event(event)
+            if matches!(
+                inner(event, "/a"),
+                Some(AgentEvent::InputAccepted { text, .. })
+                    if text.contains(task) && text.contains(REDACTED) && !text.contains(canary)
+            )
+    ));
+    assert!(matches!(
+        &published[1],
+        ToClient::Event(event)
+            if matches!(
+                event.as_ref(),
+                AgentEvent::TodosUpdated { items, .. } if items[0].text == REDACTED
+            )
+    ));
+    assert!(matches!(
+        &published[2],
+        ToClient::Event(event)
+            if matches!(
+                event.as_ref(),
+                AgentEvent::HookApplied {
+                    change: wisp_protocol::HookChange::Input { after, .. },
+                    ..
+                } if after == &json!({"k": REDACTED})
+            )
+    ));
+    let child_rows = records(&child_store);
+    assert!(child_rows.iter().any(|row| {
+        matches!(
+            &row.event,
+            LogEvent::InputRevised { turn: None, inputs }
+                if inputs.len() == 1 && inputs[0].text.contains(REDACTED) && !inputs[0].text.contains(canary)
+        )
+    }));
+    assert_resumed_brief(&child_rows, task, canary).await;
+
+    reset_held_for_test();
+    register_secrets([open_canary.to_owned()]);
+    let opening = serde_json::from_str(include_str!(
+        "../../../../../wisp-protocol/tests/fixtures/opening.json"
+    ))
+    .unwrap();
+    let mut opened = [ToClient::Opened {
+        opening,
+        view: SessionView {
+            events: vec![root_brief],
+            ..SessionView::default()
+        },
+        now: None,
+    }];
+    let out =
+        with_scrubbed_link_frames(&mut opened, None, Some(&owners), |out| out.to_vec()).unwrap();
+    assert!(matches!(
+        &out[0],
+        ToClient::Opened { view, .. }
+            if matches!(
+                view.events.as_slice(),
+                [AgentEvent::InputAccepted { text, .. }]
+                    if text.contains(task) && text.contains(REDACTED) && !text.contains(open_canary)
+            )
+    ));
+    assert_resumed_brief(&records(&root_store), task, open_canary).await;
+
+    reset_held_for_test();
+    let mat_canary = "CANARYOpaqueAfterMaterializedHostReplay";
+    let mat_store = MemoryStore::default();
+    let mut mat_agent = Agent::new(
+        Fake::new(vec![done(&[crate::agent::testing::B::Text("done")])]),
+        agent::default_session(),
+    )
+    .with_log(
+        SessionLog::new(Box::new(mat_store.clone()), "s1"),
+        log_context(),
+    );
+    let mat_brief = prime_brief(
+        &mut mat_agent,
+        checklist_mail("mat-child", task, &[mat_canary]),
+    )
+    .await
+    .into_iter()
+    .find(|event| matches!(event, AgentEvent::InputAccepted { .. }))
+    .unwrap();
+    let (outcome, _) = brief_turn(&mut mat_agent).await;
+    assert!(matches!(outcome, TurnOutcome::Completed { .. }));
+    let mat_rows_before = records(&mat_store).len();
+    service.set_test_brief_owner(path("/mat"), mat_agent.brief_owner());
+    register_secrets([mat_canary.to_owned()]);
+    let opening = serde_json::from_str(include_str!(
+        "../../../../../wisp-protocol/tests/fixtures/opening.json"
+    ))
+    .unwrap();
+    let mut mat_frames = [
+        ToClient::Opened {
+            opening,
+            view: SessionView {
+                events: vec![mat_brief.clone()],
+                ..SessionView::default()
+            },
+            now: None,
+        },
+        ToClient::event(AgentEvent::Agent {
+            agent: path("/mat"),
+            event: Box::new(mat_brief),
+        }),
+    ];
+    let mat_out =
+        with_scrubbed_link_frames(&mut mat_frames, None, Some(&owners), |out| out.to_vec())
+            .unwrap();
+    assert!(matches!(
+        &mat_out[0],
+        ToClient::Opened { view, .. }
+            if matches!(
+                view.events.as_slice(),
+                [AgentEvent::InputAccepted { text, .. }]
+                    if text.contains(REDACTED) && !text.contains(mat_canary)
+            )
+    ));
+    assert!(matches!(
+        &mat_out[1],
+        ToClient::Event(event)
+            if matches!(
+                inner(event, "/mat"),
+                Some(AgentEvent::InputAccepted { text, .. })
+                    if text.contains(REDACTED) && !text.contains(mat_canary)
+            )
+    ));
+    assert_eq!(records(&mat_store).len(), mat_rows_before);
+}
+
+#[tokio::test]
+async fn hosted_link_frames_fail_closed_when_brief_revision_cannot_persist() {
+    use wisp_protocol::link::ToClient;
+
+    use crate::agent::testing::{BriefFailStore, checklist_mail, prime_brief};
+    use crate::agent::{BriefOwners, with_scrubbed_link_frames};
+    use crate::session::{register_secrets, reset_held_for_test};
+
+    let task = "Keep hosted fail-closed prose";
+    let keep = ToClient::event(AgentEvent::TextDelta {
+        index: 0,
+        text: "unaffected".into(),
+    });
+    for mode in ["disabled", "append", "ended", "in_flight", "missing"] {
+        reset_held_for_test();
+        let canary = format!("CANARYOpaqueHostFailClosed-{mode}");
+        let Rooted {
+            mut agent,
+            tree,
+            kit,
+            ..
+        } = rooted("hosted-fail-closed", Setup::default(), Vec::new()).await;
+        let (root_tx, _) = mpsc::channel(4);
+        let service = AgentsService::new(Arc::new(kit), tree, root_tx, false);
+        let store = MemoryStore::default();
+        agent = agent.with_log(
+            SessionLog::new(
+                Box::new(BriefFailStore::new(
+                    store.clone(),
+                    if mode == "append" {
+                        "append"
+                    } else {
+                        "unrelated"
+                    },
+                )),
+                "s1",
+            ),
+            log_context(),
+        );
+        let brief = prime_brief(&mut agent, checklist_mail("fail", task, &[&canary]))
+            .await
+            .into_iter()
+            .find(|event| matches!(event, AgentEvent::InputAccepted { .. }))
+            .unwrap();
+        let brief_id = match &brief {
+            AgentEvent::InputAccepted { id, .. } => id.clone(),
+            _ => unreachable!(),
+        };
+        let (events_tx, _events_rx) = mpsc::channel(8);
+        match mode {
+            "disabled" => agent.disable_brief_test_log(&events_tx).await,
+            "ended" => agent.end_log(&events_tx).await,
+            "in_flight" => {
+                let owner = agent.brief_owner();
+                owner.mark_in_flight_for_test(&brief_id);
+            }
+            _ => {}
+        }
+        if mode != "missing" {
+            service.set_test_brief_owner(path("/a"), agent.brief_owner());
+        }
+        let owners = BriefOwners::for_test(None, Some(service));
+        register_secrets([canary.clone()]);
+
+        let mut frames = vec![
+            ToClient::event(AgentEvent::Agent {
+                agent: path("/a"),
+                event: Box::new(brief.clone()),
+            }),
+            keep.clone(),
+        ];
+        let emitted =
+            with_scrubbed_link_frames(&mut frames, None, Some(&owners), |out| out.to_vec())
+                .unwrap();
+        assert!(emitted.iter().all(|frame| !matches!(
+            frame,
+            ToClient::Event(event) if matches!(inner(event, "/a"), Some(AgentEvent::InputAccepted { .. }))
+        )));
+        assert_eq!(emitted.last(), Some(&keep));
+        if mode == "append" {
+            assert!(matches!(
+                &emitted[0],
+                ToClient::Event(event)
+                    if matches!(inner(event, "/a"), Some(AgentEvent::LogDisabled { .. }))
+            ));
+        } else {
+            assert_eq!(emitted.len(), 1);
+        }
+
+        if mode == "append" {
+            let now = serde_json::from_str(include_str!(
+                "../../../../../wisp-protocol/tests/fixtures/event_session_snapshot.json"
+            ))
+            .map(|event: AgentEvent| match event {
+                AgentEvent::SessionSnapshot { now, .. } => now,
+                _ => unreachable!(),
+            })
+            .unwrap();
+            let mut already_disabled_snap = vec![
+                ToClient::event(AgentEvent::Agent {
+                    agent: path("/a"),
+                    event: Box::new(AgentEvent::SessionSnapshot {
+                        answers: RequestId(87),
+                        view: SessionView {
+                            events: vec![brief.clone()],
+                            ..SessionView::default()
+                        },
+                        now: now.clone(),
+                        state: Vec::new(),
+                    }),
+                }),
+                keep.clone(),
+            ];
+            let disabled_out =
+                with_scrubbed_link_frames(&mut already_disabled_snap, None, Some(&owners), |out| {
+                    out.to_vec()
+                })
+                .unwrap();
+            assert!(matches!(
+                disabled_out.as_slice(),
+                [ToClient::Event(e1), last]
+                    if matches!(
+                        inner(e1, "/a"),
+                        Some(AgentEvent::Rejected {
+                            request: Some(RequestId(87)),
+                            ..
+                        })
+                    ) && last == &keep
+            ));
+
+            let snap_canary = "CANARYOpaqueHostFailClosedSnap";
+            let fresh_store = MemoryStore::default();
+            let mut fresh_agent = Agent::new(Fake::new(Vec::new()), agent::default_session())
+                .with_log(
+                    SessionLog::new(Box::new(BriefFailStore::new(fresh_store, "append")), "s1"),
+                    log_context(),
+                );
+            let fresh_brief = prime_brief(
+                &mut fresh_agent,
+                checklist_mail("fresh-fail", task, &[snap_canary]),
+            )
+            .await
+            .into_iter()
+            .find(|event| matches!(event, AgentEvent::InputAccepted { .. }))
+            .unwrap();
+            let Rooted {
+                tree: fresh_tree,
+                kit: fresh_kit,
+                ..
+            } = rooted("hosted-fail-closed-snap", Setup::default(), Vec::new()).await;
+            let (tx, _) = mpsc::channel(4);
+            let fresh_service = AgentsService::new(Arc::new(fresh_kit), fresh_tree, tx, false);
+            fresh_service.set_test_brief_owner(path("/a"), fresh_agent.brief_owner());
+            let fresh_owners = BriefOwners::for_test(None, Some(fresh_service));
+            register_secrets([snap_canary.to_owned()]);
+
+            let mut snapshot = vec![
+                ToClient::event(AgentEvent::Agent {
+                    agent: path("/a"),
+                    event: Box::new(AgentEvent::SessionSnapshot {
+                        answers: RequestId(88),
+                        view: SessionView {
+                            events: vec![fresh_brief.clone()],
+                            ..SessionView::default()
+                        },
+                        now,
+                        state: Vec::new(),
+                    }),
+                }),
+                keep.clone(),
+            ];
+            let snap_out =
+                with_scrubbed_link_frames(&mut snapshot, None, Some(&fresh_owners), |out| {
+                    out.to_vec()
+                })
+                .unwrap();
+            assert!(matches!(
+                snap_out.as_slice(),
+                [
+                    ToClient::Event(e1),
+                    ToClient::Event(e2),
+                    last,
+                ] if matches!(inner(e1, "/a"), Some(AgentEvent::LogDisabled { .. }))
+                    && matches!(
+                        inner(e2, "/a"),
+                        Some(AgentEvent::Rejected {
+                            request: Some(RequestId(88)),
+                            ..
+                        })
+                    )
+                    && last == &keep
+            ));
+
+            let opening = serde_json::from_str(include_str!(
+                "../../../../../wisp-protocol/tests/fixtures/opening.json"
+            ))
+            .unwrap();
+            let mut opened = [ToClient::Opened {
+                opening,
+                view: SessionView {
+                    events: vec![AgentEvent::Agent {
+                        agent: path("/a"),
+                        event: Box::new(fresh_brief),
+                    }],
+                    ..SessionView::default()
+                },
+                now: None,
+            }];
+            let mut called = false;
+            assert!(
+                with_scrubbed_link_frames(&mut opened, None, Some(&fresh_owners), |_| {
+                    called = true;
+                })
+                .is_none()
+            );
+            assert!(!called);
+        }
+    }
 }

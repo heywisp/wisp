@@ -2,6 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{Agent, PairState, send_scrubbed};
 use crate::provider::pair_features;
+use crate::resume::{
+    LatestBriefs, apply_latest_spanned_mail, latest_spanned_mail, transcript_with_latest,
+};
 use tokio::sync::mpsc;
 use wisp_protocol::log::{LogEvent, LogRecord};
 use wisp_protocol::{
@@ -10,10 +13,13 @@ use wisp_protocol::{
 
 impl Agent {
     pub fn view(&self, records: &[LogRecord]) -> SessionView {
-        self.view_builder()(records)
+        let latest = latest_spanned_mail(records);
+        self.view_builder()(records, &latest)
     }
 
-    fn view_builder(&self) -> impl FnOnce(&[LogRecord]) -> SessionView + Send + 'static {
+    fn view_builder(
+        &self,
+    ) -> impl FnOnce(&[LogRecord], &LatestBriefs) -> SessionView + Send + 'static {
         let returned = self
             .returned_inputs()
             .iter()
@@ -39,9 +45,9 @@ impl Agent {
         suffix.push(self.context_now());
         let endpoint = self.endpoint_name().to_owned();
         let home = self.secret_check_home();
-        move |records| {
+        move |records, latest| {
             let mut events =
-                crate::resume::transcript_with_home(records, &toolbox, offer, home.as_deref());
+                transcript_with_latest(records, latest, &toolbox, offer, home.as_deref());
             events.retain(|event| {
                 let AgentEvent::FeatureStateChanged {
                     endpoint,
@@ -184,18 +190,18 @@ impl Agent {
     }
 
     pub(super) fn cut_view(&mut self) {
-        self.view_cut.seq = self.log.as_ref().map(|(log, _)| log.next_seq());
+        self.view_cut.seq = self.log.as_ref().map(|(log, _)| log.lock().next_seq());
         self.view_cut.waiting = self.inbox.accepted_at_cut();
     }
 
     pub(super) async fn describe(&mut self, answers: RequestId, events: &mpsc::Sender<AgentEvent>) {
         let cut = self.view_cut.seq.unwrap_or(0);
-        let reader = self
-            .log
-            .as_ref()
-            .and_then(|(log, _)| log.store().reader(log.id(), log.next_seq()));
+        let reader = self.log.as_ref().and_then(|(log, _)| {
+            let log = log.lock();
+            log.store().reader(log.id(), log.next_seq())
+        });
         let build = self.view_builder();
-        let waiting = self.view_cut.waiting.clone();
+        let mut waiting = self.view_cut.waiting.clone();
         let held = self.inbox.ids().map(|id| id.0.clone()).collect::<Vec<_>>();
         let now = self.now();
         let mut state = vec![
@@ -214,8 +220,12 @@ impl Agent {
             let mut ids = input_ids(&records);
             let mut seen = ids.iter().cloned().collect::<BTreeSet<_>>();
             ids.extend(held.into_iter().filter(|id| seen.insert(id.clone())));
+            let latest = latest_spanned_mail(&records);
             records.retain(|record| record.seq < cut);
-            let mut view = build(&records);
+            let mut view = build(&records, &latest);
+            for event in &mut waiting {
+                apply_latest_spanned_mail(event, &latest);
+            }
             view.input_ids = ids;
             view.events.extend(waiting);
             AgentEvent::SessionSnapshot {
@@ -239,14 +249,27 @@ impl Agent {
             });
         } else {
             let records = match &self.log {
-                Some((log, _)) => log.store().read(log.id()),
+                Some((log, _)) => {
+                    let log = log.lock();
+                    log.store().read(log.id())
+                }
                 None => Ok(Vec::new()),
             };
             let event = match records {
                 Ok(records) => snapshot(records),
                 Err(_) => AgentEvent::refused(answers, "couldn't read the session log"),
             };
-            send_scrubbed(events, event, self.secret_check_home().as_deref()).await;
+            let owner = self.brief_owner();
+            let agents = self.agents.clone();
+            send_scrubbed(
+                events,
+                event,
+                self.secret_check_home().as_deref(),
+                |target| {
+                    target.map_or_else(|| Some(owner.clone()), |path| agents.brief_owner(path))
+                },
+            )
+            .await;
         }
     }
 

@@ -536,6 +536,7 @@ fn a_convert_before_the_first_request_places_the_turn_after_the_new_head() {
         text: "and quickly".into(),
         images: Vec::new(),
         note: None,
+        checklist_spans: Vec::new(),
     };
     let events = [
         turn_started(1, "fix the parser", None),

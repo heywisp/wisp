@@ -305,6 +305,7 @@ async fn a_cut_keeps_unsent_image_and_pasted_text_chips() {
         replaces: None,
         held: false,
         from: None,
+        checklist_spans: Vec::new(),
     };
     let withdrawn = AgentEvent::InputWithdrawn {
         ids: vec![InputId("withdrawn-1".into())],
@@ -990,6 +991,7 @@ async fn an_empty_paste_takes_the_focus_off_a_waiting_row() {
                     held: false,
                     front: false,
                     from: None,
+                    checklist_spans: Vec::new(),
                 })
                 .await
                 .unwrap();

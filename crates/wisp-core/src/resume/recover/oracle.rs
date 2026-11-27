@@ -206,7 +206,7 @@ pub(in crate::resume) fn recover(
             lost,
             fell_back: None,
             dropped_processes: dropped_processes(lines, |seq| ranges.dropped(seq)),
-            dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq))),
+            dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq)), lines),
             checked,
         });
     }
@@ -245,7 +245,7 @@ pub(in crate::resume) fn recover(
         let settings = dropped
             .iter()
             .any(|r| matches!(r.event, LogEvent::SettingsChanged { .. }));
-        let returned = returned_in(&live.iter().collect::<Vec<_>>());
+        let returned = returned_in(&live.iter().collect::<Vec<_>>(), lines);
         (true, settings, returned)
     } else {
         (false, false, Vec::new())
@@ -299,7 +299,7 @@ pub(in crate::resume) fn recover(
         start,
         lost,
         dropped_processes,
-        dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq))),
+        dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq)), lines),
         fell_back: Some(FellBack {
             event,
             seq: next_seq,

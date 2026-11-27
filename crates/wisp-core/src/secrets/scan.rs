@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use std::{ffi::OsString, path::PathBuf};
 
 use regex::Regex;
-use wisp_protocol::TodoItem;
+use wisp_protocol::{TextSpan, TodoItem};
 
 use crate::session::{self, REDACTED};
 
@@ -42,6 +42,73 @@ pub(crate) fn scrub_field(raw: &str, home: Option<&Path>, held: &session::Redact
     } else {
         scrubbed
     }
+}
+
+pub(crate) fn valid_checklist_spans(text: &str, spans: &[TextSpan]) -> bool {
+    let mut cursor = 0;
+    spans.iter().all(|span| {
+        let valid = span.start >= cursor
+            && span.start <= span.end
+            && span.end <= text.len()
+            && text.is_char_boundary(span.start)
+            && text.is_char_boundary(span.end);
+        cursor = span.end;
+        valid
+    })
+}
+
+pub(crate) fn suppress_checklist_brief(text: &mut String, spans: &mut Vec<TextSpan>) {
+    *text = REDACTED.to_owned();
+    *spans = vec![TextSpan {
+        start: 0,
+        end: REDACTED.len(),
+    }];
+}
+
+pub(crate) fn scrub_checklist_spans(
+    text: &mut String,
+    spans: &mut Vec<TextSpan>,
+    home: Option<&Path>,
+    held: &session::Redactions,
+) -> bool {
+    if spans.is_empty() {
+        return false;
+    }
+    if !valid_checklist_spans(text, spans) {
+        suppress_checklist_brief(text, spans);
+        return true;
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut updated = Vec::with_capacity(spans.len());
+    let (mut cursor, mut changed) = (0, false);
+    for span in spans.iter() {
+        let (Some(prose), Some(raw)) =
+            (text.get(cursor..span.start), text.get(span.start..span.end))
+        else {
+            suppress_checklist_brief(text, spans);
+            return true;
+        };
+        out.push_str(prose);
+        let start = out.len();
+        let scrubbed = scrub_field(raw, home, held);
+        changed |= scrubbed != raw;
+        out.push_str(&scrubbed);
+        updated.push(TextSpan {
+            start,
+            end: out.len(),
+        });
+        cursor = span.end;
+    }
+    let Some(tail) = text.get(cursor..) else {
+        suppress_checklist_brief(text, spans);
+        return true;
+    };
+    out.push_str(tail);
+    if changed {
+        *text = out;
+        *spans = updated;
+    }
+    changed
 }
 
 pub(crate) fn scrub_todo_fields(

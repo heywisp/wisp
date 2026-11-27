@@ -3356,3 +3356,129 @@ fn a_prepared_summary_logs_its_estimate_and_model() {
         }
     });
 }
+
+#[tokio::test]
+async fn a_steer_brief_stays_unaccepted_after_leading_background_compaction() {
+    use crate::agent::testing::{BriefFailStore, checklist_mail};
+    use crate::lanes::Lanes;
+    use crate::session::{held_with_generation, register_secrets};
+
+    for disabled in [false, true] {
+        let store = MemoryStore::default();
+        let first_step = Arc::new(Semaphore::new(0));
+        let canary = format!("CANARYOpaqueLeadingSteer-{disabled}");
+        let task = "Keep the leading steer task";
+        let provider = documented(vec![
+            answer("Hello.", NEAR),
+            compaction(SUMMARY),
+            Step::from(
+                [
+                    vec![start(300, 0)],
+                    finish(StopReason::StopSequence, 300, 0, 0),
+                ]
+                .concat(),
+            )
+            .gated(&first_step),
+            answer("Done.", 300),
+        ]);
+        let agent =
+            background(&provider, &store).with_path(wisp_protocol::AgentPath::new("/child"));
+        let endpoint = agent.endpoint_name().to_owned();
+        let lanes = Lanes::new([(endpoint.clone(), Some(1))].into(), None);
+        let mut agent = agent.with_lanes(lanes.clone());
+        if disabled {
+            agent = agent.with_log(
+                SessionLog::new(
+                    Box::new(BriefFailStore::new(store.clone(), "delivered")),
+                    "s1",
+                ),
+                log_context(),
+            );
+        }
+        let mailbox = agent.mail_sender();
+        let mut live = Live::start(agent);
+        assert!(completed(&live.turn("u1", "first").await));
+        live.until(prepared).await;
+        live.send(send("u2", "second")).await;
+        live.until(|event| {
+            matches!(
+                event,
+                AgentEvent::Compacted {
+                    turn: Some(2),
+                    trigger: CompactionTrigger::Background,
+                    ..
+                }
+            )
+        })
+        .await;
+        live.until(|event| matches!(event, AgentEvent::StepStarted { step: 1 }))
+            .await;
+        let mut letter = checklist_mail("leading-steer", task, &[&canary]);
+        letter.wake = false;
+        mailbox.send(letter).unwrap();
+        live.until(|event| matches!(event, AgentEvent::InputAccepted { id, text, .. } if id.as_str() == "mail-leading-steer" && text.contains(&canary))).await;
+        let mut blocker = lanes.enter(&endpoint, 0).unwrap_err();
+        first_step.add_permits(1);
+        let pass = within("the between-steps lane", blocker.admitted(0))
+            .await
+            .unwrap();
+        live.until(|event| matches!(event, AgentEvent::InputDelivered { ids, step: 2 } if ids.iter().any(|id| id.as_str() == "mail-leading-steer"))).await;
+        live.until(|event| matches!(event, AgentEvent::RequestQueued { .. }))
+            .await;
+        assert_eq!(provider.sent().len(), 3);
+        if !disabled {
+            register_secrets([canary.clone()]);
+        }
+        let generation = held_with_generation().1;
+        drop(pass);
+        let ended = live
+            .until(|event| matches!(event, AgentEvent::TurnEnded { .. }))
+            .await;
+        let (_, seen) = live.close().await;
+        assert!(log_events(&store).iter().any(|event| matches!(
+            event,
+            LogEvent::ContextCompacted {
+                turn: Some(2),
+                placement: Placement::Leading,
+                trigger: CompactionTrigger::Background,
+                ..
+            }
+        )));
+        let sent = provider.sent();
+        if disabled {
+            assert!(matches!(
+                ended,
+                AgentEvent::TurnEnded {
+                    outcome: TurnOutcome::Error { .. },
+                    ..
+                }
+            ));
+            assert_eq!(
+                seen.iter()
+                    .filter(|event| matches!(event, AgentEvent::LogDisabled { .. }))
+                    .count(),
+                1
+            );
+            assert_eq!(sent.len(), 3);
+            assert!(
+                log_events(&store)
+                    .iter()
+                    .any(|event| matches!(event, LogEvent::TurnStarted { turn: 2, .. }))
+            );
+            assert!(
+                !log_events(&store)
+                    .iter()
+                    .any(|event| matches!(event, LogEvent::InputRevised { .. }))
+            );
+        } else {
+            assert!(ended_completed(&ended));
+            assert_eq!(sent.len(), 4);
+            assert_eq!(sent[3].rendering.redactions_generation, Some(generation));
+            let actual = sent[3].body().to_string();
+            assert!(
+                actual.contains(task) && actual.contains("[redacted]") && !actual.contains(&canary),
+                "{actual}"
+            );
+        }
+    }
+}

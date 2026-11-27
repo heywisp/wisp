@@ -111,6 +111,7 @@ impl Agent {
             replaces: Some(old.clone()),
             held,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         self.emit(AgentEvent::InputWithdrawn {
@@ -771,6 +772,7 @@ async fn another_clients_row_with_images_says_why_it_cant_be_changed() {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         })
         .await;
         a.key(KeyCode::Up).key(KeyCode::Enter);

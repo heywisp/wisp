@@ -31,6 +31,7 @@ fn accepted(id: &InputId, mode: DeliveryMode, text: &str) -> AgentEvent {
         replaces: None,
         held: false,
         from: None,
+        checklist_spans: Vec::new(),
     }
 }
 
@@ -364,6 +365,7 @@ fn inputs_from_another_client_show_from_their_event_and_unheld_ones_queue_again(
             replaces: None,
             held: true,
             from: None,
+            checklist_spans: Vec::new(),
         },
         &mut t,
     );
@@ -448,6 +450,7 @@ fn a_row_shows_its_own_image_chips_first_and_not_the_kernels_count_again() {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         &mut t,
     );
@@ -497,6 +500,7 @@ fn replaced(new: &InputId, old: &InputId, mode: DeliveryMode, held: bool) -> Age
         replaces: Some(old.clone()),
         held,
         from: None,
+        checklist_spans: Vec::new(),
     }
 }
 
@@ -766,6 +770,7 @@ fn a_foreign_input_whose_images_the_tui_lacks_cannot_be_edited() {
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         &mut t,
     );
@@ -913,6 +918,7 @@ fn mail_from_another_agent_never_joins_your_waiting_messages() {
         replaces: None,
         held: false,
         from: Some(from),
+        checklist_spans: Vec::new(),
     };
     inputs.apply(&event, &mut t);
     assert!(inputs.rows(GlyphSet::Unicode).is_empty());
@@ -952,6 +958,7 @@ fn mail_from_another_agent_never_joins_your_waiting_messages() {
                 replaces: None,
                 held: false,
                 from: Some(qfrom),
+                checklist_spans: Vec::new(),
             },
             &mut t,
         );
@@ -983,6 +990,7 @@ fn typed(inputs: &mut Inputs, t: &mut Transcript, mode: DeliveryMode, text: &str
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         event => event,
     };
@@ -1002,6 +1010,7 @@ fn reply(inputs: &mut Inputs, t: &mut Transcript, mode: DeliveryMode, front: boo
             replaces: None,
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         t,
     );

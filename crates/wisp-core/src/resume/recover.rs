@@ -207,6 +207,7 @@ fn place(event: &LogEvent) -> Place<'_> {
             state: *state,
         }),
         LogEvent::ReturnedTaken { .. }
+        | LogEvent::InputRevised { .. }
         | LogEvent::ResumeFellBack { .. }
         | LogEvent::WindowLowered { .. }
         | LogEvent::AgentSpawned { .. }
@@ -857,18 +858,42 @@ fn dropped_processes(lines: &[Line], dropped: impl Fn(u64) -> bool) -> Vec<LogRe
         .collect()
 }
 
-fn returned_in(records: &[&LogRecord]) -> Vec<LoggedInput> {
+fn mail_ids(lines: &[Line]) -> BTreeSet<String> {
+    lines
+        .iter()
+        .filter_map(|line| {
+            let Line::Record(record) = line else {
+                return None;
+            };
+            match &record.event {
+                LogEvent::InputAccepted {
+                    id, from: Some(_), ..
+                } => Some(id.0.clone()),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+fn returned_in(records: &[&LogRecord], lines: &[Line]) -> Vec<LoggedInput> {
     let mut returned: Vec<LoggedInput> = Vec::new();
-    let mut gone: BTreeSet<String> = BTreeSet::new();
+    let mut gone = mail_ids(lines);
     for record in records {
         match &record.event {
             LogEvent::InputAccepted {
-                id, from: Some(_), ..
-            } => {
+                id,
+                from,
+                checklist_spans,
+                ..
+            } if from.is_some() || !checklist_spans.is_empty() => {
                 gone.insert(id.0.clone());
             }
             LogEvent::TurnStarted { retry_of: None, .. } => {
                 for input in opening_of(&record.event) {
+                    if !input.checklist_spans.is_empty() {
+                        gone.insert(input.id.0);
+                        continue;
+                    }
                     if !returned.iter().any(|r| r.id == input.id) {
                         returned.push(input);
                     }
@@ -890,6 +915,7 @@ fn returned_in(records: &[&LogRecord]) -> Vec<LoggedInput> {
                         text: text.clone(),
                         images: images.clone(),
                         note: None,
+                        checklist_spans: Vec::new(),
                     });
                 }
             }
@@ -1018,7 +1044,7 @@ fn recover_borrowed(
             lost,
             fell_back: None,
             dropped_processes: dropped_processes(lines, |seq| ranges.dropped(seq)),
-            dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq))),
+            dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq)), lines),
             checked,
         };
         return Ok((recovered, kept));
@@ -1058,7 +1084,7 @@ fn recover_borrowed(
         let settings = dropped
             .iter()
             .any(|r| matches!(r.event, LogEvent::SettingsChanged { .. }));
-        let returned = returned_in(&live);
+        let returned = returned_in(&live, lines);
         (true, settings, returned)
     } else {
         (false, false, Vec::new())
@@ -1113,7 +1139,7 @@ fn recover_borrowed(
         start,
         lost,
         dropped_processes,
-        dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq))),
+        dropped_inputs: returned_in(&dropped_records(lines, |seq| ranges.dropped(seq)), lines),
         fell_back: Some(FellBack {
             event,
             seq: next_seq,

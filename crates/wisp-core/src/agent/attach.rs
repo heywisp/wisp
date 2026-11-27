@@ -192,8 +192,10 @@ impl Agent {
             let sha256 = sha256_bytes_hex(&attachment.bytes);
             let (failure, saved) = match &mut self.log {
                 Some((log, _)) => {
+                    let mut log = log.lock();
                     let failure = log.put_blob(&sha256, &attachment.media_type, &attachment.bytes);
-                    (failure, log.saved_path(&sha256, &attachment.media_type))
+                    let saved = log.saved_path(&sha256, &attachment.media_type);
+                    (failure, saved)
                 }
                 None => (None, None),
             };

@@ -1,17 +1,20 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::{Notify, mpsc, watch};
+use wisp_protocol::log::LogEvent;
 pub use wisp_protocol::render_mail;
 use wisp_protocol::{
     AgentAction, AgentEvent, AgentPath, DeliveryMode, HoldReason, InputId, MailFrom, MailId,
-    MailKind, QueueReason, RejectKind, WakeSource,
+    MailKind, QueueReason, RejectKind, TextSpan, WakeSource, render_mail_spans, shift_spans,
 };
 
 use super::inbox::{Input, Letter};
-use super::{Agent, emit};
+use super::{Agent, Durability, emit};
 use crate::agents::news::{MailNews, TreeNews};
 use crate::agents::state::Change;
+use crate::secrets::scan::{scrub_checklist_spans, suppress_checklist_brief};
 
 pub const MAX_MAIL_PER_SENDER: usize = 64;
 pub const NOT_YOURS: &str = "not_yours";
@@ -25,6 +28,7 @@ pub struct Mail {
     pub kind: MailKind,
     pub wake: bool,
     pub text: String,
+    pub checklist_spans: Vec<TextSpan>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,6 +298,90 @@ impl Agent {
         }
     }
 
+    async fn persist_brief_revision(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        input: &mut Input,
+        home: Option<&Path>,
+    ) -> bool {
+        if self.log.is_some() {
+            self.publish_spend(events).await;
+        }
+        let handle = self.brief_owner();
+        let (persisted, failure) = {
+            let mut owner = handle.lock();
+            if !input.revision_unlogged {
+                owner.read(input);
+            }
+            self.with_log_writer(|agent, mut writer| {
+                loop {
+                    let (held, generation) = crate::session::held_with_generation();
+                    scrub_input_brief_at(input, home, &held);
+                    let row = input.logged();
+                    let result = if owner.ended {
+                        Ok((false, None))
+                    } else {
+                        agent.record_logged_at(
+                            writer.as_deref_mut(),
+                            LogEvent::InputRevised {
+                                turn: None,
+                                inputs: vec![row.clone()],
+                            },
+                            Durability::Sync,
+                            Some(generation),
+                        )
+                    };
+                    let Ok(result) = result else { continue };
+                    input.revision_unlogged = !result.0;
+                    owner.update(row, None, input.revision_unlogged);
+                    break result;
+                }
+            })
+        };
+        if let Some(reason) = failure {
+            emit(events, AgentEvent::LogDisabled { reason }).await;
+        }
+        persisted
+    }
+
+    async fn publish_letter_event(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        input: &mut Input,
+        from: MailFrom,
+        home: Option<&Path>,
+    ) -> bool {
+        loop {
+            let Ok(permit) = events.reserve().await else {
+                return false;
+            };
+            if input.checklist_spans.is_empty() {
+                #[cfg(test)]
+                before_mail_send();
+                permit.send(input.accepted(None, false, false, Some(from)));
+                return true;
+            }
+            self.brief_owner.read(input);
+            if !input.revision_unlogged {
+                let guard = crate::session::read_held();
+                if !scrub_input_brief_at(input, home, &guard) {
+                    #[cfg(test)]
+                    before_mail_send();
+                    permit.send(input.accepted(None, false, false, Some(from)));
+                    drop(guard);
+                    return true;
+                }
+                drop(guard);
+            }
+            drop(permit);
+            input.revision_unlogged = true;
+            if !self.persist_brief_revision(events, input, home).await {
+                return false;
+            }
+            input.revision_unlogged = false;
+        }
+    }
+
     async fn accept_letters(
         &mut self,
         arrived: Vec<Mail>,
@@ -304,7 +392,8 @@ impl Agent {
             return;
         }
         self.start_log(events).await;
-        for mail in arrived {
+        let home = self.secret_check_home();
+        for mut mail in arrived {
             let id = mail_input_id(&mail.id);
             if self.inbox.fate(&id).is_some() {
                 self.mailbox.committed(&mail.from, mail.kind);
@@ -317,11 +406,26 @@ impl Agent {
                 wake: mail.wake,
                 plugin: plugin.map(str::to_owned),
             };
-            let mut text = render_mail(&from.agent, from.kind, &mail.text);
+            if !mail.checklist_spans.is_empty() {
+                scrub_checklist_spans(
+                    &mut mail.text,
+                    &mut mail.checklist_spans,
+                    home.as_deref(),
+                    &crate::session::held(),
+                );
+            }
+            let (mut text, mut shifted) =
+                render_mail_spans(&from.agent, from.kind, &mail.text, &mail.checklist_spans);
             if from.kind != MailKind::Task
                 && let Some(form) = self.models.turn_form(&self.mail_model())
             {
                 text = format!("{}{text}{}", form.mail_before, form.mail_after);
+                shifted = shifted.and_then(|spans| shift_spans(&spans, form.mail_before.len()));
+            }
+            let mut checklist_spans = Vec::new();
+            match shifted {
+                Some(spans) => checklist_spans = spans,
+                None => suppress_checklist_brief(&mut text, &mut checklist_spans),
             }
             let bytes = u64::try_from(mail.text.len()).unwrap_or(u64::MAX);
             if let Some(news) = self.agents.news() {
@@ -334,7 +438,8 @@ impl Agent {
                     bytes,
                 }));
             }
-            self.push_letter(id, from, text, events).await;
+            self.push_letter(id, from, text, checklist_spans, events)
+                .await;
         }
     }
 
@@ -343,11 +448,12 @@ impl Agent {
         id: InputId,
         from: MailFrom,
         text: String,
+        checklist_spans: Vec<TextSpan>,
         events: &mpsc::Sender<AgentEvent>,
     ) {
         let letter = self.letter(from.clone());
         let owes = letter.above && letter.from.kind == MailKind::Task;
-        let input = Input {
+        let mut input = Input {
             id,
             mode: DeliveryMode::Steer,
             text,
@@ -357,8 +463,29 @@ impl Agent {
             from: Some(letter),
             arrival: None,
             note: None,
+            checklist_spans,
+            revision_unlogged: false,
         };
-        self.emit(events, input.accepted(None, false, false, Some(from)))
+        let home = self.secret_check_home();
+        let turn = self.running_turn();
+        let persisted = self
+            .record_event_fresh(events, turn, |_| {
+                let generation = if input.checklist_spans.is_empty() {
+                    None
+                } else {
+                    let (held, generation) = crate::session::held_with_generation();
+                    scrub_input_brief_at(&mut input, home.as_deref(), &held);
+                    Some(generation)
+                };
+                (
+                    input.accepted(None, false, false, Some(from.clone())),
+                    generation,
+                )
+            })
+            .await;
+        input.revision_unlogged = !persisted && !input.checklist_spans.is_empty();
+        self.brief_owner.remember(&input, home.clone());
+        self.publish_letter_event(events, &mut input, from, home.as_deref())
             .await;
         if owes {
             self.owed.get_or_insert(self.processes.next_number());
@@ -370,16 +497,35 @@ impl Agent {
     }
 
     pub(super) async fn announce_waiting_mail(&mut self, events: &mpsc::Sender<AgentEvent>) {
-        let waiting: Vec<AgentEvent> = self
-            .inbox
-            .waiting_mail()
-            .filter_map(|input| {
-                let letter = input.from.as_ref()?;
-                Some(input.accepted(None, false, false, Some(letter.from.clone())))
-            })
-            .collect();
-        for event in waiting {
-            emit(events, event).await;
+        let home = self.secret_check_home();
+        for index in 0..self.inbox.waiting_mail_len() {
+            let Some(mut input) = self.inbox.waiting_mail_cloned(index) else {
+                break;
+            };
+            let Some(from) = input.from.as_ref().map(|letter| letter.from.clone()) else {
+                continue;
+            };
+            self.brief_owner.read(&mut input);
+            if scrub_input_brief(&mut input, home.as_deref()) || input.revision_unlogged {
+                input.revision_unlogged = self.log.is_some();
+                let persisted = self
+                    .persist_brief_revision(events, &mut input, home.as_deref())
+                    .await;
+                if persisted {
+                    input.revision_unlogged = false;
+                }
+                self.inbox.update_waiting_mail(input.clone());
+                if !persisted {
+                    continue;
+                }
+            }
+            let published = self
+                .publish_letter_event(events, &mut input, from, home.as_deref())
+                .await;
+            self.inbox.update_waiting_mail(input);
+            if !published && events.is_closed() {
+                break;
+            }
         }
     }
 
@@ -389,7 +535,25 @@ impl Agent {
         {
             self.mailbox.count(&letter.from.agent, letter.from.kind);
         }
+        self.brief_owner.remember(&input, self.secret_check_home());
         self.inbox.push_mail(input);
+    }
+
+    pub(super) fn requeue_brief_mail(&mut self, mut inputs: Vec<Input>) {
+        if inputs.iter().any(|input| !input.checklist_spans.is_empty()) {
+            let mut owner = self.brief_owner.lock();
+            for input in inputs
+                .iter_mut()
+                .filter(|input| !input.checklist_spans.is_empty())
+            {
+                if !input.revision_unlogged {
+                    owner.read(input);
+                }
+                owner.remember(input);
+                owner.update(input.logged(), None, input.revision_unlogged);
+            }
+        }
+        self.inbox.requeue_mail(inputs);
     }
 
     pub(super) fn mail_committed(&mut self, mail: &[Input]) {
@@ -414,7 +578,17 @@ impl Agent {
     pub(super) fn carry_offered(&mut self, inputs: Vec<Input>) -> Vec<Input> {
         inputs
             .into_iter()
-            .filter(|input| input.from.is_none() || self.inbox.take_mail_id(&input.id))
+            .filter_map(|input| {
+                if input.from.is_none() {
+                    return Some(input);
+                }
+                let mut mail = self.inbox.take_mail_id(&input.id)?;
+                self.brief_owner.read(&mut mail);
+                if let Some(letter) = mail.from.as_mut() {
+                    letter.returned = false;
+                }
+                Some(mail)
+            })
             .collect()
     }
 
@@ -497,4 +671,28 @@ impl Agent {
 }
 
 #[cfg(test)]
+std::thread_local! {
+    pub(super) static BEFORE_MAIL_SEND: std::cell::Cell<Option<Box<dyn FnOnce()>>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn before_mail_send() {
+    if let Some(before) = BEFORE_MAIL_SEND.take() {
+        before();
+    }
+}
+
+#[cfg(test)]
 mod tests;
+
+pub(super) fn scrub_input_brief(input: &mut Input, home: Option<&Path>) -> bool {
+    !input.checklist_spans.is_empty() && scrub_input_brief_at(input, home, &crate::session::held())
+}
+
+pub(super) fn scrub_input_brief_at(
+    input: &mut Input,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+) -> bool {
+    scrub_checklist_spans(&mut input.text, &mut input.checklist_spans, home, held)
+}

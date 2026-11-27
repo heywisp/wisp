@@ -31,7 +31,7 @@ use super::state::{self, Change, Watch};
 use super::{CheckedPresets, Limits, PresetProblem, tool_off};
 use crate::agent::{self, Agent, AgentTask, Mail, send_scrubbed};
 use crate::kit::{ChildSpec, InstructionsChoice, Kit, KitError, PresetSource};
-use crate::secrets::scan::scrub_todos;
+use crate::secrets::scan::{scrub_checklist_spans, scrub_todos};
 
 pub const NOT_FOR_AGENTS: &str = "not_for_agents";
 pub use wisp_protocol::agents::NO_SUCH_AGENT;
@@ -114,6 +114,7 @@ pub(crate) struct OnAccount {
 }
 
 struct Entry {
+    brief_owner: Option<agent::BriefOwner>,
     path: watch::Sender<AgentPath>,
     session_id: String,
     depth: u32,
@@ -211,6 +212,7 @@ impl Entry {
         state_since_ms: u64,
     ) -> Self {
         Self {
+            brief_owner: None,
             path,
             session_id,
             depth,
@@ -690,6 +692,40 @@ fn inherited_tools(
 }
 
 impl AgentsService {
+    pub(crate) fn brief_owner(&self, path: &AgentPath) -> Option<agent::BriefOwner> {
+        self.tree()
+            .get(path)
+            .and_then(|entry| entry.brief_owner.clone())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_brief_owner(&self, path: AgentPath, owner: agent::BriefOwner) {
+        let mut tree = self.tree();
+        if let Some(entry) = tree.get_mut(&path) {
+            entry.brief_owner = Some(owner);
+            return;
+        }
+        let cell = watch::channel(path.clone()).0;
+        let mut entry = Entry::new(
+            cell,
+            "s1".into(),
+            1,
+            "model".into(),
+            Effort::Medium,
+            AgentState::Idle { outcome: None },
+            agent::MailSender::closed(),
+            Place {
+                endpoint: None,
+                provider: None,
+                billing: None,
+                priced: false,
+            },
+            0,
+        );
+        entry.brief_owner = Some(owner);
+        tree.entries.insert(path, entry);
+    }
+
     fn new(
         kit: Arc<Kit>,
         setup: TreeSetup,
@@ -823,6 +859,7 @@ impl AgentsService {
         let caller = agent.caller();
         let marked = self.shared.keep_warm_main && agent.keeps_warm();
         let entry = Entry {
+            brief_owner: Some(agent.brief_owner()),
             processes: agent.processes(),
             cwd: caller
                 .cwd
@@ -1310,7 +1347,13 @@ impl AgentsService {
         let session_id = child.session_id().to_owned();
         let mail = child.mail_sender();
         let shown_cwd = shorten_path(&plan.cwd, caller.home.as_deref());
-        let text = brief::brief(&request.task, &request.todos);
+        let (mut text, mut checklist_spans) = brief::brief(&request.task, &request.todos);
+        scrub_checklist_spans(
+            &mut text,
+            &mut checklist_spans,
+            child.secret_check_home().as_deref(),
+            &crate::session::held(),
+        );
         let brief_mail = Mail {
             id: self.next_mail_id(),
             from: parent.clone(),
@@ -1318,6 +1361,7 @@ impl AgentsService {
             kind: MailKind::Task,
             wake: true,
             text,
+            checklist_spans,
         };
         if mail.send(brief_mail).is_err() {
             drop(tree);
@@ -1328,6 +1372,7 @@ impl AgentsService {
         let worker = self.shared.presets.worker(plan.config.preset.as_deref());
         let (permit, state) = tree.admit(parent, &path, worker, self.shared.limits);
         let mut entry = Entry {
+            brief_owner: Some(child.brief_owner()),
             processes: child.processes(),
             worker,
             cwd: Some(shown_cwd.clone()),
@@ -1385,13 +1430,14 @@ impl AgentsService {
     ) -> [JoinHandle<()>; 2] {
         let (events, child_events) = mpsc::channel(CHILD_EVENTS);
         let home = child.secret_check_home();
+        let owner = child.brief_owner();
         let serve = tokio::spawn(async move {
             child.serve(&mut commands, &events).await;
         });
         let service = self.clone();
         let forward = tokio::spawn(async move {
             service
-                .forward_child(path, child_events, root, home.as_deref())
+                .forward_child(path, child_events, root, home.as_deref(), Some(owner))
                 .await;
         });
         [serve, forward]
@@ -1403,6 +1449,7 @@ impl AgentsService {
         mut child_events: mpsc::Receiver<AgentEvent>,
         root: Option<mpsc::Sender<AgentEvent>>,
         home: Option<&Path>,
+        owner: Option<agent::BriefOwner>,
     ) {
         while let Some(event) = child_events.recv().await {
             let path = path.borrow().clone();
@@ -1412,7 +1459,11 @@ impl AgentsService {
                 continue;
             };
             if let Some(event) = self.forwarded(&path, event) {
-                send_scrubbed(root, event, home).await;
+                send_scrubbed(root, event, home, |target| match target {
+                    Some(target) if target != &path => self.brief_owner(target),
+                    _ => owner.clone(),
+                })
+                .await;
             }
             if let Some(changed) = changed {
                 let _ = root.send(changed).await;
@@ -1841,6 +1892,7 @@ impl AgentsService {
             kind,
             wake,
             text,
+            checklist_spans: Vec::new(),
         };
         self.deliver(to, mail)
     }
@@ -2122,6 +2174,10 @@ fn resolve_cwd(given: Option<&str>, caller: &Caller) -> Result<PathBuf, String> 
 }
 
 impl AgentsHandle {
+    pub(crate) fn brief_owner(&self, path: &AgentPath) -> Option<agent::BriefOwner> {
+        self.service.as_ref()?.brief_owner(path)
+    }
+
     pub(crate) fn opening_replay(&self) -> bool {
         self.service
             .as_ref()
@@ -2582,6 +2638,7 @@ impl AgentsHandle {
             kind: MailKind::Notice,
             wake: true,
             text: text.to_owned(),
+            checklist_spans: Vec::new(),
         })
     }
 
@@ -2886,6 +2943,7 @@ pub fn start_root(
     let worst = service.shared.worst.subscribe();
     let observer = service.clone();
     let home = agent.secret_check_home();
+    let brief_owner = agent.brief_owner();
     let forward = tokio::spawn(async move {
         loop {
             let event = tokio::select! {
@@ -2912,7 +2970,10 @@ pub fn start_root(
                 tree.restart_rows = None;
             } else {
                 observer.observe(&AgentPath::root(), &event);
-                send_scrubbed(&host, event, home.as_deref()).await;
+                send_scrubbed(&host, event, home.as_deref(), |target| {
+                    observer.brief_owner(target.unwrap_or(&AgentPath::root()))
+                })
+                .await;
             }
             if recount && let Some(report) = observer.report() {
                 let _ = host.send(report).await;
@@ -2931,8 +2992,16 @@ pub fn start_root(
         }
         let _ = forward.await;
     });
-    drop(service);
-    (commands, event_rx, AgentTask { handle, worst })
+    (
+        commands,
+        event_rx,
+        AgentTask {
+            handle,
+            worst,
+            brief_owner,
+            owner_tree: Some(service),
+        },
+    )
 }
 
 mod limits;

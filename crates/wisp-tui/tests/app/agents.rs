@@ -199,6 +199,7 @@ pub(super) fn mail(id: &str, from: &str, kind: MailKind, wake: bool, body: &str)
             wake,
             plugin: None,
         }),
+        checklist_spans: Vec::new(),
     }
 }
 
@@ -734,6 +735,7 @@ fn resumed_history() -> Resumed {
                     held: false,
                     front: false,
                     from: None,
+                    checklist_spans: Vec::new(),
                 },
                 AgentEvent::turn_started(2),
                 AgentEvent::InputDelivered {

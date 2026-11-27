@@ -99,6 +99,7 @@ pub(crate) fn hostile_events(h: &str) -> Vec<AgentEvent> {
             replaces: Some(wisp_protocol::InputId(h.to_owned())),
             held: false,
             from: None,
+            checklist_spans: Vec::new(),
         },
         AgentEvent::InputWithdrawn {
             ids: vec![wisp_protocol::InputId(h.to_owned())],

@@ -21,10 +21,19 @@ pub(super) struct Withdrawal {
     step: u32,
     from: usize,
     history: Vec<Message>,
-    user: Option<Vec<ContentBlock>>,
-    after: Vec<ContentBlock>,
+    user_media: Vec<(usize, ContentBlock)>,
+    after_media: Vec<(usize, ContentBlock)>,
     items: Vec<(WithdrawnAttachment, String)>,
     pending: Vec<usize>,
+}
+
+fn non_text_blocks(blocks: &[ContentBlock]) -> Vec<(usize, ContentBlock)> {
+    blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| !matches!(block, ContentBlock::Text { .. }))
+        .map(|(index, block)| (index, block.clone()))
+        .collect()
 }
 
 pub(super) fn end_of(messages: &[Message]) -> BlockPosition {
@@ -234,8 +243,13 @@ fn pending_positions(
         },
     };
     let after = if pending.has_system() {
+        let system_message = if pending.user.is_some() {
+            user.message + 1
+        } else {
+            history.len()
+        };
         BlockPosition {
-            message: user.message + 2,
+            message: system_message + 1,
             block: 0,
         }
     } else {
@@ -336,8 +350,8 @@ impl Agent {
             step,
             from: kept_from,
             history: self.history[kept_from..].to_vec(),
-            user: pending.user.clone(),
-            after: pending.after.clone(),
+            user_media: non_text_blocks(pending.user.as_deref().unwrap_or_default()),
+            after_media: non_text_blocks(&pending.after),
             items: Vec::new(),
             pending: Vec::new(),
         };
@@ -420,8 +434,18 @@ impl Agent {
         };
         self.history.truncate(saved.from);
         self.history.extend(saved.history);
-        pending.user = saved.user;
-        pending.after = saved.after;
+        if let Some(user) = pending.user.as_mut() {
+            for (index, block) in saved.user_media {
+                if let Some(slot) = user.get_mut(index) {
+                    *slot = block;
+                }
+            }
+        }
+        for (index, block) in saved.after_media {
+            if let Some(slot) = pending.after.get_mut(index) {
+                *slot = block;
+            }
+        }
         self.sync_history();
         true
     }

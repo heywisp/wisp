@@ -64,11 +64,14 @@ impl Agent {
 
     pub(in crate::agent) async fn take_inputs(
         &mut self,
-        inputs: Vec<Input>,
+        mut inputs: Vec<Input>,
         origin: Option<TurnOrigin>,
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Option<Vec<Input>> {
+        for input in &mut inputs {
+            self.brief_owner.read(input);
+        }
         if !self.user_input_attached() || inputs.iter().all(Input::is_mail) {
             return Some(inputs);
         }
@@ -143,7 +146,7 @@ impl Agent {
         }
         self.hooks.pre_turn = false;
         let (mail, users): (Vec<Input>, Vec<Input>) = inputs.into_iter().partition(Input::is_mail);
-        self.inbox.requeue_mail(mail);
+        self.requeue_brief_mail(mail);
         let ids = users.into_iter().map(|i| i.id).collect();
         self.settle_inputs(TurnEnd::Stopped, ids, events).await;
         self.end_wakes(TurnEnd::Stopped);
