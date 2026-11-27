@@ -67,6 +67,7 @@ pub(super) struct Continuation {
     pub(super) of: u64,
     pub(super) request: Option<RequestId>,
     pub(super) endpoint: usize,
+    pub(super) account: crate::agents::endpoints::ExactAccount,
     pub(super) model: String,
     pub(super) effort: wisp_protocol::Effort,
     pub(super) same_pair: bool,
@@ -98,7 +99,7 @@ impl Continuation {
 }
 
 pub(super) struct Accepted {
-    continuation: Continuation,
+    pub(super) continuation: Continuation,
     opening: Vec<Input>,
     pub(super) moved: Option<String>,
 }
@@ -519,6 +520,18 @@ impl Agent {
                 return false;
             }
         };
+        let Some(account) = self
+            .connections
+            .get(target)
+            .map(crate::agents::endpoints::ExactAccount::connected)
+        else {
+            self.refuse_retry(request, NOTHING.to_owned(), events).await;
+            return false;
+        };
+        if let Err(reason) = self.check_live_account(&account, target) {
+            self.refuse_retry(request, reason, events).await;
+            return false;
+        }
         let Some(offered) = self.offered.take() else {
             self.refuse_retry(request, NOTHING.to_owned(), events).await;
             return false;
@@ -546,6 +559,7 @@ impl Agent {
                 of: offered.turn,
                 request,
                 endpoint: target,
+                account,
                 model: landed.model,
                 effort: landed.effort,
                 same_pair,

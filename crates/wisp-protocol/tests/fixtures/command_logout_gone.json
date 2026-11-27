@@ -9,6 +9,7 @@
     "follow": [
       "late"
     ],
-    "gone": true
+    "gone": true,
+    "accept_api": true
   }
 }

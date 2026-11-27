@@ -74,54 +74,152 @@ impl Agent {
         &self,
         off: &crate::plugin::registry::ProvidersOff,
         target: usize,
-    ) -> Result<(), Refusal> {
+    ) -> Result<Vec<String>, Refusal> {
         use crate::endpoints::goes;
         if !self.path().is_root() {
-            return Ok(());
+            return Ok(Vec::new());
         }
-        let going: Vec<_> = off
+        let going: BTreeMap<_, _> = off
             .keys()
             .filter(|provider| self.plugin_on_next(provider))
+            .map(|provider| (provider, self.provider_accounts(provider)))
             .collect();
-        let leaving: Vec<String> = going
-            .iter()
-            .flat_map(|provider| self.provider_accounts(provider))
-            .collect();
-        for provider in going {
-            let names = self.provider_accounts(provider);
-            if self.busy() && names.iter().any(|name| name == self.endpoint_name()) {
+        let leaving: Vec<String> = going.values().flatten().cloned().collect();
+        let agents = self.agents.on_accounts(&leaving);
+        for (provider, aliases) in &going {
+            if self.busy() && aliases.iter().any(|name| name == self.endpoint_name()) {
                 return Err(goes::answering_on(provider, "Try again once it's done.").into());
             }
-            let working: Vec<String> = self
-                .agents
-                .on_accounts(&names)
-                .into_iter()
-                .filter(|agent| agent.working)
-                .map(|agent| agent.agent)
+            let working: Vec<_> = agents
+                .iter()
+                .filter(|agent| {
+                    agent.working
+                        && (aliases.contains(&agent.effective.account)
+                            || agent
+                                .bound
+                                .as_ref()
+                                .is_some_and(|bound| aliases.contains(bound)))
+                })
+                .map(|a| a.agent.clone())
                 .collect();
             if !working.is_empty() {
                 return Err(goes::working_on(&working, provider).into());
             }
-            if names
-                .iter()
-                .any(|name| name == self.connection_name(target))
-            {
-                return Err(
-                    if self.connections.iter().any(|connection| {
-                        !off.contains_key(connection.provider.kind().as_str())
-                            && self.find_endpoint(&connection.name).is_ok()
-                    }) {
-                        Refusal {
-                            line: goes::provider_in_use(provider),
-                            ways: self.departure(&leaving, None).ways,
-                        }
-                    } else {
-                        goes::no_other_account().into()
-                    },
-                );
-            }
         }
-        Ok(())
+        let provider = self.provider_at(target).kind().as_str();
+        if going.contains_key(&provider.to_owned()) {
+            let origin = self.way_origin(&self.next_pair());
+            let candidates = self
+                .live_destinations()
+                .into_iter()
+                .filter(|c| !off.contains_key(c.provider.kind().as_str()));
+            let mut candidates: Vec<_> = candidates.collect();
+            let start = self
+                .settings
+                .layers
+                .endpoints
+                .iter()
+                .find(|e| e.default)
+                .map(|e| e.name.as_str());
+            candidates.sort_by_key(|c| {
+                (
+                    Some(c.name.as_str()) != start,
+                    c.provider.billing().is_metered(),
+                    c.name.clone(),
+                )
+            });
+            let ways: Vec<_> = candidates
+                .iter()
+                .map(|to| {
+                    Self::way_to(
+                        to,
+                        Some(&origin),
+                        agents
+                            .iter()
+                            .filter(|a| leaving.contains(&a.effective.account)),
+                    )
+                })
+                .collect();
+            return Err(if ways.is_empty() {
+                goes::no_other_account().into()
+            } else {
+                Refusal {
+                    line: goes::provider_in_use(provider),
+                    ways,
+                }
+            });
+        }
+        Ok(leaving)
+    }
+
+    pub(super) async fn answer_provider_switch(
+        &mut self,
+        request: wisp_protocol::RequestId,
+        verdict: super::settings::Verdict,
+        answer: super::queue::SwitchAnswer,
+        events: &mpsc::Sender<AgentEvent>,
+    ) {
+        use super::auth::DepartureKind;
+        use super::leave::MoveTo;
+        let origin = self.connection_name(self.next_endpoint());
+        if self.busy() {
+            let line = crate::endpoints::goes::answering_on(
+                self.provider_at(self.next_endpoint()).kind().as_str(),
+                "Try again once it's done.",
+            );
+            return self.emit(events, AgentEvent::refused(request, line)).await;
+        }
+        let target = self.connection_name(verdict.target.endpoint);
+        let valid = !self.is_child()
+            && verdict.retiring.iter().any(|alias| alias == origin)
+            && !verdict.retiring.iter().any(|alias| alias == target);
+        let to = valid
+            .then(|| self.live_destination(target))
+            .flatten()
+            .filter(|c| {
+                std::sync::Arc::ptr_eq(&c.provider, self.provider_at(verdict.target.endpoint))
+            })
+            .map(|c| MoveTo::new(&c, answer.accept_api));
+        let agents = self.agents.on_accounts(&verdict.retiring);
+        let affected = |path| {
+            agents.iter().any(|agent| {
+                &agent.agent == path && verdict.retiring.contains(&agent.effective.account)
+            })
+        };
+        let Some(to) = to.filter(|to| {
+            to.billing.is_metered() == answer.accept_api && answer.follow.iter().all(affected)
+        }) else {
+            return self
+                .emit(
+                    events,
+                    AgentEvent::refused(request, super::auth::CHOICE_CHANGED),
+                )
+                .await;
+        };
+        let result = Self::followers(
+            &verdict.retiring,
+            agents,
+            Some(&to),
+            Some(&answer.follow),
+            DepartureKind::Switch,
+        )
+        .await;
+        let mut problem = result.problem.or_else(|| {
+            (!self
+                .live_destination(&to.account)
+                .is_some_and(|c| to.permits(&c)))
+            .then(|| super::auth::CHOICE_CHANGED.to_owned())
+        });
+        if problem.is_none() {
+            problem = self
+                .apply_verdict(Some(request), verdict, None, events)
+                .await
+                .err();
+        }
+        Self::followers_moved(request, Some(to.account), result.moved, events).await;
+        if let Some(line) = problem {
+            self.emit(events, AgentEvent::refused(request, line)).await;
+        }
     }
 
     #[must_use]

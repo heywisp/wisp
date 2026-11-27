@@ -2034,9 +2034,24 @@ fn child_switch_setup() -> Setup {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChildMove {
+    Manual,
+    Switch,
+    Logout,
+}
+
 async fn manually_switch_child(setup: Setup) -> Run {
+    child_move(setup, ChildMove::Manual, false).await
+}
+
+async fn child_move(mut setup: Setup, route: ChildMove, with_switch: bool) -> Run {
     use crate::agent::testing::{B, step};
 
+    setup.full_screen |= with_switch;
+    if route == ChildMove::Logout {
+        setup.hosted_child = Some("/w");
+    }
     let mut run = start(
         "resume-child-on-another-provider",
         setup,
@@ -2061,6 +2076,9 @@ async fn manually_switch_child(setup: Setup) -> Run {
         ],
     )
     .await;
+    if route == ChildMove::Logout {
+        run.providers.get("/w").push([done("Noted.")]);
+    }
     run.providers.get("/w").knobs(|k| {
         k.betas = vec![crate::provider::anthropic::FALLBACK_BETA.to_owned()];
     });
@@ -2081,7 +2099,80 @@ async fn manually_switch_child(setup: Setup) -> Run {
             paused: false,
         })
     );
-    select_gpt(&mut run).await;
+    if route == ChildMove::Manual {
+        select_gpt(&mut run).await;
+        if !with_switch {
+            return run;
+        }
+    } else {
+        let request = run.request();
+        run.send(child(
+            "/w",
+            ClientCommand::shortcut(request, None, None, Some(Effort::Low)),
+        ))
+        .await;
+        run.until("the source selects the matching effort", |e| matches!(inner(e, "/w"), Some(AgentEvent::SettingsChanged { answers: Some(r), .. }) if *r == request)).await;
+    }
+    if route == ChildMove::Logout {
+        use wisp_protocol::subscription_auth::{AuthCommand, AuthOutcome};
+
+        run.root_ended().await;
+
+        let request = run.request();
+        let mut answer = AuthCommand::logout(
+            request,
+            &[ENV.into()],
+            true,
+            Some("gpt".into()),
+            vec!["w".into()],
+        );
+        if let AuthCommand::Logout { accept_api, .. } = &mut answer {
+            *accept_api = true;
+        }
+        let outcome = super::subscription_auth::auth(&mut run, answer).await;
+        assert!(
+            matches!(&outcome, AuthOutcome::LoggedOut { moved, stay, .. } if stay.is_empty() && moved.len() == 1 && moved[0].agent == "w"),
+            "{outcome:?}"
+        );
+        return run;
+    }
+    let request = run.request();
+    let ClientCommand::ChangeSettings {
+        changes: switches, ..
+    } = crate::plugin::testing::plugin_switch(
+        request.0,
+        "anthropic",
+        wisp_protocol::settings::ENABLED_KEY,
+        false,
+    )
+    else {
+        unreachable!()
+    };
+    let mut changes = ClientCommand::shortcut_changes(Some("gpt".into()), None, None);
+    changes.extend(switches);
+    let command = if route == ChildMove::Switch {
+        ClientCommand::AnswerProviderSwitch {
+            request,
+            changes,
+            follow: vec!["w".into()],
+            accept_api: true,
+        }
+    } else {
+        ClientCommand::ChangeSettings {
+            request,
+            changes,
+            save: false,
+        }
+    };
+    run.send(command).await;
+    let event = run.until("the provider switch answer", |e| matches!(e, AgentEvent::SettingsChanged { answers: Some(r), .. } | AgentEvent::Rejected { request: Some(r), .. } if *r == request)).await;
+    assert!(
+        matches!(&event, AgentEvent::SettingsChanged { endpoint, .. } if endpoint == "gpt"),
+        "{event:?}"
+    );
+    if route == ChildMove::Switch {
+        run.until("the acknowledged provider switch move", |e| matches!(e, AgentEvent::FollowersMoved { request: r, moved, .. } if *r == request && moved.len() == 1 && moved[0].agent == "w")).await;
+    }
     run
 }
 
@@ -2271,6 +2362,63 @@ async fn a_child_moved_to_another_provider_sends_its_history_converted_and_resum
             (logged.current.model.as_str(), logged.current.effort),
             (GPT, Effort::Low)
         );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_child_moved_by_a_card_sends_the_same_destination_requests_as_its_account_choice() {
+    use crate::provider::openai::build_body;
+
+    for reopen_first in [false, true] {
+        let mut control = None;
+        for case in [ChildMove::Manual, ChildMove::Switch, ChildMove::Logout] {
+            let mut run = child_move(child_switch_setup(), case, true).await;
+            if reopen_first {
+                run = resume(
+                    run.quit().await,
+                    switch_ready(false),
+                    vec![(
+                        "gpt:/w",
+                        vec![done("A later reply."), done("Another reply.")],
+                    )],
+                )
+                .await
+                .run;
+            }
+            first_moved_child_request(&mut run).await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let warmth = entry(&list(&mut run).await, "/w").keep_warm;
+            assert!(
+                warmth.is_none_or(|warm| warm.paused),
+                "{case:?}: {warmth:?}"
+            );
+            run.send(child_send("/w", "later", "A message on the destination."))
+                .await;
+            run.child_ended("/w").await;
+            let run = run.quit().await;
+            let sent = run.requests("gpt:/w");
+            let [first, next] = sent.as_slice() else {
+                panic!("{case:?} must send exactly twice")
+            };
+            grows_from(next, first, "the selected destination history");
+            let logged = logged_worker(&run);
+            assert_eq!(logged.current.provider.as_deref(), Some("openai"));
+            assert_eq!(
+                (logged.current.model.as_str(), logged.current.effort),
+                (GPT, Effort::Low)
+            );
+            let bodies = [first, next]
+                .map(|step| serde_json::to_vec(&build_body(&step.request()).unwrap()).unwrap());
+            if let Some(control) = &control {
+                assert_eq!(
+                    &(bodies, warmth),
+                    control,
+                    "{case:?}, reopen_first={reopen_first}"
+                );
+            } else {
+                control = Some((bodies, warmth));
+            }
+        }
     }
 }
 
@@ -2500,18 +2648,29 @@ async fn an_unstarted_exact_child_cannot_follow_an_unnamed_api_account() {
             host.elsewhere(&["gpt"], &[]);
         } else {
             let request = run.request();
-            run.send(ClientCommand::SubscriptionAuth {
-                command: AuthCommand::logout(request, &["gpt".into()], true, None, Vec::new()),
-            })
+            let names = ["gpt".to_owned()];
+            let outcome = super::subscription_auth::auth(
+                &mut run,
+                AuthCommand::logout(request, &names, true, None, Vec::new()),
+            )
             .await;
-            let event = run.until("a confirmed sign-out without named followers", |e| matches!(e, AgentEvent::SubscriptionAuth { event } if event.request == request)).await;
-            let AgentEvent::SubscriptionAuth { event } = event else {
-                unreachable!()
+            let AuthOutcome::LogoutNeeds {
+                fixed: true, ways, ..
+            } = outcome
+            else {
+                panic!("{outcome:?}")
             };
+            assert_eq!(ways[0].chat.as_deref(), Some(ENV));
+            assert_eq!(ways[0].follow, ["w"]);
+            let request = run.request();
+            let outcome = super::subscription_auth::auth(
+                &mut run,
+                AuthCommand::logout(request, &names, true, Some(ENV.into()), Vec::new()),
+            )
+            .await;
             assert!(
-                matches!(event.outcome, AuthOutcome::LoggedOut { ref moved, .. } if moved.is_empty() != used),
-                "{:?}",
-                event.outcome
+                matches!(&outcome, AuthOutcome::LoggedOut { moved, stay, .. } if moved.is_empty() && stay.len() == 1 && stay[0].agent == "w"),
+                "{outcome:?}"
             );
         }
         if !used {
@@ -2910,6 +3069,64 @@ async fn a_resumed_child_never_compacts_on_a_discarded_account() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn reselecting_an_unbound_child_keeps_its_pending_account_visible_until_it_binds() {
+    use wisp_protocol::subscription_auth::{AuthCommand, AuthOutcome};
+
+    for sign_out in [false, true] {
+        let selected = subscription("selected");
+        let mut run = worker_before_account_move(subscription("source"), selected, false).await;
+        select_child_account(&mut run, "selected").await;
+        let (back, host) = catalog_reopen(
+            run.quit().await,
+            None,
+            selected,
+            vec![("selected:/w", vec![done("Continued.")])],
+        )
+        .await;
+        let mut run = back.run;
+        assert_eq!(entry(&list(&mut run).await, "/w").endpoint, None);
+        select_child_account(&mut run, "selected").await;
+        assert_eq!(entry(&list(&mut run).await, "/w").endpoint, None);
+        assert!(
+            host.catalog.begin_logout("selected").is_ok(),
+            "an unbound child must not hide a token"
+        );
+        let names = ["selected".to_owned()];
+        if sign_out {
+            let request = run.request();
+            let result = super::subscription_auth::auth(
+                &mut run,
+                AuthCommand::logout(request, &names, true, Some(ENV.into()), Vec::new()),
+            )
+            .await;
+            assert!(
+                matches!(result, AuthOutcome::LoggedOut { stay, .. } if stay.iter().any(|child| child.agent == "w"))
+            );
+            assert!(
+                !host
+                    .catalog
+                    .view()
+                    .ready
+                    .iter()
+                    .any(|conn| conn.name == "selected")
+            );
+        } else {
+            run.send(child_send("/w", "after-selection", "Continue."))
+                .await;
+            assert!(matches!(
+                run.child_ended("/w").await,
+                TurnOutcome::Completed { .. }
+            ));
+            assert_eq!(
+                entry(&list(&mut run).await, "/w").endpoint.as_deref(),
+                Some("selected")
+            );
+        }
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_resumed_manual_compaction_binds_and_charges_the_selected_account() {
     let selected = api("claude-api");
     let mut run = worker_before_account_move(subscription("source"), selected, false).await;
@@ -3071,6 +3288,15 @@ async fn a_model_only_pending_change_keeps_the_active_accounts_billing_evidence(
         catalog_connection(subscription("source"), plan.clone()),
     );
     sync_worker(&mut run).await;
+    run.send(child_send(
+        "/w",
+        "unchecked-rebind",
+        "Do not change billing implicitly.",
+    ))
+    .await;
+    run.until("model and effort do not select an account", |e| matches!(inner(e, "/w"), Some(AgentEvent::Rejected { id: Some(id), reason, .. }) if id.0 == "unchecked-rebind" && reason.contains("no longer available as chosen"))).await;
+    assert!(plan.sent().is_empty());
+    select_child_account(&mut run, "source").await;
     run.send(child_send(
         "/w",
         "on-subscription",

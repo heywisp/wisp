@@ -853,6 +853,14 @@ async fn a_childs_retry_moves_only_where_it_may() {
     run.child_ended("/w").await;
     let agents = list(&mut run).await;
     assert_eq!(entry(&agents, "/w").endpoint.as_deref(), Some("gw"));
+    let root = service_of(&kernels).handle(AgentPath::root());
+    assert!(root.on_accounts(&[ENV.to_owned()]).is_empty());
+    let placement = root.on_accounts(&["gw".to_owned()]);
+    let [moved] = placement.as_slice() else {
+        panic!("the tree must see the retarget")
+    };
+    assert_eq!(moved.bound.as_deref(), Some("gw"));
+    assert_eq!(moved.effective.account, "gw");
     let run = run.quit().await;
     assert_eq!(run.requests("gw:/w").len(), 1);
     assert!(run.requests("old:/w").is_empty());

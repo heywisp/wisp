@@ -259,6 +259,8 @@ on an older host sees only old events; an old window kept open through
 `wisp restart` closes a posted card at turn end and skips `withdrawn` closes
 until reopened.
 
+A new host sends a provider-off `LeaveNeeds` with both the legacy `ways` (agents wait) and `with_followers`. A new window uses `AnswerProviderSwitch` only when `with_followers` is present and nonempty; otherwise it uses the existing unsaved settings change, then saves the switches after the host confirms it. An old window may show `LogoutNeeds { fixed: true }` as a one-row Where step. Its old `Logout` answer cannot approve a new metered move without `accept_api`. A new window's forced `/logout all` preview fails closed if an old host rejects `preview_logout`; the window shows the refusal and never retries it as executable `Logout`.
+
 Each connection gets a distinct `REQUEST_RANGE` beginning at
 `Welcome.first_request`. Clients count up within that range. The host counts
 down from `HOST_FIRST`; its description answers never reach a window.

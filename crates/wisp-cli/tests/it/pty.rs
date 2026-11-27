@@ -974,7 +974,12 @@ fn a_provider_switch_asks_where_the_chat_goes_and_applies_now() {
     plugin(&mut session);
     session.wait_shown("enter turn off");
     session.send(b"\r");
+    let held = session.wait_shown("Where should this chat go?");
+    assert!(!held.contains("enter use the API"), "{held}");
+    session.send(b"\r");
     session.wait_shown("Where should this chat go?");
+    session.send(b"\x1b[B");
+    session.wait_shown("enter use the API");
     session.send(b"\r");
     session.wait_shown("applies now");
     plugin(&mut session);

@@ -287,6 +287,49 @@ async fn background_unknown_events_survive_completion_retry_and_abort() {
 }
 
 #[tokio::test]
+async fn an_eligible_background_summary_cannot_use_a_rebound_subscription() {
+    use crate::kit::Connect;
+    use wisp_protocol::Billing;
+
+    let store = MemoryStore::default();
+    let subscription = documented(vec![answer("Hello.", NEAR)]);
+    subscription.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+    let api = documented(vec![compaction(SUMMARY)]);
+    api.knobs(|k| k.billing = Some(Billing::Metered));
+    let host = crate::endpoints::testing::AuthHost::with(crate::agent::Connection {
+        provider: subscription.clone(),
+        ..crate::agents::testing::connection("env", None)
+    });
+    let view = host.catalog.connect("/").unwrap();
+    let mut entries = small_band();
+    entries.push((
+        Place::Global,
+        names::CONTEXT_BACKGROUND_COMPACTION,
+        SettingValue::Bool(false),
+    ));
+    let mut agent = agent_with(&subscription, &store, POINT, entries)
+        .with_connections(view.ready, view.unavailable, "env")
+        .with_endpoint_host(host.clone());
+    agent.leave_account = Some(crate::agents::endpoints::ExactAccount::connected(
+        agent.connection(),
+    ));
+    let mut live = Live::start(agent);
+    let outcome = live.turn("u1", "hello").await;
+    let (agent, _) = live.close().await;
+    let mut agent = agent.with_start_layers(saved(small_band()));
+    assert!(agent.background_due(&outcome).is_some());
+
+    *host.next_provider.lock().unwrap() = Some(api.clone());
+    host.elsewhere(&[], &["env"]);
+    let (events, _received) = tokio::sync::mpsc::channel(32);
+    agent.sync_catalog(&events).await;
+    assert!(agent.binding_problem().is_some());
+    assert!(agent.background_due(&outcome).is_none());
+    agent.background_after_turn(&outcome, &events).await;
+    assert!(api.sent().is_empty());
+}
+
+#[tokio::test]
 async fn no_precompute_below_the_band_or_when_turned_off() {
     let off = |place: Place| {
         let mut entries = small_band();

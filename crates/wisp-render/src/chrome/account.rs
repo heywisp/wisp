@@ -1,7 +1,7 @@
 use wisp_protocol::CodeProblem;
 use wisp_protocol::settings::{PROVIDER_GEMINI, PROVIDER_OPENAI, joined};
 use wisp_protocol::subscription_auth::{
-    AuthFailureKind, PresetGone, Stayed, SubscriptionProvider, Unusable,
+    AuthFailureKind, PresetGone, Stayed, SubscriptionProvider, Unusable, WayOrigin,
 };
 
 use super::settings::{Rebuild, Scope};
@@ -1174,11 +1174,86 @@ pub fn consequence(
     lines
 }
 
+pub fn live_consequences(
+    movers: &[(&str, &WayOrigin)],
+    provider: &str,
+    dest: AccountState,
+    fixed: bool,
+) -> Vec<String> {
+    let subject = |name: &str| {
+        if name == "/" {
+            THIS_CHAT.to_owned()
+        } else {
+            name.to_owned()
+        }
+    };
+    let sentence = |names: &[String], tail: Option<&str>| {
+        let subject = listed(names);
+        let subject = subject
+            .strip_prefix(THIS_CHAT)
+            .map_or_else(|| subject.clone(), |rest| format!("This chat{rest}"));
+        let verb = if names.len() == 1 { "moves" } else { "move" };
+        match tail {
+            Some(tail) => format!("{subject} {verb} {tail}."),
+            None => format!("{subject} {verb}."),
+        }
+    };
+    let mut groups: Vec<(&str, Vec<String>)> = Vec::new();
+    let mut unnamed_child = false;
+    for &(name, origin) in movers {
+        let transition = match origin.billing {
+            Some(from) => billing_move(AccountState::of(from), dest),
+            None => (dest == AccountState::Api).then_some("to the API"),
+        };
+        if let Some(transition) = transition {
+            if let Some((_, names)) = groups.iter_mut().find(|(tail, _)| *tail == transition) {
+                names.push(subject(name));
+            } else {
+                groups.push((transition, vec![subject(name)]));
+            }
+        } else {
+            unnamed_child |= name != "/";
+        }
+    }
+    let mut lines = Vec::new();
+    if !fixed && !movers.is_empty() && (groups.is_empty() || unnamed_child) {
+        let names: Vec<_> = movers.iter().map(|(name, _)| subject(name)).collect();
+        lines.push(sentence(&names, None));
+    }
+    lines.extend(
+        groups
+            .into_iter()
+            .map(|(tail, names)| sentence(&names, Some(tail))),
+    );
+    let crossing: Vec<_> = movers
+        .iter()
+        .filter(|(_, origin)| {
+            origin
+                .provider
+                .as_deref()
+                .is_some_and(|from| from != provider)
+        })
+        .map(|(name, _)| subject(name))
+        .collect();
+    if !crossing.is_empty() {
+        if crossing.len() == movers.len() {
+            lines.push("Earlier reasoning won't carry over.".to_owned());
+        } else {
+            lines.push(format!(
+                "Earlier reasoning won't carry over for {}.",
+                listed(&crossing)
+            ));
+        }
+    }
+    lines
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Moving {
     pub to: Named,
     pub state: AccountState,
     pub rows: Vec<(String, Option<String>)>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1327,6 +1402,17 @@ pub fn logout_question(asked: &Asked, room: usize, glyphs: &Glyphs) -> Vec<Style
                 .iter()
                 .map(|line| mark_line(line, Token::Text, mark, glyphs)),
         );
+        if let Some(moving) = &asked.moving
+            && !moving.notes.is_empty()
+        {
+            lines.push(StyledLine::default());
+            lines.extend(
+                moving
+                    .notes
+                    .iter()
+                    .map(|line| mark_line(line, Token::Text, None, glyphs)),
+            );
+        }
         if !asked.presets.is_empty() {
             lines.push(StyledLine::default());
         }

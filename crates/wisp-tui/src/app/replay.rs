@@ -1318,6 +1318,7 @@ impl Agent {
             | ClientCommand::Terminal { .. }
             | ClientCommand::Voice { .. } => true,
             ClientCommand::PlanUsage { request, .. }
+            | ClientCommand::AnswerProviderSwitch { request, .. }
             | ClientCommand::StartOn { request, .. }
             | ClientCommand::RunPluginCommand { request, .. } => {
                 self.emit(AgentEvent::refused(request, NO_REPLAYED_COMMANDS))
@@ -1840,7 +1841,8 @@ pub fn spawn(
                         }
                         continue;
                     }
-                    ClientCommand::PlanUsage { request, .. } => {
+                    ClientCommand::PlanUsage { request, .. }
+                    | ClientCommand::AnswerProviderSwitch { request, .. } => {
                         if !agent
                             .emit(AgentEvent::refused(request, NO_REPLAYED_COMMANDS))
                             .await

@@ -1,0 +1,28 @@
+{
+  "type": "subscription_auth",
+  "event": {
+    "request": 19,
+    "outcome": {
+      "outcome": "logout_needs",
+      "fixed": true,
+      "ways": [
+        {
+          "chat": "other",
+          "follow": [
+            "worker"
+          ],
+          "charges": true,
+          "origins": {
+            "worker": {
+              "account": "team",
+              "provider": "anthropic",
+              "billing": "anthropic_plan",
+              "model": "claude-opus-5-5",
+              "effort": "high"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

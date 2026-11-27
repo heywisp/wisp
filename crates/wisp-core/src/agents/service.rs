@@ -12,6 +12,7 @@ use wisp_plugin_api::host::Delivery;
 use wisp_protocol::agents::{
     Choice, RENAME_AGENT, REPORT, ROOT_NAME, SPAWN_AGENT, SPAWN_TOOLS, WRITE_TODOS, shown_agent,
 };
+use wisp_protocol::subscription_auth::WayOrigin;
 use wisp_protocol::{
     Activity, AgentAction, AgentEntry, AgentEvent, AgentPath, AgentState, CONFIG_FILE, CacheTtl,
     ClientCommand, ContextFill, Effort, HoldReason, IdleOutcome, KeepWarm, MailId, MailKind,
@@ -105,8 +106,8 @@ pub enum Reach {
 
 pub(crate) struct OnAccount {
     pub(crate) agent: String,
-    pub(crate) account: String,
-    pub(crate) provider: Option<String>,
+    pub(crate) effective: WayOrigin,
+    pub(crate) bound: Option<String>,
     pub(crate) working: bool,
     pub(crate) leave: Option<crate::agent::LeaveSender>,
 }
@@ -153,6 +154,7 @@ struct Entry {
     idle_at: Option<Instant>,
     state_since_ms: u64,
     place: Place,
+    effective_next: Option<WayOrigin>,
     kind: Option<&'static str>,
     preset_change: Option<PresetChange>,
     waking: bool,
@@ -165,6 +167,7 @@ struct Entry {
 struct Place {
     endpoint: Option<String>,
     provider: Option<String>,
+    billing: Option<wisp_protocol::Billing>,
     priced: bool,
 }
 
@@ -173,6 +176,7 @@ impl Place {
         Self {
             endpoint: Some(ready.name.clone()),
             provider: Some(ready.kind().as_str().to_owned()),
+            billing: Some(ready.provider.billing()),
             priced,
         }
     }
@@ -184,6 +188,7 @@ pub(crate) struct Settled {
     pub(crate) effort: Effort,
     pub(crate) endpoint: Option<String>,
     pub(crate) provider: &'static str,
+    pub(crate) billing: wisp_protocol::Billing,
     pub(crate) kind: &'static str,
     pub(crate) priced: bool,
 }
@@ -246,6 +251,7 @@ impl Entry {
             idle_at: None,
             state_since_ms,
             place,
+            effective_next: None,
             kind: None,
             preset_change: None,
             waking: false,
@@ -840,6 +846,7 @@ impl AgentsService {
                 Place {
                     endpoint: Some(caller.endpoint.clone()),
                     provider: Some(agent.provider_kind().as_str().to_owned()),
+                    billing: Some(agent.account_billing()),
                     priced: agent.is_priced(),
                 },
                 self.now_ms(),
@@ -2587,13 +2594,26 @@ impl AgentsHandle {
             .tree()
             .entries
             .iter()
-            .filter(|(path, entry)| !path.is_root() && entry.commands.is_some())
+            .filter(|(path, entry)| {
+                !path.is_root() && entry.commands.is_some() && entry.state.is_live()
+            })
             .filter_map(|(path, entry)| {
-                let account = entry.place.endpoint.clone()?;
-                names.contains(&account).then(|| OnAccount {
+                let bound = entry.place.endpoint.clone();
+                let effective = entry.effective_next.clone().or_else(|| {
+                    Some(WayOrigin {
+                        account: bound.clone()?,
+                        provider: entry.place.provider.clone(),
+                        billing: entry.place.billing,
+                        model: entry.model.clone(),
+                        effort: entry.effort,
+                    })
+                })?;
+                (names.contains(&effective.account)
+                    || bound.as_ref().is_some_and(|n| names.contains(n)))
+                .then(|| OnAccount {
                     agent: path.as_str().trim_start_matches('/').to_owned(),
-                    account,
-                    provider: entry.place.provider.clone(),
+                    effective,
+                    bound,
                     working: !matches!(
                         entry.state,
                         AgentState::Idle { .. } | AgentState::Held { .. }
@@ -2616,7 +2636,13 @@ impl AgentsHandle {
         let tree = service.tree();
         let live = tree.entries.iter();
         let live = live.filter(|(path, entry)| !path.is_root() && entry.state.is_live());
-        let places = live.filter_map(|(_, entry)| entry.place.endpoint.clone());
+        let places = live.filter_map(|(_, entry)| {
+            entry
+                .effective_next
+                .as_ref()
+                .map(|p| p.account.clone())
+                .or_else(|| entry.place.endpoint.clone())
+        });
         let places = places.filter(|account| !names.contains(account));
         (presets.collect(), places.collect())
     }
@@ -2658,7 +2684,7 @@ impl AgentsHandle {
             .is_some_and(|s| s.tree().gone.contains_key(name))
     }
 
-    pub(crate) fn settle(&self, settled: Settled) {
+    pub(crate) fn settle(&self, settled: Settled, next: Option<Option<WayOrigin>>) {
         if let Some(service) = &self.service {
             service.with_entry(&self.path(), |e| {
                 e.model = settled.model;
@@ -2666,9 +2692,13 @@ impl AgentsHandle {
                 e.place = Place {
                     endpoint: settled.endpoint,
                     provider: Some(settled.provider.to_owned()),
+                    billing: Some(settled.billing),
                     priced: settled.priced,
                 };
                 e.kind = Some(settled.kind);
+                if let Some(next) = next {
+                    e.effective_next = next;
+                }
             });
         }
     }
@@ -2895,3 +2925,5 @@ pub use load::{ChangedPreset, LoadedTree, load_tree};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::{attach_test_tree, test_root_next};

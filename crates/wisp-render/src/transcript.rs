@@ -3297,6 +3297,7 @@ impl Transcript {
             | AgentEvent::Voice { .. }
             | AgentEvent::AccountsGone { .. }
             | AgentEvent::LeaveNeeds { .. }
+            | AgentEvent::FollowersMoved { .. }
             | AgentEvent::CatalogChanged { .. }
             | AgentEvent::SlotContent { .. }
             | AgentEvent::SlotFailed { .. } => {}

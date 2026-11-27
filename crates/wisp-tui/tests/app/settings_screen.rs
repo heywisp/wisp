@@ -1194,7 +1194,7 @@ fn provider_accounts() -> Vec<EndpointFacts> {
 }
 
 impl Stage {
-    async fn provider_off(&mut self, remove: bool) -> (RequestId, SettingChange) {
+    async fn provider_off(&mut self, remove: bool, live: bool) -> (RequestId, SettingChange) {
         self.open("/config gemini", provider_off_of).await;
         if remove {
             self.char('d');
@@ -1203,8 +1203,31 @@ impl Stage {
         }
         self.key(KeyCode::Enter);
         let (request, switch) = saving(self.next().await);
+        use wisp_protocol::subscription_auth::{Way, WayOrigin};
+        let origins = ["/", "worker"]
+            .into_iter()
+            .map(|path| {
+                (
+                    path.to_owned(),
+                    WayOrigin {
+                        account: "gemini".into(),
+                        provider: Some("gemini".into()),
+                        billing: Some(wisp_protocol::Billing::Metered),
+                        model: MODEL.into(),
+                        effort: wisp_protocol::Effort::High,
+                    },
+                )
+            })
+            .collect();
+        let live_way = Way {
+            chat: Some("claude-sub".into()),
+            follow: vec!["worker".into()],
+            origins,
+            ..Way::default()
+        };
         self.emit(AgentEvent::LeaveNeeds {
             request,
+            with_followers: if live { vec![live_way] } else { Vec::new() },
             ways: vec![wisp_protocol::subscription_auth::Way {
                 chat: Some("claude-sub".into()),
                 stay: vec!["worker".into()],
@@ -1212,7 +1235,17 @@ impl Stage {
             }],
         })
         .await;
-        self.until(|r| shows(r, "worker stays behind")).await;
+        self.until(|r| {
+            shows(
+                r,
+                if live {
+                    "This chat and worker move"
+                } else {
+                    "worker stays behind"
+                },
+            )
+        })
+        .await;
         (request, switch)
     }
 
@@ -1230,7 +1263,7 @@ impl Stage {
     }
 
     async fn provider_move(&mut self) -> (RequestId, SettingChange) {
-        let (request, switch) = self.provider_off(false).await;
+        let (request, switch) = self.provider_off(false, false).await;
         self.provider_refused(request).await;
         self.key(KeyCode::Enter);
         let ClientCommand::ChangeSettings {
@@ -1291,7 +1324,7 @@ async fn a_provider_switch_opens_the_where_card_and_esc_keeps_it_on() {
         provider_accounts(),
         |mut stage| async move {
             for (remove, late) in [(false, false), (true, false), (false, true)] {
-                let (request, _) = stage.provider_off(remove).await;
+                let (request, _) = stage.provider_off(remove, false).await;
                 if !late {
                     stage.provider_refused(request).await;
                 }
@@ -1345,17 +1378,59 @@ async fn the_where_card_moves_the_chat_then_saves_only_the_switch_and_prints_it_
         None,
         provider_accounts(),
         |mut stage| async move {
-            let (request, switch) = stage.provider_move().await;
+            let (offer, switch) = stage.provider_off(false, true).await;
+            stage.provider_refused(offer).await;
+            stage.key(KeyCode::Enter);
+            let ClientCommand::AnswerProviderSwitch {
+                request,
+                changes,
+                follow,
+                accept_api,
+            } = stage.next().await
+            else {
+                panic!("expected confirmed switch")
+            };
+            assert_eq!(follow, ["worker"]);
+            assert!(!accept_api);
+            let mut expected =
+                ClientCommand::shortcut_changes(Some("claude-sub".into()), None, None);
+            expected.push(switch.clone());
+            assert_eq!(changes, expected);
+            stage
+                .emit(AgentEvent::rejected("This answer is not understood."))
+                .await;
+            stage
+                .until(|r| shows(r, "This answer is not understood."))
+                .await;
+            stage
+                .emit(AgentEvent::refused(offer, "Unrelated answer."))
+                .await;
+            stage.nothing_sent().await;
             stage.emit(provider_answer(request, &switch, false)).await;
             let (saved, sent) = saving(stage.next().await);
             assert_eq!(sent, switch);
+            stage
+                .emit(AgentEvent::FollowersMoved {
+                    request,
+                    to: "claude-sub".into(),
+                    moved: vec![wisp_protocol::subscription_auth::Followed {
+                        agent: "worker".into(),
+                        model: MODEL.into(),
+                        effort: wisp_protocol::Effort::High,
+                        rebuild_usd: Some(0.08),
+                        from: None,
+                        to: None,
+                    }],
+                })
+                .await;
+            stage.until(|r| shows(r, "~$0.08")).await;
+            stage.emit(provider_answer(request, &switch, false)).await;
+            stage.nothing_sent().await;
             let rows = stage.until(|r| shows(r, "Switched to")).await;
             assert!(shows(&rows, "claude-sub"), "{rows:#?}");
             assert!(!shows(&rows, "Plugin for gemini"), "{rows:#?}");
             stage.emit(provider_answer(saved, &switch, true)).await;
-            let rows = stage
-                .until(|r| shows(r, "worker waits until gemini is on again"))
-                .await;
+            let rows = stage.until(|r| shows(r, "saved to")).await;
             assert!(
                 said(
                     &rows,

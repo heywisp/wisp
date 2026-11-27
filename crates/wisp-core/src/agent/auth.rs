@@ -3,11 +3,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use wisp_protocol::subscription_auth::{
     AuthCommand, AuthEvent, AuthFailureKind, AuthOutcome, Followed, PresetGone, Stayed, Way,
+    WayOrigin,
 };
 use wisp_protocol::{AgentEvent, RejectKind, RequestId};
 
 use super::Agent;
-use super::leave::{Leave, Left};
+use super::leave::{Leave, LeaveAction, Left, MoveTo, Parked, ParkedLoss, admitted};
 use crate::agents::OnAccount;
 use crate::endpoints::EndpointName;
 use crate::endpoints::goes::{
@@ -22,7 +23,21 @@ impl Agent {
         command: AuthCommand,
         events: &mpsc::Sender<AgentEvent>,
     ) {
+        if let AuthCommand::PreviewLogout { request, names } = command {
+            return self.preview_logout(request, names, events).await;
+        }
         self.sync_catalog(events).await;
+        if self.signing_out.is_some() && matches!(command, AuthCommand::Logout { gone: false, .. })
+        {
+            return self
+                .auth_refused(
+                    command.request(),
+                    AuthFailureKind::Busy,
+                    SIGN_OUT_IN_PROGRESS.to_owned(),
+                    events,
+                )
+                .await;
+        }
         let Some(host) = self.queue.endpoints.clone() else {
             self.auth_refused(
                 command.request(),
@@ -33,7 +48,8 @@ impl Agent {
             .await;
             return;
         };
-        if let Some((_, true)) = host.auth_alias(&command)
+        if !matches!(command, AuthCommand::Logout { gone: true, .. })
+            && let Some((_, true)) = host.auth_alias(&command)
             && !self.busy()
             && let Err(message) = self.apply_pending_binding()
         {
@@ -112,13 +128,21 @@ impl Agent {
             .map(|connection| connection.name.clone())
             .collect();
         let active = self.endpoint_name().to_owned();
+        if self.leave_account.is_none()
+            && self.connected
+            && self.child_resume.destination().is_none()
+        {
+            self.leave_account = Some(crate::agents::endpoints::ExactAccount::connected(
+                self.connection(),
+            ));
+        }
         if !view.ready.iter().any(|connection| {
             connection.name == active && self.check_resumed_connection(connection).is_ok()
         }) && self.child_resume.detach()
         {
             self.endpoint_binding = None;
             self.disarm_keep_warm();
-            self.settle_entry();
+            self.publish_entry(Some(self.pending_displacement()));
         }
         let mut faulted = false;
         for connection in &self.connections {
@@ -174,23 +198,42 @@ impl Agent {
                     self.usage_generations
                         .insert(connection.name.clone(), generation);
                 }
-                let incompatible = self.check_resumed_connection(&connection).err();
+                let incompatible = self
+                    .check_resumed_connection(&connection)
+                    .and_then(|()| {
+                        self.pending_account_for(index)
+                            .map_or(Ok(()), |a| a.check(Some(&connection)))
+                    })
+                    .err();
                 self.connections[index] = connection.clone();
+                let retry_problem = self
+                    .queue
+                    .retry
+                    .as_ref()
+                    .filter(|retry| retry.endpoint() == index)
+                    .and_then(|retry| {
+                        incompatible
+                            .clone()
+                            .or_else(|| retry.continuation.account.check(Some(&connection)).err())
+                    });
+                if let Some(reason) = retry_problem
+                    && let Some(retry) = self.queue.retry.take()
+                {
+                    self.refuse_retry(retry.request(), reason, events).await;
+                }
                 if let Some(reason) = incompatible {
-                    if let Some(retry) = self.queue.retry.take_if(|retry| retry.endpoint() == index)
-                    {
-                        self.refuse_retry(retry.request(), reason.clone(), events)
-                            .await;
-                    }
                     if index == self.endpoint {
                         faulted = replaced;
+                        self.disarm_keep_warm();
+                        self.endpoint_binding = None;
                         self.binding_fault = Some(reason);
+                        self.binding_detached = true;
                         if replaced && index == self.next_endpoint() {
                             self.drop_compacts(events).await;
                         }
                     } else if index == self.next_endpoint() {
-                        if self.bound_endpoint().is_some() {
-                            self.settings.pending = None;
+                        if self.resumed_selection_is(index) && !self.child_resume.unbound() {
+                            self.set_pending(None);
                         } else if replaced {
                             self.drop_compacts(events).await;
                         }
@@ -203,6 +246,9 @@ impl Agent {
                     active_replaced = !self.child_resume.unbound();
                     self.disarm_keep_warm();
                     self.binding_fault = self.refresh_binding().err();
+                    if self.binding_fault.is_none() {
+                        self.binding_detached = false;
+                    }
                     faulted = self.binding_fault.is_some();
                 }
             } else {
@@ -215,7 +261,7 @@ impl Agent {
             }
             self.gone.retain(|(name, _)| name != &connection.name);
             self.agents.restore_endpoint(&connection.name);
-            if connection.name == active {
+            if connection.name == active && !self.gone_auto_failed && !self.binding_detached {
                 self.gone_elsewhere = None;
             }
         }
@@ -231,6 +277,7 @@ impl Agent {
         }
         self.register_held();
         self.catalog_revision = revision;
+        self.publish_entry(Some(self.pending_displacement()));
         if let Some(reason) = rejected.or_else(|| self.binding_fault.clone().filter(|_| faulted)) {
             super::emit(events, AgentEvent::rejected(reason)).await;
         }
@@ -250,18 +297,35 @@ impl Agent {
 
 pub(super) struct SigningOut {
     request: RequestId,
+    to: Option<String>,
     moved: Vec<Followed>,
     stay: Vec<Stayed>,
+    losses: Vec<ParkedLoss>,
+    pub(super) root_loss: Option<Parked>,
 }
 
-const LEAVE_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+#[derive(Default)]
+pub(super) struct Departed {
+    pub(super) moved: Vec<Followed>,
+    stay: Vec<Stayed>,
+    pub(super) problem: Option<String>,
+    losses: Vec<ParkedLoss>,
+    root_loss: Option<Parked>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum DepartureKind {
+    Logout,
+    Elsewhere,
+    Switch,
+}
 
 pub(super) struct Departure {
     leaving: Option<String>,
     agents: Vec<OnAccount>,
     dest: Option<String>,
     pub(super) ways: Vec<Way>,
-    from: Option<wisp_protocol::Billing>,
+    origin: Option<WayOrigin>,
 }
 
 impl Departure {
@@ -276,7 +340,7 @@ fn working_on_each(names: &[String], agents: &[&OnAccount]) -> Option<String> {
         .filter_map(|name| {
             let on: Vec<String> = agents
                 .iter()
-                .filter(|a| a.account == *name)
+                .filter(|a| a.bound.as_deref() == Some(name) || a.effective.account == *name)
                 .map(|a| a.agent.clone())
                 .collect();
             (!on.is_empty()).then(|| working_on(&on, name))
@@ -312,144 +376,369 @@ impl Agent {
         presets.collect()
     }
 
-    fn way_to(&self, to: Option<&str>, plan: &Departure) -> Way {
-        let to = to.and_then(|to| self.connections.iter().find(|c| c.name == to));
-        let kind = to.map(|c| c.provider.kind().as_str());
-        let (follow, stay): (Vec<&OnAccount>, Vec<&OnAccount>) = plan
-            .agents
-            .iter()
-            .partition(|a| Way::follows(a.provider.as_deref(), kind));
-        let names = |list: Vec<&OnAccount>| list.into_iter().map(|a| a.agent.clone()).collect();
-        Way {
-            chat: to.map(|c| c.name.clone()),
-            follow: names(follow),
-            stay: names(stay),
-            charges: to.is_some_and(|c| starts_charging(plan.from, c.provider.billing())),
+    pub(super) fn way_to<'a>(
+        to: &super::Connection,
+        origin: Option<&WayOrigin>,
+        agents: impl Iterator<Item = &'a OnAccount>,
+    ) -> Way {
+        let mut way = Way {
+            chat: Some(to.name.clone()),
+            ..Way::default()
+        };
+        if let Some(origin) = origin {
+            way.origins.insert("/".to_owned(), origin.clone());
         }
+        for agent in agents {
+            way.follow.push(agent.agent.clone());
+            way.origins
+                .insert(agent.agent.clone(), agent.effective.clone());
+        }
+        way.charges = way
+            .origins
+            .values()
+            .any(|origin| starts_charging(origin.billing, to.provider.billing()));
+        way
     }
 
     pub(super) fn departure(&self, names: &[String], chat: Option<&str>) -> Departure {
-        let current = self.endpoint_name().to_owned();
-        let next = self.connection_name(self.next_endpoint()).to_owned();
+        let current = self.endpoint_name();
+        let origin = self.way_origin(&self.next_pair());
+        let root_moves = names.contains(&origin.account);
         let leaving = names
             .iter()
-            .find(|n| **n == current || **n == next)
+            .find(|n| n.as_str() == current || **n == origin.account)
             .cloned();
-        let gone = |name: &String| names.contains(name) || self.gone.iter().any(|(n, _)| n == name);
-        let left: Vec<Account<'_>> = self
-            .connections
+        let connections = self.live_destinations();
+        let usable: Vec<_> = connections
             .iter()
-            .filter(|c| !gone(&c.name))
+            .filter(|c| !names.contains(&c.name))
+            .collect();
+        let left: Vec<_> = usable
+            .iter()
             .map(|c| Account {
                 name: &c.name,
                 provider: c.provider.kind(),
                 billing: c.provider.billing(),
             })
             .collect();
-        let start = self
-            .settings
-            .layers
-            .endpoints
-            .iter()
-            .find(|e| e.default)
-            .map(|e| e.name.as_str());
-        let from = leaving
-            .as_ref()
-            .and_then(|name| self.connections.iter().find(|c| c.name == *name));
+        let agents = self.agents.on_accounts(names);
         let mut plan = Departure {
-            leaving: leaving.clone(),
-            agents: self.agents.on_accounts(names),
-            dest: Some(current),
+            leaving,
+            agents,
+            dest: left
+                .iter()
+                .any(|c| c.name == origin.account)
+                .then(|| origin.account.clone()),
             ways: Vec::new(),
-            from: from.map(|c| c.provider.billing()),
+            origin: root_moves.then_some(origin),
         };
-        if let Some(name) = &leaving {
+        if let Some(origin) = &plan.origin {
+            let start = self
+                .settings
+                .layers
+                .endpoints
+                .iter()
+                .find(|e| e.default)
+                .map(|e| e.name.as_str());
             let from = Leaving {
-                name,
-                provider: from.map(|c| c.provider.kind()),
-                billing: plan.from,
+                name: &origin.account,
+                provider: origin
+                    .provider
+                    .as_deref()
+                    .and_then(crate::endpoints::ProviderKind::parse),
+                billing: origin.billing,
             };
             match chat_goes(&left, &from, start) {
-                Goes::Continue(to) => plan.dest = Some(to.to_owned()),
-                Goes::Ask(list) => {
+                Goes::Continue(to)
+                    if left.iter().any(|a| a.name == to && !a.billing.is_metered()) =>
+                {
+                    plan.dest = Some(to.to_owned())
+                }
+                goes => {
+                    let list = match goes {
+                        Goes::Ask(list) => list,
+                        Goes::Continue(to) => vec![to],
+                    };
                     plan.dest = chat.filter(|c| list.contains(c)).map(str::to_owned);
-                    let ways = list.iter().map(|to| self.way_to(Some(to), &plan));
-                    plan.ways = ways.collect();
+                    plan.ways = list
+                        .iter()
+                        .filter_map(|to| {
+                            let dest = usable.iter().find(|c| c.name == *to)?;
+                            Some(Self::way_to(
+                                dest,
+                                Some(origin),
+                                plan.agents
+                                    .iter()
+                                    .filter(|a| names.contains(&a.effective.account)),
+                            ))
+                        })
+                        .collect();
                 }
             }
         }
         plan
     }
 
-    async fn depart(
-        &mut self,
+    pub(super) async fn followers(
         names: &[String],
-        plan: &Departure,
-        follow: &[String],
-        elsewhere: bool,
-        events: &mpsc::Sender<AgentEvent>,
-    ) -> Result<(Vec<Followed>, Vec<Stayed>), String> {
-        let dest = plan.dest.clone();
-        let way = self.way_to(dest.as_deref(), plan);
-        let to = dest
-            .as_deref()
-            .and_then(|to| self.connections.iter().find(|c| c.name == to))
-            .map(|c| c.provider.billing());
-        let mut kept_names = names.to_vec();
-        kept_names.sort();
+        agents: Vec<OnAccount>,
+        to: Option<&MoveTo>,
+        selected: Option<&[String]>,
+        kind: DepartureKind,
+    ) -> Departed {
         let mut asked = Vec::new();
-        for agent in &plan.agents {
-            let takes = way.follow.contains(&agent.agent);
-            let from = self.connections.iter().find(|c| c.name == agent.account);
-            let charges =
-                to.is_some_and(|to| starts_charging(from.map(|c| c.provider.billing()), to));
-            let kept = takes && charges && !follow.contains(&agent.agent);
-            let (reply, answer) = tokio::sync::oneshot::channel();
+        let elsewhere = matches!(kind, DepartureKind::Elsewhere);
+        let switching = matches!(kind, DepartureKind::Switch);
+        let retiring: Arc<[String]> = Arc::from(names);
+        let mut result = Departed::default();
+        for agent in agents {
+            #[cfg(test)]
+            super::pause(
+                &wisp_protocol::AgentPath::new(format!("/{}", agent.agent)),
+                "before-leave",
+            )
+            .await;
+            let effective = &agent.effective;
+            let (action, gone, moves, charges) = if !names.contains(&effective.account) {
+                let Some(bound) = agent
+                    .bound
+                    .as_ref()
+                    .filter(|n| names.contains(n) && !switching)
+                else {
+                    continue;
+                };
+                (LeaveAction::Release, bound.clone(), false, false)
+            } else {
+                let charges = to.is_some_and(|to| starts_charging(effective.billing, to.billing));
+                let takes = to.filter(|to| {
+                    let named = selected.is_some_and(|paths| paths.contains(&agent.agent));
+                    (selected.is_none() || named)
+                        && Way::follows(
+                            effective.provider.as_deref(),
+                            Some(to.provider.as_str()),
+                            named,
+                            to.billing.is_metered(),
+                        )
+                        && (!to.billing.is_metered() || to.accept_api)
+                });
+                let Some(action) = takes
+                    .map(|to| LeaveAction::Move(to.clone()))
+                    .or_else(|| (!switching).then_some(LeaveAction::Lose { charges }))
+                else {
+                    continue;
+                };
+                (
+                    action,
+                    effective.account.clone(),
+                    takes.is_some(),
+                    charges && takes.is_none(),
+                )
+            };
+            let (start, answer) = tokio::sync::oneshot::channel();
             let leave = Leave {
-                to: dest.clone().filter(|_| takes && !kept),
-                gone: agent.account.clone(),
-                kept: elsewhere.then(|| kept_names.clone()),
-                reply,
+                action,
+                gone,
+                source: agent.effective.account.clone(),
+                names: Arc::clone(&retiring),
+                elsewhere,
+                start,
             };
             if agent
                 .leave
                 .as_ref()
                 .is_some_and(|tx| tx.send(leave).is_ok())
             {
-                asked.push((agent, takes && !kept, kept, answer));
+                asked.push((agent, moves, charges, answer));
             }
         }
-        let now = tokio::time::Instant::now();
-        let answers = futures::future::join_all(asked.iter_mut().map(|(agent, .., answer)| {
-            let wait = if agent.working { now } else { now + LEAVE_WAIT };
-            tokio::time::timeout_at(wait, answer)
-        }))
+        let answers = futures::future::join_all(asked.into_iter().map(
+            |(agent, moves, charges, answer)| async move {
+                let left = admitted(answer, agent.working).await;
+                (agent, moves, charges, left)
+            },
+        ))
         .await;
-        let mut moved = Vec::new();
-        let mut stay = Vec::new();
         let mut blocked = Vec::new();
-        for (index, (agent, has_way, kept, _)) in asked.iter().enumerate() {
-            let stayed = |busy| Stayed {
+        for (agent, moves, would_charge, left) in answers {
+            let stay = |busy, charges| Stayed {
                 agent: agent.agent.clone(),
-                charges: *kept,
+                charges,
                 busy,
-                account: agent.account.clone(),
+                account: agent.effective.account.clone(),
                 ..Stayed::default()
             };
-            match answers.get(index) {
-                Some(Ok(Ok(Left::Moved(followed)))) => moved.push(followed.clone()),
-                Some(Ok(Ok(Left::Stayed))) => stay.push(stayed(false)),
-                _ if elsewhere => stay.push(stayed(*has_way)),
-                _ => blocked.push(*agent),
+            match left {
+                Left::Moved(followed) => result.moved.push(followed),
+                Left::Released => {}
+                Left::Parked(loss, charges) => {
+                    if let Some(charges) = charges {
+                        result.stay.push(stay(false, charges));
+                    }
+                    result.losses.push(loss);
+                }
+                Left::Stayed { charges } => result.stay.push(stay(false, charges)),
+                Left::Refused { charges, .. } if elsewhere => {
+                    result.stay.push(stay(false, charges))
+                }
+                Left::Busy if elsewhere => result.stay.push(stay(moves, would_charge)),
+                Left::Busy => blocked.push(agent),
+                Left::Unconfirmed => {
+                    result
+                        .problem
+                        .get_or_insert_with(|| format!("{}'s move wasn't confirmed", agent.agent));
+                }
+                Left::Refused { reason, .. } => {
+                    result.problem.get_or_insert_with(|| reason.clone());
+                }
             }
         }
-        if let Some(line) = working_on_each(names, &blocked) {
-            return Err(line);
+        if !blocked.is_empty() {
+            result.problem = if switching {
+                let agents: Vec<_> = blocked.iter().map(|a| a.agent.clone()).collect();
+                let provider = blocked
+                    .first()
+                    .and_then(|a| a.effective.provider.as_deref())
+                    .unwrap_or("that provider");
+                Some(working_on(&agents, provider))
+            } else {
+                working_on_each(names, &blocked.iter().collect::<Vec<_>>())
+            };
         }
-        if let Some(name) = &plan.leaving {
-            self.leave(dest.as_deref(), name, events).await;
+        result
+    }
+
+    async fn depart(
+        &mut self,
+        names: &[String],
+        plan: Departure,
+        to: Option<&MoveTo>,
+        selected: Option<&[String]>,
+        kind: DepartureKind,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> Departed {
+        let mut result = Self::followers(names, plan.agents, to, selected, kind).await;
+        if result.problem.is_none()
+            && let Some(gone) = &plan.leaving
+        {
+            if plan.origin.is_none() {
+                result.problem = self.apply_pending_binding().err();
+                if result.problem.is_none() {
+                    self.disarm_keep_warm();
+                }
+            } else if let Some(to) = to {
+                result.problem = self.leave_to(to, events).await.err();
+            } else if matches!(kind, DepartureKind::Logout) {
+                result.root_loss = Some(self.park_loss(Arc::from(names)));
+            } else {
+                self.lose_account(gone);
+            }
         }
-        Ok((moved, stay))
+        result
+    }
+
+    fn busy_logout(&self, names: &[String], plan: &Departure) -> Option<(AuthFailureKind, String)> {
+        if let Some(name) = &plan.leaving
+            && self.busy()
+        {
+            return Some((
+                AuthFailureKind::Busy,
+                answering_on(name, "Sign out once it's done, or press esc to stop it."),
+            ));
+        }
+        let working: Vec<_> = plan.agents.iter().filter(|a| a.working).collect();
+        working_on_each(names, &working).map(|line| (AuthFailureKind::ChildReference, line))
+    }
+
+    fn logout_needs(
+        &self,
+        names: &[String],
+        plan: &Departure,
+        deletes_keys_of: Vec<String>,
+        new_start: Option<String>,
+    ) -> AuthOutcome {
+        let fixed = plan.ways.is_empty();
+        let mut ways = plan.ways.clone();
+        if fixed
+            && let Some(to) = plan
+                .dest
+                .as_deref()
+                .and_then(|to| self.live_destination(to))
+        {
+            let agents = plan
+                .agents
+                .iter()
+                .filter(|a| names.contains(&a.effective.account));
+            let way = Self::way_to(&to, plan.origin.as_ref(), agents);
+            if !way.origins.is_empty() {
+                ways.push(way);
+            }
+        }
+        let chat: Vec<_> = if fixed {
+            plan.dest.iter().cloned().collect()
+        } else {
+            ways.iter().filter_map(|w| w.chat.clone()).collect()
+        };
+        AuthOutcome::LogoutNeeds {
+            fixed,
+            deletes_keys_of,
+            new_start,
+            presets: self.presets_gone(names, &chat),
+            ways,
+        }
+    }
+
+    pub(super) async fn preview_logout(
+        &mut self,
+        request: RequestId,
+        names: Vec<String>,
+        events: &mpsc::Sender<AgentEvent>,
+    ) {
+        let Some(host) = self.queue.endpoints.clone() else {
+            return self
+                .auth_answer(request, crate::endpoints::host::unavailable(), events)
+                .await;
+        };
+        if names.is_empty() {
+            return self
+                .auth_refused(
+                    request,
+                    AuthFailureKind::StaleRequest,
+                    "Sign-out preview requires account names.".to_owned(),
+                    events,
+                )
+                .await;
+        }
+        let plan = self.departure(&names, None);
+        if let Some((kind, line)) = self.busy_logout(&names, &plan) {
+            return self.auth_refused(request, kind, line, events).await;
+        }
+        let destination = plan
+            .dest
+            .clone()
+            .or_else(|| plan.ways.first().and_then(|w| w.chat.clone()));
+        let outcome = match host.check_logout(names.clone(), destination, false).await {
+            Some(failed @ AuthOutcome::Failed { .. }) => failed,
+            Some(AuthOutcome::LogoutNeeds {
+                deletes_keys_of,
+                new_start,
+                ..
+            }) => self.logout_needs(&names, &plan, deletes_keys_of, new_start),
+            _ => self.logout_needs(&names, &plan, Vec::new(), None),
+        };
+        self.auth_answer(request, outcome, events).await;
+    }
+
+    pub(super) async fn followers_moved(
+        request: RequestId,
+        to: Option<String>,
+        moved: Vec<Followed>,
+        events: &mpsc::Sender<AgentEvent>,
+    ) {
+        if let Some(to) = to
+            && !moved.is_empty()
+        {
+            super::emit(events, AgentEvent::FollowersMoved { request, to, moved }).await;
+        }
     }
 
     async fn logout(
@@ -466,23 +755,31 @@ impl Agent {
             confirmed,
             follow,
             gone,
+            accept_api,
         } = command.clone()
         else {
             return;
         };
-        let names: Vec<String> = std::iter::once(alias).chain(also).collect();
+        let names: Vec<_> = std::iter::once(alias).chain(also).collect();
         if gone {
-            return self.gone_answer(request, names, chat, follow, events).await;
+            return self
+                .gone_answer(request, names, chat, follow, accept_api, events)
+                .await;
         }
         let plan = self.departure(&names, chat.as_deref());
-        let mut probe = command.clone();
-        if let AuthCommand::Logout { chat, .. } = &mut probe {
-            *chat = plan
-                .dest
-                .clone()
-                .or_else(|| plan.ways.first().and_then(|w: &Way| w.chat.clone()));
-        }
-        let (keys, new_start) = match host.check_logout(probe).await {
+        let to = plan
+            .dest
+            .as_deref()
+            .and_then(|name| self.live_destination(name))
+            .map(|c| MoveTo::new(&c, accept_api));
+        let destination = plan
+            .dest
+            .clone()
+            .or_else(|| plan.ways.first().and_then(|w| w.chat.clone()));
+        let (keys, new_start) = match host
+            .check_logout(names.clone(), destination, confirmed)
+            .await
+        {
             Some(failed @ AuthOutcome::Failed { .. }) => {
                 return self.auth_answer(request, failed, events).await;
             }
@@ -493,53 +790,66 @@ impl Agent {
             }) => (Some(deletes_keys_of), new_start),
             _ => (None, None),
         };
-        if let Some(name) = &plan.leaving
-            && self.busy()
+        if let Some((kind, line)) = self.busy_logout(&names, &plan) {
+            return self.auth_refused(request, kind, line, events).await;
+        }
+        let needs_fixed = to.as_ref().is_some_and(|to| {
+            (plan.origin.is_some() && to.billing.is_metered())
+                || plan.agents.iter().any(|a| {
+                    names.contains(&a.effective.account)
+                        && (to.billing.is_metered()
+                            || a.effective.provider.as_deref() != Some(to.provider.as_str()))
+                })
+        });
+        if (!confirmed && (keys.is_some() || !plan.ways.is_empty() || needs_fixed))
+            || (chat.is_none() && (!plan.ways.is_empty() || needs_fixed))
+        {
+            let needs = self.logout_needs(&names, &plan, keys.unwrap_or_default(), new_start);
+            return self.auth_answer(request, needs, events).await;
+        }
+        if chat
+            .as_deref()
+            .is_some_and(|name| plan.dest.as_deref() != Some(name))
+            || !valid_consent(&plan, to.as_ref(), &follow)
         {
             return self
                 .auth_refused(
                     request,
-                    AuthFailureKind::Busy,
-                    answering_on(name, "Sign out once it's done, or press esc to stop it."),
+                    AuthFailureKind::StaleRequest,
+                    CHOICE_CHANGED.to_owned(),
                     events,
                 )
                 .await;
         }
-        let working: Vec<&OnAccount> = plan.agents.iter().filter(|a| a.working).collect();
-        if let Some(line) = working_on_each(&names, &working) {
+        let selected = (confirmed || chat.is_some()).then_some(follow.as_slice());
+        let result = self
+            .depart(
+                &names,
+                plan,
+                to.as_ref(),
+                selected,
+                DepartureKind::Logout,
+                events,
+            )
+            .await;
+        let name = to.map(|to| to.account);
+        if let Some(line) = result.problem {
+            ParkedLoss::finish_all(result.losses, &[]).await;
+            Self::followers_moved(request, name, result.moved, events).await;
             return self
                 .auth_refused(request, AuthFailureKind::ChildReference, line, events)
                 .await;
         }
-        let chat_asks = !plan.ways.is_empty();
-        if (!confirmed && (keys.is_some() || chat_asks)) || (chat_asks && plan.dest.is_none()) {
-            let chat: Vec<String> = match plan.ways.as_slice() {
-                [] => plan.dest.iter().cloned().collect(),
-                ways => ways.iter().filter_map(|w| w.chat.clone()).collect(),
-            };
-            let needs = AuthOutcome::LogoutNeeds {
-                deletes_keys_of: keys.unwrap_or_default(),
-                new_start,
-                presets: self.presets_gone(&names, &chat),
-                ways: plan.ways,
-            };
-            return self.auth_answer(request, needs, events).await;
-        }
-        let (moved, stay) = match self.depart(&names, &plan, &follow, false, events).await {
-            Ok(done) => done,
-            Err(line) => {
-                return self
-                    .auth_refused(request, AuthFailureKind::ChildReference, line, events)
-                    .await;
-            }
-        };
         if let AuthCommand::Logout { chat, .. } = &mut command {
-            chat.clone_from(&plan.dest);
+            chat.clone_from(&name);
         }
         self.signing_out = Some(SigningOut {
             request,
-            moved,
-            stay,
+            to: name,
+            moved: result.moved,
+            stay: result.stay,
+            losses: result.losses,
+            root_loss: result.root_loss,
         });
         self.queue.auth(host, command);
     }
@@ -550,20 +860,60 @@ impl Agent {
         names: Vec<String>,
         chat: Option<String>,
         follow: Vec<String>,
+        accept_api: bool,
         events: &mpsc::Sender<AgentEvent>,
     ) {
-        let names: Vec<String> = names
+        let names: Vec<_> = names
             .into_iter()
-            .filter(|name| self.gone.iter().any(|(n, _)| n == name))
+            .filter(|name| {
+                self.gone.iter().any(|(n, _)| n == name)
+                    || ((self.gone_auto_failed || self.binding_detached)
+                        && self
+                            .gone_elsewhere
+                            .as_ref()
+                            .is_some_and(|gone| gone.contains(name)))
+            })
             .collect();
-        let (moved, stay) = if self.gone_elsewhere.is_some() && !names.is_empty() {
-            let plan = self.departure(&names, chat.as_deref());
-            self.depart(&names, &plan, &follow, true, events)
-                .await
-                .unwrap_or_default()
-        } else {
-            (Vec::new(), Vec::new())
-        };
+        let plan = self.departure(&names, chat.as_deref());
+        let to = plan
+            .dest
+            .as_deref()
+            .and_then(|name| self.live_destination(name))
+            .map(|c| MoveTo::new(&c, accept_api));
+        if self
+            .gone_elsewhere
+            .as_ref()
+            .is_none_or(|gone| !gone.iter().all(|name| names.contains(name)))
+            || chat
+                .as_deref()
+                .is_some_and(|name| plan.dest.as_deref() != Some(name))
+            || (chat.is_none() && !plan.ways.is_empty())
+            || !valid_consent(&plan, to.as_ref(), &follow)
+        {
+            return self
+                .auth_refused(
+                    request,
+                    AuthFailureKind::StaleRequest,
+                    CHOICE_CHANGED.to_owned(),
+                    events,
+                )
+                .await;
+        }
+        let selected = chat.as_ref().map(|_| follow.as_slice());
+        let result = self
+            .depart(
+                &names,
+                plan,
+                to.as_ref(),
+                selected,
+                DepartureKind::Elsewhere,
+                events,
+            )
+            .await;
+        let recovered = self.gone_auto_failed
+            && result.problem.is_none()
+            && to.is_some()
+            && self.active_binding_ready();
         let outcome = AuthOutcome::LoggedOut {
             alias: names.first().cloned().unwrap_or_default(),
             remote_revoked: false,
@@ -572,15 +922,49 @@ impl Agent {
             left_sign_ins: Vec::new(),
             left_keys: Vec::new(),
             new_start: None,
-            moved,
-            stay,
-            stopped: None,
+            moved: result.moved,
+            stay: result.stay,
+            stopped: result.problem,
             presets: Vec::new(),
         };
         self.auth_answer(request, outcome, events).await;
-        if self.gone_elsewhere.is_none() {
+        if recovered {
+            self.resume_gone(events).await;
+        } else if self.gone_elsewhere.is_none() {
             self.release_gone(events).await;
         }
+    }
+
+    pub(super) fn clear_gone_hold(&mut self) {
+        self.gone_auto_failed = false;
+        self.gone_elsewhere = None;
+    }
+
+    pub(super) async fn resume_gone(&mut self, events: &mpsc::Sender<AgentEvent>) {
+        self.clear_gone_hold();
+        self.release_gone(events).await;
+    }
+
+    async fn continue_gone(
+        &mut self,
+        names: &[String],
+        plan: Departure,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> Departed {
+        let to = plan
+            .dest
+            .as_deref()
+            .and_then(|name| self.live_destination(name))
+            .map(|c| MoveTo::new(&c, false));
+        self.depart(
+            names,
+            plan,
+            to.as_ref(),
+            None,
+            DepartureKind::Elsewhere,
+            events,
+        )
+        .await
     }
 
     async fn release_gone(&mut self, events: &mpsc::Sender<AgentEvent>) {
@@ -589,11 +973,42 @@ impl Agent {
         self.unheld_as(ids, false, events).await;
     }
 
-    async fn took_elsewhere(&mut self, names: Vec<String>, events: &mpsc::Sender<AgentEvent>) {
-        let plan = self.departure(&names, None);
+    async fn report_gone_result(
+        &mut self,
+        names: Vec<String>,
+        result: Departed,
+        events: &mpsc::Sender<AgentEvent>,
+    ) -> bool {
+        super::emit(
+            events,
+            gone_event(names, result.moved, result.stay, Vec::new()),
+        )
+        .await;
+        if let Some(problem) = result.problem {
+            super::emit(events, AgentEvent::rejected(&problem)).await;
+            return false;
+        }
+        true
+    }
+
+    async fn took_elsewhere(&mut self, mut names: Vec<String>, events: &mpsc::Sender<AgentEvent>) {
         for name in &names {
             self.agents.forget_endpoint(name, self.billing_of(name));
         }
+        if self.gone_auto_failed {
+            if let Some(unresolved) = &self.gone_elsewhere {
+                names.retain(|name| !unresolved.contains(name));
+            }
+            if !names.is_empty() {
+                super::emit(
+                    events,
+                    gone_event(names, Vec::new(), Vec::new(), Vec::new()),
+                )
+                .await;
+            }
+            return;
+        }
+        let plan = self.departure(&names, None);
         if plan.asks() {
             if let Some(name) = &plan.leaving {
                 self.binding_fault = Some(signed_out_elsewhere(name));
@@ -604,11 +1019,16 @@ impl Agent {
             self.gone_again(true, events).await;
             return;
         }
-        let (moved, stay) = self
-            .depart(&names, &plan, &[], true, events)
-            .await
-            .unwrap_or_default();
-        super::emit(events, gone_event(names, moved, stay, Vec::new())).await;
+        let leaving = plan.leaving.clone();
+        let result = self.continue_gone(&names, plan, events).await;
+        if !self.report_gone_result(names.clone(), result, events).await
+            && let Some(name) = leaving
+        {
+            self.binding_fault = Some(signed_out_elsewhere(&name));
+            self.gone_elsewhere = Some(names);
+            self.gone_auto_failed = true;
+            self.hold_gone(events).await;
+        }
     }
 
     pub(super) async fn gone_again(
@@ -621,22 +1041,22 @@ impl Agent {
             .clone()
             .filter(|_| self.track.is_none())?;
         let next = self.connection_name(self.next_endpoint());
-        if !names.iter().any(|name| name == next) {
-            self.gone_elsewhere = None;
-            self.release_gone(events).await;
-            return None;
-        }
-        let plan = self.departure(&names, None);
-        if !plan.asks() {
-            let (moved, stay) = self
-                .depart(&names, &plan, &[], true, events)
-                .await
-                .unwrap_or_default();
-            super::emit(events, gone_event(names, moved, stay, Vec::new())).await;
-            if release {
-                self.release_gone(events).await;
+        if !self.gone_auto_failed {
+            if !names.iter().any(|name| name == next) {
+                self.resume_gone(events).await;
+                return None;
             }
-            return None;
+            let plan = self.departure(&names, None);
+            if !plan.asks() {
+                let result = self.continue_gone(&names, plan, events).await;
+                if self.report_gone_result(names, result, events).await {
+                    if release {
+                        self.release_gone(events).await;
+                    }
+                    return None;
+                }
+                self.gone_auto_failed = true;
+            }
         }
         if release && self.inbox.has_unheld() {
             self.hold_gone(events).await;
@@ -670,18 +1090,33 @@ impl Agent {
         };
         let ways = self.departure(&names, None).ways;
         super::emit(events, gone_event(names, Vec::new(), Vec::new(), ways)).await;
-        let reason = self.binding_fault.clone().unwrap_or_default();
+        let reason = self
+            .binding_fault
+            .clone()
+            .unwrap_or_else(|| CHOICE_CHANGED.to_owned());
         self.refuse(id, RejectKind::AccountGone, reason, events)
             .await;
     }
 
-    pub(super) fn signed_out(&mut self, event: &mut AuthEvent) {
+    pub(super) async fn signed_out(
+        &mut self,
+        event: &mut AuthEvent,
+        events: &mpsc::Sender<AgentEvent>,
+    ) {
         let Some(out) = self.signing_out.take_if(|out| out.request == event.request) else {
             return;
         };
+        let names: Vec<String> = match &event.outcome {
+            AuthOutcome::LoggedOut { alias, also, .. } => {
+                std::iter::once(alias).chain(also).cloned().collect()
+            }
+            _ => Vec::new(),
+        };
+        ParkedLoss::finish_all(out.losses, &names).await;
+        if let Some(loss) = out.root_loss {
+            self.finish_parked_loss(loss, &names, None);
+        }
         if let AuthOutcome::LoggedOut {
-            alias,
-            also,
             moved,
             stay,
             presets,
@@ -689,17 +1124,28 @@ impl Agent {
         } = &mut event.outcome
         {
             *moved = out.moved;
-            *stay = out.stay;
-            let names: Vec<String> = std::iter::once(&*alias)
-                .chain(also.iter())
-                .cloned()
+            *stay = out
+                .stay
+                .into_iter()
+                .filter(|a| names.contains(&a.account))
                 .collect();
             *presets = self.presets_gone(&names, &[self.endpoint_name().to_owned()]);
             for name in &names {
                 self.agents.forget_endpoint(name, self.billing_of(name));
             }
+        } else {
+            Self::followers_moved(event.request, out.to, out.moved, events).await;
         }
     }
+}
+
+pub(super) const SIGN_OUT_IN_PROGRESS: &str = "Sign-out is already in progress.";
+
+pub(super) const CHOICE_CHANGED: &str = "That account choice has changed. Choose again.";
+
+fn valid_consent(plan: &Departure, to: Option<&MoveTo>, follow: &[String]) -> bool {
+    let moving = plan.origin.is_some() || !follow.is_empty();
+    !moving || to.is_none_or(|to| to.billing.is_metered() == to.accept_api)
 }
 
 fn gone_event(
@@ -734,7 +1180,7 @@ mod tests {
     use crate::kit::Connect;
     use crate::models::list::ModelList;
     use wisp_protocol::subscription_auth::SubscriptionProvider;
-    use wisp_protocol::{DeliveryMode, Effort, InputId, RequestId, Secret};
+    use wisp_protocol::{ClientCommand, DeliveryMode, Effort, InputId, RequestId, Secret};
 
     fn provider_catalog() -> wisp_protocol::Catalog {
         use wisp_plugin_testkit::hooks as kit;
@@ -950,6 +1396,44 @@ mod tests {
         assert_eq!(agent.turns, 0);
     }
     #[tokio::test]
+    async fn a_configured_root_refuses_an_in_place_api_replacement() {
+        let source = Fake::new([]);
+        source.knobs(|k| k.billing = Some(wisp_protocol::Billing::AnthropicPlan));
+        let host = AuthHost::with(crate::agent::Connection {
+            provider: source,
+            ..crate::agents::testing::connection("source", None)
+        });
+        let connected = host.catalog.connect("/").unwrap();
+        let mut agent = Agent::new(connected.provider, crate::agent::default_session())
+            .with_connections(connected.ready, connected.unavailable, "source")
+            .with_endpoint_host(host.clone());
+        assert!(agent.leave_account.is_none());
+        let api = Fake::new([]);
+        *host.next_provider.lock().unwrap() = Some(api.clone());
+        host.load("source");
+        let (events, _received) = mpsc::channel(32);
+        agent.sync_catalog(&events).await;
+        assert!(
+            agent
+                .binding_problem()
+                .unwrap()
+                .contains("no longer available as chosen")
+        );
+        let (_send, mut commands) = mpsc::channel(4);
+        assert!(
+            agent
+                .run_turn(
+                    "Do not call the replacement".to_owned(),
+                    &mut commands,
+                    &events
+                )
+                .await
+                .is_none()
+        );
+        assert!(api.sent().is_empty());
+    }
+
+    #[tokio::test]
     async fn active_reauthorization_marks_the_existing_rebuild_boundary_without_editing_history() {
         let host = AuthHost::new();
         host.load("plan");
@@ -1061,40 +1545,171 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_sign_out_names_every_agent_that_answers_busy_once_per_account() {
+    async fn a_host_signout_failure_reports_acknowledged_children_before_the_error() {
         let mut agent = Agent::new(Fake::new([]), crate::agent::default_session());
+        let request = RequestId(7);
+        agent.signing_out = Some(SigningOut {
+            request,
+            to: Some("other".into()),
+            moved: vec![Followed {
+                agent: "worker".into(),
+                model: "model".into(),
+                effort: Effort::Low,
+                rebuild_usd: Some(0.08),
+                from: None,
+                to: None,
+            }],
+            stay: vec![],
+            losses: Vec::new(),
+            root_loss: None,
+        });
+        let (events, mut received) = mpsc::channel(32);
+        agent
+            .finish(
+                crate::agent::queue::Done::Auth(AuthEvent {
+                    request,
+                    outcome: AuthOutcome::Failed {
+                        kind: AuthFailureKind::Storage,
+                        message: "Storage refused.".into(),
+                        problem: None,
+                        same_account: None,
+                    },
+                }),
+                &events,
+            )
+            .await;
+        assert!(
+            matches!(received.recv().await.unwrap(), AgentEvent::FollowersMoved { request: id, moved, .. } if id == request && moved[0].agent == "worker")
+        );
+        assert!(matches!(
+            received.recv().await.unwrap(),
+            AgentEvent::SubscriptionAuth {
+                event: AuthEvent {
+                    outcome: AuthOutcome::Failed {
+                        kind: AuthFailureKind::Storage,
+                        ..
+                    },
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_second_signout_cannot_replace_the_first_response() {
+        let host = AuthHost::new();
+        let connected = host.catalog.connect("/").unwrap();
+        let mut agent = Agent::new(connected.provider, crate::agent::default_session())
+            .with_connections(connected.ready, connected.unavailable, "env")
+            .with_endpoint_host(host.clone());
+        let (events, mut received) = mpsc::channel(32);
+        agent
+            .auth_command(crate::endpoints::testing::logout(1, "env"), &events)
+            .await;
+        agent
+            .auth_command(crate::endpoints::testing::logout(2, "env"), &events)
+            .await;
+        assert!(
+            std::iter::from_fn(|| received.try_recv().ok()).any(|e| matches!(
+                e,
+                AgentEvent::SubscriptionAuth {
+                    event: AuthEvent {
+                        request: RequestId(2),
+                        outcome: AuthOutcome::Failed {
+                            kind: AuthFailureKind::Busy,
+                            message,
+                            ..
+                        }
+                    }
+                } if message == SIGN_OUT_IN_PROGRESS
+            ))
+        );
+        assert_eq!(
+            agent.check_resume_destination(agent.endpoint).unwrap_err(),
+            SIGN_OUT_IN_PROGRESS
+        );
+        assert_eq!(agent.signing_out.as_ref().unwrap().request, RequestId(1));
+        let done = agent.queue.done().await;
+        agent.finish(done, &events).await;
+        assert_eq!(*host.calls.lock().unwrap(), [RequestId(1)]);
+    }
+
+    #[tokio::test]
+    async fn preview_logout_does_not_settle_a_pending_root_or_call_auth() {
+        let host = AuthHost::new();
+        host.load("plan");
+        let connected = host.catalog.connect("/").unwrap();
+        let mut agent = Agent::new(connected.provider, crate::agent::default_session())
+            .with_connections(connected.ready, connected.unavailable, "env")
+            .with_endpoint_host(host.clone());
+        let (events, mut received) = mpsc::channel(32);
+        let endpoint = agent.find_endpoint("plan").unwrap();
+        let mut pending = agent.session_pair();
+        pending.endpoint = endpoint;
+        agent.set_pending(Some(pending));
+        for (request, idle) in [(RequestId(10), true), (RequestId(11), false)] {
+            let command = ClientCommand::SubscriptionAuth {
+                command: AuthCommand::PreviewLogout {
+                    request,
+                    names: vec!["plan".into()],
+                },
+            };
+            if idle {
+                agent.idle_command(command, &events).await;
+            } else {
+                agent.on_command(Some(command), &events).await;
+            }
+            let AgentEvent::SubscriptionAuth { event } = received.recv().await.unwrap() else {
+                panic!("expected preview response")
+            };
+            assert_eq!(event.request, request);
+            assert!(matches!(event.outcome, AuthOutcome::LogoutNeeds { .. }));
+            assert_eq!(agent.endpoint_name(), "env");
+            assert_eq!(agent.next_endpoint(), endpoint);
+            assert!(host.calls.lock().unwrap().is_empty());
+            assert!(host.catalog.view().ready.iter().any(|c| c.name == "plan"));
+            assert!(received.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_sign_out_names_every_agent_that_answers_busy_once_per_account() {
         let mut leaves = Vec::new();
         let mut on = |name: &str, account: &str| {
             let (leave, asked) = mpsc::unbounded_channel();
             leaves.push(asked);
             OnAccount {
                 agent: name.to_owned(),
-                account: account.to_owned(),
-                provider: None,
+                effective: WayOrigin {
+                    account: account.to_owned(),
+                    provider: None,
+                    billing: None,
+                    model: String::new(),
+                    effort: Effort::Medium,
+                },
+                bound: Some(account.to_owned()),
                 working: false,
                 leave: Some(leave),
             }
         };
-        let plan = Departure {
-            leaving: None,
-            agents: vec![
-                on("coder", "team"),
-                on("reviewer", "plan"),
-                on("worker", "plan"),
-            ],
-            dest: None,
-            ways: Vec::new(),
-            from: None,
-        };
+        let agents = vec![
+            on("coder", "team"),
+            on("reviewer", "plan"),
+            on("worker", "plan"),
+        ];
         let busy = futures::future::join_all(leaves.iter_mut().map(async |asked| {
             let leave = asked.recv().await.unwrap();
-            leave.reply.send(Left::Busy).unwrap();
+            let (result, rx) = tokio::sync::oneshot::channel();
+            leave.start.send(rx).unwrap();
+            result.send(Left::Busy).unwrap();
         }));
-        let (events, _received) = mpsc::channel(8);
         let names = ["plan".to_owned(), "team".to_owned()];
-        let (refused, _) = tokio::join!(agent.depart(&names, &plan, &[], false, &events), busy);
+        let (refused, _) = tokio::join!(
+            Agent::followers(&names, agents, None, None, DepartureKind::Logout),
+            busy
+        );
         assert_eq!(
-            refused.err().as_deref(),
+            refused.problem.as_deref(),
             Some(
                 "reviewer and worker are working on plan. Try again once they're done. coder is working on team. Try again once it's done."
             )

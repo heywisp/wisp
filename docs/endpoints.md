@@ -2040,54 +2040,44 @@ Client protocol contract for the subscription wizard:
 - `Status { request, alias }` reads local configuration/profile validity
   without an account lookup; absent alias means all configured subscriptions.
   Local validity is not proof of remote acceptance.
-- `Logout { request, alias, also, chat, confirmed, follow, gone }` signs out of
-  `alias` and every name in `also`, always named; a client expands `all` into
-  the names its question showed. An unconfirmed command answers
-  `LogoutNeeds { deletes_keys_of, new_start, ways }` when it would delete a
-  stored key, names more than one account, or leaves the chat a choice; nothing
-  changes until the client resends it with `confirmed: true`. Each `Way` names
-  where the chat would go (`chat`), the agents whose move the question shows
-  (`follow`) and the agents that stay behind (`stay`). `follow` has one
-  meaning, in the command and in a way: the agents the question showed moving.
-  A move from a subscription to the API takes an agent only when `follow` names
-  it, so resend `chat` and `follow` from the way the user chose; an agent the
-  question didn't show stays, unbound, and reads `charges` in the result. A
-  confirmed command with no `chat` while `ways` is not empty gets `LogoutNeeds`
-  again, so the client asks where the chat goes. With nothing left, `chat` is
-  absent and the command signs out of the last account.
+- `PreviewLogout { request, names }` checks a nonempty list of sign-outs without applying pending settings, moving agents, writing storage or revoking credentials. `/logout all` uses it even for a single removable account. The host returns `LogoutNeeds { fixed, deletes_keys_of, new_start, ways, presets }` or a refusal. A single destination with affected movers appears on the Sign out/Keep card. Multiple destinations appear only after Sign out is chosen; no destination or movers can yield no rows.
+- `Logout { request, alias, also, chat, confirmed, follow, gone, accept_api }` signs out of the named accounts. Unconfirmed sign-out asks first when it would delete a stored key, removes several accounts, leaves a choice or requires consent for idle agents to follow a fixed cross-provider or metered destination. A live `Way` names the destination and the agents shown moving. Its `origins` gives the effective source pair for each mover (`/` for the chat if it moves). Resend the selected `chat` and `follow`, with `accept_api` only for a deliberately chosen API destination. A child not shown and named cannot cross providers or move to a metered account; without a choice only same-provider noncharging continuation is automatic. No destination means nobody follows.
 - `LoggedOut` returns `alias`, `also`, `new_start`, the agents that moved
   (`moved`, with model, effort and rebuild estimate) and stayed (`stay`), the
   accounts whose cleanup didn't finish (`left_sign_ins`, `left_keys`, also
   summarised by `cleanup_pending`), and `stopped` when a failed write ended a
   list early. `remote_revoked` reports remote revocation separately.
-  `Failed` carries a typed category and safe recovery wording.
+  `Failed` carries a typed category and safe recovery wording. If followers already moved before a local refusal or storage failure, `FollowersMoved { request, to, moved }` shows just those acknowledged moves before the error, without a sign-out header.
 - `AccountsGone { names, moved, stay, ways }` says that the accounts in
   `names` were signed out in another window, and where things are now: the
   agents that moved (`moved`), those that stayed (`stay`, with `busy` for one
-  that was working; it moves once its turn ends and then sends its own
-  `AccountsGone` naming only itself in `moved`) and, when the chat must
+  that was working). After that turn, the child sends its own `AccountsGone`,
+  naming itself in `moved` if it moved or `stay` if the chosen destination no
+  longer matches or is unavailable. When the chat must
   choose, its `ways` (each with `charges` when that way starts charging). It
   is state, not a count: read each event as "these accounts are gone; these
   are the ways now", keyed by `names`, so a later event for the same `names`
   replaces the ways and never repeats a removal. While the chat must choose, a
   send is refused with the `kind` `account_gone`, just after an
   `AccountsGone` with the current `ways`; answer it with `Logout` naming those
-  accounts, `gone: true` and the chosen way's `chat` and `follow`. A `gone`
+  accounts, `gone: true` and the chosen way's `chat`, `follow` and metered consent. A stale choice is refused with `StaleRequest` and cannot release the held message. A `gone`
   answer deletes nothing: it moves the chat and the agents, answers
   `LoggedOut`, and releases a queued message the refusal held. A name that
   came back in the meantime is dropped from it, and when the chat's own
   account came back nothing moves. Moving the chat to another account, as
   with `/account`, also ends the choice and releases what it held.
 
-- `LeaveNeeds { request, ways }` comes just before the refusal of a
+- `LeaveNeeds { request, ways, with_followers }` comes just before the refusal of a
   `ChangeSettings` that turns off or removes the plugin of the provider this
-  chat is on, when another account can be used. Its `ways` are where the chat
-  can go, as in `LogoutNeeds`, each with the agents that stay behind and
-  `charges`. The refusal still ends the request. To go ahead, send one unsaved
-  `ChangeSettings` with the chosen way's `chat` as the account and the same
-  switch: Wisp judges the two together, so the chat moves and the provider
-  goes off, or nothing changes. To keep the switch for later chats, send it
-  again with `save: true` once that change is answered.
+  chat is on, when another account can be used. `with_followers` gives the live
+  destinations and affected agents; `ways` is the chat-only projection for older
+  clients. Answer a live way with `AnswerProviderSwitch { request, changes, follow,
+  accept_api }`, carrying the chosen `chat` and the provider switch in `changes`.
+  Send `accept_api` only when the user chooses a metered destination. An older
+  client can still use one unsaved `ChangeSettings` to move the chat alone.
+  An answer that moves followers emits `FollowersMoved` for the acknowledged
+  moves, even if a later refusal leaves the provider on. Save the provider
+  switch for later chats only after the settings change succeeds.
 
 ### Accounts changed in another window
 

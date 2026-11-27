@@ -59,6 +59,7 @@ pub(super) struct SettingsState {
     start_effort: Effort,
     max_tokens: u32,
     pub(super) pending: Option<Pending>,
+    pub(super) pending_account: Option<crate::agents::endpoints::ExactAccount>,
     states: BTreeMap<(String, String, Feature), PairState>,
     pub(super) binding_controls: bool,
     pub(super) turn_binding: bool,
@@ -75,6 +76,7 @@ impl SettingsState {
             start_effort: session.effort,
             max_tokens: session.max_tokens,
             pending: None,
+            pending_account: None,
             states: BTreeMap::new(),
             binding_controls: false,
             turn_binding: false,
@@ -400,22 +402,91 @@ impl Agent {
         }
     }
 
+    pub(super) fn set_pending(&mut self, pending: Option<Pending>) {
+        self.settings.pending_account = pending
+            .as_ref()
+            .filter(|next| next.endpoint != self.endpoint || self.child_resume.unbound())
+            .and_then(|next| {
+                self.pending_account_for(next.endpoint)
+                    .cloned()
+                    .or_else(|| {
+                        self.connections
+                            .get(next.endpoint)
+                            .map(crate::agents::endpoints::ExactAccount::connected)
+                    })
+            });
+        self.settings.pending = pending;
+        self.publish_entry(Some(self.pending_displacement()));
+    }
+
+    pub(super) fn pending_account_for(
+        &self,
+        endpoint: usize,
+    ) -> Option<&crate::agents::endpoints::ExactAccount> {
+        self.settings
+            .pending
+            .as_ref()
+            .filter(|pair| pair.endpoint == endpoint)?;
+        self.settings.pending_account.as_ref()
+    }
+
+    pub(crate) fn pending_displacement(
+        &self,
+    ) -> Option<wisp_protocol::subscription_auth::WayOrigin> {
+        let Some(pair) = self.settings.pending.as_ref() else {
+            return self
+                .binding_detached
+                .then(|| self.way_origin(&self.session_pair()));
+        };
+        (self.bound_endpoint().is_none()
+            || pair.endpoint != self.endpoint
+            || pair.model != self.session.model
+            || pair.effort != self.session.effort)
+            .then(|| self.way_origin(pair))
+    }
+
+    pub(super) fn way_origin(&self, pair: &Pending) -> wisp_protocol::subscription_auth::WayOrigin {
+        let provider = self.provider_at(pair.endpoint);
+        let accepted = self
+            .pending_account_for(pair.endpoint)
+            .or_else(|| self.accepted_account(self.connection_name(pair.endpoint)));
+        wisp_protocol::subscription_auth::WayOrigin {
+            account: self.connection_name(pair.endpoint).to_owned(),
+            provider: accepted
+                .map_or(Some(provider.kind().as_str()), |a| a.kind.shown())
+                .map(str::to_owned),
+            billing: accepted.map_or(Some(provider.billing()), |a| a.billing),
+            model: pair.model.clone(),
+            effort: pair.effort,
+        }
+    }
+
     pub(super) fn apply_pending_binding(&mut self) -> Result<(), String> {
         if let Some(pending) = self.settings.pending.clone() {
-            let switching = pending.endpoint != self.endpoint;
-            let moved = switching || pending.model != self.session.model;
-            self.use_connection(pending.endpoint)?;
-            self.settings.binding_controls |= switching;
-            self.settings.pending = None;
-            self.pending_endpoint_binding = None;
-            self.session.model = pending.model;
-            self.session.effort = pending.effort;
-            if moved {
-                self.search.array = None;
-                self.search.pickup = false;
-            }
+            let binding = self.reserve_binding(pending.endpoint)?;
+            self.commit_pending_binding(pending, binding, None);
         }
         Ok(())
+    }
+
+    pub(super) fn commit_pending_binding(
+        &mut self,
+        pending: Pending,
+        binding: Option<crate::endpoints::generation::Binding>,
+        selected: Option<crate::agents::endpoints::ExactAccount>,
+    ) {
+        let switching = pending.endpoint != self.endpoint;
+        let moved = switching || pending.model != self.session.model;
+        self.adopt_binding(pending.endpoint, binding, selected);
+        self.settings.binding_controls |= switching;
+        self.pending_endpoint_binding = None;
+        self.session.model = pending.model;
+        self.session.effort = pending.effort;
+        self.set_pending(None);
+        if moved {
+            self.search.array = None;
+            self.search.pickup = false;
+        }
     }
 
     pub(super) async fn bind_unbound(
@@ -459,7 +530,7 @@ impl Agent {
 
     pub(super) fn hold_settings_after_retry(&mut self) {
         if self.settings.pending.is_none() {
-            self.settings.pending = Some(self.session_pair());
+            self.set_pending(Some(self.session_pair()));
         }
     }
 
@@ -469,15 +540,17 @@ impl Agent {
         opens: bool,
     ) -> Result<Option<EffortMarker>, String> {
         let next = self.next_pair();
+        self.check_live_account(&retry.account, retry.endpoint)?;
+        let binding = self.reserve_generation(retry.endpoint)?;
         if retry.endpoint != self.endpoint {
             self.search.array = None;
             self.search.pickup = false;
         }
-        self.use_connection(retry.endpoint)?;
+        self.adopt_binding(retry.endpoint, binding, Some(retry.account.clone()));
         let unchanged = next.endpoint == self.endpoint
             && next.model == self.session.model
             && next.effort == self.session.effort;
-        self.settings.pending = (!unchanged).then_some(next);
+        self.set_pending((!unchanged).then_some(next));
         if self.settings.pending.is_none() {
             self.pending_endpoint_binding = None;
         }
@@ -509,20 +582,16 @@ impl Agent {
             self.discard_background(wisp_protocol::DiscardReason::Superseded, turn, events)
                 .await;
         }
-        if self.child_resume.destination().is_some()
-            && let Some(connection) = self.connections.get(target.endpoint)
-        {
-            self.child_resume
-                .reselect(crate::agents::endpoints::ExactAccount::connected(
-                    connection,
-                ));
+        if let Some(connection) = self.connections.get(target.endpoint) {
+            let exact = crate::agents::endpoints::ExactAccount::connected(connection);
+            self.child_resume.reselect(exact);
         }
         let cache = self.pending_cache(&target);
         let account_bound = self.account_bound(target.endpoint);
         let unchanged = target.endpoint == self.endpoint
             && target.model == self.session.model
             && target.effort == self.session.effort;
-        self.settings.pending = (!unchanged).then(|| target.clone());
+        self.set_pending((!unchanged).then(|| target.clone()));
         self.pending_endpoint_binding = None;
         self.settings_changed(
             target,
@@ -869,6 +938,7 @@ impl Agent {
                 save: false,
                 projected: Projected::default(),
                 by: None,
+                answer: None,
             },
             events,
         )
@@ -932,7 +1002,7 @@ impl Agent {
         let wanted = self
             .settings
             .pending
-            .take()
+            .as_ref()
             .map_or(self.session.effort, |p| p.effort);
         let takes = self
             .provider()
@@ -945,7 +1015,7 @@ impl Agent {
             model: self.session.model.clone(),
             effort,
         };
-        self.settings.pending = (effort != self.session.effort).then(|| target.clone());
+        self.set_pending((effort != self.session.effort).then(|| target.clone()));
         self.pending_endpoint_binding = None;
         let mut restated = vec![
             (

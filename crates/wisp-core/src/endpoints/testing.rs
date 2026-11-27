@@ -81,6 +81,7 @@ pub(crate) struct AuthHost {
     pub(crate) next_provider: Mutex<Option<Arc<dyn crate::provider::Provider>>>,
     pub(crate) status: Mutex<Vec<SubscriptionEndpoint>>,
     pub(crate) stall: Mutex<Option<std::time::Duration>>,
+    pub(crate) fail_logout: std::sync::atomic::AtomicBool,
 }
 
 impl AuthHost {
@@ -89,15 +90,28 @@ impl AuthHost {
     }
 
     pub(crate) fn with(connection: crate::agent::Connection) -> Arc<Self> {
+        Self::with_connections(connection, Vec::new())
+    }
+
+    pub(crate) fn with_connections(
+        first: crate::agent::Connection,
+        rest: Vec<crate::agent::Connection>,
+    ) -> Arc<Self> {
         let elsewhere = Arc::new(Elsewhere::default());
-        let prints = Prints::from([("env".to_owned(), Print::of([&b"env"[..]]))]);
+        let active = first.name.clone();
+        let provider = first.provider.clone();
+        let ready: Vec<_> = std::iter::once(first).chain(rest).collect();
+        let prints: Prints = ready
+            .iter()
+            .map(|c| (c.name.clone(), Print::of([c.name.as_bytes()])))
+            .collect();
         *elsewhere.prints.lock().unwrap() = prints.clone();
         Arc::new(Self {
             catalog: LiveCatalog::new(Connected {
-                provider: connection.provider.clone(),
-                ready: vec![connection],
+                provider,
+                ready,
                 unavailable: Vec::new(),
-                active: "env".to_owned(),
+                active,
                 env_account: None,
             })
             .with_watch(elsewhere.clone(), prints),
@@ -107,6 +121,7 @@ impl AuthHost {
             next_provider: Mutex::default(),
             status: Mutex::default(),
             stall: Mutex::default(),
+            fail_logout: Default::default(),
         })
     }
 
@@ -250,6 +265,16 @@ impl EndpointHost for AuthHost {
                         previous_cleanup_pending: false,
                     }
                 }
+                AuthCommand::Logout { .. }
+                    if self.fail_logout.load(std::sync::atomic::Ordering::Relaxed) =>
+                {
+                    AuthOutcome::Failed {
+                        kind: wisp_protocol::subscription_auth::AuthFailureKind::Unavailable,
+                        message: "Sign-out storage failed.".to_owned(),
+                        problem: None,
+                        same_account: None,
+                    }
+                }
                 AuthCommand::Logout { alias, also, .. } => {
                     for name in std::iter::once(&alias).chain(&also) {
                         let change = self.catalog.begin_logout(name).unwrap();
@@ -280,7 +305,12 @@ impl EndpointHost for AuthHost {
             AuthEvent { request, outcome }
         })
     }
-    fn check_logout(&self, _: AuthCommand) -> BoxFuture<'_, Option<AuthOutcome>> {
+    fn check_logout(
+        &self,
+        _: Vec<String>,
+        _: Option<String>,
+        _: bool,
+    ) -> BoxFuture<'_, Option<AuthOutcome>> {
         Box::pin(async { None })
     }
     fn connections(&self) -> BoxFuture<'_, Result<Reconnected, HostError>> {

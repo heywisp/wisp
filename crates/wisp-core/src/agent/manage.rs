@@ -189,6 +189,7 @@ impl Agent {
                 save: false,
                 projected: Projected::default(),
                 by,
+                answer: None,
             };
             self.enqueue(queued, events).await;
         }

@@ -1025,6 +1025,7 @@ fn the_terminal_sends_the_commands_the_card_sends() {
             confirmed: false,
             follow: Vec::new(),
             gone: false,
+            accept_api: false,
         }]
     );
     let quiet = Recorder::new(Vec::new());
@@ -1040,6 +1041,7 @@ fn the_terminal_sends_the_commands_the_card_sends() {
         front.said
     );
     let needs = AuthOutcome::LogoutNeeds {
+        fixed: false,
         presets: Vec::new(),
         deletes_keys_of: Vec::new(),
         new_start: Some("claude-api".to_owned()),
@@ -1229,6 +1231,7 @@ fn result_lines_and_help_at_three_widths() {
                 };
                 let auth = Recorder::new(vec![
                     AuthOutcome::LogoutNeeds {
+                        fixed: false,
                         presets: Vec::new(),
                         deletes_keys_of: keys,
                         new_start: start.map(str::to_owned),

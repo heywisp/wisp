@@ -62,6 +62,12 @@ pub(super) const WAITING_RETRY: &str = "A waiting Retry uses it.";
 pub const QUIT_MARGIN: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct SwitchAnswer {
+    pub(super) follow: Vec<String>,
+    pub(super) accept_api: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Queued {
     Change {
         request: Option<RequestId>,
@@ -69,6 +75,7 @@ pub(super) enum Queued {
         save: bool,
         projected: Projected,
         by: Option<By>,
+        answer: Option<SwitchAnswer>,
     },
     Describe {
         request: RequestId,
@@ -418,6 +425,7 @@ impl Agent {
                     save,
                     projected,
                     by,
+                    answer,
                 } => match self
                     .refreshed_verdict(&changes, save, &projected)
                     .await
@@ -428,12 +436,35 @@ impl Agent {
                     Err(refusal) => {
                         if let Some(request) = request
                             && !refusal.ways.is_empty()
+                            && answer.is_none()
                         {
                             self.emit(
                                 events,
                                 AgentEvent::LeaveNeeds {
                                     request,
-                                    ways: refusal.ways,
+                                    ways: refusal
+                                        .ways
+                                        .iter()
+                                        .cloned()
+                                        .map(|mut way| {
+                                            way.charges = way
+                                                .chat
+                                                .as_deref()
+                                                .and_then(|name| self.billing_of(name))
+                                                .is_some_and(|to| {
+                                                    wisp_protocol::starts_charging(
+                                                        way.origins
+                                                            .get("/")
+                                                            .and_then(|origin| origin.billing),
+                                                        to,
+                                                    )
+                                                });
+                                            way.stay.append(&mut way.follow);
+                                            way.origins.clear();
+                                            way
+                                        })
+                                        .collect(),
+                                    with_followers: refusal.ways,
                                 },
                             )
                             .await;
@@ -442,7 +473,14 @@ impl Agent {
                             .await;
                     }
                     Ok(verdict) if !save || verdict.edits.is_empty() => {
-                        self.apply_verdict(request, verdict, None, events).await;
+                        if let (Some(request), Some(answer)) = (request, answer) {
+                            self.answer_provider_switch(request, verdict, answer, events)
+                                .await;
+                        } else if let Err(line) =
+                            self.apply_verdict(request, verdict, None, events).await
+                        {
+                            self.emit(events, AgentEvent::refused(request, line)).await;
+                        }
                     }
                     Ok(verdict) => match self.queue.host.clone() {
                         Some(host) => {
@@ -488,7 +526,7 @@ impl Agent {
         }
         if let Done::Auth(mut event) = done {
             self.queue.background_in_flight = self.queue.background_in_flight.saturating_sub(1);
-            self.signed_out(&mut event);
+            self.signed_out(&mut event, events).await;
             self.sync_catalog(events).await;
             super::emit(events, AgentEvent::SubscriptionAuth { event }).await;
             return;
@@ -505,8 +543,12 @@ impl Agent {
                 verdict,
                 result: Ok(file),
             } => {
-                self.apply_verdict(request, verdict, Some(file), events)
+                if let Err(line) = self
+                    .apply_verdict(request, verdict, Some(file), events)
                     .await
+                {
+                    self.emit(events, AgentEvent::refused(request, line)).await;
+                }
             }
             Done::Saved {
                 request,

@@ -2,7 +2,7 @@ use super::*;
 use crate::endpoints::testing::{AuthHost, CANARY};
 use wisp_protocol::subscription_auth::{AuthCommand, AuthEvent, AuthOutcome, SubscriptionProvider};
 
-async fn auth(run: &mut Run, command: AuthCommand) -> AuthOutcome {
+pub(super) async fn auth(run: &mut Run, command: AuthCommand) -> AuthOutcome {
     let request = command.request();
     run.send(ClientCommand::SubscriptionAuth { command }).await;
     let AgentEvent::SubscriptionAuth { event } = run.until("auth outcome", |event| matches!(event, AgentEvent::SubscriptionAuth { event } if event.request == request)).await else { panic!("expected auth outcome") };
@@ -65,6 +65,23 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
         .await,
         AuthOutcome::Ready { .. }
     ));
+    let reviewer = [wisp_protocol::subscription_auth::PresetGone {
+        preset: "reviewer".to_owned(),
+        account: "plan".to_owned(),
+        runs: false,
+    }];
+    let preview = auth(
+        &mut run,
+        AuthCommand::PreviewLogout {
+            request: RequestId(1020),
+            names: vec!["plan".into()],
+        },
+    )
+    .await;
+    assert!(
+        matches!(preview, AuthOutcome::LogoutNeeds { fixed: true, ref ways, ref presets, .. } if ways.is_empty() && presets.as_slice() == reviewer),
+        "{preview:?}"
+    );
     run.send(ClientCommand::ChangeSettings {
         request: RequestId(102),
         changes: vec![
@@ -164,11 +181,6 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
     else {
         panic!("the chat must choose where to go")
     };
-    let reviewer = [wisp_protocol::subscription_auth::PresetGone {
-        preset: "reviewer".to_owned(),
-        account: "plan".to_owned(),
-        runs: false,
-    }];
     assert_eq!(presets, reviewer);
     let [way] = ways.as_slice() else {
         panic!("one way: {ways:?}")
@@ -181,17 +193,29 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
         .filter(|a| *a != "preset")
         .cloned()
         .collect();
-    let outcome = auth(
-        &mut run,
-        AuthCommand::logout(
-            RequestId(104),
-            &["plan".to_owned()],
-            true,
-            way.chat.clone(),
-            follow,
-        ),
-    )
-    .await;
+    assert_eq!(way.origins.len(), 4);
+    assert_eq!(way.origins["/"].account, "plan");
+    let mut answer = AuthCommand::logout(
+        RequestId(104),
+        &["plan".to_owned()],
+        true,
+        way.chat.clone(),
+        follow,
+    );
+    assert!(matches!(
+        auth(&mut run, answer.clone()).await,
+        AuthOutcome::Failed { .. }
+    ));
+    if let AuthCommand::Logout {
+        request,
+        accept_api,
+        ..
+    } = &mut answer
+    {
+        *request = RequestId(199);
+        *accept_api = true;
+    }
+    let outcome = auth(&mut run, answer).await;
     let AuthOutcome::LoggedOut {
         moved,
         stay,
@@ -398,6 +422,7 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
         confirmed: true,
         follow: vec!["late".to_owned()],
         gone: true,
+        accept_api: true,
     };
     let long = Arc::new(Semaphore::new(0));
     let queued = async |run: &mut Run, id: &str| {
@@ -459,14 +484,34 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
         assert_eq!(sent, 4 - usize::from(re_added));
         if re_added {
             host.elsewhere(&[], &["team"]);
-            let AuthOutcome::LoggedOut { moved, stay, .. } = auth(&mut run, answer(129)).await
-            else {
-                panic!("a stale answer is answered")
-            };
-            assert!(moved.is_empty() && stay.is_empty(), "{moved:?} {stay:?}");
+            let stale = auth(&mut run, answer(129)).await;
+            assert!(
+                matches!(
+                    stale,
+                    AuthOutcome::Failed {
+                        kind: wisp_protocol::subscription_auth::AuthFailureKind::StaleRequest,
+                        ..
+                    }
+                ),
+                "{stale:?}"
+            );
             assert!(host.catalog.view().ready.iter().any(|c| c.name == "team"));
         }
     }
+    let mut stale = answer(131);
+    if let AuthCommand::Logout { chat, .. } = &mut stale {
+        *chat = Some("not-offered".into());
+    }
+    let before = run.seen.len();
+    assert!(matches!(
+        auth(&mut run, stale).await,
+        AuthOutcome::Failed { .. }
+    ));
+    assert!(
+        !run.seen[before..]
+            .iter()
+            .any(|e| matches!(e, AgentEvent::InputUnheld { .. }))
+    );
     assert_eq!(env.sent().len(), 1);
     env.push([done("Held."), gated(done("Long."), &long)]);
     let AuthOutcome::LoggedOut { moved, stay, .. } = auth(&mut run, answer(130)).await else {
@@ -658,7 +703,7 @@ async fn login_adds_an_alias_for_endpoint_selection_explicit_spawn_and_preloaded
                     outcome: AuthOutcome::Failed { .. },
                     request,
                 },
-        } => ![RequestId(110), RequestId(111)].contains(request),
+        } => ![RequestId(104), RequestId(110), RequestId(111)].contains(request),
         _ => false,
     }));
 }
@@ -1127,4 +1172,1198 @@ async fn idle_children_wait_through_provider_switches_without_a_notice_or_a_chan
         ]);
         run.quit().await;
     }
+}
+
+fn departure_host(dest: Arc<Fake>, source: Arc<Fake>, root_on_source: bool) -> Arc<AuthHost> {
+    use wisp_protocol::Billing;
+    dest.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+    table(&source, Table::Gemini);
+    source.knobs(|k| k.billing = Some(Billing::AntigravityPlan));
+    let connect = |name, provider| crate::agent::Connection {
+        provider,
+        ..crate::agents::testing::connection(name, None)
+    };
+    let dest = connect(ENV, dest);
+    let source = connect("source", source);
+    let (first, other) = if root_on_source {
+        (source, dest)
+    } else {
+        (dest, source)
+    };
+    AuthHost::with_connections(first, vec![other])
+}
+
+#[tokio::test(start_paused = true)]
+async fn leave_routes_wait_for_the_real_refetch_but_never_for_a_late_start() {
+    use crate::models::list::tests::{claude_entry, claude_list};
+    use wisp_protocol::settings::ENABLED_KEY;
+
+    for route in ["switch", "logout", "elsewhere", "no start"] {
+        let folder = tempfile::tempdir().unwrap();
+        let gate = Arc::new(Semaphore::new(0));
+        let listing = Arc::new(tokio::sync::Notify::new());
+        let dest = scripted([done("Noted")]);
+        let root_on_source = matches!(route, "switch" | "elsewhere");
+        let mut steps = vec![uses(&[report_call("r", "Done")])];
+        if root_on_source {
+            steps.push(done("Noted"));
+        }
+        let mut host = departure_host(dest.clone(), scripted(steps), root_on_source);
+        Arc::get_mut(&mut host).unwrap().catalog =
+            host.catalog.clone().with_lists(Some(folder.path().into()));
+        let mut setup = super::switches::provider_setup(true);
+        if !root_on_source {
+            setup.root_model = MODEL;
+        }
+        setup.endpoint_host = Some(host.clone());
+        let mut run = start("leave-refetch", setup, Vec::new()).await;
+        run.spawn(SpawnRequest {
+            endpoint: Some("source".into()),
+            model: Some(crate::provider::gemini::default_model().into()),
+            ..spawn_request("refetch-worker", "Work")
+        })
+        .await;
+        run.child_ended("/refetch-worker").await;
+        super::resume::idle(&mut run, "/refetch-worker").await;
+        run.root_ended().await;
+        let mover = vec!["refetch-worker".to_owned()];
+        let mut answer = AuthCommand::logout(
+            RequestId(91),
+            &["source".into()],
+            true,
+            Some(ENV.into()),
+            mover.clone(),
+        );
+        if route == "elsewhere" {
+            host.elsewhere(&["source"], &[]);
+            run.send(ClientCommand::ListAgents {
+                request: RequestId(92),
+            })
+            .await;
+            run.until(
+                "gone choices",
+                |e| matches!(e, AgentEvent::AccountsGone { ways, .. } if !ways.is_empty()),
+            )
+            .await;
+            if let AuthCommand::Logout { gone, .. } = &mut answer {
+                *gone = true;
+            }
+        }
+        let paused = (route == "no start").then(|| pause_at("/refetch-worker", "leave-start"));
+        let before_refetch =
+            (route != "no start").then(|| pause_at("/refetch-worker", "before-model-refetch"));
+        let old = run.records("/refetch-worker").len();
+        if route == "switch" {
+            let ClientCommand::ChangeSettings { mut changes, .. } =
+                crate::plugin::testing::plugin_switch(91, "gemini", ENABLED_KEY, false)
+            else {
+                unreachable!()
+            };
+            changes.extend(ClientCommand::shortcut_changes(
+                Some(ENV.into()),
+                None,
+                None,
+            ));
+            run.send(ClientCommand::AnswerProviderSwitch {
+                request: RequestId(91),
+                changes,
+                follow: mover,
+                accept_api: false,
+            })
+            .await;
+        } else {
+            run.send(ClientCommand::SubscriptionAuth { command: answer })
+                .await;
+        }
+        let final_answer = |e: &AgentEvent| {
+            matches!(
+                e,
+                AgentEvent::SubscriptionAuth {
+                    event: AuthEvent {
+                        request: RequestId(91),
+                        ..
+                    }
+                } | AgentEvent::SettingsChanged {
+                    answers: Some(RequestId(91)),
+                    ..
+                } | AgentEvent::Rejected {
+                    request: Some(RequestId(91)),
+                    ..
+                }
+            )
+        };
+        if let Some(paused) = &paused {
+            paused.wait().await;
+        } else {
+            let before_refetch = before_refetch.unwrap();
+            within("proposal before the refetch", before_refetch.wait()).await;
+            dest.knobs(|k| {
+                k.list = Some(Arc::new(claude_list(&[claude_entry(
+                    "claude-sonnet-5",
+                    "sonnet",
+                    1_000_000,
+                )])));
+                k.fresh = Some(Arc::new(claude_list(&[claude_entry(
+                    MODEL, "opus", 1_000_000,
+                )])));
+                k.list_gate = Some((listing.clone(), gate.clone()));
+            });
+            before_refetch.wait().await;
+            within("the real model-list refetch", listing.notified()).await;
+            assert_eq!(
+                dest.refreshes(),
+                1,
+                "{route} must enter the model-list refetch: {:?}",
+                run.events.try_recv()
+            );
+        }
+        tokio::time::advance(Duration::from_secs(3)).await;
+        if paused.is_none() {
+            tokio::task::yield_now().await;
+            while let Ok(event) = run.events.try_recv() {
+                assert!(
+                    !final_answer(&event),
+                    "{route} answered before its move: {event:?}"
+                );
+                run.seen.push(event);
+            }
+            gate.add_permits(1);
+        }
+        let event = run
+            .until("one definitive route outcome", final_answer)
+            .await;
+        if let Some(paused) = paused {
+            assert!(
+                matches!(
+                    event,
+                    AgentEvent::SubscriptionAuth {
+                        event: AuthEvent {
+                            outcome: AuthOutcome::Failed { .. },
+                            ..
+                        }
+                    }
+                ),
+                "{event:?}"
+            );
+            paused.wait().await;
+            super::resume::list(&mut run).await;
+            assert_eq!(dest.refreshes(), 0);
+        } else if route == "switch" {
+            assert!(
+                matches!(event, AgentEvent::SettingsChanged { .. }),
+                "{event:?}"
+            );
+            run.until("the switch receipt", |e| matches!(e, AgentEvent::FollowersMoved { request: RequestId(91), moved, .. } if moved.len() == 1 && moved[0].agent == "refetch-worker")).await;
+        } else {
+            assert!(
+                matches!(event, AgentEvent::SubscriptionAuth { event: AuthEvent { outcome: AuthOutcome::LoggedOut { moved, stay, .. }, .. } } if stay.is_empty() && moved.len() == 1 && moved[0].agent == "refetch-worker")
+            );
+        }
+        let run = run.quit().await;
+        assert_eq!(run.seen.iter().filter(|e| final_answer(e)).count(), 1);
+        let records = run.records("/refetch-worker");
+        assert_eq!(
+            records[old..]
+                .iter()
+                .filter(|e| matches!(e, LogEvent::SettingsChanged { .. }))
+                .count(),
+            usize::from(route != "no start"),
+            "{route}"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn local_departures_receipt_a_real_move_before_a_late_busy_child_or_storage_failure() {
+    use wisp_protocol::settings::ENABLED_KEY;
+
+    for route in ["switch", "logout", "storage"] {
+        let root_on_source = route == "switch";
+        let source = scripted([]);
+        let dest = scripted([]);
+        let host = departure_host(dest.clone(), source.clone(), root_on_source);
+        host.fail_logout
+            .store(route == "storage", std::sync::atomic::Ordering::Relaxed);
+        let kernels = Kernels::default();
+        let mut setup = super::switches::provider_setup(true);
+        if !root_on_source {
+            setup.root_model = MODEL;
+        }
+        setup.kernels = kernels.clone();
+        setup.endpoint_host = Some(host.clone());
+        let mut run = start("partial-local", setup, Vec::new()).await;
+        let names = if route == "storage" {
+            &["first"][..]
+        } else {
+            &["first", "late-worker"]
+        };
+        let omitted = route != "switch";
+        let late_step = |e: &AgentEvent| {
+            matches!(
+                inner(e, "/late-worker"),
+                Some(AgentEvent::StepStarted { .. })
+            )
+        };
+        for name in names.iter().copied().chain(omitted.then_some("omitted")) {
+            source.push([uses(&[report_call("r", "Done")])]);
+            if root_on_source {
+                source.push([done("Noted")]);
+            } else {
+                dest.push([done("Noted")]);
+            }
+            run.spawn(SpawnRequest {
+                endpoint: Some("source".into()),
+                keep_warm: name == "omitted",
+                model: Some(crate::provider::gemini::default_model().into()),
+                ..spawn_request(name, "Work")
+            })
+            .await;
+            if name == "late-worker" {
+                run.until("the late worker starts its first turn's step", late_step)
+                    .await;
+            }
+            run.child_ended(&format!("/{name}")).await;
+            super::resume::idle(&mut run, &format!("/{name}")).await;
+            run.root_ended().await;
+        }
+        let old_warm = if omitted {
+            Some(
+                super::resume::entry(&super::resume::list(&mut run).await, "/omitted")
+                    .keep_warm
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
+        let pause = (route != "storage").then(|| pause_at("/late-worker", "before-leave"));
+        let request = run.request();
+        let follow = names.iter().map(|s| (*s).to_owned()).collect();
+        if route == "switch" {
+            let ClientCommand::ChangeSettings { mut changes, .. } =
+                crate::plugin::testing::plugin_switch(request.0, "gemini", ENABLED_KEY, false)
+            else {
+                unreachable!()
+            };
+            changes.extend(ClientCommand::shortcut_changes(
+                Some(ENV.into()),
+                None,
+                None,
+            ));
+            run.send(ClientCommand::AnswerProviderSwitch {
+                request,
+                changes,
+                follow,
+                accept_api: false,
+            })
+            .await;
+        } else {
+            run.send(ClientCommand::SubscriptionAuth {
+                command: AuthCommand::logout(
+                    request,
+                    &["source".into()],
+                    true,
+                    Some(ENV.into()),
+                    follow,
+                ),
+            })
+            .await;
+        }
+        let gate = Arc::new(Semaphore::new(0));
+        if let Some(pause) = pause {
+            pause.wait().await;
+            source.push([gated(uses(&[report_call("r3", "Late")]), &gate)]);
+            service_of(&kernels)
+                .handle(AgentPath::root())
+                .send("late-worker", "More".into(), true)
+                .unwrap();
+            run.until("the late worker starts its next turn's step", late_step)
+                .await;
+            pause.wait().await;
+        }
+        let failure = run.until("failed local departure", |e| matches!(e, AgentEvent::Rejected { request: Some(r), .. } | AgentEvent::SubscriptionAuth { event: AuthEvent { request: r, .. } } if *r == request)).await;
+        let message = match &failure {
+            AgentEvent::Rejected { reason, .. } => reason,
+            AgentEvent::SubscriptionAuth {
+                event:
+                    AuthEvent {
+                        outcome: AuthOutcome::Failed { message, .. },
+                        ..
+                    },
+            } => message,
+            _ => panic!("{failure:?}"),
+        };
+        assert!(
+            message.contains(if route == "storage" {
+                "storage failed"
+            } else {
+                "late-worker is working"
+            }),
+            "{route}: {message}"
+        );
+        let receipt = |e: &AgentEvent| matches!(e, AgentEvent::FollowersMoved { request: r, moved, to } if *r == request && to == ENV && moved.len() == 1 && moved[0].agent == "first");
+        let before_error = run.seen.len();
+        assert!(run.seen.iter().any(receipt));
+        if route != "storage" {
+            gate.add_permits(1);
+            run.child_ended("/late-worker").await;
+        }
+        let agents = super::resume::list(&mut run).await;
+        assert_eq!(
+            super::resume::entry(&agents, "/first").endpoint.as_deref(),
+            Some(ENV)
+        );
+        if route != "storage" {
+            assert_eq!(
+                super::resume::entry(&agents, "/late-worker")
+                    .endpoint
+                    .as_deref(),
+                Some("source")
+            );
+        }
+        if let Some(old_warm) = old_warm {
+            let row = super::resume::entry(&agents, "/omitted");
+            assert_eq!(row.endpoint.as_deref(), Some("source"));
+            assert_eq!(row.keep_warm, Some(old_warm));
+            source.push([done("Continued where I was")]);
+            run.send(super::resume::child_send(
+                "/omitted",
+                "after-refusal",
+                "Continue",
+            ))
+            .await;
+            assert!(matches!(
+                run.child_ended("/omitted").await,
+                TurnOutcome::Completed { .. }
+            ));
+        }
+        assert!(host.catalog.view().ready.iter().any(|c| c.name == "source"));
+        let run = run.quit().await;
+        assert!(!run.seen[before_error..].iter().any(receipt));
+        assert_eq!(
+            run.seen
+                .iter()
+                .filter(|e| matches!(e, AgentEvent::FollowersMoved { .. }))
+                .count(),
+            1
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_busy_child_reports_a_deferred_stay_if_its_chosen_subscription_becomes_api() {
+    let wait = Arc::new(Semaphore::new(0));
+    let dest = scripted([]);
+    let source = scripted([gated(uses(&[report_call("r", "Finished")]), &wait)]);
+    let host = departure_host(dest.clone(), source, true);
+    let mut setup = super::switches::provider_setup(true);
+    setup.endpoint_host = Some(host.clone());
+    let mut run = start("busy-rebound", setup, Vec::new()).await;
+    run.spawn(spawn_request("reviewer", "Work")).await;
+    run.until("the reviewer starts on the old account", |e| {
+        matches!(inner(e, "/reviewer"), Some(AgentEvent::StepStarted { .. }))
+    })
+    .await;
+    host.elsewhere(&["source"], &[]);
+    super::resume::list(&mut run).await;
+    let choices = run
+        .until(
+            "the externally removed account's choices",
+            |e| matches!(e, AgentEvent::AccountsGone { ways, .. } if !ways.is_empty()),
+        )
+        .await;
+    assert!(
+        matches!(choices, AgentEvent::AccountsGone { ways, .. } if ways.len() == 1 && ways[0].chat.as_deref() == Some(ENV) && !ways[0].charges && ways[0].follow == ["reviewer"])
+    );
+    let mut command = AuthCommand::logout(
+        RequestId(91),
+        &["source".into()],
+        true,
+        Some(ENV.into()),
+        vec!["reviewer".into()],
+    );
+    if let AuthCommand::Logout { gone, .. } = &mut command {
+        *gone = true;
+    }
+    let outcome = auth(&mut run, command).await;
+    assert!(
+        matches!(&outcome, AuthOutcome::LoggedOut { moved, stay, .. } if moved.is_empty() && stay.len() == 1 && stay[0].agent == "reviewer" && stay[0].busy && !stay[0].charges),
+        "{outcome:?}"
+    );
+
+    let neutral = scripted([done("Noted")]);
+    neutral.knobs(|k| k.billing = Some(wisp_protocol::Billing::AnthropicPlan));
+    *host.next_provider.lock().unwrap() = Some(neutral);
+    host.load("neutral");
+    let chosen = super::switches::provider_answer(
+        &mut run,
+        ClientCommand::shortcut(RequestId(92), Some("neutral".into()), None, None),
+        92,
+    )
+    .await;
+    assert!(
+        matches!(chosen, AgentEvent::SettingsChanged { .. }),
+        "{chosen:?}"
+    );
+    let api = scripted([]);
+    *host.next_provider.lock().unwrap() = Some(api.clone());
+    host.load(ENV);
+    wait.add_permits(1);
+    run.child_ended("/reviewer").await;
+    let receipt = run
+        .until(
+            "the deferred real stay",
+            |e| matches!(e, AgentEvent::AccountsGone { stay, .. } if !stay.is_empty()),
+        )
+        .await;
+    assert!(
+        matches!(&receipt, AgentEvent::AccountsGone { names, moved, stay, ways } if names == &["source"] && moved.is_empty() && ways.is_empty() && stay.len() == 1 && stay[0].agent == "reviewer" && stay[0].charges && !stay[0].busy),
+        "{receipt:?}"
+    );
+    let run = run.quit().await;
+    assert!(api.sent().is_empty());
+    assert!(dest.sent().is_empty());
+    assert!(
+        !run.records("/reviewer")
+            .iter()
+            .any(|event| matches!(event, LogEvent::SettingsChanged { .. }))
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_fixed_api_departure_uses_the_effective_child_binding_before_its_next_turn() {
+    use wisp_protocol::Billing;
+
+    for (from, pending, selected, rebound) in [
+        ("sub", "key-a", true, None),
+        ("sub", "key-a", false, None),
+        ("key-a", "sub", false, None),
+        ("key-a", "sub", false, Some(Billing::AnthropicPlan)),
+        ("key-a", "sub", false, Some(Billing::Metered)),
+    ] {
+        let api = scripted([done("Noted")]);
+        let mover = scripted([uses(&[report_call("r", "Work")])]);
+        let sub = scripted([uses(&[report_call("r", "Work")])]);
+        sub.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+        let connection = |name, provider| crate::agent::Connection {
+            provider,
+            ..crate::agents::testing::connection(name, None)
+        };
+        let host = AuthHost::with_connections(
+            connection("key-b", api.clone()),
+            vec![
+                connection("key-a", mover.clone()),
+                connection("sub", sub.clone()),
+            ],
+        );
+        let kernels = Kernels::default();
+        let mut run = start(
+            "fixed-effective",
+            Setup {
+                endpoint_host: Some(host.clone()),
+                kernels: kernels.clone(),
+                ..Setup::default()
+            },
+            Vec::new(),
+        )
+        .await;
+        run.spawn(SpawnRequest {
+            endpoint: Some(from.into()),
+            ..spawn_request("worker", "Work")
+        })
+        .await;
+        run.child_ended("/worker").await;
+        run.root_ended().await;
+        let request = run.request();
+        run.send(child(
+            "/worker",
+            ClientCommand::shortcut(request, Some(pending.into()), None, None),
+        ))
+        .await;
+        run.until("selected account before starting a second turn", |e| matches!(inner(e, "/worker"), Some(AgentEvent::SettingsChanged { answers: Some(id), .. }) if *id == request)).await;
+        let tree = service_of(&kernels);
+        let agents = tree
+            .handle(AgentPath::root())
+            .on_accounts(&["key-a".to_owned()]);
+        let [agent] = agents.as_slice() else {
+            panic!("one connected worker")
+        };
+        assert_eq!(agent.bound.as_deref(), Some(from));
+        assert_eq!(agent.effective.account, pending);
+        let replacement = rebound.map(|billing| {
+            let fake = scripted([done("Continued")]);
+            fake.knobs(|k| k.billing = Some(billing));
+            *host.next_provider.lock().unwrap() = Some(fake.clone());
+            host.load("sub");
+            fake
+        });
+        let names = vec!["key-a".to_owned()];
+        let probe = auth(
+            &mut run,
+            AuthCommand::PreviewLogout {
+                request: RequestId(90),
+                names: names.clone(),
+            },
+        )
+        .await;
+        let onto_key = pending == "key-a";
+        assert!(
+            matches!(&probe, AuthOutcome::LogoutNeeds { fixed: true, ways, .. } if if onto_key {
+            ways.len() == 1 && ways[0].chat.as_deref() == Some("key-b") && ways[0].follow == ["worker"] && ways[0].origins["worker"].account == "key-a" && !ways[0].charges
+        } else { ways.is_empty() }),
+            "{probe:?}"
+        );
+        let records = run.records("/worker");
+        if onto_key {
+            let omitted = auth(
+                &mut run,
+                AuthCommand::logout(RequestId(91), &names, true, None, Vec::new()),
+            )
+            .await;
+            assert!(
+                matches!(omitted, AuthOutcome::LogoutNeeds { .. }),
+                "{omitted:?}"
+            );
+            assert!(host.catalog.view().ready.iter().any(|c| c.name == "key-a"));
+            assert_eq!(run.records("/worker"), records);
+        }
+        let chat = onto_key.then(|| "key-b".to_owned());
+        let mut answer = AuthCommand::logout(
+            RequestId(92),
+            &names,
+            true,
+            chat,
+            if selected {
+                vec!["worker".into()]
+            } else {
+                Vec::new()
+            },
+        );
+        if let AuthCommand::Logout { accept_api, .. } = &mut answer {
+            *accept_api = selected;
+        }
+        let outcome = auth(&mut run, answer).await;
+        assert!(
+            matches!(&outcome, AuthOutcome::LoggedOut { moved, stay, .. } if moved.len() == usize::from(selected) && stay.len() == usize::from(onto_key && !selected)),
+            "{outcome:?}"
+        );
+        let roster = super::resume::list(&mut run).await;
+        let landed = super::resume::entry(&roster, "/worker").endpoint.as_deref();
+        if selected {
+            assert_eq!(landed, Some("key-b"));
+        } else {
+            assert_ne!(landed, Some("key-b"));
+        }
+        if !onto_key {
+            assert_eq!(landed, (rebound != Some(Billing::Metered)).then_some("sub"));
+        }
+        if let Some(replacement) = replacement {
+            run.send(super::resume::child_send(
+                "/worker",
+                "resume-work",
+                "Continue",
+            ))
+            .await;
+            if rebound == Some(Billing::Metered) {
+                let refusal = run.until("the rejected rebound account", |e| matches!(inner(e, "/worker"), Some(AgentEvent::Rejected { id: Some(id), .. }) if id.as_str() == "resume-work")).await;
+                assert!(
+                    matches!(inner(&refusal, "/worker"), Some(AgentEvent::Rejected { reason, .. }) if reason.contains("choose an account again")),
+                    "{refusal:?}"
+                );
+                assert!(replacement.sent().is_empty());
+            } else {
+                run.child_ended("/worker").await;
+                assert_eq!(replacement.sent().len(), 1);
+            }
+        }
+        let run = run.quit().await;
+        assert!(
+            !run.seen
+                .iter()
+                .any(|e| matches!(e, AgentEvent::FollowersMoved { .. }))
+        );
+        assert_eq!(api.sent().len(), 1);
+        assert_eq!(
+            run.records("/worker")[records.len()..]
+                .iter()
+                .filter(|e| matches!(e, LogEvent::SettingsChanged { .. }))
+                .count(),
+            usize::from(selected)
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_multi_alias_logout_previews_only_affected_descendants_and_revalidates_billing() {
+    use wisp_protocol::Billing;
+    for rebind in [false, true] {
+        let dest = scripted([]);
+        let source = scripted([uses(&[report_call("r", "Grandchild")])]);
+        let host = departure_host(dest.clone(), source, false);
+        if !rebind {
+            dest.knobs(|k| k.billing = Some(Billing::Metered));
+        }
+        let old_api = scripted([uses(&[report_call("r", "API child")])]);
+        *host.next_provider.lock().unwrap() = Some(old_api);
+        host.load("other-api");
+        let mut run = start(
+            "multi-logout",
+            Setup {
+                endpoint_host: Some(host.clone()),
+                ..Setup::default()
+            },
+            Vec::new(),
+        )
+        .await;
+        for name in ["lead", "sibling", "api-child"] {
+            if name != "api-child" {
+                dest.push([uses(&[report_call("r", "Done")])]);
+            }
+            dest.push([done("Noted")]);
+            run.spawn(SpawnRequest {
+                endpoint: (name == "api-child").then(|| "other-api".into()),
+                ..spawn_request(name, "Work")
+            })
+            .await;
+            run.child_ended(&format!("/{name}")).await;
+            run.root_ended().await;
+        }
+        dest.push([done("Noted"), done("Noted"), done("Noted"), done("Noted")]);
+        run.send(child(
+            "/lead",
+            ClientCommand::SpawnAgent {
+                request: RequestId(80),
+                spawn: SpawnRequest {
+                    endpoint: Some("source".into()),
+                    model: Some(crate::provider::gemini::default_model().into()),
+                    ..spawn_request("reviewer", "Review")
+                },
+            },
+        ))
+        .await;
+        run.child_ended("/lead/reviewer").await;
+        let names = ["source".to_owned(), "other-api".to_owned()];
+        let choices = auth(
+            &mut run,
+            AuthCommand::PreviewLogout {
+                request: RequestId(90),
+                names: names.to_vec(),
+            },
+        )
+        .await;
+        let AuthOutcome::LogoutNeeds {
+            fixed: true, ways, ..
+        } = choices
+        else {
+            panic!("{choices:?}")
+        };
+        let [way] = ways.as_slice() else {
+            panic!("one fixed destination: {ways:?}")
+        };
+        assert_eq!(way.chat.as_deref(), Some(ENV));
+        assert_eq!(way.follow, ["api-child", "lead/reviewer"]);
+        assert_eq!(way.origins.len(), 2);
+        assert_eq!(way.origins["api-child"].billing, Some(Billing::Metered));
+        assert_eq!(
+            way.origins["lead/reviewer"].billing,
+            Some(Billing::AntigravityPlan)
+        );
+        assert_eq!(way.charges, !rebind);
+        if rebind {
+            *host.next_provider.lock().unwrap() = Some(scripted([]));
+            host.load(ENV);
+        }
+        let mut command = AuthCommand::logout(
+            RequestId(91),
+            &names,
+            true,
+            way.chat.clone(),
+            way.follow.clone(),
+        );
+        if let AuthCommand::Logout { accept_api, .. } = &mut command {
+            *accept_api = !rebind;
+        }
+        let outcome = auth(&mut run, command).await;
+        if rebind {
+            assert!(
+                matches!(
+                    &outcome,
+                    AuthOutcome::Failed {
+                        kind: wisp_protocol::subscription_auth::AuthFailureKind::StaleRequest,
+                        ..
+                    }
+                ),
+                "{outcome:?}"
+            );
+            assert!(host.calls.lock().unwrap().is_empty());
+        } else {
+            assert!(
+                matches!(&outcome, AuthOutcome::LoggedOut { also, moved, stay, .. } if also == &["other-api"] && stay.is_empty() && moved.iter().map(|m| m.agent.as_str()).eq(["api-child", "lead/reviewer"])),
+                "{outcome:?}"
+            );
+        }
+        let roster = super::resume::list(&mut run).await;
+        for p in ["/sibling", "/lead"] {
+            assert_eq!(
+                super::resume::entry(&roster, p).endpoint.as_deref(),
+                (!rebind).then_some(ENV)
+            );
+        }
+        let run = run.quit().await;
+        for p in ["/sibling", "/lead"] {
+            assert!(
+                !run.records(p)
+                    .iter()
+                    .any(|event| matches!(event, LogEvent::SettingsChanged { endpoint_name: Some(name), .. } if name != ENV))
+            );
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unconfirmed_automatic_external_move_keeps_root_input_held() {
+    use wisp_protocol::Billing;
+
+    for recovery in ["answer", "account", "release"] {
+        let gate = Arc::new(Semaphore::new(0));
+        let source = scripted([
+            uses(&[report_call("work", "Done")]),
+            done("Noted"),
+            gated(done("Before the removal"), &gate),
+        ]);
+        source.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+        let host = AuthHost::with(crate::agent::Connection {
+            provider: source.clone(),
+            ..crate::agents::testing::connection("source", None)
+        });
+        host.load("unrelated");
+        let kernels = Kernels::default();
+        let mut run = start(
+            "unconfirmed-external-departure",
+            Setup {
+                endpoint_host: Some(host.clone()),
+                kernels: kernels.clone(),
+                ..Setup::default()
+            },
+            Vec::new(),
+        )
+        .await;
+        run.spawn(SpawnRequest {
+            endpoint: Some("source".into()),
+            ..spawn_request("worker", "Work")
+        })
+        .await;
+        run.child_ended("/worker").await;
+        super::resume::idle(&mut run, "/worker").await;
+        run.root_ended().await;
+        if recovery == "account" {
+            let request = run.request();
+            run.send(ClientCommand::shortcut(
+                request,
+                Some("source".into()),
+                None,
+                None,
+            ))
+            .await;
+            run.until("an explicit session override", |e| matches!(e, AgentEvent::SettingsChanged { answers: Some(id), .. } if *id == request)).await;
+        }
+        run.say("Before").await;
+        run.until("the root has started on its configured subscription", |e| {
+            matches!(e, AgentEvent::StepStarted { .. })
+        })
+        .await;
+        run.send(ClientCommand::queue("held", "Do not send until recovered"))
+            .await;
+        run.until(
+            "the queued input",
+            |e| matches!(e, AgentEvent::InputAccepted { id, .. } if id.0 == "held"),
+        )
+        .await;
+        host.elsewhere(&["source"], &[]);
+        gate.add_permits(1);
+        run.root_ended().await;
+        run.until("the held input", |e| matches!(e, AgentEvent::InputHeld { ids, .. } if ids.iter().any(|id| id.0 == "held"))).await;
+
+        let service = service_of(&kernels);
+        let worker = AgentPath::new("/worker");
+        let (fake, mut incoming) = mpsc::unbounded_channel();
+        let real = service
+            .with_entry(&worker, |entry| entry.leave.replace(fake))
+            .unwrap()
+            .unwrap();
+        let close_result = tokio::spawn(async move {
+            let leave = incoming.recv().await.unwrap();
+            let (_answer, response) = tokio::sync::oneshot::channel();
+            leave.start.send(response).unwrap();
+        });
+        let backup = scripted([done("Released after explicit recovery")]);
+        backup.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+        *host.next_provider.lock().unwrap() = Some(backup.clone());
+        host.load("backup");
+        let request = run.request();
+        run.send(ClientCommand::DescribeSettings { request }).await;
+        run.until("an actual receipt without a phantom move", |e| matches!(e, AgentEvent::AccountsGone { names, ways, moved, stay } if names == &["source"] && ways.is_empty() && moved.is_empty() && stay.is_empty())).await;
+        run.until("the unconfirmed child's rejection", |e| matches!(e, AgentEvent::Rejected { reason, .. } if reason.contains("worker's move wasn't confirmed"))).await;
+        close_result.await.unwrap();
+        service
+            .with_entry(&worker, |entry| entry.leave = Some(real))
+            .unwrap();
+
+        let still_held = async |run: &mut Run| {
+            let request = run.request();
+            run.send(ClientCommand::DescribeSettings { request }).await;
+            run.until("settings after the catalog change", |e| matches!(e, AgentEvent::SettingsSnapshot(snapshot) if snapshot.answers == request)).await;
+            assert!(!run.seen.iter().any(|e| matches!(e, AgentEvent::InputUnheld { ids, .. } if ids.iter().any(|id| id.0 == "held"))));
+            assert!(backup.sent().is_empty());
+        };
+        still_held(&mut run).await;
+        host.elsewhere(&["unrelated"], &[]);
+        still_held(&mut run).await;
+        let api = scripted([done("Must never run on the returned key")]);
+        api.knobs(|k| k.billing = Some(Billing::Metered));
+        *host.next_provider.lock().unwrap() = Some(api.clone());
+        host.load("source");
+        still_held(&mut run).await;
+        run.until("the returned alias is not the chosen subscription", |e| matches!(e, AgentEvent::Rejected { reason, .. } if reason.contains("source is no longer available as chosen"))).await;
+        run.send(ClientCommand::Release).await;
+        run.until("release still needs a valid account", |e| {
+            matches!(
+                e,
+                AgentEvent::Rejected {
+                    kind: Some(wisp_protocol::RejectKind::AccountGone),
+                    reason,
+                    ..
+                } if reason.contains("source is no longer available as chosen")
+            )
+        })
+        .await;
+        still_held(&mut run).await;
+        assert!(api.sent().is_empty());
+
+        if recovery == "account" {
+            use wisp_protocol::settings::{
+                SettingChange, SettingTarget, SettingValue, SitePath, find, names,
+            };
+            let request = run.request();
+            run.send(ClientCommand::ChangeSettings {
+                request,
+                changes: vec![SettingChange {
+                    target: SettingTarget::Path(SitePath::global(find(names::ENDPOINT).unwrap())),
+                    value: Some(SettingValue::Text("source".into())),
+                }],
+                save: true,
+            })
+            .await;
+            run.until("the overridden global default does not approve the replacement", |e| matches!(e, AgentEvent::Rejected { request: Some(id), reason, .. } if *id == request && reason.contains("no longer available as chosen"))).await;
+            still_held(&mut run).await;
+            assert!(api.sent().is_empty());
+        }
+
+        let landed = match recovery {
+            "answer" => {
+                let request = run.request();
+                let mut command = AuthCommand::logout(
+                    request,
+                    &["source".to_owned()],
+                    true,
+                    Some("backup".into()),
+                    vec!["worker".into()],
+                );
+                if let AuthCommand::Logout { gone, .. } = &mut command {
+                    *gone = true;
+                }
+                let result = auth(&mut run, command).await;
+                assert!(
+                    matches!(&result, AuthOutcome::LoggedOut { moved, stopped: None, .. } if moved.iter().any(|m| m.agent == "worker")),
+                    "{result:?}"
+                );
+                backup.clone()
+            }
+            "account" => {
+                let request = run.request();
+                run.send(ClientCommand::shortcut(
+                    request,
+                    Some("backup".into()),
+                    None,
+                    None,
+                ))
+                .await;
+                run.until("the user chooses the backup account", |e| matches!(e, AgentEvent::SettingsChanged { answers: Some(id), .. } if *id == request)).await;
+                backup.clone()
+            }
+            _ => {
+                let restored = scripted([done("Released on the restored subscription")]);
+                restored.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+                *host.next_provider.lock().unwrap() = Some(restored.clone());
+                host.load("source");
+                still_held(&mut run).await;
+                assert!(restored.sent().is_empty());
+                run.send(ClientCommand::Release).await;
+                restored
+            }
+        };
+        assert!(matches!(
+            run.root_ended().await,
+            TurnOutcome::Completed { .. }
+        ));
+        assert_eq!(landed.sent().len(), 1, "{recovery}");
+        assert!(api.sent().is_empty());
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_configured_child_requires_a_choice_before_using_a_rebound_api_alias() {
+    use wisp_protocol::Billing;
+
+    for sign_out in [false, true] {
+        let host = AuthHost::with(crate::agent::Connection {
+            provider: scripted([done("Noted")]),
+            ..crate::agents::testing::connection(ENV, None)
+        });
+        let source = scripted([uses(&[report_call("work", "Done")])]);
+        source.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+        *host.next_provider.lock().unwrap() = Some(source);
+        host.load("source");
+        let kernels = Kernels::default();
+        let mut run = start(
+            "child-subscription-replaced",
+            Setup {
+                endpoint_host: Some(host.clone()),
+                kernels: kernels.clone(),
+                ..Setup::default()
+            },
+            Vec::new(),
+        )
+        .await;
+        run.spawn(SpawnRequest {
+            endpoint: Some("source".into()),
+            ..spawn_request("worker", "Work")
+        })
+        .await;
+        run.child_ended("/worker").await;
+        super::resume::idle(&mut run, "/worker").await;
+        run.root_ended().await;
+        let names = ["source".to_owned()];
+        if sign_out {
+            let request = run.request();
+            let result = auth(
+                &mut run,
+                AuthCommand::logout(request, &names, true, Some(ENV.into()), Vec::new()),
+            )
+            .await;
+            assert!(
+                matches!(&result, AuthOutcome::LoggedOut { stay, .. } if stay.iter().any(|child| child.agent == "worker")),
+                "{result:?}"
+            );
+            assert!(!host.catalog.view().ready.iter().any(|c| c.name == "source"));
+        }
+
+        let api = scripted([done("Explicitly chosen")]);
+        api.knobs(|k| k.billing = Some(Billing::Metered));
+        *host.next_provider.lock().unwrap() = Some(api.clone());
+        host.load("source");
+        run.send(super::resume::child_send(
+            "/worker",
+            "before-choice",
+            "Must not bill the API",
+        ))
+        .await;
+        run.until("the child refuses the replacement", |e| matches!(inner(e, "/worker"), Some(AgentEvent::Rejected { id: Some(id), reason, .. }) if id.0 == "before-choice" && reason.contains("no longer available as chosen"))).await;
+        assert!(api.sent().is_empty());
+        let root = service_of(&kernels).handle(AgentPath::root());
+        let children = root.on_accounts(&names);
+        assert_eq!(children.len(), 1);
+        assert!(children[0].bound.is_none());
+        assert_eq!(children[0].effective.billing, Some(Billing::AnthropicPlan));
+
+        let request = run.request();
+        run.send(child(
+            "/worker",
+            ClientCommand::shortcut(request, Some("source".into()), None, None),
+        ))
+        .await;
+        run.until("the child explicitly chooses the API", |e| matches!(inner(e, "/worker"), Some(AgentEvent::SettingsChanged { answers: Some(id), .. }) if *id == request)).await;
+        run.send(super::resume::child_send(
+            "/worker",
+            "after-choice",
+            "Continue on the chosen account",
+        ))
+        .await;
+        assert!(matches!(
+            run.child_ended("/worker").await,
+            TurnOutcome::Completed { .. }
+        ));
+        assert_eq!(api.sent().len(), 1);
+        run.quit().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_asking_external_departure_can_be_answered_after_alias_reuse() {
+    use wisp_protocol::Billing;
+
+    let source = scripted([]);
+    source.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+    let host = AuthHost::with(crate::agent::Connection {
+        provider: source,
+        ..crate::agents::testing::connection("source", None)
+    });
+    let destination = scripted([done("On the chosen API")]);
+    *host.next_provider.lock().unwrap() = Some(destination.clone());
+    host.load("destination");
+    let mut run = start(
+        "answer-after-alias-reuse",
+        Setup {
+            endpoint_host: Some(host.clone()),
+            ..Setup::default()
+        },
+        Vec::new(),
+    )
+    .await;
+    host.elsewhere(&["source"], &[]);
+    let request = run.request();
+    run.send(ClientCommand::DescribeSettings { request }).await;
+    run.until("the external Where choice", |e| matches!(e, AgentEvent::AccountsGone { names, ways, .. } if names == &["source"] && ways.iter().any(|way| way.chat.as_deref() == Some("destination") && way.charges))).await;
+    let replacement = scripted([]);
+    *host.next_provider.lock().unwrap() = Some(replacement.clone());
+    host.load("source");
+    let request = run.request();
+    let mut command = AuthCommand::logout(
+        request,
+        &["source".to_owned()],
+        true,
+        Some("destination".into()),
+        Vec::new(),
+    );
+    if let AuthCommand::Logout {
+        gone, accept_api, ..
+    } = &mut command
+    {
+        *gone = true;
+        *accept_api = true;
+    }
+    let result = auth(&mut run, command).await;
+    assert!(
+        matches!(result, AuthOutcome::LoggedOut { stopped: None, .. }),
+        "{result:?}"
+    );
+    run.say("Continue on the chosen account").await;
+    assert!(matches!(
+        run.root_ended().await,
+        TurnOutcome::Completed { .. }
+    ));
+    assert!(replacement.sent().is_empty());
+    assert_eq!(destination.sent().len(), 1);
+    run.quit().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn logout_all_releases_both_of_a_childs_retiring_generations() {
+    let active = scripted([uses(&[report_call("work", "Done")]), done("Noted")]);
+    let host = AuthHost::with(crate::agent::Connection {
+        provider: active,
+        ..crate::agents::testing::connection(ENV, None)
+    });
+    host.load("work");
+    let kernels = Kernels::default();
+    let mut run = start(
+        "logout-all-with-pending-worker",
+        Setup {
+            endpoint_host: Some(host.clone()),
+            kernels: kernels.clone(),
+            ..Setup::default()
+        },
+        Vec::new(),
+    )
+    .await;
+    run.spawn(SpawnRequest {
+        endpoint: Some(ENV.into()),
+        ..spawn_request("worker", "Work")
+    })
+    .await;
+    run.child_ended("/worker").await;
+    super::resume::idle(&mut run, "/worker").await;
+    run.root_ended().await;
+    let request = run.request();
+    run.send(child(
+        "/worker",
+        ClientCommand::shortcut(request, Some("work".into()), None, None),
+    ))
+    .await;
+    run.until("the pending child account", |e| matches!(inner(e, "/worker"), Some(AgentEvent::SettingsChanged { answers: Some(id), .. }) if *id == request)).await;
+    let names = [ENV.to_owned(), "work".to_owned()];
+    let root = service_of(&kernels).handle(AgentPath::root());
+    let children = root.on_accounts(&names);
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].bound.as_deref(), Some(ENV));
+    assert_eq!(children[0].effective.account, "work");
+    assert!(host.catalog.begin_logout("work").is_err());
+    let request = run.request();
+    let result = auth(
+        &mut run,
+        AuthCommand::logout(request, &names, true, None, Vec::new()),
+    )
+    .await;
+    assert!(
+        matches!(result, AuthOutcome::LoggedOut { alias, also, stay, .. } if alias == ENV && also == ["work"] && stay.iter().any(|child| child.agent == "worker"))
+    );
+    assert!(host.catalog.view().ready.is_empty());
+    run.quit().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn signing_out_the_last_account_has_no_destination_or_phantom_move() {
+    let provider = scripted([done("Before"), done("After the refused sign-out")]);
+    let host = AuthHost::with(crate::agent::Connection {
+        provider: provider.clone(),
+        ..crate::agents::testing::connection(ENV, None)
+    });
+    let mut run = start(
+        "no-destination",
+        Setup {
+            endpoint_host: Some(host.clone()),
+            ..Setup::default()
+        },
+        Vec::new(),
+    )
+    .await;
+    run.say("Before").await;
+    run.root_ended().await;
+    let names = vec![ENV.to_owned()];
+    let needs = auth(
+        &mut run,
+        AuthCommand::PreviewLogout {
+            request: RequestId(90),
+            names: names.clone(),
+        },
+    )
+    .await;
+    assert!(matches!(needs, AuthOutcome::LogoutNeeds { ways, .. } if ways.is_empty()));
+    host.fail_logout
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let failure = auth(
+        &mut run,
+        AuthCommand::logout(RequestId(91), &names, true, None, Vec::new()),
+    )
+    .await;
+    assert!(
+        matches!(failure, AuthOutcome::Failed { message, .. } if message.contains("storage failed"))
+    );
+    assert!(host.catalog.view().ready.iter().any(|c| c.name == ENV));
+    run.say("After").await;
+    run.root_ended().await;
+    assert_eq!(provider.sent().len(), 2);
+    host.fail_logout
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    let outcome = auth(
+        &mut run,
+        AuthCommand::logout(RequestId(92), &names, true, None, Vec::new()),
+    )
+    .await;
+    assert!(
+        matches!(&outcome, AuthOutcome::LoggedOut { moved, stay, .. } if moved.is_empty() && stay.is_empty()),
+        "{outcome:?}"
+    );
+    assert!(host.catalog.view().ready.is_empty());
+    run.quit().await;
 }

@@ -346,7 +346,7 @@ async fn an_account_only_switch_adjusts_effort_but_named_choices_still_refuse() 
 
 #[tokio::test]
 async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_only_model_warns() {
-    use crate::agent::leave::{Leave, Left};
+    use crate::agent::leave::{Leave, LeaveAction, Left, MoveTo};
     use crate::endpoints::{EndpointName, PricingMode, ProviderKind, ResolvedEndpoint, UrlSource};
     use crate::models::list::{ListMeta, ModelList, SavedList};
     use crate::provider::credential::{Credential, Source, SubscriptionKind};
@@ -491,23 +491,31 @@ async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_onl
                 models,
                 ..StartLayers::default()
             });
-        *slot_in.lock().unwrap() = Some(agent.leave_sender());
+        *slot_in.lock().unwrap() = Some((agent.leave_sender(), agent.connections.clone()));
         agent
     });
 
-    let leave_tx = leave_slot.lock().unwrap().take().unwrap();
+    let (leave_tx, connections) = leave_slot.lock().unwrap().take().unwrap();
+    let target = |name| {
+        LeaveAction::Move(MoveTo::new(
+            connections.iter().find(|c| c.name == name).unwrap(),
+            true,
+        ))
+    };
     live.send(effort(20, Effort::Low)).await;
     assert_eq!(answers(&live.quiet().await), [(20, true)]);
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     leave_tx
         .send(Leave {
-            to: Some("antigravity".into()),
+            action: target("antigravity"),
             gone: "direct".into(),
-            kept: None,
-            reply: reply_tx,
+            source: "direct".into(),
+            names: Arc::from(["direct".to_owned()]),
+            elsewhere: false,
+            start: reply_tx,
         })
         .unwrap();
-    let moved = reply_rx.await.unwrap();
+    let moved = reply_rx.await.unwrap().await.unwrap();
     let Left::Moved(followed) = moved else {
         panic!("{moved:?}");
     };
@@ -590,13 +598,15 @@ async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_onl
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     leave_tx
         .send(Leave {
-            to: Some("gemini".into()),
+            action: target("gemini"),
             gone: "antigravity".into(),
-            kept: None,
-            reply: reply_tx,
+            source: "antigravity".into(),
+            names: Arc::from(["antigravity".to_owned()]),
+            elsewhere: false,
+            start: reply_tx,
         })
         .unwrap();
-    let moved = reply_rx.await.unwrap();
+    let moved = reply_rx.await.unwrap().await.unwrap();
     let Left::Moved(followed) = moved else {
         panic!("{moved:?}");
     };
@@ -614,13 +624,15 @@ async fn antigravity_leave_prefers_default_agent_model_and_configured_listed_onl
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
     leave_tx
         .send(Leave {
-            to: Some("antigravity".into()),
+            action: target("antigravity"),
             gone: "gemini".into(),
-            kept: None,
-            reply: reply_tx,
+            source: "gemini".into(),
+            names: Arc::from(["gemini".to_owned()]),
+            elsewhere: false,
+            start: reply_tx,
         })
         .unwrap();
-    let moved = reply_rx.await.unwrap();
+    let moved = reply_rx.await.unwrap().await.unwrap();
     let Left::Moved(followed) = moved else {
         panic!("{moved:?}");
     };

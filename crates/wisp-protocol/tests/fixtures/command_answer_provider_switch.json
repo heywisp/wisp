@@ -1,0 +1,19 @@
+{
+  "type": "answer_provider_switch",
+  "request": 19,
+  "changes": [
+    {
+      "target": {
+        "name": "endpoint"
+      },
+      "value": {
+        "kind": "text",
+        "text": "other"
+      }
+    }
+  ],
+  "follow": [
+    "worker"
+  ],
+  "accept_api": true
+}

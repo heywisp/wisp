@@ -1,0 +1,13 @@
+{
+  "type": "followers_moved",
+  "request": 7,
+  "to": "other",
+  "moved": [
+    {
+      "agent": "worker",
+      "model": "gpt-6.2-sol",
+      "effort": "high",
+      "rebuild_usd": 0.08
+    }
+  ]
+}

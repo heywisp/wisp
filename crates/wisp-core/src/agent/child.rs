@@ -83,7 +83,8 @@ fn route_refusal(command: &ClientCommand) -> Option<&'static str> {
         | ClientCommand::AttachProcess { .. }
         | ClientCommand::ProcessInput { .. }
         | ClientCommand::DetachProcess { .. } => None,
-        ClientCommand::SubscriptionAuth { .. }
+        ClientCommand::AnswerProviderSwitch { .. }
+        | ClientCommand::SubscriptionAuth { .. }
         | ClientCommand::PlanUsage { .. }
         | ClientCommand::SaveEndpoint { .. }
         | ClientCommand::EditEndpoint { .. }
@@ -119,6 +120,7 @@ fn request_of(command: &ClientCommand) -> Option<RequestId> {
         | ClientCommand::ListAgents { request }
         | ClientCommand::DescribeSession { request }
         | ClientCommand::ChangeSettings { request, .. }
+        | ClientCommand::AnswerProviderSwitch { request, .. }
         | ClientCommand::DescribeSettings { request }
         | ClientCommand::ContextReport { request, .. }
         | ClientCommand::Compact { request, .. }
@@ -243,7 +245,7 @@ impl Agent {
             message_time: self.session.message_time,
             context_note: self.session.context_note,
             endpoint: self.endpoint_name().to_owned(),
-            can_inherit_endpoint: self.bound_endpoint().is_some() && self.binding_fault.is_none(),
+            can_inherit_endpoint: self.active_binding_ready(),
             plugins: self.child_switches(),
         }
     }

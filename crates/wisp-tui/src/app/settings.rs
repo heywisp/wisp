@@ -80,6 +80,7 @@ struct Asked {
     told: Option<Told>,
     quiet: bool,
     holds: bool,
+    waiting: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -276,7 +277,9 @@ impl Tracker {
 
     pub fn wanted(&self) -> Chosen {
         self.asked
-            .back()
+            .iter()
+            .rev()
+            .find(|asked| asked.waiting)
             .map(|asked| asked.chosen.clone())
             .unwrap_or_else(|| self.next.clone())
     }
@@ -315,7 +318,14 @@ impl Tracker {
             told: None,
             quiet: false,
             holds: true,
+            waiting: true,
         });
+    }
+
+    pub fn dismiss_wait(&mut self, request: RequestId) {
+        if let Some(asked) = self.asked.iter_mut().find(|a| a.request == request) {
+            asked.waiting = false;
+        }
     }
 
     pub fn take_held(&mut self) -> Vec<String> {
@@ -411,6 +421,7 @@ impl Tracker {
             told,
             quiet: false,
             holds: false,
+            waiting: true,
         });
     }
 
@@ -423,6 +434,7 @@ impl Tracker {
             told: None,
             quiet: true,
             holds: false,
+            waiting: true,
         });
     }
 
@@ -438,7 +450,7 @@ impl Tracker {
     pub fn quit_status(&self) -> Option<&'static str> {
         if self.saving() {
             Some(copy::SAVING_SETTINGS)
-        } else if self.asked.is_empty() {
+        } else if !self.asked.iter().any(|a| a.waiting) {
             None
         } else {
             Some(copy::APPLYING_SETTINGS)
@@ -521,6 +533,10 @@ impl Tracker {
     pub fn sized(&mut self, tokens: u64) {
         self.prefix = Some(tokens);
         self.prompt = tokens;
+    }
+
+    pub fn has_cache_measurement(&self) -> bool {
+        self.last_request.is_some() || self.prompt != 0
     }
 
     pub fn cache_size(&self) -> CacheSize {

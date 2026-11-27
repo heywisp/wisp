@@ -32,6 +32,8 @@ pub(crate) mod news;
 pub mod report;
 mod service;
 pub(crate) use service::{OnAccount, ROOT_COMMANDS, ROOT_EVENTS, still_working};
+#[cfg(test)]
+pub(crate) use service::{attach_test_tree, test_root_next};
 pub mod state;
 #[cfg(test)]
 pub(crate) mod testing;
