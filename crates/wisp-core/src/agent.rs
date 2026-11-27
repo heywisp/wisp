@@ -17,6 +17,7 @@ use wisp_protocol::log::{
     LeadEntry, LogEvent, LoggedInput, LoggedMessage, ToolContext, TurnLead,
 };
 use wisp_protocol::settings::{AccountModel, Landing};
+use wisp_protocol::subscription_auth::AuthCommand;
 use wisp_protocol::{
     AccountSpend, AgentEvent, BlockKind, CLOSED_PAUSE_NOTE, CacheTtl, ClientCommand, ContentBlock,
     Cost, DeliveryMode, DetachReason, DiscardReason, Effort, EffortMarker, ErrorDetail, ErrorKind,
@@ -840,13 +841,16 @@ pub struct Agent {
     catalog_revision: u64,
     endpoint_catalog: Option<crate::endpoints::catalog::CatalogReader>,
     child_resume: crate::kit::ChildResume,
+    leave_account: Option<crate::agents::endpoints::ExactAccount>,
     endpoint_binding: Option<crate::endpoints::generation::Binding>,
     pending_endpoint_binding: Option<crate::endpoints::generation::Binding>,
     binding_fault: Option<String>,
+    binding_detached: bool,
     leaves: (leave::LeaveSender, mpsc::UnboundedReceiver<leave::Leave>),
     voice_calls: voice::Calls,
     signing_out: Option<auth::SigningOut>,
     gone_elsewhere: Option<Vec<String>>,
+    gone_auto_failed: bool,
     gone_released: bool,
     kept_leave: Option<leave::Kept>,
     completed_on: BTreeMap<String, u64>,
@@ -996,13 +1000,16 @@ impl Agent {
             catalog_revision: 0,
             endpoint_catalog: None,
             child_resume,
+            leave_account: None,
             endpoint_binding,
             pending_endpoint_binding: None,
             binding_fault,
+            binding_detached: false,
             leaves: mpsc::unbounded_channel(),
             voice_calls: mpsc::unbounded_channel(),
             signing_out: None,
             gone_elsewhere: None,
+            gone_auto_failed: false,
             gone_released: false,
             kept_leave: None,
             completed_on: BTreeMap::new(),
@@ -1359,16 +1366,65 @@ impl Agent {
             .is_some_and(|choice| choice.name == self.connection_name(index))
     }
 
+    fn accepted_account(&self, name: &str) -> Option<&crate::agents::endpoints::ExactAccount> {
+        self.leave_account
+            .as_ref()
+            .filter(|account| account.name == name)
+            .or_else(|| self.child_resume.account(name))
+    }
+
     fn check_resumed_connection(&self, connection: &Connection) -> Result<(), String> {
-        self.child_resume
-            .account(&connection.name)
+        self.accepted_account(&connection.name)
             .map_or(Ok(()), |choice| choice.check(Some(connection)))
     }
 
+    fn check_sign_out(&self, index: usize) -> Result<(), String> {
+        if self
+            .signing_out
+            .as_ref()
+            .and_then(|out| out.root_loss.as_ref())
+            .is_some_and(|loss| loss.contains(self.connection_name(index)))
+        {
+            return Err(auth::SIGN_OUT_IN_PROGRESS.to_owned());
+        }
+        Ok(())
+    }
+
     fn check_resume_destination(&self, index: usize) -> Result<(), String> {
+        if let Some(exact) = self.pending_account_for(index) {
+            self.check_live_account(exact, index)?;
+        } else {
+            self.check_sign_out(index)?;
+        }
         self.connections
             .get(index)
             .map_or(Ok(()), |c| self.check_resumed_connection(c))
+    }
+
+    fn check_live_account(
+        &self,
+        account: &crate::agents::endpoints::ExactAccount,
+        index: usize,
+    ) -> Result<(), String> {
+        self.check_sign_out(index)?;
+        account.check(self.connections.get(index))?;
+        if let Some(catalog) = &self.endpoint_catalog {
+            let view = catalog.view();
+            let candidate = view.ready.iter().find(|c| c.name == account.name);
+            account.check(candidate)?;
+            if let Some(generation) = candidate.and_then(|c| c.provider.generation()) {
+                generation
+                    .available()
+                    .map_err(|error| self.binding_error(index, error))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn active_binding_ready(&self) -> bool {
+        !self.child_resume.unbound()
+            && self.binding_fault.is_none()
+            && self.binding_ready(self.endpoint)
     }
 
     fn reserve_binding(
@@ -1392,21 +1448,27 @@ impl Agent {
             .generation()
             .map(|generation| generation.bind(self.path().as_str()))
             .transpose()
-            .map_err(|error| {
-                format!(
-                    "{}: {error}; choose another account",
-                    self.connection_name(index)
-                )
-            })
+            .map_err(|error| self.binding_error(index, error))
+    }
+
+    fn binding_error(
+        &self,
+        index: usize,
+        error: crate::endpoints::generation::Unavailable,
+    ) -> String {
+        format!(
+            "{}: {error}; choose another account",
+            self.connection_name(index)
+        )
     }
 
     pub(crate) fn bound_endpoint(&self) -> Option<&str> {
-        (!self.child_resume.unbound()).then(|| self.endpoint_name())
+        (!self.child_resume.unbound() && !self.binding_detached).then(|| self.endpoint_name())
     }
 
     fn refresh_binding(&mut self) -> Result<(), String> {
         self.check_resume_destination(self.endpoint)?;
-        if self.bound_endpoint().is_none() {
+        if self.child_resume.unbound() {
             return Ok(());
         }
         let Some(generation) = self.provider().generation() else {
@@ -1429,14 +1491,31 @@ impl Agent {
 
     fn use_connection(&mut self, index: usize) -> Result<(), String> {
         let binding = self.reserve_binding(index)?;
+        self.adopt_binding(index, binding, None);
+        Ok(())
+    }
+
+    fn adopt_binding(
+        &mut self,
+        index: usize,
+        binding: Option<crate::endpoints::generation::Binding>,
+        selected: Option<crate::agents::endpoints::ExactAccount>,
+    ) {
+        if let Some(account) = selected.or_else(|| self.pending_account_for(index).cloned()) {
+            self.leave_account = Some(account);
+        } else if index != self.endpoint {
+            self.leave_account = None;
+        }
         if self.child_resume.unbound() || self.resumed_selection_is(index) {
             self.child_resume = crate::kit::ChildResume::Legacy;
         }
         self.endpoint = index;
         self.endpoint_binding = binding;
         self.binding_fault = None;
-        self.gone_elsewhere = None;
-        Ok(())
+        self.binding_detached = false;
+        if !self.gone_auto_failed {
+            self.gone_elsewhere = None;
+        }
     }
 
     fn priced(&self) -> bool {
@@ -1444,18 +1523,28 @@ impl Agent {
     }
 
     fn settle_entry(&self) {
-        self.agents.settle(crate::agents::Settled {
+        self.publish_entry(None);
+    }
+
+    fn publish_entry(&self, next: Option<Option<wisp_protocol::subscription_auth::WayOrigin>>) {
+        let settled = crate::agents::Settled {
             model: self.session.model.clone(),
             effort: self.session.effort,
             endpoint: self.bound_endpoint().map(str::to_owned),
             provider: self.provider().kind().as_str(),
+            billing: self.account_billing(),
             kind: self.account_kind(),
             priced: self.is_priced(),
-        });
+        };
+        self.agents.settle(settled, next);
     }
 
     pub fn account_kind(&self) -> &'static str {
         crate::agents::endpoints::connection_kind(self.connection())
+    }
+
+    pub(crate) fn account_billing(&self) -> wisp_protocol::Billing {
+        self.provider().billing()
     }
 
     pub fn is_priced(&self) -> bool {
@@ -2180,8 +2269,15 @@ impl Agent {
         let target = retry
             .as_ref()
             .map_or_else(|| self.next_endpoint(), |retry| retry.endpoint);
-        let admission = self
-            .check_resume_destination(target)
+        let checked = if self.gone_auto_failed {
+            Err(auth::CHOICE_CHANGED.to_owned())
+        } else {
+            match retry.as_ref() {
+                Some(retry) => self.check_live_account(&retry.account, target),
+                None => self.check_resume_destination(target),
+            }
+        };
+        let admission = checked
             .map(|()| crate::endpoints::generation::admit(self.provider_at(target).generation()));
         let _admission = match admission {
             Ok(Ok(admission)) => admission,
@@ -2626,8 +2722,8 @@ impl Agent {
             .map(|catalog| catalog.changes());
         while !self.closed {
             let restart_changed = self.agents.restart_changed();
-            self.take_kept(events).await;
             self.sync_catalog(events).await;
+            self.take_kept(events).await;
             self.drain_idle(events).await;
             self.accept_mail(events).await;
             self.sign_ins_ended(events).await;
@@ -2647,11 +2743,12 @@ impl Agent {
                 }
                 continue;
             }
-            let retry_ready = self
-                .queue
-                .retry
-                .as_ref()
-                .is_some_and(|retry| self.binding_ready(retry.endpoint()));
+            let retry_ready = !self.gone_auto_failed
+                && self
+                    .queue
+                    .retry
+                    .as_ref()
+                    .is_some_and(|retry| self.binding_ready(retry.endpoint()));
             let retry_admission = if retry_ready {
                 crate::endpoints::generation::admit(
                     self.queue
@@ -2673,7 +2770,8 @@ impl Agent {
                 continue;
             }
             drop(retry_admission);
-            if self.binding_ready(self.next_endpoint())
+            if !self.gone_auto_failed
+                && self.binding_ready(self.next_endpoint())
                 && !self.agents.restarting()
                 && let Some((focus, request)) = self.queue.take_compact()
             {
@@ -2683,7 +2781,8 @@ impl Agent {
                 self.pump(events).await;
                 continue;
             }
-            if self.queue.is_empty()
+            if !self.gone_auto_failed
+                && self.queue.is_empty()
                 && self.queue.retry.is_none()
                 && self.binding_ready(self.next_endpoint())
             {
@@ -2720,7 +2819,8 @@ impl Agent {
             let wake_at = self
                 .wake_at()
                 .filter(|_| {
-                    self.queue.is_empty()
+                    !self.gone_auto_failed
+                        && self.queue.is_empty()
                         && self.queue.retry.is_none()
                         && self.binding_ready(self.next_endpoint())
                 })
@@ -2773,7 +2873,7 @@ impl Agent {
                     self.background_done(id, ran, events).await;
                     None
                 }
-                woke = keep_warm::woke(&mut self.keep_warm) => {
+                woke = keep_warm::woke(&mut self.keep_warm), if self.signing_out.as_ref().is_none_or(|out| out.root_loss.is_none()) => {
                     self.warm_woke(woke, events).await;
                     None
                 }
@@ -2886,6 +2986,13 @@ impl Agent {
         command: ClientCommand,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Option<Vec<Input>> {
+        if let ClientCommand::SubscriptionAuth {
+            command: AuthCommand::PreviewLogout { request, names },
+        } = command
+        {
+            self.preview_logout(request, names, events).await;
+            return None;
+        }
         self.sync_catalog(events).await;
         let arrival = self.inbox.arrive();
         let command = match sent_of(command, arrival) {
@@ -2913,6 +3020,13 @@ impl Agent {
             self.window_gone(events, true).await;
             return true;
         };
+        if let ClientCommand::SubscriptionAuth {
+            command: AuthCommand::PreviewLogout { request, names },
+        } = command
+        {
+            self.preview_logout(request, names, events).await;
+            return false;
+        }
         self.sync_catalog(events).await;
         let arrival = self.inbox.arrive();
         let command = match sent_of(command, arrival) {
@@ -2990,6 +3104,23 @@ impl Agent {
                     save,
                     projected: settings::Projected::default(),
                     by: None,
+                    answer: None,
+                };
+                self.enqueue(queued, events).await;
+            }
+            ClientCommand::AnswerProviderSwitch {
+                request,
+                changes,
+                follow,
+                accept_api,
+            } => {
+                let queued = Queued::Change {
+                    request: Some(request),
+                    changes,
+                    save: false,
+                    projected: settings::Projected::default(),
+                    by: None,
+                    answer: Some(queue::SwitchAnswer { follow, accept_api }),
                 };
                 self.enqueue(queued, events).await;
             }

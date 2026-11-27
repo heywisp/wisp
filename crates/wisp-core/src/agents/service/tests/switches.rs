@@ -614,20 +614,57 @@ async fn provider_switches_are_refused_while_the_chat_or_any_working_child_uses_
 }
 
 #[tokio::test]
-async fn a_provider_switch_offers_other_accounts_with_idle_children_staying() {
+async fn a_provider_switch_projects_legacy_waiters_and_moves_confirmed_followers() {
+    let mut setup = provider_setup(true);
+    setup.digests = true;
+    setup.endpoints.push(FakeEndpoint {
+        table: Table::Gemini,
+        ..endpoint("g2")
+    });
     let mut run = start(
         "provider-leave-needs",
-        provider_setup(true),
-        vec![("g1:/worker", vec![uses(&[report_call("r1", "Done")])])],
+        setup,
+        vec![
+            ("g1:/worker", vec![uses(&[report_call("r1", "Done")])]),
+            ("g1:/away", vec![uses(&[report_call("r2", "Done")])]),
+            ("other:/onto", vec![uses(&[report_call("r3", "Done")])]),
+            (
+                "g1:/scout",
+                vec![uses(&[report_call("r4", "First")]), done("Second")],
+            ),
+            (
+                "other:/sibling",
+                vec![uses(&[report_call("r5", "First")]), done("Second")],
+            ),
+        ],
     )
     .await;
-    run.spawn(SpawnRequest {
-        endpoint: Some("g1".into()),
-        model: Some(crate::provider::gemini::default_model().into()),
-        ..spawn_request("worker", "Work")
-    })
-    .await;
-    run.child_ended("/worker").await;
+    for (name, account, model) in [
+        ("worker", "g1", crate::provider::gemini::default_model()),
+        ("away", "g1", crate::provider::gemini::default_model()),
+        ("onto", "other", MODEL),
+        ("scout", "g1", crate::provider::gemini::default_model()),
+        ("sibling", "other", MODEL),
+    ] {
+        run.spawn(SpawnRequest {
+            endpoint: Some(account.into()),
+            keep_warm: true,
+            model: Some(model.into()),
+            ..spawn_request(name, "Work")
+        })
+        .await;
+        run.child_ended(&format!("/{name}")).await;
+        super::resume::idle(&mut run, &format!("/{name}")).await;
+    }
+    for (id, path, account) in [(90, "/away", "other"), (91, "/onto", "g1")] {
+        let request = RequestId(id);
+        run.send(child(
+            path,
+            ClientCommand::shortcut(request, Some(account.into()), None, None),
+        ))
+        .await;
+        run.until("the idle child selects its next account", |e| matches!(inner(e, path), Some(AgentEvent::SettingsChanged { answers: Some(r), endpoint, .. }) if *r == request && endpoint == account)).await;
+    }
     for (request, key) in [(100, ENABLED_KEY), (101, INSTALLED_KEY)] {
         run.send(plugin_switch(request, "gemini", key, false)).await;
         let offered = |event: &AgentEvent| match event {
@@ -635,17 +672,19 @@ async fn a_provider_switch_offers_other_accounts_with_idle_children_staying() {
             _ => false,
         };
         let event = run.until("ways for the provider switch", offered).await;
-        assert_eq!(
-            event,
-            AgentEvent::LeaveNeeds {
-                request: RequestId(request),
-                ways: vec![wisp_protocol::subscription_auth::Way {
-                    chat: Some("other".into()),
-                    stay: vec!["worker".into()],
-                    ..Default::default()
-                }],
-            }
-        );
+        let AgentEvent::LeaveNeeds {
+            ways,
+            with_followers,
+            ..
+        } = event
+        else {
+            panic!("{event:?}");
+        };
+        assert_eq!(ways[0].stay, ["onto", "scout", "worker"]);
+        assert!(ways[0].follow.is_empty());
+        assert_eq!(with_followers[0].follow, ["onto", "scout", "worker"]);
+        assert_eq!(with_followers[0].origins["onto"].account, "g1");
+        assert!(!with_followers[0].origins.contains_key("away"));
         let refusal = run
             .until("the provider switch refusal", |event| {
                 matches!(event,
@@ -660,6 +699,101 @@ async fn a_provider_switch_offers_other_accounts_with_idle_children_staying() {
         assert!(
             matches!(&run.seen[needs + 1], AgentEvent::Rejected { request: Some(id), .. } if id.0 == request)
         );
+    }
+    let moved_alias = provider_answer(
+        &mut run,
+        ClientCommand::shortcut(RequestId(102), Some("g2".into()), None, None),
+        102,
+    )
+    .await;
+    assert!(
+        matches!(moved_alias, AgentEvent::SettingsChanged { endpoint, .. } if endpoint == "g2")
+    );
+    let mut changes = ClientCommand::shortcut_changes(Some("other".into()), None, None);
+    let ClientCommand::ChangeSettings {
+        changes: switches, ..
+    } = plugin_switch(103, "gemini", INSTALLED_KEY, false)
+    else {
+        unreachable!()
+    };
+    changes.extend(switches);
+    let before = super::resume::list(&mut run).await;
+    for name in ["/worker", "/scout", "/sibling"] {
+        assert!(
+            super::resume::entry(&before, name)
+                .keep_warm
+                .is_some_and(|k| !k.paused)
+        );
+    }
+    for (id, follow, accept_api) in [
+        (103, vec!["unseen".to_owned()], true),
+        (104, vec!["worker".to_owned()], false),
+        (105, vec!["worker".to_owned()], true),
+    ] {
+        let event = provider_answer(
+            &mut run,
+            ClientCommand::AnswerProviderSwitch {
+                request: RequestId(id),
+                changes: changes.clone(),
+                follow,
+                accept_api,
+            },
+            id,
+        )
+        .await;
+        if id == 105 {
+            assert!(
+                matches!(&event, AgentEvent::SettingsChanged { endpoint, .. } if endpoint == "other"),
+                "{event:?}"
+            );
+            run.until("the confirmed follower lands", |e| matches!(e, AgentEvent::FollowersMoved { request, to, moved } if request.0 == id && to == "other" && moved.len() == 1 && moved[0].agent == "worker")).await;
+        } else {
+            assert!(matches!(event, AgentEvent::Rejected { .. }));
+            let after = super::resume::list(&mut run).await;
+            let worker = super::resume::entry(&after, "/worker");
+            let old = super::resume::entry(&before, "/worker");
+            assert_eq!(
+                (&worker.endpoint, worker.keep_warm),
+                (&old.endpoint, old.keep_warm)
+            );
+        }
+    }
+    let after = super::resume::list(&mut run).await;
+    for name in ["/scout", "/sibling"] {
+        let old = super::resume::entry(&before, name);
+        let new = super::resume::entry(&after, name);
+        assert_eq!(
+            (&new.endpoint, new.keep_warm),
+            (&old.endpoint, old.keep_warm)
+        );
+    }
+    run.send(super::resume::child_send("/sibling", "unaffected", "More"))
+        .await;
+    run.child_ended("/sibling").await;
+    let restored = provider_answer(
+        &mut run,
+        plugin_switch(106, "gemini", INSTALLED_KEY, true),
+        106,
+    )
+    .await;
+    assert!(
+        matches!(restored, AgentEvent::SettingsChanged { .. }),
+        "{restored:?}"
+    );
+    run.send(super::resume::child_send("/scout", "restored", "More"))
+        .await;
+    run.child_ended("/scout").await;
+    for p in ["g1:/scout", "other:/sibling"] {
+        let sent = run.requests(p);
+        let [first, next] = sent.as_slice() else {
+            panic!("{p} must keep its requests")
+        };
+        grows_from(next, first, p);
+        if p == "g1:/scout" {
+            crate::test_guard::prefix::assert_gemini_prefix_stable(
+                &[first, next].map(|s| crate::provider::gemini::build_body(&s.request()).unwrap()),
+            );
+        }
     }
     run.quit().await;
 }

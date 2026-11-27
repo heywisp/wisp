@@ -615,8 +615,9 @@ The `AccountsGone` event (accounts signed out in another window,
 `docs/endpoints.md`) is never logged: each move it reports is that agent's
 `settings_changed`, and a send it refuses is a `rejected` with `account_gone`.
 
-`LeaveNeeds` (`docs/endpoints.md`) is never logged: the refusal after it is
-a `rejected`, and the change that answers it a `settings_changed`.
+`LeaveNeeds` and `FollowersMoved` (`docs/endpoints.md`) are never logged.
+The refusal after `LeaveNeeds` is a `rejected`; each actual move writes the
+moving agent's `settings_changed`.
 
 Input the user types into a process (`ProcessInput`) is never logged: it
 writes no record, and a refused one writes `rejected` with a `reason` naming

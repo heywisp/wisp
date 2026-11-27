@@ -1,7 +1,9 @@
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::endpoint::StoreKind;
-use crate::{CodeProblem, RequestId, Secret};
+use crate::{Billing, CodeProblem, Effort, RequestId, Secret};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -110,6 +112,11 @@ pub enum AuthCommand {
         request: RequestId,
         alias: String,
     },
+    PreviewLogout {
+        request: RequestId,
+        #[serde(deserialize_with = "logout_names")]
+        names: Vec<String>,
+    },
     Logout {
         request: RequestId,
         alias: String,
@@ -123,7 +130,17 @@ pub enum AuthCommand {
         follow: Vec<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         gone: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        accept_api: bool,
     },
+}
+
+fn logout_names<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    let names = Vec::<String>::deserialize(d)?;
+    if names.is_empty() {
+        return Err(de::Error::custom("sign-out preview requires account names"));
+    }
+    Ok(names)
 }
 
 impl AuthCommand {
@@ -142,6 +159,7 @@ impl AuthCommand {
             confirmed,
             follow,
             gone: false,
+            accept_api: false,
         }
     }
 
@@ -152,6 +170,7 @@ impl AuthCommand {
             | Self::Finish { request, .. }
             | Self::Open { request, .. }
             | Self::Status { request, .. }
+            | Self::PreviewLogout { request, .. }
             | Self::Logout { request, .. }
             | Self::Reload { request, .. } => *request,
         }
@@ -227,11 +246,24 @@ pub struct Way {
     pub stay: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub charges: bool,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub origins: BTreeMap<String, WayOrigin>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WayOrigin {
+    pub account: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub billing: Option<Billing>,
+    pub model: String,
+    pub effort: Effort,
 }
 
 impl Way {
-    pub fn follows(agent: Option<&str>, to: Option<&str>) -> bool {
-        to.is_some() && agent == to
+    pub fn follows(agent: Option<&str>, to: Option<&str>, selected: bool, metered: bool) -> bool {
+        to.is_some() && (selected || (agent == to && !metered))
     }
 }
 
@@ -318,6 +350,8 @@ pub enum AuthOutcome {
         presets: Vec<PresetGone>,
     },
     LogoutNeeds {
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        fixed: bool,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         deletes_keys_of: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -357,10 +391,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_agent_follows_only_onto_its_own_provider() {
-        assert!(Way::follows(Some("anthropic"), Some("anthropic")));
-        assert!(!Way::follows(Some("anthropic"), Some("openai")));
-        assert!(!Way::follows(None, None));
+    fn an_agent_follows_a_selected_or_noncharging_same_provider_destination() {
+        let claude = Some("anthropic");
+        let gpt = Some("openai");
+        assert!(Way::follows(claude, claude, false, false));
+        assert!(!Way::follows(claude, claude, false, true));
+        assert!(!Way::follows(claude, gpt, false, false));
+        assert!(Way::follows(claude, claude, true, true));
+        assert!(Way::follows(claude, gpt, true, false));
+        assert!(!Way::follows(claude, None, true, false));
+        assert!(!Way::follows(None, None, false, false));
+    }
+
+    #[test]
+    fn old_logout_input_cannot_accept_charges_or_name_followers() {
+        let command = serde_json::from_str::<AuthCommand>(
+            r#"{"operation":"logout","request":7,"alias":"team"}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(command, AuthCommand::Logout { accept_api: false, follow, .. } if follow.is_empty())
+        );
+        for invalid in [
+            r#"{"operation":"preview_logout","request":7,"names":[]}"#,
+            r#"{"operation":"preview_logout","request":7}"#,
+            r#"{"operation":"preview_logout","names":["team"]}"#,
+        ] {
+            assert!(serde_json::from_str::<AuthCommand>(invalid).is_err());
+        }
     }
 
     #[test]

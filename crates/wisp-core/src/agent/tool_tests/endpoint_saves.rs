@@ -214,6 +214,7 @@ async fn switch(agent: &mut Agent, name: &str) -> Vec<AgentEvent> {
         save: false,
         projected: crate::agent::settings::Projected::default(),
         by: None,
+        answer: None,
     };
     agent.enqueue(queued, &tx).await;
     agent.settle_queue(&tx).await;

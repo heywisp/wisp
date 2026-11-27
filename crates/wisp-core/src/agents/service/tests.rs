@@ -305,6 +305,27 @@ impl Providers {
         scripted
     }
 
+    fn connection(
+        &self,
+        endpoint: &FakeEndpoint,
+        path: &str,
+        redactions: &[&str],
+    ) -> agent::Connection {
+        let mut context = context_with(redactions);
+        if let Some(billing) = endpoint.billing {
+            context.credential_source = CredentialSource::Mode {
+                billing,
+                source: Box::new(CredentialSource::Environment),
+            };
+        }
+        agent::Connection {
+            name: endpoint.name.into(),
+            provider: self.on_endpoint(endpoint, path),
+            context,
+            priced: endpoint.priced,
+        }
+    }
+
     fn timeline(&self) -> Vec<Moment> {
         self.wire.timeline.lock().unwrap().clone()
     }
@@ -534,6 +555,7 @@ struct Setup {
     endpoints: Vec<FakeEndpoint>,
     unavailable: Vec<(&'static str, &'static str)>,
     endpoint_host: Option<Arc<dyn crate::endpoints::host::EndpointHost>>,
+    hosted_child: Option<&'static str>,
     full_screen: bool,
     remembered: crate::settings::remembered::RememberedStore,
     root_model: &'static str,
@@ -618,6 +640,7 @@ impl Default for Setup {
             endpoints: vec![endpoint(ENV)],
             unavailable: Vec::new(),
             endpoint_host: None,
+            hosted_child: None,
             full_screen: false,
             remembered: Default::default(),
             root_model: MODEL,
@@ -730,22 +753,7 @@ fn kit_for(
         move |path: &str| -> Result<Connected, String> {
             let ready: Vec<agent::Connection> = endpoints
                 .iter()
-                .map(|e| {
-                    let provider: Arc<dyn Provider> = providers.on_endpoint(e, path);
-                    let mut context = context_with(&redactions);
-                    if let Some(billing) = e.billing {
-                        context.credential_source = CredentialSource::Mode {
-                            billing,
-                            source: Box::new(CredentialSource::Environment),
-                        };
-                    }
-                    agent::Connection {
-                        name: e.name.into(),
-                        provider,
-                        context,
-                        priced: e.priced,
-                    }
-                })
+                .map(|e| providers.connection(e, path, &redactions))
                 .collect();
             let first = ready.first().ok_or("no endpoints")?;
             Ok(Connected {
@@ -906,6 +914,16 @@ async fn rooted(name: &str, mut setup: Setup, scripts: Vec<(&str, Vec<Step>)>) -
     for (path, steps) in scripts {
         providers.script(path, steps);
     }
+    if let Some(path) = setup.hosted_child {
+        let mut connections = setup
+            .endpoints
+            .iter()
+            .map(|endpoint| providers.connection(endpoint, path, &setup.redactions));
+        setup.endpoint_host = Some(crate::endpoints::testing::AuthHost::with_connections(
+            connections.next().unwrap(),
+            connections.collect(),
+        ));
+    }
     let store = MemoryStore::default();
     let kit = kit_for(&env, &providers, &store, &setup);
     setup_presets(&env, &mut setup, &kit_view(&kit));
@@ -940,6 +958,41 @@ async fn rooted(name: &str, mut setup: Setup, scripts: Vec<(&str, Vec<Step>)>) -
         store,
         env,
     }
+}
+
+pub(crate) fn attach_test_tree(agent: Agent) -> (Agent, AgentsService) {
+    let env = ScratchDir::new("wisp-agents-test-", "placement");
+    let kit = kit_for(
+        &env,
+        &Arc::default(),
+        &MemoryStore::default(),
+        &Setup::default(),
+    );
+    let tree = TreeSetup {
+        presets: CheckedPresets::default(),
+        tools_off: Vec::new(),
+        followers: Vec::new(),
+        limits: Limits::default(),
+        instructions: tree_instructions(false),
+        loaded: LoadedTree::default(),
+        keep_warm_main: false,
+        restarted: false,
+        start: None,
+        unusable: Vec::new(),
+    };
+    let service = AgentsService::new(Arc::new(kit), tree, mpsc::channel(16).0, false);
+    service.register_root(&agent);
+    let agent = agent.with_agents(service.handle(AgentPath::root()), None);
+    (agent, service)
+}
+
+pub(crate) fn test_root_next(
+    service: &AgentsService,
+) -> Option<wisp_protocol::subscription_auth::WayOrigin> {
+    let tree = service.tree();
+    let root = &tree.entries[&AgentPath::root()];
+    assert_eq!(root.model, MODEL);
+    root.effective_next.clone()
 }
 
 async fn start(name: &str, setup: Setup, scripts: Vec<(&str, Vec<Step>)>) -> Run {

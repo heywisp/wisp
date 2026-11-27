@@ -212,6 +212,7 @@ pub(crate) struct Knobs {
     pub(crate) web_search_models: Vec<String>,
     pub(crate) fresh: Option<Arc<crate::models::list::ModelList>>,
     pub(crate) stall_list: bool,
+    pub(crate) list_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     pub(crate) plan_usage: Option<PlanUsage>,
     pub(crate) voice: Option<Arc<dyn crate::provider::voice::VoiceRoute>>,
 }
@@ -366,7 +367,7 @@ pub(crate) fn gemini_list(ids: &[&str]) -> Arc<crate::models::list::ModelList> {
 
 pub(crate) struct Fake {
     shared: Arc<Shared>,
-    knobs: Mutex<Knobs>,
+    knobs: Arc<Mutex<Knobs>>,
 }
 
 impl Fake {
@@ -377,7 +378,7 @@ impl Fake {
     pub(crate) fn with(knobs: Knobs, steps: impl IntoIterator<Item = Step>) -> Arc<Self> {
         let fake = Self {
             shared: Arc::default(),
-            knobs: Mutex::new(knobs),
+            knobs: Arc::new(Mutex::new(knobs)),
         };
         fake.push(steps);
         Arc::new(fake)
@@ -388,7 +389,7 @@ impl Fake {
         change(&mut knobs);
         Arc::new(Self {
             shared: self.shared.clone(),
-            knobs: Mutex::new(knobs),
+            knobs: Arc::new(Mutex::new(knobs)),
         })
     }
 
@@ -623,14 +624,22 @@ impl Provider for Fake {
         if self.knobs(|k| k.stall_list) {
             return futures::future::pending().boxed();
         }
-        let cell = crate::models::list::ListCell::new(self.model_list());
-        let sent = self.shared.sent.lock().unwrap();
-        sent.iter().for_each(|sent| cell.sent(&sent.session.model));
-        self.knobs(|k| {
-            k.fresh.iter().for_each(|fresh| cell.add(fresh));
-            k.list = cell.get();
-        });
-        futures::future::ready(()).boxed()
+        let shared = self.shared.clone();
+        let knobs = self.knobs.clone();
+        let gate = self.knobs(|k| k.list_gate.clone());
+        async move {
+            if let Some((started, gate)) = gate {
+                started.notify_one();
+                gate.acquire().await.unwrap().forget();
+            }
+            let mut knobs = knobs.lock().unwrap();
+            let cell = crate::models::list::ListCell::new(knobs.list.clone());
+            let sent = shared.sent.lock().unwrap();
+            sent.iter().for_each(|sent| cell.sent(&sent.session.model));
+            knobs.fresh.iter().for_each(|fresh| cell.add(fresh));
+            knobs.list = cell.get();
+        }
+        .boxed()
     }
 
     fn media_types(&self) -> &'static [&'static str] {

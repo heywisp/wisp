@@ -5992,22 +5992,102 @@ fn the_session_log_doc_names_the_current_schema_version() {
 
 #[test]
 fn a_jsonl_client_reads_leave_needs() {
+    use wisp_protocol::subscription_auth::{AuthEvent, AuthOutcome, Way, WayOrigin};
+    let legacy = Way {
+        chat: Some("other".into()),
+        stay: vec!["worker".into()],
+        ..Default::default()
+    };
+    let live = Way {
+        chat: Some("other".into()),
+        follow: vec!["worker".into()],
+        charges: true,
+        origins: [(
+            "worker".into(),
+            WayOrigin {
+                account: "team".into(),
+                provider: Some("anthropic".into()),
+                billing: Some(wisp_protocol::Billing::AnthropicPlan),
+                model: "claude-opus-5-5".into(),
+                effort: Effort::High,
+            },
+        )]
+        .into(),
+        ..Default::default()
+    };
+    for (name, with_followers) in [
+        ("event_leave_needs", vec![]),
+        ("event_leave_needs_with_followers", vec![live.clone()]),
+    ] {
+        golden(
+            name,
+            &AgentEvent::LeaveNeeds {
+                request: RequestId(19),
+                ways: vec![legacy.clone()],
+                with_followers,
+            },
+        );
+    }
     golden(
-        "event_leave_needs",
-        &AgentEvent::LeaveNeeds {
-            request: RequestId(19),
-            ways: vec![wisp_protocol::subscription_auth::Way {
-                chat: Some("other".into()),
-                stay: vec!["worker".into()],
-                ..Default::default()
-            }],
+        "event_logout_needs_fixed",
+        &AgentEvent::SubscriptionAuth {
+            event: AuthEvent {
+                request: RequestId(19),
+                outcome: AuthOutcome::LogoutNeeds {
+                    fixed: true,
+                    ways: vec![live],
+                    deletes_keys_of: vec![],
+                    new_start: None,
+                    presets: vec![],
+                },
+            },
         },
+    );
+    golden(
+        "command_answer_provider_switch",
+        &ClientCommand::AnswerProviderSwitch {
+            request: RequestId(19),
+            changes: vec![change("endpoint", "other")],
+            follow: vec!["worker".into()],
+            accept_api: true,
+        },
+    );
+    let old_defaults = serde_json::from_str::<ClientCommand>(
+        r#"{"type":"answer_provider_switch","request":19,"changes":[]}"#,
+    )
+    .unwrap();
+    assert!(
+        matches!(old_defaults, ClientCommand::AnswerProviderSwitch { follow, accept_api: false, .. } if follow.is_empty())
     );
 }
 
 #[test]
 fn a_jsonl_client_reads_accounts_gone_and_answers_it() {
     use wisp_protocol::subscription_auth::{AuthCommand, Followed, Stayed, Way};
+    golden(
+        "command_preview_logout",
+        &ClientCommand::SubscriptionAuth {
+            command: AuthCommand::PreviewLogout {
+                request: RequestId(7),
+                names: vec!["team".into()],
+            },
+        },
+    );
+    golden(
+        "event_followers_moved",
+        &AgentEvent::FollowersMoved {
+            request: RequestId(7),
+            to: "other".into(),
+            moved: vec![Followed {
+                agent: "worker".into(),
+                model: "gpt-6.2-sol".into(),
+                effort: Effort::High,
+                rebuild_usd: Some(0.08),
+                from: None,
+                to: None,
+            }],
+        },
+    );
     golden(
         "event_accounts_gone",
         &AgentEvent::AccountsGone {
@@ -6030,6 +6110,7 @@ fn a_jsonl_client_reads_accounts_gone_and_answers_it() {
                 follow: vec!["late".into()],
                 stay: Vec::new(),
                 charges: true,
+                ..Default::default()
             }],
         },
     );
@@ -6049,8 +6130,12 @@ fn a_jsonl_client_reads_accounts_gone_and_answers_it() {
         Some("env".into()),
         vec!["late".into()],
     );
-    if let AuthCommand::Logout { gone, .. } = &mut answer {
+    if let AuthCommand::Logout {
+        gone, accept_api, ..
+    } = &mut answer
+    {
         *gone = true;
+        *accept_api = true;
     }
     golden(
         "command_logout_gone",

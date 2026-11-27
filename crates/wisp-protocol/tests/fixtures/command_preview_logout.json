@@ -1,0 +1,10 @@
+{
+  "type": "subscription_auth",
+  "command": {
+    "operation": "preview_logout",
+    "request": 7,
+    "names": [
+      "team"
+    ]
+  }
+}

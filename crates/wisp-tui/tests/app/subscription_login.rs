@@ -426,6 +426,7 @@ fn way(chat: &str, follow: &[&str], stay: &[&str]) -> Way {
         follow: names(follow),
         stay: names(stay),
         charges: false,
+        ..Way::default()
     }
 }
 
@@ -527,6 +528,28 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
             )
             .await;
             assert!(s.shown().contains(message), "{}", s.shown());
+            let mut executes = Vec::new();
+            let mut old_host = |command: &AuthCommand| {
+                let wire = serde_json::to_string(command).unwrap();
+                let fields: serde_json::Value = serde_json::from_str(&wire).unwrap();
+                if fields["operation"] == "logout" && let Some(alias) = fields["alias"].as_str() {
+                    executes.push(alias.to_owned());
+                    true
+                } else { false }
+            };
+            assert!(old_host(&AuthCommand::logout(RequestId(1), &["claude-work".into()], false, None, Vec::new())));
+            let subset = vec![account("claude-work", "anthropic_subscription", false, false), account("claude-api", "bearer", false, true)];
+            for reason in ["Unknown host operation.", "This request isn't understood."] {
+                s.say("/logout all");
+                s.described(subset.clone()).await;
+                let probe = s.next().await;
+                assert!(matches!(&probe, AuthCommand::PreviewLogout { names, .. } if names == &["claude-work"]));
+                assert!(!old_host(&probe));
+                s.events.send(AgentEvent::rejected(reason)).await.unwrap();
+                s.sends_no_logout().await;
+                assert!(s.shown().contains(reason), "{}", s.shown());
+            }
+            assert_eq!(executes, ["claude-work"]);
             s.say("/login status");
             s.settle().await;
             let shown = s.shown();
@@ -591,6 +614,7 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
             s.emit(
                 request,
                 AuthOutcome::LogoutNeeds {
+                    fixed: false,
                     presets: Vec::new(),
                     deletes_keys_of: Vec::new(),
                     new_start: Some("claude-work".to_owned()),
@@ -682,10 +706,16 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
             s.emit(
                 request,
                 AuthOutcome::LogoutNeeds {
+                    fixed: true,
                     presets: Vec::new(),
                     deletes_keys_of: vec!["work-api".to_owned()],
                     new_start: None,
-                    ways: Vec::new(),
+                    ways: vec![Way {
+                        origins: [("scout".into(), wisp_protocol::subscription_auth::WayOrigin {
+                            account: "work-api".into(), provider: Some("anthropic".into()), billing: Some(wisp_protocol::Billing::Metered), model: "claude-opus-5-5".into(), effort: wisp_protocol::Effort::High,
+                        })].into(),
+                        ..way("claude-subscription", &["scout"], &[])
+                    }],
                 },
             )
             .await;
@@ -708,6 +738,9 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
             s.say("/logout all");
             s.described(vec![accounts()[0].clone(), accounts()[3].clone()])
                 .await;
+            let AuthCommand::PreviewLogout { request, names } = s.next().await else { panic!("one removable") };
+            assert_eq!(names, ["claude-subscription"]);
+            s.emit(request, AuthOutcome::LogoutNeeds { fixed: false, presets: Vec::new(), deletes_keys_of: Vec::new(), new_start: None, ways: Vec::new() }).await;
             assert!(
                 s.shown().contains("Sign out of \u{25cf} claude-subscription?"),
                 "{}",
@@ -718,16 +751,8 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
 
             s.say("/logout all");
             s.described(vec![accounts()[3].clone()]).await;
-            let AuthCommand::Logout {
-                request,
-                alias,
-                confirmed: false,
-                ..
-            } = s.next().await
-            else {
-                panic!("the keys-file account alone")
-            };
-            assert_eq!(alias, "claude-api");
+            let AuthCommand::PreviewLogout { request, names } = s.next().await else { panic!("the keys-file account alone") };
+            assert_eq!(names, ["claude-api"]);
             let line =
                 "claude-api's key comes from Wisp's keys file: remove ANTHROPIC_API_KEY there.";
             s.emit(
@@ -751,24 +776,22 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
             s.events.send(super::agents::spawned(coder)).await.unwrap();
             s.say("/logout all");
             s.described(accounts()).await;
-            let AuthCommand::Logout {
-                request,
-                alias,
-                also,
-                confirmed: false,
-                ..
-            } = s.next().await
-            else {
-                panic!("all")
-            };
-            assert_eq!((alias.as_str(), also.len()), ("claude-subscription", 2));
+            let AuthCommand::PreviewLogout { request, names } = s.next().await else { panic!("all") };
+            assert_eq!(names.len(), 3);
+            assert_eq!(names[0], "claude-subscription");
             s.emit(
                 request,
                 AuthOutcome::LogoutNeeds {
+                    fixed: true,
                     presets: Vec::new(),
                     deletes_keys_of: vec!["work-api".to_owned()],
                     new_start: Some("claude-api".to_owned()),
-                    ways: vec![way("claude-api", &["coder"], &["reviewer"])],
+                    ways: vec![Way {
+                        origins: ["/", "coder"].into_iter().map(|path| (path.into(), wisp_protocol::subscription_auth::WayOrigin {
+                            account: "claude-subscription".into(), provider: Some("anthropic".into()), billing: Some(wisp_protocol::Billing::AnthropicPlan), model: "claude-opus-5-5".into(), effort: wisp_protocol::Effort::High,
+                        })).collect(),
+                        ..way("claude-api", &["coder"], &[])
+                    }],
                 },
             )
             .await;
@@ -777,7 +800,6 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
                 "? Sign out of 3 accounts?",
                 "\u{25cb} claude-subscription · \u{25cb} claude-work · \u{25cb} work-api (key deleted)",
                 "Moving to \u{25cf} claude-api · API   cache rebuild",
-                "Staying behind",
             ] {
                 assert!(shown.contains(line), "{line}\n{shown}");
             }
@@ -789,13 +811,7 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
                 .unwrap_or_default();
             assert!(amount.starts_with("~$"), "{shown}");
             let amount = amount.to_owned();
-            let reviewer = shown
-                .lines()
-                .find(|l| l.trim_start().starts_with("reviewer "));
-            assert!(
-                reviewer.is_some_and(|l| l.trim_end().ends_with("can't move to Claude")),
-                "{shown}"
-            );
+            assert!(!shown.contains("Staying behind"), "{shown}");
             s.key(KeyCode::Char('1'));
             s.sends_no_logout().await;
             s.key(KeyCode::Enter);
@@ -804,6 +820,7 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
                 chat,
                 follow,
                 confirmed: true,
+                accept_api: true,
                 also,
                 ..
             } = s.next().await
@@ -840,12 +857,13 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
             ];
             s.say("/logout all");
             s.described(two.clone()).await;
-            let AuthCommand::Logout { request, .. } = s.next().await else {
+            let AuthCommand::PreviewLogout { request, .. } = s.next().await else {
                 panic!("nothing left")
             };
             s.emit(
                 request,
                 AuthOutcome::LogoutNeeds {
+                    fixed: false,
                     presets: Vec::new(),
                     deletes_keys_of: Vec::new(),
                     new_start: None,
@@ -887,12 +905,13 @@ async fn logout_refusals_are_verbatim_and_login_status_opens_the_model_list() {
 
             s.say("/logout all");
             s.described(two.clone()).await;
-            let AuthCommand::Logout { request, .. } = s.next().await else {
+            let AuthCommand::PreviewLogout { request, .. } = s.next().await else {
                 panic!("nothing left")
             };
             s.emit(
                 request,
                 AuthOutcome::LogoutNeeds {
+                    fixed: false,
                     presets: Vec::new(),
                     deletes_keys_of: Vec::new(),
                     new_start: None,
@@ -1524,6 +1543,70 @@ async fn a_sign_in_another_name_holds_is_refused_on_the_card_and_kept_in_the_tra
                     .contains("To sign it in again: /login --name chatgpt")
             );
         }
+    })
+    .await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_partial_local_signout_shows_only_the_acknowledged_child_once() {
+    scenario(Screen::new(30, 120), |mut s| async move {
+        s.say("/logout all");
+        s.described(vec![accounts()[0].clone(), accounts()[3].clone()])
+            .await;
+        let AuthCommand::PreviewLogout { request, .. } = s.next().await else {
+            panic!("read-only preview")
+        };
+        s.emit(
+            request,
+            AuthOutcome::LogoutNeeds {
+                fixed: true,
+                presets: Vec::new(),
+                deletes_keys_of: Vec::new(),
+                new_start: None,
+                ways: vec![way("claude-api", &["worker", "scout"], &[])],
+            },
+        )
+        .await;
+        s.key(KeyCode::Char('1'));
+        s.key(KeyCode::Enter);
+        let AuthCommand::Logout { request, .. } = s.next().await else {
+            panic!("confirmed logout")
+        };
+        s.events
+            .send(AgentEvent::FollowersMoved {
+                request,
+                to: "claude-api".into(),
+                moved: vec![wisp_protocol::subscription_auth::Followed {
+                    agent: "worker".into(),
+                    model: "claude-opus-5-5".into(),
+                    effort: wisp_protocol::Effort::High,
+                    rebuild_usd: Some(0.08),
+                    from: None,
+                    to: None,
+                }],
+            })
+            .await
+            .unwrap();
+        s.emit(
+            request,
+            AuthOutcome::Failed {
+                kind: AuthFailureKind::ChildReference,
+                message: "scout is working on claude-subscription. Try again once it's done."
+                    .into(),
+                problem: None,
+                same_account: None,
+            },
+        )
+        .await;
+        let shown = s.shown();
+        let moved = shown.find("worker switched to").expect(&shown);
+        let refused = shown.find("scout is working").expect(&shown);
+        assert!(moved < refused, "{shown}");
+        assert_eq!(shown.matches("worker switched to").count(), 1, "{shown}");
+        assert!(
+            !shown.contains("scout switched to") && !shown.contains("Signed out"),
+            "{shown}"
+        );
     })
     .await;
 }

@@ -540,21 +540,19 @@ Enter does nothing until ↑↓ chooses one. Enter or Space on the chosen row, a
 digit (only while the list has nine rows or fewer) or a click then does what
 naming that row does, so a subscription signs out at once.
 A stored key and `all` ask before anything changes, with two answers, Sign out
-and Keep, and the card opens on Keep: ↑ or `1` chooses Sign out, and only Enter
-or Space then signs out, while `2` or Enter on Keep leaves everything as it was.
-When the chat's account goes and the way on isn't clear, "Where should this chat
-go?" opens with no row chosen; a digit, an arrow or a click chooses a row, and
-Enter or Space signs out. Idle agents on the account follow the
-chat; one whose move would start charging the API follows only when the card
-showed it. Every row prices each agent that moves with it, `cache rebuild ~$0.41
-and ~$0.08`, or names each amount when one has nothing cached yet; the line an
-agent prints after the move shows the amount its row showed. A question about
-two or more accounts that says more than its title counts them, `Sign out of 4
-accounts?`, over one line naming what goes, `(key deleted)` after a key Wisp
-saved, then `Moving to NAME · API` with one row per mover and its price
-right-aligned under `cache rebuild` (`—` for one with nothing cached), and
-`Staying behind` with each agent that can't move and why. A key's question
-gains the `Moving to` section when agents on the key move. A preset without
+and Keep. So does a fixed destination that would move an idle agent across
+providers or onto an API account. The card opens on Keep: ↑ or `1` chooses Sign
+out, and only Enter or Space accepts it. `2` or Enter on Keep changes nothing.
+If this confirmation has one destination, it names the account and each mover
+in a `Moving to` table and confirms there, with no second card. If it has
+several destinations, Sign out opens "Where should this chat go?" without
+picking for you. On that card a digit, arrow or click chooses a row; Enter or
+Space accepts the choice. A metered destination requires an explicit choice.
+Each row shows its movers and their cache rebuild estimates. A fixed table
+aligns dollar amounts under `cache rebuild` and uses `—` with the reason when
+there is no dollar quote, such as expired cache, a token estimate, or missing
+prices. A question about several accounts counts them in the title and lists
+the names beneath it, with `(key deleted)` after a key Wisp saved. A preset without
 `fallback` whose account goes gets a line: `Preset coder used claude-work; it now runs on its
 parent's account.`, or, when an agent that may spawn it would be on the API,
 `…; new agents from it won't start on the API.`, followed after the sign-out by

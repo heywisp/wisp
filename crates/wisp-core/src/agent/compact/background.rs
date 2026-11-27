@@ -366,8 +366,8 @@ impl Agent {
         self.start_background(covered, (hooked, run), events).await;
     }
 
-    fn background_due(&self, outcome: &TurnOutcome) -> Option<Vec<Message>> {
-        if self.bound_endpoint().is_none()
+    pub(super) fn background_due(&self, outcome: &TurnOutcome) -> Option<Vec<Message>> {
+        if !self.active_binding_ready()
             || self.agents.restarting()
             || self.compaction.background.phase.is_some()
         {

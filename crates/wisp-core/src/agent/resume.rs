@@ -1199,11 +1199,13 @@ impl Agent {
         let unchanged = endpoint == self.endpoint
             && model == self.session.model
             && effort == self.session.effort;
-        self.settings.pending = (!unchanged || self.child_resume.unbound()).then_some(Pending {
-            endpoint,
-            model,
-            effort,
-        });
+        self.set_pending(
+            (!unchanged || self.child_resume.unbound()).then_some(Pending {
+                endpoint,
+                model,
+                effort,
+            }),
+        );
         if !unchanged
             && endpoint != self.endpoint
             && !matches!(self.child_resume, ChildResume::Pending { .. })
@@ -1212,7 +1214,7 @@ impl Agent {
                 Ok(binding) => self.pending_endpoint_binding = binding,
                 Err(reason) => {
                     lost.push(reason);
-                    self.settings.pending = None;
+                    self.set_pending(None);
                     self.pending_endpoint_binding = None;
                 }
             }

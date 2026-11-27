@@ -743,6 +743,7 @@ async fn an_edit_keeps_the_pricing_this_session_set_on_that_endpoint() {
                 save: false,
                 projected: crate::agent::settings::Projected::default(),
                 by: None,
+                answer: None,
             },
             &tx,
         )
@@ -801,6 +802,7 @@ async fn an_endpoint_that_drops_out_and_comes_back_keeps_this_sessions_pricing()
                 save: false,
                 projected: crate::agent::settings::Projected::default(),
                 by: None,
+                answer: None,
             },
             &tx,
         )

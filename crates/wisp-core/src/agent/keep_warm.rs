@@ -256,7 +256,9 @@ impl Agent {
     }
 
     fn warm_anchor(&self) -> Option<Anchor> {
-        self.bound_endpoint()?;
+        if !self.active_binding_ready() {
+            return None;
+        }
         if self.session.cache_ttl != CacheTtl::OneHour {
             return None;
         }
@@ -415,6 +417,7 @@ impl Agent {
         self.record_side(events).await;
         self.refresh_plan_usage();
         if !flight.detached
+            && self.active_binding_ready()
             && landed.asm.usage().is_none()
             && let Some(error) = &landed.error
             && is_busy(&self.retry, error, false)
@@ -444,7 +447,7 @@ impl Agent {
             events,
         )
         .await;
-        if flight.detached {
+        if flight.detached || !self.active_binding_ready() {
             return;
         }
         let limit = self.warm_limit();

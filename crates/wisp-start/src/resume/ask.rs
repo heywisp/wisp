@@ -175,6 +175,7 @@ impl Question {
                     follow: names(follow),
                     stay: names(stay),
                     charges: starts_charging(self.left.billing, billing),
+                    ..Way::default()
                 }
             })
             .collect()

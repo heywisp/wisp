@@ -69,6 +69,8 @@ struct Ui {
     screen: Screen,
     inputs: mpsc::UnboundedSender<Input>,
     events: mpsc::UnboundedReceiver<AgentEvent>,
+    kernel: mpsc::Sender<wisp_protocol::ClientCommand>,
+    departures: Rc<RefCell<Vec<AuthCommand>>>,
 }
 impl Ui {
     fn key(&self, code: KeyCode) {
@@ -121,8 +123,13 @@ impl Ui {
                         AuthOutcome::SavedNotReady { .. } => {
                             self.shown("saved, not usable yet").await
                         }
-                        AuthOutcome::LoggedOut { alias, .. } => {
-                            self.shown("Signed out \u{b7} ").await;
+                        AuthOutcome::LoggedOut { alias, also, .. } => {
+                            self.shown(if also.is_empty() {
+                                "Signed out \u{b7} "
+                            } else {
+                                "Signed out of "
+                            })
+                            .await;
                             self.shown(alias).await;
                         }
                         AuthOutcome::Cancelled { .. } => self.shown("Sign-in closed.").await,
@@ -224,12 +231,20 @@ async fn run_ui<F: std::future::Future<Output = ()>>(
     fixture: &Fixture,
     drive: impl FnOnce(Ui) -> F,
 ) {
+    run_ui_with_tree(fixture, false, drive).await;
+}
+
+async fn run_ui_with_tree<F: std::future::Future<Output = ()>>(
+    fixture: &Fixture,
+    tree: bool,
+    drive: impl FnOnce(Ui) -> F,
+) {
     let connected = fixture.host.catalog.as_ref().unwrap().connect("/").unwrap();
     let context = connected.ready[0].context.clone();
     let store = wisp_core::session::MemoryStore::default();
     let mut config = default_session();
     config.model = fixture.host.model.clone();
-    let agent = Agent::new(connected.provider, config)
+    let mut agent = Agent::new(connected.provider, config)
         .with_connections(connected.ready, connected.unavailable, &connected.active)
         .with_model_settings(ModelSettings::new(
             ModelTable::shipped().unwrap(),
@@ -237,10 +252,18 @@ async fn run_ui<F: std::future::Future<Output = ()>>(
         ))
         .with_log(
             wisp_core::session::SessionLog::new(Box::new(store.clone()), "auth-tui"),
-            context,
+            context.clone(),
         )
         .with_endpoint_host(fixture.host.clone());
-    let (kernel_commands, mut kernel_events, task) = wisp_core::agent::spawn(agent);
+    let (kernel_commands, mut kernel_events, task) = if tree {
+        use wisp_core::plugin::KernelHost;
+        let (kit, tree) = tree_fixture::logout_tree(fixture, context);
+        let tools = kit.tools.start("/", Arc::new(KernelHost::new())).await;
+        agent = agent.with_tools(tools.toolbox, kit.workspace.clone().unwrap());
+        wisp_core::agents::start_root(kit, tree, agent)
+    } else {
+        wisp_core::agent::spawn(agent)
+    };
     let (commands, mut received) = mpsc::channel(64);
     let (events_in, events) = mpsc::channel(256);
     let (seen, observed) = mpsc::unbounded_channel();
@@ -269,9 +292,20 @@ async fn run_ui<F: std::future::Future<Output = ()>>(
         resumed: None,
     };
     let app = wisp_tui::app::run(&mut console, input_rx, session, options);
+    let kernel = kernel_commands.clone();
+    let departures = Rc::new(RefCell::new(Vec::new()));
+    let sent = departures.clone();
     let forward_commands = async move {
         while let Some(command) = received.recv().await {
             assert!(!format!("{command:?}").contains("CANARY"));
+            if let wisp_protocol::ClientCommand::SubscriptionAuth { command } = &command
+                && matches!(
+                    command,
+                    AuthCommand::PreviewLogout { .. } | AuthCommand::Logout { .. }
+                )
+            {
+                sent.borrow_mut().push(command.clone());
+            }
             kernel_commands.send(command).await.unwrap();
         }
     };
@@ -287,6 +321,8 @@ async fn run_ui<F: std::future::Future<Output = ()>>(
             screen,
             inputs,
             events: observed,
+            kernel,
+            departures,
         };
         ui.shown(copy::PLACEHOLDER_SHORT).await;
         drive(ui).await;
@@ -296,6 +332,131 @@ async fn run_ui<F: std::future::Future<Output = ()>>(
     assert!(task.join().await);
     let stored = serde_json::to_string(&store.read("auth-tui").unwrap()).unwrap();
     assert!(!stored.contains("CANARY"));
+}
+
+#[cfg(test)]
+mod tree_fixture {
+    use super::*;
+    pub(super) fn logout_tree(
+        fixture: &Fixture,
+        log_context: wisp_core::agent::LogContext,
+    ) -> (wisp_core::kit::Kit, wisp_core::agents::TreeSetup) {
+        use wisp_core::{
+            agents::TreeSetup,
+            kit::{InstructionsChoice, JsonlLogs, Kit},
+            plugin::{Registry, Tools},
+        };
+        let (registry, problems) = Registry::new(wisp_plugins::bundled(), &Default::default());
+        assert!(problems.is_empty());
+        let on = registry.default_on();
+        let root = fixture.dir.root.clone();
+        (
+            Kit {
+                plan_usage: Default::default(),
+                usage_display: wisp_core::plan_usage::Display::Disabled,
+                connect: Arc::new(fixture.host.catalog.clone().unwrap()),
+                tools: Arc::new(Tools::new(Arc::new(registry), on)),
+                logs: Arc::new(JsonlLogs {
+                    on: false,
+                    dir: None,
+                    root_id: None,
+                }),
+                log_context,
+                models: ModelSettings::new(ModelTable::shipped().unwrap(), ConfigModels::default()),
+                options: Default::default(),
+                retry_budget: None,
+                count_tokens: false,
+                auto_compact: false,
+                user_input: true,
+                naming: false,
+                workspace: Ok(wisp_core::workspace::Workspace {
+                    root: root.clone(),
+                    home: Some(root.clone()),
+                    temp: root,
+                }),
+                instructions: Default::default(),
+                plugin_data: None,
+                start_layers: Default::default(),
+                settings_host: None,
+                endpoint_host: Some(fixture.host.clone()),
+                clock: Arc::new(wisp_core::clock::SystemClock),
+                warmth: Default::default(),
+                lanes: Default::default(),
+                mcp: Default::default(),
+            },
+            TreeSetup {
+                presets: Default::default(),
+                tools_off: Vec::new(),
+                followers: Vec::new(),
+                limits: Default::default(),
+                instructions: InstructionsChoice {
+                    source: wisp_protocol::InstructionsSource::None,
+                    warn_tokens: 0,
+                },
+                loaded: Default::default(),
+                keep_warm_main: false,
+                restarted: false,
+                start: None,
+                unusable: Vec::new(),
+            },
+        )
+    }
+}
+
+struct LocalClaude(wisp_protocol::Billing);
+
+impl Provider for LocalClaude {
+    fn stream(
+        &self,
+        request: &wisp_core::provider::Request<'_>,
+    ) -> futures::stream::BoxStream<
+        'static,
+        Result<wisp_core::provider::ProviderEvent, wisp_core::provider::ProviderError>,
+    > {
+        use wisp_core::provider::ProviderEvent;
+        let usage = wisp_protocol::Usage {
+            cache_creation_input_tokens: 30_000,
+            billing: self.billing(),
+            ..Default::default()
+        };
+        Box::pin(futures::stream::iter([
+            Ok(ProviderEvent::Sending),
+            Ok(ProviderEvent::MessageStart {
+                id: None,
+                model: request.session.model.clone(),
+                usage,
+                iterations: Vec::new(),
+                diagnostics: None,
+            }),
+            Ok(ProviderEvent::BlockStart {
+                index: 0,
+                block: wisp_protocol::ContentBlock::Text {
+                    text: "Reviewed.".into(),
+                },
+            }),
+            Ok(ProviderEvent::BlockStop { index: 0 }),
+            Ok(ProviderEvent::MessageDelta {
+                stop_reason: Some(wisp_protocol::StopReason::EndTurn),
+                stop_details: None,
+                usage,
+                iterations: Vec::new(),
+                diagnostics: None,
+            }),
+            Ok(ProviderEvent::MessageStop),
+        ]))
+    }
+
+    fn cache_prefix(&self, _: &wisp_core::provider::Request<'_>) -> Option<String> {
+        None
+    }
+
+    fn billing(&self) -> wisp_protocol::Billing {
+        self.0
+    }
+
+    fn capabilities(&self, model: &str) -> Option<wisp_core::provider::ModelCapabilities> {
+        wisp_core::provider::anthropic::capabilities::row(model).copied()
+    }
 }
 
 #[tokio::test]
@@ -529,6 +690,10 @@ async fn tui_and_real_host_activate_reauthorize_select_and_remove_both_providers
 #[tokio::test]
 async fn tui_real_host_moves_nothing_before_the_chats_stored_key_is_answered() {
     let fixture = Fixture::new_for(Mode::Stored, SubscriptionProvider::Claude);
+    let catalog = fixture.host.catalog.as_ref().unwrap();
+    let mut summaries = catalog.view().endpoints;
+    summaries[0].keys_file = true;
+    catalog.clone().with_summaries(summaries);
     let fixture = &fixture;
     run_ui(fixture, |mut ui| async move {
         let saved = wisp_core::endpoints::host::EndpointHost::save(
@@ -556,6 +721,19 @@ async fn tui_real_host_moves_nothing_before_the_chats_stored_key_is_answered() {
         ui.key(KeyCode::Esc);
         ui.wait_screen(|screen| !screen.contains("Sign out of which account?"))
             .await;
+        ui.say("/logout all");
+        let preview = loop {
+            match ui.events.recv().await.unwrap() {
+                AgentEvent::SettingsChanged { endpoint, .. } => panic!("preview moved to {endpoint}"),
+                AgentEvent::SubscriptionAuth { event } => break event.outcome,
+                _ => {}
+            }
+        };
+        assert!(matches!(preview, AuthOutcome::LogoutNeeds { ref deletes_keys_of, ref ways, .. } if deletes_keys_of == &["keyed"] && ways.is_empty()));
+        ui.shown("Its key is deleted from Wisp.").await;
+        ui.key(KeyCode::Char('2'));
+        ui.wait_screen(|screen| !screen.contains("Its key is deleted from Wisp.")).await;
+        assert!(fixture.host.catalog.as_ref().unwrap().view().ready.iter().any(|c| c.name == "keyed"));
         ui.say("/endpoint keyed");
         ui.selected().await;
         ui.say("/logout keyed");
@@ -569,9 +747,10 @@ async fn tui_real_host_moves_nothing_before_the_chats_stored_key_is_answered() {
         assert!(matches!(
             needs,
             AuthOutcome::LogoutNeeds { ref deletes_keys_of, ref ways, .. }
-                if deletes_keys_of == &["keyed"] && ways.is_empty()
-        ));
+                if deletes_keys_of == &["keyed"] && ways.iter().all(|way| way.origins.contains_key("/"))
+        ), "{needs:?}");
         ui.shown("Its key is deleted from Wisp.").await;
+        ui.shown("Moving to").await;
         ui.key(KeyCode::Char('2'));
         ui.wait_screen(|screen| !screen.contains("Its key is deleted from Wisp."))
             .await;
@@ -586,8 +765,148 @@ async fn tui_real_host_moves_nothing_before_the_chats_stored_key_is_answered() {
         assert!(footer.contains("keyed"), "{footer}");
         let config = std::fs::read_to_string(fixture.host.config.as_ref().unwrap()).unwrap();
         assert!(config.contains("[endpoints.keyed]"), "{config}");
+        ui.say("/logout keyed");
+        assert!(matches!(ui.auth().await.outcome, AuthOutcome::LogoutNeeds { .. }));
+        ui.shown("Moving to").await;
+        ui.key(KeyCode::Char('1'));
+        ui.key(KeyCode::Enter);
+        assert!(matches!(ui.auth().await.outcome, AuthOutcome::LoggedOut { .. }));
+        let departures = ui.departures.borrow();
+        assert!(matches!(departures.last(), Some(AuthCommand::Logout { alias, confirmed: true, chat: Some(chat), accept_api: true, .. }) if alias == "keyed" && chat == "base"));
+        assert!(!ui.screen.text().contains("Where should this chat go?"));
+
     })
     .await;
+}
+
+#[tokio::test]
+async fn tui_real_host_logout_all_keeps_first_and_only_promises_a_single_destination() {
+    use wisp_protocol::{AgentState, ClientCommand, SpawnRequest};
+    for (removed, retained, root_leaves, mover) in [
+        (1, 1, false, true),
+        (1, 1, false, false),
+        (2, 1, true, true),
+        (2, 2, true, false),
+        (1, 1, true, false),
+        (1, 2, true, false),
+    ] {
+        let fixture = Fixture::new_for(Mode::Stored, SubscriptionProvider::Claude);
+        let catalog = fixture.host.catalog.as_ref().unwrap();
+        let mut view = catalog.view();
+        view.ready[0].provider = Arc::new(LocalClaude(wisp_protocol::Billing::Metered));
+        catalog.begin("base").unwrap().publish(view);
+        let mut summaries = catalog.view().endpoints;
+        summaries[0].keys_file = true;
+        summaries[0].provider = "anthropic".into();
+        catalog.clone().with_summaries(summaries);
+        if retained == 2 {
+            let mut view = catalog.view();
+            let mut base2 = view.ready[0].clone();
+            base2.name = "base2".into();
+            base2.context.endpoint_name = "base2".into();
+            view.ready.push(base2);
+            let mut summary = view.endpoints[0].clone();
+            summary.name = "base2".into();
+            summary.mark = Some(2);
+            view.endpoints.push(summary);
+            catalog.begin("base2").unwrap().publish(view);
+        }
+        let fixture = &fixture;
+        run_ui_with_tree(fixture, true, |mut ui| async move {
+            let mut removed_names = vec!["work".to_owned()];
+            if removed == 2 {
+                removed_names.insert(0, "team".to_owned());
+            }
+            for alias in &removed_names {
+                ui.say(&format!("/login claude {alias}"));
+                assert!(matches!(ui.login(SubscriptionProvider::Claude).await, AuthOutcome::Ready { .. }));
+                ui.key(KeyCode::Esc);
+                ui.wait_screen(|screen| !screen.contains("for this chat")).await;
+            }
+            if mover {
+                let update = catalog.begin("work").unwrap();
+                let mut view = catalog.view();
+                view.ready.iter_mut().find(|c| c.name == "work").unwrap().provider = Arc::new(LocalClaude(wisp_protocol::Billing::AnthropicPlan));
+                update.publish(view);
+                ui.kernel.send(ClientCommand::SpawnAgent {
+                    request: RequestId(800), spawn: SpawnRequest {
+                        name: "reviewer".into(), task: "Review".into(), endpoint: Some("work".into()),
+                        model: Some("claude-sonnet-5-5".into()), ..SpawnRequest::default()
+                    }
+                }).await.unwrap();
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        match ui.events.recv().await.unwrap() {
+                            AgentEvent::AgentStateChanged { agent, state: AgentState::Idle { .. } | AgentState::Held { .. }, .. } if agent.as_str() == "/reviewer" => break,
+                            AgentEvent::Rejected { request: Some(RequestId(800)), reason, .. } => panic!("could not spawn reviewer: {reason}"),
+                            _ => {}
+                        }
+                    }
+                }).await.unwrap();
+            }
+            if root_leaves {
+                ui.say("/account work");
+                ui.selected().await;
+            }
+            let directs = retained == 1;
+            let moves = root_leaves || mover;
+            let old = std::fs::read(fixture.host.config.as_ref().unwrap()).unwrap();
+            let names = || catalog.view().ready.into_iter().map(|c| c.name).collect::<Vec<_>>();
+            let old_names = names();
+            for keep in [true, false] {
+                ui.say("/logout all");
+                let outcome = ui.auth().await.outcome;
+                assert!(matches!(&outcome, AuthOutcome::LogoutNeeds { fixed, ways, .. } if *fixed != root_leaves && ways.len() == if moves { retained } else { 0 }), "{outcome:?}");
+                ui.wait_screen(|screen| screen.contains("Sign out of") && screen.contains("2 Keep")).await;
+                assert!(ui.screen.text().contains("› 2 Keep"));
+                if directs && moves {
+                    for words in ["Moving to", "base", "cache rebuild", "subscription to the API."] {
+                        ui.shown(words).await;
+                    }
+                    if mover {
+                        ui.shown("reviewer").await;
+                        ui.shown("~$").await;
+                    }
+                } else {
+                    assert!(!ui.screen.text().contains("Moving to"));
+                }
+                assert!(!ui.screen.text().contains("Where should this chat go?"));
+                assert_eq!(names(), old_names);
+                assert_eq!(std::fs::read(fixture.host.config.as_ref().unwrap()).unwrap(), old);
+                assert!(ui.departures.borrow().iter().all(|c| matches!(c, AuthCommand::PreviewLogout { names, .. } if names == &removed_names)));
+                assert_eq!(ui.departures.borrow().len(), if keep { 1 } else { 2 });
+                if keep {
+                    ui.key(KeyCode::Char('2'));
+                    ui.wait_screen(|screen| !screen.contains("2 Keep")).await;
+                    assert_eq!(names(), old_names);
+                    assert_eq!(std::fs::read(fixture.host.config.as_ref().unwrap()).unwrap(), old);
+                    assert_eq!(ui.departures.borrow().len(), 1);
+                } else {
+                    ui.key(KeyCode::Char('1'));
+                    ui.key(KeyCode::Enter);
+                    if !directs {
+                        ui.shown("Where should this chat go?").await;
+                        assert_eq!(ui.departures.borrow().len(), 2);
+                        assert_eq!(names(), old_names);
+                        assert_eq!(std::fs::read(fixture.host.config.as_ref().unwrap()).unwrap(), old);
+                        ui.key(KeyCode::Char('1'));
+                        ui.key(KeyCode::Enter);
+                    }
+                    let outcome = ui.auth().await.outcome;
+                    assert!(matches!(&outcome, AuthOutcome::LoggedOut { moved, .. } if moved.len() == usize::from(mover)), "{outcome:?}");
+                    let commands = ui.departures.borrow();
+                    let [_, _, AuthCommand::Logout { alias, also, confirmed: true, chat, follow, accept_api, .. }] = commands.as_slice() else { panic!("exactly one confirmed command") };
+                    assert_eq!(std::iter::once(alias).chain(also).collect::<Vec<_>>(), removed_names.iter().collect::<Vec<_>>());
+                    let follow = follow.iter().map(String::as_str).collect::<Vec<_>>();
+                    assert_eq!(follow, if mover { vec!["reviewer"] } else { vec![] });
+                    assert_eq!(chat.as_deref(), moves.then_some("base"));
+                    assert_eq!(*accept_api, moves);
+                    assert!(!ui.screen.text().contains("Where should this chat go?"));
+                    assert_eq!(names().len(), retained);
+                }
+            }
+        }).await;
+    }
 }
 
 #[tokio::test]

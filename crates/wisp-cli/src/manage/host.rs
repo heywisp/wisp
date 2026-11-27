@@ -537,13 +537,17 @@ impl EndpointHost for CliEndpointHost {
 
     fn check_logout(
         &self,
-        command: wisp_protocol::subscription_auth::AuthCommand,
+        names: Vec<String>,
+        chat: Option<String>,
+        confirmed: bool,
     ) -> BoxFuture<'_, Option<wisp_protocol::subscription_auth::AuthOutcome>> {
         let host = self.clone();
         async move {
-            tokio::task::spawn_blocking(move || crate::auth::check_logout(&host, command))
-                .await
-                .unwrap_or_else(|_| Some(wisp_core::endpoints::host::unavailable()))
+            tokio::task::spawn_blocking(move || {
+                crate::auth::check_logout(&host, &names, chat.as_deref(), confirmed)
+            })
+            .await
+            .unwrap_or_else(|_| Some(wisp_core::endpoints::host::unavailable()))
         }
         .boxed()
     }

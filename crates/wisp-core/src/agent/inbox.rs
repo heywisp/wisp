@@ -778,7 +778,9 @@ impl Agent {
         mut sent: Sent,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Option<Vec<Input>> {
-        if self.next_endpoint() == self.endpoint && self.gone_again(false, events).await.is_some() {
+        if (self.gone_auto_failed || self.next_endpoint() == self.endpoint)
+            && self.gone_again(false, events).await.is_some()
+        {
             self.refuse_gone(Some(sent.id), events).await;
             if self.inbox.has_unheld() {
                 self.hold_gone(events).await;
@@ -968,6 +970,15 @@ impl Agent {
         &mut self,
         events: &mpsc::Sender<AgentEvent>,
     ) -> Option<Vec<Input>> {
+        if self.gone_auto_failed {
+            let next = self.next_endpoint();
+            if !self.binding_ready(next) || (next == self.endpoint && self.binding_fault.is_some())
+            {
+                self.refuse_gone(None, events).await;
+                return None;
+            }
+            self.clear_gone_hold();
+        }
         self.start_log(events).await;
         let released = std::mem::take(&mut self.gone_released);
         let running = self.track.is_some() || self.compacting() || self.hooks.pre_turn;

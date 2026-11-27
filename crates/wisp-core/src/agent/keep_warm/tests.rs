@@ -1711,3 +1711,121 @@ async fn an_off_provider_stops_new_refreshes_but_an_already_sent_refresh_finishe
         }
     }
 }
+
+fn checked_rig(steps: Vec<Step>) -> (Rig, Arc<crate::endpoints::testing::AuthHost>, Arc<Fake>) {
+    use crate::kit::Connect;
+    use wisp_protocol::Billing;
+    let subscribed = warm(steps);
+    subscribed.knobs(|k| k.billing = Some(Billing::AnthropicPlan));
+    let api = warm(vec![answer("replacement"), answer("continuation")]);
+    api.knobs(|k| k.billing = Some(Billing::Metered));
+    let host = crate::endpoints::testing::AuthHost::with(crate::agent::Connection {
+        provider: subscribed.clone(),
+        ..crate::agents::testing::connection(IMPLICIT_ENDPOINT, None)
+    });
+    let viewed = host.catalog.connect("/").unwrap();
+    let store = MemoryStore::default();
+    let clock = shifted();
+    let mut agent = agent(&subscribed, &store, &clock)
+        .with_connections(viewed.ready, viewed.unavailable, IMPLICIT_ENDPOINT)
+        .with_endpoint_host(host.clone())
+        .with_naming(true)
+        .with_keep_warm(8);
+    agent.leave_account = Some(crate::agents::endpoints::ExactAccount::connected(
+        agent.connection(),
+    ));
+    let rig = Rig::serve(agent, subscribed, store, clock);
+    (rig, host, api)
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_rebound_subscription_cannot_retry_an_in_flight_refresh_on_the_api() {
+    let gate = Arc::new(Semaphore::new(0));
+    let (mut rig, host, api) = checked_rig(vec![
+        answer("message"),
+        refused_with(ErrorKind::RateLimit, RetryClass::Transient).held(Wait::Gate(gate.clone())),
+    ]);
+    rig.completed("Start").await;
+    rig.idle(56).await;
+    assert_eq!(rig.provider.sent().len(), 2);
+    *host.next_provider.lock().unwrap() = Some(api.clone());
+    host.elsewhere(&[], &[IMPLICIT_ENDPOINT]);
+    gate.add_permits(1);
+    rig.until(|event| matches!(event, AgentEvent::Rejected { reason, .. } if reason.contains("no longer available as chosen"))).await;
+    rig.idle(5).await;
+    let closed = rig.close().await;
+    assert!(closed.agent.keep_warm.spell.is_none());
+    assert!(api.sent().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn completing_a_turn_on_a_rebound_subscription_sends_no_side_requests_until_reselected() {
+    let (mut rig, host, api) = checked_rig(vec![answer("one"), answer("two"), answer("three")]);
+    rig.completed("First").await;
+    rig.completed("Second").await;
+    let arming = Arc::new(tokio::sync::Barrier::new(2));
+    crate::agent::PAUSES.lock().unwrap().push((
+        wisp_protocol::AgentPath::root(),
+        "arming",
+        arming.clone(),
+    ));
+    rig.completed("Third").await;
+    tokio::time::timeout(LONG, arming.wait()).await.unwrap();
+    *host.next_provider.lock().unwrap() = Some(api.clone());
+    host.load(IMPLICIT_ENDPOINT);
+    tokio::time::timeout(LONG, arming.wait()).await.unwrap();
+    rig.until(|e| matches!(e, AgentEvent::Rejected { reason, .. } if reason.contains("no longer available as chosen"))).await;
+    rig.idle(60).await;
+    assert!(
+        api.sent().is_empty(),
+        "no naming, background compaction or keep-warm"
+    );
+    rig.send(ClientCommand::shortcut(
+        RequestId(90),
+        Some(IMPLICIT_ENDPOINT.into()),
+        None,
+        None,
+    ))
+    .await;
+    rig.until(|e| {
+        matches!(
+            e,
+            AgentEvent::SettingsChanged {
+                answers: Some(RequestId(90)),
+                ..
+            }
+        )
+    })
+    .await;
+    rig.completed("Explicitly on the replacement").await;
+    assert!(!api.sent().is_empty());
+    let closed = rig.close().await;
+    assert_eq!(closed.agent.bound_endpoint(), Some(IMPLICIT_ENDPOINT));
+    assert!(closed.agent.binding_fault.is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn failed_last_account_sign_out_keeps_the_root_refresh_scheduled() {
+    use wisp_protocol::subscription_auth::{AuthEvent, AuthOutcome};
+
+    let (mut rig, host, _) = checked_rig(vec![answer("first"), refreshed(), answer("next")]);
+    rig.completed("First").await;
+    host.fail_logout
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    rig.send(ClientCommand::SubscriptionAuth {
+        command: crate::endpoints::testing::logout(91, IMPLICIT_ENDPOINT),
+    })
+    .await;
+    rig.until(|e| {
+        matches!(e, AgentEvent::SubscriptionAuth { event: AuthEvent {
+        request: RequestId(91), outcome: AuthOutcome::Failed { message, .. }
+    }} if message.contains("storage failed"))
+    })
+    .await;
+    rig.idle(56).await;
+    rig.refreshed().await;
+    assert_eq!(rig.provider.sent().len(), 2);
+    rig.completed("Next").await;
+    assert_eq!(rig.provider.sent().len(), 3);
+    rig.close().await;
+}

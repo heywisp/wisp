@@ -3,6 +3,7 @@ use std::time::Duration;
 use wisp_protocol::settings::{INSTALLED_KEY, SettingChange, SettingTarget, SettingValue};
 use wisp_protocol::subscription_auth::{Followed, Stayed, Way};
 use wisp_protocol::{AgentEvent, ClientCommand, RejectKind, RequestId};
+use wisp_render::chrome::Rebuild;
 use wisp_render::chrome::account::{AccountKind, SignedOut, gone_title, message_waits, off_title};
 use wisp_render::theme::glyphs::Glyphs;
 
@@ -18,6 +19,9 @@ pub(super) struct GoingOff {
     plugin: String,
     removed: bool,
     step: Step,
+    with_followers: bool,
+    move_request: Option<RequestId>,
+    move_priced: Option<Vec<(String, Rebuild)>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -42,12 +46,49 @@ impl GoingOff {
             plugin: plugin.to_owned(),
             removed: key == INSTALLED_KEY,
             step: Step::Switch,
+            with_followers: false,
+            move_request: None,
+            move_priced: None,
         })
     }
 }
 
 impl Presenter {
     pub(super) fn going_off_event(&mut self, event: &AgentEvent, at: Duration) -> bool {
+        if let AgentEvent::FollowersMoved { request, to, moved } = event {
+            let priced = self
+                .authentication
+                .going_off
+                .as_mut()
+                .filter(|g| g.move_request == Some(*request))
+                .and_then(|g| g.move_priced.take());
+            self.follower_receipt(*request, to, moved, priced.as_deref());
+            return true;
+        }
+        if matches!(
+            event,
+            AgentEvent::Rejected {
+                request: None,
+                id: None,
+                kind: None,
+                ..
+            }
+        ) {
+            let switch = self
+                .authentication
+                .going_off
+                .as_ref()
+                .filter(|g| g.with_followers && g.step == Step::Move)
+                .map(|g| g.request);
+            let previews = self.outstanding_previews();
+            if previews == 1 && switch.is_none() {
+                self.dismiss_preview();
+            } else if previews == 0
+                && let Some(request) = switch
+            {
+                self.tracker.dismiss_wait(request);
+            }
+        }
         if let AgentEvent::Rejected {
             request: Some(request),
             ..
@@ -74,14 +115,30 @@ impl Presenter {
             return false;
         };
         if going.request != request {
+            let duplicate = going.step == Step::Save
+                && going.move_request == Some(request)
+                && matches!(event, AgentEvent::SettingsChanged { .. });
             self.authentication.going_off = Some(going);
-            return false;
+            return duplicate;
         }
         match (&going.step, event) {
-            (Step::Switch, AgentEvent::LeaveNeeds { ways, .. }) => {
+            (
+                Step::Switch,
+                AgentEvent::LeaveNeeds {
+                    ways,
+                    with_followers,
+                    ..
+                },
+            ) => {
                 self.authentication.off_refusal = Some(request);
                 self.set_aside_settings();
                 let (title, prompt) = off_title(&going.plugin, going.removed);
+                going.with_followers = !with_followers.is_empty();
+                let ways = if going.with_followers {
+                    with_followers
+                } else {
+                    ways
+                };
                 self.way_card(Vec::new(), (title, prompt, None), ways, at);
                 going.step = Step::Card;
                 self.authentication.going_off = Some(going);
@@ -120,7 +177,12 @@ impl Presenter {
         false
     }
 
-    pub(super) fn going_off_intent(&mut self, intent: &Intent, at: Duration) -> bool {
+    pub(super) fn going_off_intent(
+        &mut self,
+        intent: &Intent,
+        card: Option<&SignOut>,
+        at: Duration,
+    ) -> bool {
         if !self
             .authentication
             .going_off
@@ -133,20 +195,35 @@ impl Presenter {
             return false;
         };
         if let Intent::Send {
-            chat: Some(chat), ..
+            chat: Some(chat),
+            follow,
+            accept_api,
+            ..
         } = intent
         {
             let next = self.next_request();
             let mut changes = ClientCommand::shortcut_changes(Some(chat.clone()), None, None);
             changes.extend(going.changes.iter().cloned());
-            if self.command(
+            let command = if going.with_followers {
+                let priced = card
+                    .map(|card| card.movers_of(Some(chat)))
+                    .unwrap_or_default();
+                going.move_request = Some(next);
+                going.move_priced = Some(priced);
+                ClientCommand::AnswerProviderSwitch {
+                    request: next,
+                    changes,
+                    follow: follow.clone(),
+                    accept_api: *accept_api,
+                }
+            } else {
                 ClientCommand::ChangeSettings {
                     request: next,
                     changes,
                     save: false,
-                },
-                at,
-            ) {
+                }
+            };
+            if self.command(command, at) {
                 self.tracker.asked_holding(next, chat);
                 going.request = next;
                 going.step = Step::Move;

@@ -1,0 +1,30 @@
+{
+  "type": "leave_needs",
+  "request": 19,
+  "ways": [
+    {
+      "chat": "other",
+      "stay": [
+        "worker"
+      ]
+    }
+  ],
+  "with_followers": [
+    {
+      "chat": "other",
+      "follow": [
+        "worker"
+      ],
+      "charges": true,
+      "origins": {
+        "worker": {
+          "account": "team",
+          "provider": "anthropic",
+          "billing": "anthropic_plan",
+          "model": "claude-opus-5-5",
+          "effort": "high"
+        }
+      }
+    }
+  ]
+}

@@ -193,6 +193,7 @@ async fn execute(host: &CliEndpointHost, command: AuthCommand) -> Result<AuthOut
             Ok(AuthOutcome::Cancelled { login })
         }
         AuthCommand::Status { alias, .. } => Ok(status(host, alias)?),
+        AuthCommand::PreviewLogout { .. } => Err(stale().into()),
         command @ AuthCommand::Logout { .. } => Ok(logout(host, command).await?),
         AuthCommand::Reload { alias, .. } => Ok(reload(host, alias).await?),
     }
@@ -746,20 +747,11 @@ fn checked(host: &CliEndpointHost, names: &[String]) -> Result<Checked, Failure>
 
 fn asked(
     host: &CliEndpointHost,
-    command: &AuthCommand,
+    names: &[String],
+    chat: Option<&str>,
+    confirmed: bool,
 ) -> Result<(Checked, Option<AuthOutcome>), Failure> {
-    let AuthCommand::Logout {
-        alias,
-        also,
-        chat,
-        confirmed,
-        ..
-    } = command
-    else {
-        return Err(stale());
-    };
-    let names: Vec<String> = std::iter::once(alias).chain(also).cloned().collect();
-    let checked = checked(host, &names)?;
+    let checked = checked(host, names)?;
     let mut keys: Vec<String> = checked
         .names
         .iter()
@@ -769,8 +761,9 @@ fn asked(
     keys.sort();
     let needs = (!confirmed && (!keys.is_empty() || checked.names.len() > 1)).then(|| {
         let going: Vec<EndpointName> = checked.names.iter().map(|(name, _)| name.clone()).collect();
-        let chat = chat.as_deref().and_then(EndpointName::parse);
+        let chat = chat.and_then(EndpointName::parse);
         AuthOutcome::LogoutNeeds {
+            fixed: false,
             presets: Vec::new(),
             deletes_keys_of: keys,
             new_start: checked.config.as_ref().and_then(|config| {
@@ -869,8 +862,13 @@ async fn sign_out_one(
     Ok(())
 }
 
-pub(crate) fn check_logout(host: &CliEndpointHost, command: AuthCommand) -> Option<AuthOutcome> {
-    match asked(host, &command) {
+pub(crate) fn check_logout(
+    host: &CliEndpointHost,
+    names: &[String],
+    chat: Option<&str>,
+    confirmed: bool,
+) -> Option<AuthOutcome> {
+    match asked(host, names, chat, confirmed) {
         Err((kind, message)) => Some(AuthOutcome::Failed {
             kind,
             message,
@@ -882,13 +880,21 @@ pub(crate) fn check_logout(host: &CliEndpointHost, command: AuthCommand) -> Opti
 }
 
 async fn logout(host: &CliEndpointHost, command: AuthCommand) -> Result<AuthOutcome, Failure> {
-    let (checked, needs) = asked(host, &command)?;
+    let AuthCommand::Logout {
+        alias,
+        also,
+        chat,
+        confirmed,
+        ..
+    } = command
+    else {
+        return Err(stale());
+    };
+    let names: Vec<_> = std::iter::once(alias).chain(also).collect();
+    let (checked, needs) = asked(host, &names, chat.as_deref(), confirmed)?;
     if let Some(needs) = needs {
         return Ok(needs);
     }
-    let AuthCommand::Logout { chat, .. } = command else {
-        return Err(stale());
-    };
     let chat = chat.as_deref().and_then(EndpointName::parse);
     let mut went = Went::default();
     let mut stopped = None;

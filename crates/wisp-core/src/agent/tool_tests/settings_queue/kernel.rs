@@ -222,7 +222,13 @@ async fn lengthening_the_cache_lifetime_expects_the_next_miss_and_shortening_doe
 #[tokio::test]
 async fn a_value_set_back_before_the_turn_leaves_nothing_pending() {
     let provider = scripted(vec![done("one"), done("two")]);
-    let mut live = Live::start(provider.clone(), None);
+    let mut tree = None;
+    let mut live = Live::with(provider.clone(), None, |agent| {
+        let (agent, attached) = crate::agents::attach_test_tree(agent);
+        tree = Some(attached);
+        agent
+    });
+    let tree = tree.unwrap();
     turn(&mut live, "tui-1", "first").await;
     ask(&mut live, set(1, "debug_cache", SettingValue::Bool(true))).await;
     let events = ask(&mut live, set(2, "debug_cache", SettingValue::Bool(false))).await;
@@ -235,6 +241,7 @@ async fn a_value_set_back_before_the_turn_leaves_nothing_pending() {
     assert_eq!(cache, CacheEffect::Kept);
     assert_eq!(changes[0].cache, Some(CacheEffect::Kept));
     assert_eq!(changes[0].value, None);
+    assert!(crate::agents::test_root_next(&tree).is_none());
     turn(&mut live, "tui-2", "second").await;
     let requests = provider.sent();
     assert_eq!(requests[1].options, RequestOptions::default());
@@ -1047,6 +1054,7 @@ async fn the_retry_budget_the_counter_and_the_kept_words_apply_at_once() {
         save: false,
         projected: crate::agent::settings::Projected::default(),
         by: None,
+        answer: None,
     };
     agent
         .enqueue(
@@ -1102,6 +1110,7 @@ async fn kept_words_note(agent: &mut Agent) -> Option<wisp_protocol::settings::O
                 save: false,
                 projected: crate::agent::settings::Projected::default(),
                 by: None,
+                answer: None,
             },
             &events,
         )
@@ -1154,6 +1163,7 @@ async fn pricing_is_kept_per_endpoint_and_binds_to_a_pending_switch() {
         save: false,
         projected: crate::agent::settings::Projected::default(),
         by: None,
+        answer: None,
     };
     agent
         .enqueue(

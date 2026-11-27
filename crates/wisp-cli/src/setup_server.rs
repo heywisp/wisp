@@ -24,6 +24,7 @@ pub(crate) fn refusal(command: &ClientCommand) -> AgentEvent {
         ClientCommand::Send { id, .. } => (Some(id.clone()), None),
         ClientCommand::PlanUsage { request, .. }
         | ClientCommand::ChangeSettings { request, .. }
+        | ClientCommand::AnswerProviderSwitch { request, .. }
         | ClientCommand::DescribeSettings { request }
         | ClientCommand::ContextReport { request, .. }
         | ClientCommand::SaveEndpoint { request, .. }

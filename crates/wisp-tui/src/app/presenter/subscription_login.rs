@@ -1,14 +1,13 @@
 use std::time::Duration;
 
 use ratatui_core::buffer::Buffer;
-use wisp_protocol::agents::AgentEntry;
 use wisp_protocol::settings::{EndpointSummary, SettingsSnapshot};
 use wisp_protocol::subscription_auth::{
     AuthCommand, AuthEvent, AuthOutcome, Followed, LocalState, PresetGone, Stayed, Unusable, Way,
 };
 use wisp_protocol::{AgentEvent, ClientCommand, RequestId};
 use wisp_render::chrome::account::{
-    self, AccountKind, Asked, Kept, Move, Moved, Moving, Named, Said, SignedOut, Start, Who,
+    self, AccountKind, Asked, Kept, Move, Moved, Named, Said, SignedOut, Start, Who,
 };
 use wisp_render::chrome::{CardHit, CardRows, Credential, EndpointFacts, Rebuild, short_model};
 use wisp_render::markdown::Layout;
@@ -17,7 +16,6 @@ use wisp_render::theme::glyphs::Glyphs;
 
 use super::gone::GoingOff;
 use super::{AppError, Presenter, paint_lines};
-use crate::app::config_screen::store_of;
 use crate::app::endpoint_card::endpoint_facts_of;
 use crate::app::logout::{self, Choice, Leaving, SignOut, WayRow};
 use crate::app::picker::{Picked, display_effort};
@@ -63,6 +61,7 @@ pub(super) struct Sent {
     pub(super) names: Vec<String>,
     pub(super) gone: bool,
     confirmed: bool,
+    accept_api: bool,
     nothing_left: bool,
     moved: Option<Moved>,
     priced: Vec<(String, Rebuild)>,
@@ -72,6 +71,7 @@ pub(super) struct Sent {
 enum Operation {
     Accounts,
     Logout(Box<Sent>),
+    Preview(Box<Sent>),
 }
 
 impl Presenter {
@@ -169,6 +169,7 @@ impl Presenter {
     }
 
     pub(super) fn logout_command(&mut self, words: &str, at: Duration) {
+        self.dismiss_preview();
         match words.trim() {
             "" | "all" => {
                 if let Some(request) = self.ask_described(at) {
@@ -241,35 +242,27 @@ impl Presenter {
                 let card = SignOut::which(accounts.iter().map(choice).collect());
                 open(card, self);
             }
-            [] => {
-                let names = accounts.iter().map(|e| e.name.clone()).collect();
-                self.send_logout(
-                    Sent {
+            _ => {
+                let names: Vec<_> = if names.is_empty() {
+                    accounts.iter().map(|e| e.name.clone()).collect()
+                } else {
+                    names
+                };
+                let request = self.next_request();
+                let command = AuthCommand::PreviewLogout {
+                    request,
+                    names: names.clone(),
+                };
+                if self.command(ClientCommand::SubscriptionAuth { command }, at) {
+                    let sent = Sent {
+                        nothing_left: names.len() == accounts.len(),
                         names,
                         ..Sent::default()
-                    },
-                    None,
-                    Vec::new(),
-                    at,
-                );
-            }
-            [one] => {
-                let named = (one.clone(), self.facts.mark_of(one));
-                let asked = Asked {
-                    names: vec![named.clone()],
-                    keys: store_of(snapshot, one).map(|_| named).into_iter().collect(),
-                    nothing_left: accounts.len() == 1,
-                    ..Asked::default()
-                };
-                open(SignOut::yes(asked, Vec::new(), None), self);
-            }
-            _ => {
-                let sent = Sent {
-                    nothing_left: names.len() == accounts.len(),
-                    names,
-                    ..Sent::default()
-                };
-                self.send_logout(sent, None, Vec::new(), at);
+                    };
+                    self.authentication
+                        .pending
+                        .push((request, Operation::Preview(Box::new(sent))));
+                }
             }
         }
     }
@@ -283,8 +276,12 @@ impl Presenter {
     ) {
         let request = self.next_request();
         let mut command = AuthCommand::logout(request, &sent.names, sent.confirmed, chat, follow);
-        if let AuthCommand::Logout { gone, .. } = &mut command {
+        if let AuthCommand::Logout {
+            gone, accept_api, ..
+        } = &mut command
+        {
             *gone = sent.gone;
+            *accept_api = sent.accept_api;
         }
         if self.command(ClientCommand::SubscriptionAuth { command }, at) {
             self.authentication
@@ -350,45 +347,52 @@ impl Presenter {
 
     fn logout_needs(
         &mut self,
-        sent: Sent,
-        keys: Vec<String>,
-        ways: &[Way],
-        presets: Vec<PresetGone>,
+        (sent, preview): (Sent, bool),
+        (keys, ways, presets, fixed): (Vec<String>, &[Way], Vec<PresetGone>, bool),
         at: Duration,
     ) {
         let rows = self.way_rows(ways, at);
         let named = |name: &String| (name.clone(), self.facts.mark_of(name));
         let names: Vec<Named> = sent.names.iter().map(named).collect();
         let keys: Vec<Named> = keys.iter().map(named).collect();
-        let state = |row: &WayRow| self.facts.account_state(&row.chat);
-        let card = if sent.names.len() > 1 {
-            let to = rows.first().and_then(|w| self.kind_of(&w.chat));
-            let to = to.map_or("", AccountKind::provider_word);
-            let stay = ways.first().map(|w| w.stay.as_slice()).unwrap_or_default();
-            let asked = Asked {
-                keys,
-                moving: rows.first().map(|w| w.moving(state(w), true)),
-                behind: stay
-                    .iter()
-                    .map(|a| (a.clone(), account::cant_move(to)))
-                    .collect(),
-                presets,
-                nothing_left: sent.nothing_left,
-                names,
-                ..Asked::default()
+        let card = if fixed || preview || !keys.is_empty() || sent.names.len() > 1 {
+            let row = match rows.as_slice() {
+                [only] => Some(only),
+                _ => None,
             };
-            let way = (!rows.is_empty()).then_some(0);
-            SignOut::yes(asked, rows, way)
-        } else if !keys.is_empty() {
-            let moving = rows.is_empty().then(|| self.key_movers(&sent.names, at));
-            let asked = Asked {
-                names,
-                keys,
-                moving: moving.flatten(),
-                presets,
-                ..Asked::default()
+            let moving =
+                row.map(|w| w.moving(self.facts.account_state(&w.chat), !w.live || w.chat_moves));
+            let behind = if fixed {
+                Vec::new()
+            } else {
+                row.and_then(|row| ways.iter().find(|w| w.chat.as_deref() == Some(&row.chat)))
+                    .into_iter()
+                    .flat_map(|w| {
+                        let to = w
+                            .chat
+                            .as_deref()
+                            .and_then(|name| self.kind_of(name))
+                            .map_or("", AccountKind::provider_word);
+                        w.stay
+                            .iter()
+                            .map(move |a| (a.clone(), account::cant_move(to)))
+                    })
+                    .collect()
             };
-            SignOut::yes(asked, rows, None)
+            let way = row.map(|_| 0);
+            SignOut::yes(
+                Asked {
+                    names,
+                    moving,
+                    behind,
+                    keys,
+                    presets,
+                    nothing_left: sent.nothing_left,
+                    ..Asked::default()
+                },
+                rows,
+                way,
+            )
         } else if !rows.is_empty() {
             SignOut::place(names, rows, !sent.confirmed).presets(presets)
         } else {
@@ -399,28 +403,44 @@ impl Presenter {
         self.authentication.sign_out = Some(card);
     }
 
-    fn key_movers(&self, names: &[String], at: Duration) -> Option<Moving> {
-        let chat = self.tracker.wanted().endpoint;
-        let provider = self.facts.endpoint_facts(&chat).map(|e| e.provider.clone());
-        let on_key = |e: &AgentEntry| e.endpoint.as_ref().is_some_and(|a| names.contains(a));
-        let rows = self
-            .agents
-            .rows()
+    pub(super) fn outstanding_previews(&self) -> usize {
+        self.authentication
+            .pending
             .iter()
-            .filter(|r| r.is_live())
-            .map(|r| &r.entry);
-        let follows = |e: &AgentEntry| Way::follows(e.provider.as_deref(), provider.as_deref());
-        let follow = rows.filter(|e| on_key(e) && follows(e));
-        let way = Way {
-            chat: Some(chat),
-            follow: follow
-                .map(|e| e.path.as_str().trim_start_matches('/').to_owned())
-                .collect(),
-            ..Way::default()
+            .filter(|(_, op)| matches!(op, Operation::Preview(_)))
+            .count()
+    }
+
+    pub(super) fn dismiss_preview(&mut self) {
+        self.authentication
+            .pending
+            .retain(|(_, op)| !matches!(op, Operation::Preview(_)));
+    }
+
+    pub(super) fn follower_receipt(
+        &mut self,
+        request: RequestId,
+        to: &str,
+        moved: &[Followed],
+        priced: Option<&[(String, Rebuild)]>,
+    ) {
+        let priced = priced.or_else(|| {
+            self.authentication
+                .pending
+                .iter()
+                .find_map(|(id, op)| match op {
+                    Operation::Logout(sent) if *id == request => Some(sent.priced.as_slice()),
+                    _ => None,
+                })
+        });
+        let Some(priced) = priced else {
+            return;
         };
-        let row = self.way_rows(&[way], at).into_iter().next()?;
-        let state = self.facts.account_state(&row.chat);
-        (!row.movers.is_empty()).then(|| row.moving(state, false))
+        let agents = self.followed(moved, to, priced);
+        self.transcript.signed_out(SignedOut {
+            agents,
+            ..SignedOut::default()
+        });
     }
 
     fn logged_out(&mut self, sent: Sent, outcome: &AuthOutcome, at: Duration) {
@@ -527,7 +547,7 @@ impl Presenter {
                         .map(|e| e.as_str().to_owned()),
                     rebuild: priced
                         .iter()
-                        .find(|(agent, _)| *agent == f.agent)
+                        .find(|(agent, rebuild)| *agent == f.agent && *rebuild != Rebuild::Unknown)
                         .map(|(_, rebuild)| *rebuild)
                         .or_else(|| f.rebuild_usd.map(|usd| account::quoted(usd, state))),
                 };
@@ -579,7 +599,7 @@ impl Presenter {
     fn sign_out_intent(&mut self, intent: logout::Intent, at: Duration) {
         let card = self.authentication.sign_out.take();
         self.authentication.hits.clear();
-        if self.going_off_intent(&intent, at) {
+        if self.going_off_intent(&intent, card.as_ref(), at) {
             return;
         }
         if intent == logout::Intent::Close {
@@ -593,12 +613,14 @@ impl Presenter {
             chat,
             follow,
             gone,
+            accept_api,
         } = intent
         {
             let sent = Sent {
                 names,
                 gone,
                 confirmed,
+                accept_api,
                 nothing_left: card.as_ref().is_some_and(SignOut::nothing_left),
                 priced: card
                     .map(|card| card.movers_of(chat.as_deref()))
@@ -805,6 +827,7 @@ impl Presenter {
             .position(|(pending, _)| pending == request)
         {
             let (_, operation) = self.authentication.pending.remove(index);
+            let preview = matches!(operation, Operation::Preview(_));
             match (operation, outcome) {
                 (Operation::Accounts, AuthOutcome::Status { endpoints }) => {
                     for endpoint in endpoints {
@@ -823,8 +846,9 @@ impl Presenter {
                     self.logged_out(*sent, outcome, at);
                 }
                 (
-                    Operation::Logout(sent),
+                    Operation::Logout(sent) | Operation::Preview(sent),
                     AuthOutcome::LogoutNeeds {
+                        fixed,
                         deletes_keys_of,
                         ways,
                         presets,
@@ -832,9 +856,12 @@ impl Presenter {
                     },
                 ) => {
                     let keys = deletes_keys_of.clone();
-                    self.logout_needs(*sent, keys, ways, presets.clone(), at);
+                    self.logout_needs((*sent, preview), (keys, ways, presets.clone(), *fixed), at);
                 }
-                (Operation::Logout(sent), AuthOutcome::Failed { message, .. }) => {
+                (
+                    Operation::Logout(sent) | Operation::Preview(sent),
+                    AuthOutcome::Failed { message, .. },
+                ) => {
                     if let Some(moved) = sent.moved {
                         self.transcript.moved(moved);
                     }

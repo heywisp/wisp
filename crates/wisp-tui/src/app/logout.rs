@@ -1,14 +1,14 @@
 use std::time::Duration;
 
 use wisp_protocol::agents::AgentEntry;
-use wisp_protocol::subscription_auth::{PresetGone, Way};
+use wisp_protocol::subscription_auth::{PresetGone, Way, WayOrigin};
 use wisp_protocol::{Billing, QuestionOption};
 use wisp_render::chrome::account::{
     self, AccountState, Asked, Moving, Named, SIGN_OUT_OPTIONS, THIS_CHAT, WHERE_SHOULD_IT_GO,
     WHERE_TITLE, WHICH_TITLE, logout_question, mark_line, marked, preset_line, sign_out_title,
 };
 use wisp_render::chrome::{
-    CardHit, CardRows, Effect, Facts, FormView, KeyHint, Rebuild, answer_options, form_rows,
+    CardHit, CardRows, Effect, Facts, FormView, KeyHint, Rebuild, Scope, answer_options, form_rows,
 };
 use wisp_render::markdown::Layout;
 use wisp_render::styled::{Look, StyledLine, StyledSpan};
@@ -19,7 +19,7 @@ use wisp_render::transcript::copy;
 
 use crate::app::list::Pick;
 use crate::app::picker;
-use crate::app::settings::Tracker;
+use crate::app::settings::{Chosen, Tracker};
 use crate::app::subscription_login::{cancel, columns};
 use crate::term::{Key, KeyCode};
 
@@ -44,6 +44,10 @@ pub struct WayRow {
     pub rebuild: Option<Rebuild>,
     pub movers: Vec<(String, Option<Rebuild>)>,
     pub consequence: Vec<String>,
+    pub fixed_notes: Vec<String>,
+    pub live: bool,
+    pub chat_moves: bool,
+    pub accept_api: bool,
     pub charges: bool,
     pub again: bool,
 }
@@ -58,6 +62,7 @@ impl WayRow {
             to: (self.chat.clone(), self.mark),
             state,
             rows: chat.into_iter().chain(agents).collect(),
+            notes: self.fixed_notes.clone(),
         }
     }
 }
@@ -119,6 +124,88 @@ fn way_price(
     }
 }
 
+fn named_rebuild(name: &str, rebuild: Rebuild, glyphs: GlyphSet) -> String {
+    match rebuild {
+        Rebuild::Unknown => format!("no estimate for {name}"),
+        Rebuild::Empty => account::nothing_cached(&[name.to_owned()]),
+        Rebuild::Unpriced(Scope::Exact) => format!("no prices for {name}"),
+        other => format!(
+            "{} for {name}",
+            amount(&other).unwrap_or_else(|| other.amount(glyphs))
+        ),
+    }
+}
+
+fn live_price(movers: &[(&str, Rebuild)], glyphs: GlyphSet) -> String {
+    if movers.is_empty() {
+        return String::new();
+    }
+    if movers
+        .iter()
+        .all(|(_, r)| *r == Rebuild::Unpriced(Scope::Exact))
+    {
+        let names: Vec<_> = movers.iter().map(|(name, _)| (*name).to_owned()).collect();
+        return format!("cache rebuild, no prices for {}.", copy::listed(&names));
+    }
+    let mut dollars = Vec::new();
+    let mut other = Vec::new();
+    for &(name, rebuild) in movers {
+        if let Some(value) = amount(&rebuild) {
+            dollars.push((name, value));
+        } else {
+            other.push(named_rebuild(name, rebuild, glyphs));
+        }
+    }
+    if other.is_empty() {
+        let amounts: Vec<_> = dollars.into_iter().map(|(_, value)| value).collect();
+        return copy::cache_rebuild(&copy::listed(&amounts));
+    }
+    let reasons = other.join("; ");
+    if dollars.is_empty() {
+        format!("cache rebuild, {reasons}.")
+    } else {
+        let named: Vec<_> = dollars
+            .into_iter()
+            .map(|(name, value)| format!("{value} for {name}"))
+            .collect();
+        let amounts = copy::cache_rebuild(&copy::listed(&named));
+        format!("{amounts}; {reasons}.")
+    }
+}
+
+fn landed(
+    facts: &Facts,
+    tracker: &Tracker,
+    dest: &str,
+    origin: &WayOrigin,
+) -> wisp_protocol::settings::Landed {
+    picker::shown_pair_from(
+        facts,
+        tracker,
+        dest,
+        &Chosen {
+            endpoint: origin.account.clone(),
+            model: origin.model.clone(),
+            effort: Some(origin.effort),
+        },
+    )
+}
+
+fn live_quote(
+    facts: &Facts,
+    tracker: &Tracker,
+    to: &str,
+    model: &str,
+    known: bool,
+    at: Duration,
+) -> Rebuild {
+    if known {
+        tracker.rebuild_on(facts, to, model, Scope::Exact, at)
+    } else {
+        Rebuild::Unknown
+    }
+}
+
 fn agent_rebuild(agent: &Mover, to: &str, at: Duration) -> Option<Rebuild> {
     agent.entry.context.as_ref()?;
     let model = picker::shown_pair(&agent.facts, agent.tracker, to).model;
@@ -172,37 +259,128 @@ pub(crate) fn way_rows(
         .filter_map(|way| {
             let name = way.chat.clone()?;
             let to = row(&name)?;
-            let pair = picker::shown_pair(facts, tracker, &name);
+            let live = !way.origins.is_empty();
+            let root = way.origins.get("/");
+            let pair = root.map_or_else(
+                || picker::shown_pair(facts, tracker, &name),
+                |origin| landed(facts, tracker, &name, origin),
+            );
             let (choice, head, model) =
                 to.folded(facts, tracker, 0, &pair.model, pair.effort, &glyphs);
-            let rebuild = rebuild_to(facts, tracker, &name, &model, at);
-            let movers = agents.map_or_else(Vec::new, |agents| {
-                let agent = |name: &String| {
-                    let shown =
-                        |e: &&Mover| e.entry.path.as_str().trim_start_matches('/') == name.as_str();
-                    let entry = agents.iter().find(shown);
-                    let rebuild = entry.and_then(|e| agent_rebuild(e, &to.name, at));
-                    (name.clone(), rebuild)
-                };
-                way.follow.iter().map(agent).collect()
-            });
+            let rebuild = if live {
+                root.map(|_| {
+                    live_quote(
+                        facts,
+                        tracker,
+                        &name,
+                        &model,
+                        tracker.has_cache_measurement(),
+                        at,
+                    )
+                })
+            } else {
+                rebuild_to(facts, tracker, &name, &model, at)
+            };
+            let movers: Vec<_> = way
+                .follow
+                .iter()
+                .filter_map(|path| {
+                    let entry = agents.and_then(|agents| {
+                        agents
+                            .iter()
+                            .find(|e| e.entry.path.as_str().trim_start_matches('/') == path)
+                    });
+                    let rebuild = if live {
+                        Some(entry.zip(way.origins.get(path)).map_or(
+                            Rebuild::Unknown,
+                            |(e, origin)| {
+                                let pair = landed(&e.facts, e.tracker, &name, origin);
+                                live_quote(
+                                    &e.facts,
+                                    e.tracker,
+                                    &name,
+                                    &pair.model,
+                                    e.entry.context.is_some(),
+                                    at,
+                                )
+                            },
+                        ))
+                    } else {
+                        agents?;
+                        entry.and_then(|e| agent_rebuild(e, &name, at))
+                    };
+                    Some((path.clone(), rebuild))
+                })
+                .collect();
+            let state = facts.account_state(&name);
+            let origins = root
+                .map(|origin| ("/", origin))
+                .into_iter()
+                .chain(
+                    way.follow
+                        .iter()
+                        .filter_map(|path| Some((path.as_str(), way.origins.get(path)?))),
+                )
+                .collect::<Vec<_>>();
+            let quotes: Vec<_> = rebuild
+                .map(|r| (THIS_CHAT, r))
+                .into_iter()
+                .chain(
+                    movers
+                        .iter()
+                        .map(|(name, r)| (name.as_str(), r.unwrap_or(Rebuild::Unknown))),
+                )
+                .collect();
+            let provider = facts
+                .endpoint_facts(&name)
+                .map_or("", |facts| facts.provider.as_str());
+            let mut fixed_notes: Vec<_> = if live {
+                quotes
+                    .iter()
+                    .filter(|(_, r)| amount(r).is_none())
+                    .map(|(name, r)| {
+                        let note = named_rebuild(name, *r, set);
+                        let mut chars = note.chars();
+                        chars.next().map_or_else(String::new, |c| {
+                            format!("{}{}.", c.to_uppercase(), chars.as_str())
+                        })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            if live {
+                fixed_notes.extend(account::live_consequences(&origins, provider, state, true));
+            }
             Some(WayRow {
                 mark: facts.mark_of(&name),
                 kind: choice.detail,
                 billing: head.short,
                 model: choice.effect,
-                price: way_price(rebuild, set, &way.follow, &movers),
+                price: if live {
+                    live_price(&quotes, set)
+                } else {
+                    way_price(rebuild, set, &way.follow, &movers)
+                },
                 rebuild,
                 movers,
-                consequence: account::consequence(
-                    &way.follow,
-                    &way.stay,
-                    to.no_carry(ran).is_none(),
-                    AccountState::of(billing),
-                    facts.account_state(&name),
-                ),
+                consequence: if live {
+                    account::live_consequences(&origins, provider, state, false)
+                } else {
+                    account::consequence(
+                        &way.follow,
+                        &way.stay,
+                        to.no_carry(ran).is_none(),
+                        AccountState::of(billing),
+                        state,
+                    )
+                },
                 follow: way.follow.clone(),
-                charges: way.charges,
+                charges: way.charges || live && state == AccountState::Api,
+                fixed_notes,
+                live,
+                chat_moves: root.is_some(),
+                accept_api: state == AccountState::Api,
                 again: false,
                 chat: name,
             })
@@ -226,6 +404,7 @@ pub enum Intent {
         chat: Option<String>,
         follow: Vec<String>,
         gone: bool,
+        accept_api: bool,
     },
 }
 
@@ -355,6 +534,7 @@ impl SignOut {
             chat: way.map(|w| w.chat.clone()),
             follow: way.map(|w| w.follow.clone()).unwrap_or_default(),
             gone: self.heading.is_some(),
+            accept_api: way.is_some_and(|w| w.accept_api),
         }
     }
 
@@ -368,6 +548,7 @@ impl SignOut {
             chat: None,
             follow: Vec::new(),
             gone: false,
+            accept_api: false,
         })
     }
 

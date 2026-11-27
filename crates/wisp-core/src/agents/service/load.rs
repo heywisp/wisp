@@ -822,6 +822,7 @@ impl Known {
             .and_then(|at| u64::try_from(at.as_millisecond()).ok())
             .unwrap_or(now_ms);
         let place = Place {
+            billing: None,
             priced: spawned
                 .endpoint
                 .as_deref()
@@ -950,8 +951,10 @@ impl AgentsService {
             entry.place = Place {
                 endpoint: child.bound_endpoint().map(str::to_owned),
                 provider: Some(child.provider_kind().as_str().to_owned()),
+                billing: Some(child.account_billing()),
                 priced: child.is_priced(),
             };
+            entry.effective_next = child.pending_displacement();
             entry.kind = Some(child.account_kind());
             entry.commands = Some(commands);
             entry.processes = child.processes();

@@ -456,8 +456,7 @@ Nothing new starts on those accounts: turns, sub-agents, usage lookups, account 
 A model request already sent finishes; a usage lookup is dropped as on any account change. A switch applies at once and is saved for later chats; other open chats keep their own switches.
 The root refuses a switch while this chat is answering on the provider or any sub-agent is working on it, naming everyone.
 When this chat is on it, the window asks where the chat goes with the card `/logout` has (`LeaveNeeds`, `docs/endpoints.md`); with no other account, the switch is refused with a line that says to add one (`/login`).
-Idle sub-agents stay and wait, and the switch's line names them. A message to one says why its account can't be used.
-They carry on once the provider is on again or added back, with one rebuild mark but the same request prefix.
+The card names the idle agents that can follow, including across providers, and quotes their cache rebuilds. Only the session-only `AnswerProviderSwitch` moves the named followers; accepting an API row explicitly names the metered destination. A successful move reports the actual landings, then the window saves just the original switches. A bare provider switch, or an agent not named in the answer, leaves that agent waiting. A message to it says why its account can't be used. It carries on once the provider is on again or added back, with one rebuild mark but the same request prefix.
 `AGENTS.md`'s "Providers are plugins" rule states what a provider plugin is never handed and that a switch never touches a sign-in.
 An installed plugin cannot take a provider's reserved id.
 

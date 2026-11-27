@@ -187,7 +187,7 @@ mirror! {
     }
     elsewhere {
         Restart ReadyToRestart
-        SubscriptionAuth AccountsGone LeaveNeeds PlanUsageWarning PlanUsageChanged TurnStarted InputDelivered
+        SubscriptionAuth AccountsGone LeaveNeeds FollowersMoved PlanUsageWarning PlanUsageChanged TurnStarted InputDelivered
         AttachmentsWithdrawn Retrying BlockStarted TextDelta ThinkingDelta BlockStopped
         CacheRefreshed ModelAsked SessionNamed CacheDiagnostics AgentStateChanged SpendChanged KeepWarmChanged
         Agent AgentsSnapshot SessionSnapshot LogDisabled SessionResumed TurnEnded StepStarted RequestQueued

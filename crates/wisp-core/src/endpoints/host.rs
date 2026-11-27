@@ -128,7 +128,9 @@ pub trait EndpointHost: Send + Sync {
 
     fn check_logout(
         &self,
-        _command: wisp_protocol::subscription_auth::AuthCommand,
+        _names: Vec<String>,
+        _chat: Option<String>,
+        _confirmed: bool,
     ) -> BoxFuture<'_, Option<wisp_protocol::subscription_auth::AuthOutcome>> {
         Box::pin(async { Some(unavailable()) })
     }

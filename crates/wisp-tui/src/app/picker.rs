@@ -1478,11 +1478,20 @@ pub(crate) fn shown_pair(
     name: &str,
 ) -> wisp_protocol::settings::Landed {
     let wanted = tracker.wanted();
+    shown_pair_from(facts, tracker, name, &wanted)
+}
+
+pub(crate) fn shown_pair_from(
+    facts: &Facts,
+    tracker: &Tracker,
+    name: &str,
+    source: &super::settings::Chosen,
+) -> wisp_protocol::settings::Landed {
     wisp_protocol::settings::lands_on(
         &offers(&facts.models),
         facts.landing(name),
-        name == wanted.endpoint,
-        (chat_of(&facts.models, &wanted.model), wanted.effort),
+        name == source.endpoint,
+        (chat_of(&facts.models, &source.model), source.effort),
         tracker.remembered(name),
     )
 }

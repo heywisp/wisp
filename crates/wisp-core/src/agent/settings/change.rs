@@ -16,6 +16,7 @@ use wisp_protocol::{
 use super::Pending;
 use super::kernel::Applied;
 use crate::agent::Agent;
+use crate::agent::leave::MoveTo;
 use crate::agents::endpoints;
 use crate::config::SavedSettings;
 use crate::config_file::SiteEdit;
@@ -208,8 +209,10 @@ fn connection_words(spec: &SettingSpec) -> String {
 
 #[derive(Debug, Clone)]
 pub(in crate::agent) struct Verdict {
-    target: Pending,
+    pub(in crate::agent) target: Pending,
     binding: Option<crate::endpoints::generation::Binding>,
+    pub(in crate::agent) commit_binding: Option<MoveTo>,
+    pub(in crate::agent) retiring: Vec<String>,
     reselected: Option<crate::agents::endpoints::ExactAccount>,
     choices: Vec<Choice>,
     pub(in crate::agent) edits: Vec<SiteEdit>,
@@ -445,16 +448,6 @@ impl Agent {
         crate::context::check_limit(&model, *window, max_tokens).map_err(|e| e.to_string())
     }
 
-    pub(in crate::agent) fn verdict(
-        &self,
-        changes: &[SettingChange],
-        save: bool,
-        projected: &Projected,
-    ) -> Result<Verdict, Refusal> {
-        let (verdict, check_model, effort) = self.proposed_verdict(changes, save, projected)?;
-        self.checked_verdict(verdict, check_model, effort)
-    }
-
     pub(in crate::agent) async fn refreshed_verdict(
         &mut self,
         changes: &[SettingChange],
@@ -465,6 +458,8 @@ impl Agent {
             self.proposed_verdict(changes, save, projected)?;
         let target = &verdict.target;
         let before = self.next_pair();
+        #[cfg(test)]
+        crate::agent::pause(&self.path(), "before-model-refetch").await;
         if let Some(catalog) = &self.endpoint_catalog
             && (target.model != before.model || target.endpoint != before.endpoint)
             && catalog
@@ -474,9 +469,15 @@ impl Agent {
             (verdict, check_model, effort) = self.proposed_verdict(changes, save, projected)?;
         }
         if let Some(connection) = self.connections.get(verdict.target.endpoint)
-            && self.child_resume.destination().is_some()
+            && (verdict.target.endpoint != self.endpoint
+                || self.child_resume.destination().is_some()
+                || self.leave_account.is_some()
+                || self.binding_fault.is_some()
+                || self.settings.pending_account.is_some())
             && verdict.choices.iter().any(|choice| {
                 choice.spec.name == names::ENDPOINT
+                    && choice.session()
+                    && self.overridden(choice, false).is_none()
                     && text_of(choice.value.as_ref()).as_deref() == Some(&connection.name)
             })
         {
@@ -682,13 +683,15 @@ impl Agent {
                 })
                 .is_none_or(|(value, _)| !crate::settings::is_off(&value))
         });
-        self.provider_refusal(
+        let retiring = self.provider_refusal(
             &crate::plugin::registry::providers_off(&switches),
             target.endpoint,
         )?;
         Ok((
             Verdict {
                 binding: None,
+                commit_binding: None,
+                retiring,
                 reselected: None,
                 target,
                 choices,
@@ -720,10 +723,22 @@ impl Agent {
     }
 
     fn check_verdict_account(&self, verdict: &Verdict) -> Result<(), String> {
+        let index = verdict.target.endpoint;
+        if let Some(to) = &verdict.commit_binding {
+            self.check_sign_out(index)?;
+            if !self.live_destination(&to.account).is_some_and(|c| {
+                Arc::ptr_eq(&c.provider, self.provider_at(index)) && to.permits(&c)
+            }) {
+                return Err(format!(
+                    "{} is no longer available as shown; choose an account again",
+                    to.account
+                ));
+            }
+        }
         if let Some(choice) = &verdict.reselected {
-            choice.check(self.connections.get(verdict.target.endpoint))
+            self.check_live_account(choice, index)
         } else {
-            self.check_resume_destination(verdict.target.endpoint)
+            self.check_resume_destination(index)
         }
     }
 
@@ -893,16 +908,17 @@ impl Agent {
         verdict: Verdict,
         file: Option<SavedFile>,
         events: &mpsc::Sender<AgentEvent>,
-    ) {
-        if let Err(reason) = self.check_verdict_account(&verdict) {
-            self.emit(events, AgentEvent::refused(request, reason))
-                .await;
-            return;
+    ) -> Result<(), String> {
+        #[cfg(test)]
+        if verdict.commit_binding.is_some() {
+            crate::agent::pause(&self.path(), "before-leave-commit").await;
         }
+        self.check_verdict_account(&verdict)?;
         let Verdict {
             target,
             choices,
-            binding,
+            mut binding,
+            commit_binding,
             reselected,
             by,
             ..
@@ -915,13 +931,23 @@ impl Agent {
         } else {
             None
         };
-        let reseats_unbound =
-            reselected.is_some() && self.child_resume.unbound() && target.endpoint == self.endpoint;
+        let resumes_gone = self.gone_auto_failed
+            && reselected.is_some()
+            && commit_binding.is_none()
+            && by.is_none();
+        let reseats = reselected.is_some() && target.endpoint == self.endpoint;
+        let reseats_unbound = reseats && self.child_resume.unbound();
         if let Some(choice) = reselected {
-            self.child_resume.reselect(choice);
-            if reseats_unbound {
+            self.settings.pending_account = None;
+            if reseats && commit_binding.is_none() {
                 self.binding_fault = None;
+                self.binding_detached = false;
+                if !reseats_unbound {
+                    self.leave_account = Some(choice.clone());
+                    self.endpoint_binding = binding.take();
+                }
             }
+            self.child_resume.reselect(choice);
         }
         let off_before = crate::agent::manage::session_names(&self.settings.session);
         let account_bound = self.account_bound(target.endpoint);
@@ -965,12 +991,14 @@ impl Agent {
         let unchanged = target.endpoint == self.endpoint
             && target.model == self.session.model
             && target.effort == self.session.effort;
-        self.settings.pending = (!unchanged).then(|| target.clone());
-        self.pending_endpoint_binding = if target.endpoint != self.endpoint {
-            binding
-        } else {
-            None
-        };
+        if commit_binding.is_none() {
+            self.pending_endpoint_binding = if target.endpoint != self.endpoint {
+                binding.take()
+            } else {
+                None
+            };
+            self.set_pending((!unchanged || self.child_resume.unbound()).then(|| target.clone()));
+        }
         let mut built = Vec::new();
         let mut warnings = Vec::new();
         for choice in &choices {
@@ -1081,6 +1109,21 @@ impl Agent {
             });
             applied.push(change);
         }
+        let cache = self.pending_cache(&target);
+        if reseats_unbound {
+            self.session.model.clone_from(&target.model);
+            self.session.effort = target.effort;
+            self.search.array = None;
+            self.search.pickup = false;
+        }
+        if commit_binding.is_some() {
+            let selected = self
+                .connections
+                .get(target.endpoint)
+                .map(endpoints::ExactAccount::connected);
+            self.commit_pending_binding(target.clone(), binding, selected);
+            self.disarm_keep_warm();
+        }
         if self.endpoint_defaults() != defaults_before {
             self.endpoints_changed(events).await;
         }
@@ -1093,13 +1136,6 @@ impl Agent {
         let provider_switch = choices
             .iter()
             .any(|choice| choice.path().provider_switch().is_some());
-        let cache = self.pending_cache(&target);
-        if reseats_unbound {
-            self.session.model.clone_from(&target.model);
-            self.session.effort = target.effort;
-            self.search.array = None;
-            self.search.pickup = false;
-        }
         self.settings_changed(
             target,
             cache,
@@ -1109,6 +1145,9 @@ impl Agent {
             events,
         )
         .await;
+        if resumes_gone {
+            self.resume_gone(events).await;
+        }
         if provider_switch {
             Box::pin(self.sync_catalog(events)).await;
         }
@@ -1119,6 +1158,7 @@ impl Agent {
             super::emit(events, AgentEvent::InstructionsWarning { diagnostic }).await;
         }
         self.background_after_change(events).await;
+        Ok(())
     }
 
     fn unknown_sections(&self, spec: &SettingSpec, value: Option<&SettingValue>) -> Vec<String> {
@@ -1500,11 +1540,12 @@ impl Agent {
         if !self.path().is_root() || self.plugin_key_on(provider, key) {
             return None;
         }
+        let aliases = self.provider_accounts(provider);
         let agents: Vec<String> = self
             .agents
-            .on_accounts(&self.provider_accounts(provider))
+            .on_accounts(&aliases)
             .into_iter()
-            .filter(|a| !a.working)
+            .filter(|a| !a.working && aliases.contains(&a.effective.account))
             .map(|a| a.agent)
             .collect();
         if agents.is_empty() {

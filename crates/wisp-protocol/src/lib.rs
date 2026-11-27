@@ -762,6 +762,14 @@ pub enum ClientCommand {
         #[serde(default, skip_serializing_if = "is_false")]
         save: bool,
     },
+    AnswerProviderSwitch {
+        request: RequestId,
+        changes: Vec<settings::SettingChange>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        follow: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        accept_api: bool,
+    },
     SettingsUsed {
         names: Vec<String>,
     },
@@ -1082,6 +1090,13 @@ pub enum AgentEvent {
     LeaveNeeds {
         request: RequestId,
         ways: Vec<subscription_auth::Way>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        with_followers: Vec<subscription_auth::Way>,
+    },
+    FollowersMoved {
+        request: RequestId,
+        to: String,
+        moved: Vec<subscription_auth::Followed>,
     },
     PlanUsageWarning {
         endpoint: String,

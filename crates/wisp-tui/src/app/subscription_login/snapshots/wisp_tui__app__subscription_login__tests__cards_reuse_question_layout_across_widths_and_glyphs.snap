@@ -435,6 +435,40 @@ where T§3e
 
    enter choose - esc quit
 
+live provider choices
+ ? Where should this chat go?
+   gemini is going off.
+   This chat and reviewer move.
+   Earlier reasoning won't carry over.
+
+ > 1 * claude-work
+     subscription - opus-5-5 high
+     cache rebuild ~$0.80 for this
+     chat; no estimate for reviewer.
+   2 * chatgpt
+     subscription - gpt-6.1-sol high
+     cache rebuild ~$0.50 for this
+     chat; no estimate for reviewer.
+
+   enter choose - esc cancel
+
+fixed API confirmation
+ ? Sign out of * chatgpt?
+
+   Moving to * claude-api - API
+    cache rebuild
+     reviewer   -
+
+   No estimate for reviewer.
+   reviewer moves from your
+   subscription to the API.
+   Earlier reasoning won't carry over.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
 Ascii 80 provider
  ? Sign in
 
@@ -815,6 +849,36 @@ where T§3e
 
    enter choose - esc quit
 
+live provider choices
+ ? Where should this chat go?
+   gemini is going off.
+   This chat and reviewer move.
+   Earlier reasoning won't carry over.
+
+ > 1 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.80 for this chat; no estimate for reviewer.
+   2 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.50 for this chat; no estimate for reviewer.
+
+   enter choose - esc cancel
+
+fixed API confirmation
+ ? Sign out of * chatgpt?
+
+   Moving to * claude-api - API   cache rebuild
+     reviewer                                 -
+
+   No estimate for reviewer.
+   reviewer moves from your subscription to the API.
+   Earlier reasoning won't carry over.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
+
 Ascii 120 provider
  ? Sign in
 
@@ -1193,6 +1257,36 @@ where T§3e
      This chat moves from your subscription to the API.
 
    enter choose - esc quit
+
+live provider choices
+ ? Where should this chat go?
+   gemini is going off.
+   This chat and reviewer move.
+   Earlier reasoning won't carry over.
+
+ > 1 * claude-work
+     Claude subscription - opus-5-5 high
+     cache rebuild ~$0.80 for this chat; no estimate for reviewer.
+   2 * chatgpt
+     ChatGPT subscription - gpt-6.1-sol high
+     cache rebuild ~$0.50 for this chat; no estimate for reviewer.
+
+   enter choose - esc cancel
+
+fixed API confirmation
+ ? Sign out of * chatgpt?
+
+   Moving to * claude-api - API   cache rebuild
+     reviewer                                 -
+
+   No estimate for reviewer.
+   reviewer moves from your subscription to the API.
+   Earlier reasoning won't carry over.
+
+   1 Sign out
+ > 2 Keep
+
+   enter choose - esc cancel
 
 Unicode 40 provider
  ? Sign in
@@ -1627,6 +1721,40 @@ where T§3e
 
    enter choose · esc quit
 
+live provider choices
+ ? Where should this chat go?
+   gemini is going off.
+   This chat and reviewer move.
+   Earlier reasoning won't carry over.
+
+ › 1 ● claude-work
+     subscription · opus-5-5 high
+     cache rebuild ~$0.80 for this
+     chat; no estimate for reviewer.
+   2 ● chatgpt
+     subscription · gpt-6.1-sol high
+     cache rebuild ~$0.50 for this
+     chat; no estimate for reviewer.
+
+   enter choose · esc cancel
+
+fixed API confirmation
+ ? Sign out of ● chatgpt?
+
+   Moving to ● claude-api · API
+    cache rebuild
+     reviewer   —
+
+   No estimate for reviewer.
+   reviewer moves from your
+   subscription to the API.
+   Earlier reasoning won't carry over.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
 Unicode 80 provider
  ? Sign in
 
@@ -2007,6 +2135,36 @@ where T§3e
 
    enter choose · esc quit
 
+live provider choices
+ ? Where should this chat go?
+   gemini is going off.
+   This chat and reviewer move.
+   Earlier reasoning won't carry over.
+
+ › 1 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.80 for this chat; no estimate for reviewer.
+   2 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.50 for this chat; no estimate for reviewer.
+
+   enter choose · esc cancel
+
+fixed API confirmation
+ ? Sign out of ● chatgpt?
+
+   Moving to ● claude-api · API   cache rebuild
+     reviewer                                 —
+
+   No estimate for reviewer.
+   reviewer moves from your subscription to the API.
+   Earlier reasoning won't carry over.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel
+
 Unicode 120 provider
  ? Sign in
 
@@ -2385,3 +2543,33 @@ where T§3e
      This chat moves from your subscription to the API.
 
    enter choose · esc quit
+
+live provider choices
+ ? Where should this chat go?
+   gemini is going off.
+   This chat and reviewer move.
+   Earlier reasoning won't carry over.
+
+ › 1 ● claude-work
+     Claude subscription · opus-5-5 high
+     cache rebuild ~$0.80 for this chat; no estimate for reviewer.
+   2 ● chatgpt
+     ChatGPT subscription · gpt-6.1-sol high
+     cache rebuild ~$0.50 for this chat; no estimate for reviewer.
+
+   enter choose · esc cancel
+
+fixed API confirmation
+ ? Sign out of ● chatgpt?
+
+   Moving to ● claude-api · API   cache rebuild
+     reviewer                                 —
+
+   No estimate for reviewer.
+   reviewer moves from your subscription to the API.
+   Earlier reasoning won't carry over.
+
+   1 Sign out
+ › 2 Keep
+
+   enter choose · esc cancel

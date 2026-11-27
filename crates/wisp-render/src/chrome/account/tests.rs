@@ -845,6 +845,7 @@ fn sign_out_texts(glyphs: &Glyphs, columns: usize) -> Vec<String> {
     let to_api = |rows: &[(&str, Option<&str>)]| Moving {
         to: ("claude-api".to_owned(), mockup_mark("claude-api")),
         state: AccountState::Api,
+        notes: Vec::new(),
         rows: priced(rows),
     };
     let behind = |agent: &str| vec![(agent.to_owned(), cant_move("Claude"))];
@@ -886,6 +887,7 @@ fn sign_out_texts(glyphs: &Glyphs, columns: usize) -> Vec<String> {
                     mockup_mark("claude-subscription"),
                 ),
                 state: AccountState::Subscription,
+                notes: Vec::new(),
                 rows: priced(&[both[1]]),
             }),
             ..Asked::default()
@@ -1216,5 +1218,111 @@ fn the_module_says_none_of_the_banned_words() {
         "set in your environment",
     ] {
         assert!(!vocabulary_slips(fine).contains(env), "{fine}");
+    }
+}
+
+#[test]
+fn live_move_consequences_name_only_the_people_affected() {
+    use wisp_protocol::{Billing, Effort};
+    let origin = |provider, billing| WayOrigin {
+        account: "from".into(),
+        provider: Some(String::from(provider)),
+        billing,
+        model: "model".into(),
+        effort: Effort::High,
+    };
+    let root = origin("anthropic", Some(Billing::Metered));
+    let worker = origin("anthropic", Some(Billing::AnthropicPlan));
+    let reviewer = origin("openai", None);
+    let movers = [("/", &root), ("worker", &worker), ("reviewer", &reviewer)];
+    assert_eq!(
+        live_consequences(&movers, "anthropic", AccountState::Api, false),
+        [
+            "worker moves from your subscription to the API.",
+            "reviewer moves to the API.",
+            "Earlier reasoning won't carry over for reviewer.",
+        ]
+    );
+    assert_eq!(
+        live_consequences(&movers[..2], "anthropic", AccountState::Subscription, true),
+        ["This chat moves from the API to your subscription."]
+    );
+    let sub_chat = origin("anthropic", Some(Billing::AnthropicPlan));
+    let sub_reviewer = origin("openai", Some(Billing::ChatGptPlan));
+    assert_eq!(
+        live_consequences(
+            &[("reviewer", &sub_reviewer)],
+            "anthropic",
+            AccountState::Subscription,
+            true
+        ),
+        ["Earlier reasoning won't carry over."]
+    );
+    assert_eq!(
+        live_consequences(
+            &[("reviewer", &sub_reviewer)],
+            "anthropic",
+            AccountState::Api,
+            true
+        ),
+        [
+            "reviewer moves from your subscription to the API.",
+            "Earlier reasoning won't carry over."
+        ]
+    );
+    assert_eq!(
+        live_consequences(
+            &[
+                ("/", &sub_chat),
+                ("coder", &worker),
+                ("reviewer", &sub_reviewer)
+            ],
+            "anthropic",
+            AccountState::Api,
+            true
+        ),
+        [
+            "This chat, coder and reviewer move from your subscription to the API.",
+            "Earlier reasoning won't carry over for reviewer."
+        ]
+    );
+    assert_eq!(
+        live_consequences(&movers[..1], "anthropic", AccountState::Api, false),
+        ["This chat moves."]
+    );
+    let api = origin("gemini", Some(Billing::Metered));
+    let sub = origin("gemini", Some(Billing::AntigravityPlan));
+    for (movers, all, changes) in [
+        (
+            vec![("/", &sub), ("worker", &api)],
+            Some("This chat and worker move."),
+            "This chat moves from your subscription to the API.",
+        ),
+        (
+            vec![("/", &api), ("coder", &api), ("worker", &sub)],
+            Some("This chat, coder and worker move."),
+            "worker moves from your subscription to the API.",
+        ),
+        (
+            vec![("/", &api), ("worker", &sub)],
+            None,
+            "worker moves from your subscription to the API.",
+        ),
+        (
+            vec![("/", &api), ("coder", &sub), ("worker", &sub)],
+            None,
+            "coder and worker move from your subscription to the API.",
+        ),
+    ] {
+        let reasoning = "Earlier reasoning won't carry over.";
+        let expected: Vec<_> = all.into_iter().chain([changes, reasoning]).collect();
+        assert_eq!(
+            live_consequences(&movers, "openai", AccountState::Api, false),
+            expected
+        );
+        assert_eq!(
+            live_consequences(&movers, "openai", AccountState::Api, true),
+            [changes, reasoning]
+        );
     }
 }

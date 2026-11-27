@@ -27,6 +27,7 @@ fn a_card_drops_keys_until_it_is_drawn_and_answers_by_enter_or_digit() {
         chat: None,
         follow: Vec::new(),
         gone: false,
+        accept_api: false,
     });
     assert_eq!(card.key(key(KeyCode::Enter)), sent);
     let mut card = SignOut::yes(asked, Vec::new(), None);
@@ -64,6 +65,7 @@ fn a_card_drops_keys_until_it_is_drawn_and_answers_by_enter_or_digit() {
     let way = |chat: &str, charges: bool| WayRow {
         chat: chat.to_owned(),
         charges,
+        accept_api: charges,
         ..WayRow::default()
     };
     let ways = vec![way("claude-api", true), way("chatgpt", false)];
@@ -75,18 +77,20 @@ fn a_card_drops_keys_until_it_is_drawn_and_answers_by_enter_or_digit() {
     );
     card.drawn = true;
     assert_eq!(card.pick.focus, Some(1));
-    let sent = |chat: &str| {
+    let sent = |chat: &str, accept_api| {
         Some(Intent::Send {
             names: Vec::new(),
             confirmed: true,
             chat: Some(chat.to_owned()),
             follow: Vec::new(),
             gone: true,
+            accept_api,
         })
     };
+    assert_eq!(card.key(key(KeyCode::Char('1'))), None);
     assert_eq!(card.click(CardHit::Option(0)), None);
-    assert_eq!(card.key(key(KeyCode::Enter)), sent("claude-api"));
-    assert_eq!(card.click(CardHit::Option(1)), sent("chatgpt"));
+    assert_eq!(card.key(key(KeyCode::Enter)), sent("claude-api", true));
+    assert_eq!(card.click(CardHit::Option(1)), sent("chatgpt", false));
     let all = SignOut::gone(
         Vec::new(),
         heading.clone(),
@@ -326,4 +330,140 @@ fn a_card_drops_keys_until_it_is_drawn_and_answers_by_enter_or_digit() {
     let line =
         "Preset coder used claude-subscription; new agents from it won't start on the API. 1";
     assert!(words.contains(line), "{words}");
+}
+
+#[test]
+fn live_prices_keep_the_actual_cache_qualifiers() {
+    use GlyphSet::{Ascii, Unicode};
+    let named = |rebuild| {
+        live_price(
+            &[(THIS_CHAT, Rebuild::Usd(0.41)), ("worker", rebuild)],
+            Unicode,
+        )
+    };
+    assert_eq!(named(Rebuild::Usd(0.08)), "cache rebuild ~$0.41 and ~$0.08");
+    assert_eq!(
+        named(Rebuild::Expired),
+        "cache rebuild ~$0.41 for this chat; cache expired for worker."
+    );
+    assert_eq!(
+        named(Rebuild::Tokens(12_000)),
+        "cache rebuild ~$0.41 for this chat; ≈12k tokens for worker."
+    );
+    assert_eq!(
+        named(Rebuild::Empty),
+        "cache rebuild ~$0.41 for this chat; worker has nothing cached yet."
+    );
+    assert_eq!(
+        named(Rebuild::Unknown),
+        "cache rebuild ~$0.41 for this chat; no estimate for worker."
+    );
+    assert_eq!(
+        live_price(&[("worker", Rebuild::UpToTokens(12_000))], Ascii),
+        "cache rebuild, up to ~12k tokens for worker."
+    );
+    assert_eq!(live_price(&[], Unicode), "");
+    assert_eq!(
+        live_price(
+            &[(THIS_CHAT, Rebuild::Unknown), ("worker", Rebuild::Expired)],
+            Unicode
+        ),
+        "cache rebuild, no estimate for this chat; cache expired for worker."
+    );
+    assert_eq!(
+        live_price(
+            &[
+                (THIS_CHAT, Rebuild::Usd(0.41)),
+                ("coder", Rebuild::Usd(0.08)),
+                ("worker", Rebuild::Expired)
+            ],
+            Unicode
+        ),
+        "cache rebuild ~$0.41 for this chat and ~$0.08 for coder; cache expired for worker."
+    );
+    let unpriced = Rebuild::Unpriced(Scope::Exact);
+    assert_eq!(
+        live_price(&[(THIS_CHAT, unpriced), ("worker", unpriced)], Unicode),
+        "cache rebuild, no prices for this chat and worker."
+    );
+}
+
+#[test]
+fn a_fixed_moving_table_keeps_each_non_dollar_quote() {
+    let glyphs = GlyphSet::Unicode;
+    let layout = Layout::new(120, glyphs);
+    let cases = [
+        (None, 0, true, "No estimate for this chat."),
+        (Some(0), 0, true, "This chat has nothing cached yet."),
+        (Some(12_000), 3601, true, "Cache expired for this chat."),
+        (Some(12_000), 0, true, "≈12k tokens for this chat."),
+        (Some(12_000), 0, false, "No prices for this chat."),
+    ];
+    for (tokens, at, priced, expected) in cases {
+        let mut facts = crate::app::fixture::four_accounts();
+        facts
+            .endpoints
+            .iter_mut()
+            .find(|a| a.name == "claude-api")
+            .unwrap()
+            .priced = priced;
+        for model in &mut facts.models {
+            model.rates = None;
+        }
+        let mut tracker = Tracker::new(&facts);
+        if let Some(tokens) = tokens {
+            tracker.apply(
+                &wisp_protocol::AgentEvent::StepEnded {
+                    step: 1,
+                    usage: Some(wisp_protocol::Usage {
+                        input_tokens: tokens,
+                        ..Default::default()
+                    }),
+                    cost_usd: None,
+                    lower_bound: false,
+                },
+                &facts,
+                Duration::ZERO,
+                glyphs,
+            );
+        }
+        let way = Way {
+            chat: Some("claude-api".into()),
+            origins: [(
+                "/".into(),
+                WayOrigin {
+                    account: "claude-subscription".into(),
+                    provider: Some("anthropic".into()),
+                    billing: Some(Billing::AnthropicPlan),
+                    model: facts.model.clone(),
+                    effort: wisp_protocol::Effort::High,
+                },
+            )]
+            .into(),
+            ..Way::default()
+        };
+        let ways = way_rows(
+            &facts,
+            &tracker,
+            glyphs,
+            &[way],
+            Leaving::Chat(Billing::AnthropicPlan),
+            None,
+            Duration::from_secs(at),
+        );
+        let moving = ways[0].moving(AccountState::Api, true);
+        assert_eq!(moving.rows, [(THIS_CHAT.to_owned(), None)]);
+        assert_eq!(moving.notes[0], expected);
+        let card = SignOut::yes(
+            Asked {
+                names: vec![("claude-subscription".into(), None)],
+                moving: Some(moving),
+                ..Asked::default()
+            },
+            ways,
+            Some(0),
+        );
+        let text = texts(&card.render(24, layout).lines).join("\n");
+        assert!(text.contains(expected), "{text}");
+    }
 }

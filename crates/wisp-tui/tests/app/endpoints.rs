@@ -585,6 +585,7 @@ async fn on_the_start_and_resume_cards_a_digit_or_click_only_marks_a_row_that_st
                     follow: vec!["coder".to_owned()],
                     stay: Vec::new(),
                     charges: true,
+                    ..Way::default()
                 },
                 Way {
                     chat: Some("claude-work".to_owned()),

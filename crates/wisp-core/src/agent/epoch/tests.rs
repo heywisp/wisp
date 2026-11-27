@@ -913,6 +913,7 @@ async fn cache_lifetime_and_request_option_changes_set_no_mark() {
                 save: false,
                 projected: crate::agent::settings::Projected::default(),
                 by: None,
+                answer: None,
             },
             &rig.events,
         )

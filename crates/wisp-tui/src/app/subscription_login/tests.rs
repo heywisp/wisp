@@ -320,9 +320,86 @@ fn cards_reuse_question_layout_across_widths_and_glyphs() {
             shots.push(format!("not working first\n{shown}"));
             shots.extend(sign_out_cards(width, glyphs));
             shots.extend(where_cards(width, glyphs));
+            shots.extend(live_cards(width, glyphs));
         }
     }
     insta::assert_snapshot!(shots.join("\n\n"));
+}
+
+fn live_cards(width: usize, glyphs: GlyphSet) -> [String; 2] {
+    use crate::app::logout::{Leaving, SignOut, way_rows};
+    use crate::app::settings::Tracker;
+    use wisp_protocol::{
+        Billing, Effort,
+        subscription_auth::{Way, WayOrigin},
+    };
+    use wisp_render::chrome::account::{AccountState, Asked, off_title};
+
+    let facts = crate::app::fixture::four_accounts();
+    let mut tracker = Tracker::new(&facts);
+    tracker.sized(100_000);
+    let origin = |provider: &str, billing, account: &str| WayOrigin {
+        account: account.into(),
+        provider: Some(provider.into()),
+        billing: Some(billing),
+        model: facts.model.clone(),
+        effort: Effort::High,
+    };
+    let way = |chat: &str, root: bool, child: WayOrigin| Way {
+        chat: Some(chat.into()),
+        follow: vec!["reviewer".into()],
+        origins: root
+            .then(|| {
+                (
+                    "/".into(),
+                    origin("gemini", Billing::AntigravityPlan, "antigravity"),
+                )
+            })
+            .into_iter()
+            .chain([("reviewer".into(), child)])
+            .collect(),
+        ..Way::default()
+    };
+    let rows = |ways: &[Way]| {
+        way_rows(
+            &facts,
+            &tracker,
+            glyphs,
+            ways,
+            Leaving::Chat(Billing::AnthropicPlan),
+            None,
+            Duration::ZERO,
+        )
+    };
+    let choices = rows(&["claude-work", "chatgpt"].map(|to| {
+        way(
+            to,
+            true,
+            origin("gemini", Billing::AntigravityPlan, "antigravity"),
+        )
+    }));
+    let (title, prompt) = off_title("gemini", false);
+    let choice = SignOut::gone(Vec::new(), (title, prompt, None), choices, super::cancel());
+    let fixed = rows(&[way(
+        "claude-api",
+        false,
+        origin("openai", Billing::ChatGptPlan, "chatgpt"),
+    )]);
+    let confirm = SignOut::yes(
+        Asked {
+            names: vec![("chatgpt".into(), facts.mark_of("chatgpt"))],
+            moving: Some(fixed[0].moving(AccountState::Api, false)),
+            ..Asked::default()
+        },
+        fixed,
+        Some(0),
+    );
+    let layout = Layout::new(width, glyphs);
+    [
+        ("live provider choices", choice),
+        ("fixed API confirmation", confirm),
+    ]
+    .map(|(name, card)| format!("{name}\n{}", shown(&card.render(24, layout))))
 }
 
 #[test]
@@ -1230,7 +1307,7 @@ fn sign_out_cards(width: usize, glyphs: GlyphSet) -> Vec<String> {
                 "Earlier reasoning won't carry over, and coder stays behind.".to_owned(),
             ],
             charges: false,
-            again: false,
+            ..WayRow::default()
         },
         WayRow {
             chat: "claude-api".to_owned(),
@@ -1246,7 +1323,7 @@ fn sign_out_cards(width: usize, glyphs: GlyphSet) -> Vec<String> {
                 "This chat and coder move from your subscription to the API.".to_owned(),
             ],
             charges: true,
-            again: false,
+            ..WayRow::default()
         },
     ];
     let mut list = SignOut::which(vec![
@@ -1306,6 +1383,7 @@ fn sign_out_cards(width: usize, glyphs: GlyphSet) -> Vec<String> {
     let to_api = |movers: &[(&str, Option<&str>)]| Moving {
         to: ("claude-api".to_owned(), mockup_mark("claude-api")),
         state: AccountState::Api,
+        notes: Vec::new(),
         rows: rows(movers),
     };
     let behind = |agent: &str| vec![(agent.to_owned(), cant_move("Claude"))];
@@ -1358,6 +1436,7 @@ fn sign_out_cards(width: usize, glyphs: GlyphSet) -> Vec<String> {
                         mockup_mark("claude-subscription"),
                     ),
                     state: AccountState::Subscription,
+                    notes: Vec::new(),
                     rows: rows(&[both[1]]),
                 }),
                 ..asked(&["work-api"])

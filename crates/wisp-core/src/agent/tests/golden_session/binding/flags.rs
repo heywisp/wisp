@@ -957,7 +957,7 @@ async fn a_resumed_sonnet_log_with_thinking_gets_the_switchs_handling() {
 
 #[tokio::test]
 async fn a_sign_out_of_the_chats_account_rebuilds_once_with_a_mark_and_no_miss() {
-    use wisp_protocol::subscription_auth::{AuthEvent, AuthOutcome};
+    use wisp_protocol::subscription_auth::{AuthCommand, AuthEvent, AuthOutcome};
     for (stage, elsewhere) in [(false, false), (true, false), (false, true), (true, true)] {
         let case = if elsewhere {
             "signed-out-elsewhere"
@@ -968,7 +968,7 @@ async fn a_sign_out_of_the_chats_account_rebuilds_once_with_a_mark_and_no_miss()
         let host = crate::endpoints::testing::AuthHost::new();
         *host.next_provider.lock().unwrap() = Some(bench.server.provider());
         host.load("env");
-        host.load("claude-subscription");
+        host.load("other-api");
         let log = SessionLog::new(Box::new(bench.store.clone()), "s1");
         let build = Build {
             model: OPUS,
@@ -984,31 +984,44 @@ async fn a_sign_out_of_the_chats_account_rebuilds_once_with_a_mark_and_no_miss()
         let change = bench.settled();
         if elsewhere {
             host.elsewhere(&["env"], &[]);
-        } else {
-            live.send(ClientCommand::SubscriptionAuth {
-                command: crate::endpoints::testing::logout(90, "env"),
+            live.send(ClientCommand::DescribeSettings {
+                request: RequestId(89),
             })
             .await;
-            let answer = live
-                .until(|e| matches!(e, AgentEvent::SubscriptionAuth { .. }))
-                .await;
-            assert!(
-                matches!(
-                    answer,
-                    AgentEvent::SubscriptionAuth {
-                        event: AuthEvent {
-                            outcome: AuthOutcome::LoggedOut { .. },
-                            ..
-                        }
-                    }
-                ),
-                "{answer:?}"
-            );
+            live.until(|e| matches!(e, AgentEvent::AccountsGone { ways, .. } if ways.iter().any(|way| way.chat.as_deref() == Some("other-api")))).await;
         }
+        live.send(ClientCommand::SubscriptionAuth {
+            command: AuthCommand::Logout {
+                request: RequestId(90),
+                alias: "env".into(),
+                also: Vec::new(),
+                chat: Some("other-api".into()),
+                confirmed: true,
+                follow: Vec::new(),
+                gone: elsewhere,
+                accept_api: true,
+            },
+        })
+        .await;
+        let answer = live
+            .until(|e| matches!(e, AgentEvent::SubscriptionAuth { .. }))
+            .await;
+        assert!(
+            matches!(
+                answer,
+                AgentEvent::SubscriptionAuth {
+                    event: AuthEvent {
+                        outcome: AuthOutcome::LoggedOut { stopped: None, .. },
+                        ..
+                    }
+                }
+            ),
+            "{answer:?}"
+        );
         two_turns(&mut live, 3).await;
         live.completed("u5", "Once more.").await;
         let (agent, seen) = finish_seen(&bench, live).await;
-        assert_eq!(agent.endpoint_name(), "claude-subscription");
+        assert_eq!(agent.endpoint_name(), "other-api");
         assert!(
             !seen
                 .iter()
@@ -1027,7 +1040,7 @@ async fn a_sign_out_of_the_chats_account_rebuilds_once_with_a_mark_and_no_miss()
         once(&bench, change, None);
         let events: Vec<LogEvent> = log_events(&bench.store);
         assert_eq!(
-            switched_to(&events, "claude-subscription"),
+            switched_to(&events, "other-api"),
             [Vec::<String>::new()],
             "{}",
             bench.case
