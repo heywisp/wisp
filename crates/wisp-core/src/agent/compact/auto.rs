@@ -384,7 +384,7 @@ impl Agent {
         if early.is_none() && self.auto_paused() {
             mark_paused(&mut event);
         }
-        emit(events, event).await;
+        self.publish_event(events, event).await;
         if compacted {
             emit(events, self.context_changed()).await;
         }
@@ -633,6 +633,11 @@ impl Agent {
                     answers: None,
                 };
                 let event = self.compaction_failed(failure, &spent, events).await;
+                let message = if crate::session::hook_compaction_error_kind(&kind).is_some() {
+                    crate::session::compaction_terminal_message(message)
+                } else {
+                    message
+                };
                 return InTurn::Failed {
                     kind,
                     message,

@@ -120,7 +120,10 @@ async fn a_compact_blocked_by_a_hook_answers_blocked_naming_it_and_sends_nothing
     let agent = heard_by(
         logged(provider.clone(), &store),
         &gate_body(""),
-        blocking(),
+        replying(vec![(
+            "gate",
+            Reply::Block(["CANARYcompactBlock", "example.invalid"].join("@")),
+        )]),
         &calls,
     )
     .await;
@@ -137,19 +140,22 @@ async fn a_compact_blocked_by_a_hook_answers_blocked_naming_it_and_sends_nothing
                 message,
                 answers: Some(RequestId(2)),
                 ..
-            } if message == NOT_NOW
+            } if message == "Blocked by aa/gate: [redacted]"
         ),
         "{answered:?}"
     );
     assert_eq!(provider.sent().len(), 1);
     assert_eq!(
         blocked_records(&store),
-        [(CompactionTrigger::Manual, NOT_NOW.to_owned())]
+        [(
+            CompactionTrigger::Manual,
+            "Blocked by aa/gate: [redacted]".to_owned()
+        )]
     );
     assert_eq!(
         ran(&store, GATE),
         [HookOutcome::Blocked {
-            reason: "not now".into()
+            reason: crate::session::REDACTED.into()
         }]
     );
     let info = &infos(&calls, "gate")[0];
@@ -948,10 +954,17 @@ async fn a_blocking_gate_starts_no_precompute_and_logs_only_its_run() {
     let store = MemoryStore::default();
     let near = super::background::NEAR;
     let provider = documented(vec![answer("Hello.", near), answer("Again.", near)]);
+    let scratch = crate::test_guard::ScratchDir::new("wisp-gate-", "workspace-home");
+    let mut workspace = scratch.workspace();
+    let home_prefix = "/opt/CANARY-workspace-private/";
+    let home = format!("{home_prefix}end");
+    workspace.home = Some(home.clone().into());
+    let cap = crate::plugin::hooks::points::MAX_APPEND_CHARS;
+    let reason = format!("{} {home}/notes", "x".repeat(cap - home_prefix.len() - 1));
     let agent = heard_by(
-        background(&provider, &store),
+        background(&provider, &store).with_workspace(workspace),
         &gate_body(""),
-        blocking(),
+        replying(vec![("gate", Reply::Block(reason))]),
         &calls,
     )
     .await;
@@ -963,9 +976,17 @@ async fn a_blocking_gate_starts_no_precompute_and_logs_only_its_run() {
     let (agent, seen) = live.close().await;
     assert_eq!(provider.sent().len(), 2);
     let blocked = HookOutcome::Blocked {
-        reason: "not now".into(),
+        reason: crate::session::REDACTED.into(),
     };
-    assert_eq!(ran(&store, GATE), [blocked.clone(), blocked]);
+    assert_eq!(ran(&store, GATE), [blocked.clone(), blocked.clone()]);
+    let live_runs: Vec<_> = seen
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::HookRan { hook, outcome, .. } if hook == GATE => Some(outcome),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(live_runs, [&blocked, &blocked]);
     assert!(
         !log_events(&store)
             .iter()

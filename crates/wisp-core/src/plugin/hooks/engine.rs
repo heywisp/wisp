@@ -561,6 +561,7 @@ pub struct Fire {
     pub refusal: Option<&'static str>,
     pub plugins: Option<BTreeSet<String>>,
     pub(crate) command_workspace_home: Option<PathBuf>,
+    pub(crate) scrub_compaction_failure: bool,
 }
 
 impl Fire {
@@ -578,6 +579,7 @@ impl Fire {
             refusal: None,
             plugins: None,
             command_workspace_home: None,
+            scrub_compaction_failure: false,
         }
     }
 
@@ -741,6 +743,7 @@ impl Set {
 #[derive(Clone)]
 pub(super) enum Payload {
     Hook(Event),
+    HookCompactionFailure(wisp_plugin_api::hooks::CompactedInfo),
     Tree(TreeEvent),
 }
 
@@ -1031,10 +1034,16 @@ impl Engine {
                 fire.cancel.clone()
             };
             let caller = Caller::call(cancel, Some(deadline)).hook(fire.depth, fire.at.clone());
+            let payload = match event {
+                Event::AfterCompact(info) if fire.scrub_compaction_failure => {
+                    Payload::HookCompactionFailure(info)
+                }
+                event => Payload::Hook(event),
+            };
             let run = self.run_one(
                 plugin.clone(),
                 name.clone(),
-                Payload::Hook(event),
+                payload,
                 deadline,
                 caller,
                 fire.command_workspace_home.clone(),
@@ -1118,6 +1127,19 @@ impl Engine {
         self.record(ran);
     }
 
+    fn block_reason(&self, fire: &Fire, reason: &str) -> String {
+        let home = crate::plugin::host::secret_check_home(
+            self.host.as_deref(),
+            fire.command_workspace_home.as_deref(),
+        );
+        let reason = crate::secrets::scan::scrub_field(
+            reason,
+            home.as_deref(),
+            &crate::session::read_held(),
+        );
+        cut_chars(&reason, MAX_APPEND_CHARS)
+    }
+
     fn compose(
         &self,
         fire: &Fire,
@@ -1140,8 +1162,7 @@ impl Engine {
                     Fail::TimedOut => (HookOutcome::TimedOut, "it timed out".to_owned()),
                 };
                 if point.gate && spec.on_failure == OnFailure::Block && !fire.ceiling {
-                    progress.blocked =
-                        Some((full.to_owned(), cut_chars(&reason, MAX_APPEND_CHARS)));
+                    progress.blocked = Some((full.to_owned(), self.block_reason(fire, &reason)));
                     return (outcome, true);
                 }
                 return (outcome, false);
@@ -1231,7 +1252,7 @@ impl Engine {
                 false,
             ),
             Reply::Block(reason) => {
-                let reason = cut_chars(&reason, MAX_APPEND_CHARS);
+                let reason = self.block_reason(fire, &reason);
                 progress.blocked = Some((full.to_owned(), reason.clone()));
                 (HookOutcome::Blocked { reason }, true)
             }
@@ -1390,6 +1411,7 @@ impl Engine {
                 refusal: None,
                 plugins: None,
                 command_workspace_home: None,
+                scrub_compaction_failure: false,
             };
             let mut progress = Progress::default();
             self.fire_unboxed(fire, &mut progress).await;
@@ -1425,7 +1447,10 @@ impl Engine {
         caller: Caller,
         workspace_home: Option<PathBuf>,
     ) -> BoxFuture<'static, Result<Reply, Fail>> {
-        let host = if matches!(&payload, Payload::Hook(Event::Command(_))) {
+        let host = if matches!(
+            &payload,
+            Payload::Hook(Event::Command(_)) | Payload::HookCompactionFailure(_)
+        ) {
             self.host.clone()
         } else {
             None
@@ -1444,6 +1469,20 @@ impl Engine {
                 let hook = name.hook.clone();
                 let called = contain(|| match payload {
                     Payload::Hook(event) => plugin.on_hook(&hook, event),
+                    Payload::HookCompactionFailure(mut info) => {
+                        if let Some(message) = &mut info.failed {
+                            let home = crate::plugin::host::secret_check_home(
+                                host.as_deref(),
+                                workspace_home.as_deref(),
+                            );
+                            crate::session::scrub_hook_failure(
+                                message,
+                                home.as_deref(),
+                                &crate::session::read_held(),
+                            );
+                        }
+                        plugin.on_hook(&hook, Event::AfterCompact(info))
+                    }
                     Payload::Tree(event) => plugin
                         .on_agent_hook(&hook, event)
                         .map(|()| Reply::None)

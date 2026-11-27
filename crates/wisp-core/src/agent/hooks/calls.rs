@@ -5,7 +5,8 @@ use wisp_protocol::{AgentEvent, ClientCommand, HookChange, NotRunReason, ToolOut
 
 use super::super::{Agent, Finished, not_run_text};
 use crate::plugin::hooks::points::{AFTER_TOOL, BEFORE_TOOL};
-use crate::plugin::hooks::{Fire, What};
+use crate::plugin::hooks::{BLOCKED_BY, Fire, What};
+use crate::secrets::scan::scrub_field;
 use crate::tool::Prepared;
 
 pub(in crate::agent) enum Before {
@@ -25,7 +26,7 @@ fn as_text(input: &Value) -> String {
 }
 
 pub(in crate::agent) fn blocked_text(hook: &str, reason: &str) -> String {
-    format!("Blocked by {hook}: {reason}")
+    format!("{BLOCKED_BY}{hook}: {reason}")
 }
 
 impl Agent {
@@ -58,6 +59,8 @@ impl Agent {
             return Before::Settled(Finished::synthetic(ToolOutcome::NotRun { reason }, text));
         }
         if let Some((hook, reason)) = progress.blocked {
+            let home = self.secret_check_home();
+            let reason = scrub_field(&reason, home.as_deref(), &crate::session::read_held());
             let message = blocked_text(&hook, &reason);
             let outcome = ToolOutcome::Failed {
                 message: message.clone(),
@@ -65,6 +68,7 @@ impl Agent {
             };
             let mut finished = Finished::synthetic(outcome, message.clone());
             finished.result = Some(message);
+            finished.hook_blocked = true;
             return Before::Settled(finished);
         }
         let Some(last) = progress.changes.last().map(|c| c.hook.clone()) else {

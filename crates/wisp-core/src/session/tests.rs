@@ -966,6 +966,10 @@ fn redactions_scrub_every_string_but_the_conversation() {
             if let Some(serde_json::Value::Object(detail)) = detail {
                 assert_eq!(detail.remove("limit_reached").unwrap()["label"], REDACTED);
             }
+            assert!(
+                !serde_json::to_string(&expected).unwrap().contains(secret),
+                "{kind}"
+            );
             assert_eq!(registered_log.record(event.clone()), None, "{kind}");
             let logged = registered_store.read("registered").unwrap().pop().unwrap();
             assert_eq!(
@@ -1309,6 +1313,40 @@ fn records_from_before_message_stamps_still_parse() {
     );
     let line = jsonl_line(&records[1]).unwrap();
     assert!(!line.contains("stamp"), "{line}");
+}
+
+#[test]
+fn redacting_colliding_json_keys_keeps_nested_values_and_is_idempotent() {
+    let redactions = Redactions::new([
+        "CANARYJsonKeyOne".into(),
+        "CANARYJsonKeyTwo".into(),
+        " (2)".into(),
+    ]);
+    let mut value = json!({"outer": [{
+        "CANARYJsonKeyOne": 1,
+        "CANARYJsonKeyTwo": 2,
+        (REDACTED): "literal",
+        "[redacted] (3)": "already present"
+    }]});
+    let expected = json!({"outer": [{
+        (REDACTED): "literal",
+        "[redacted] (3)": "already present",
+        "[redacted] (4)": 1,
+        "[redacted] (5)": 2
+    }]});
+    for _ in 0..2 {
+        redactions.scrub_value(&mut value);
+        assert_eq!(value, expected);
+    }
+    let mut nested = json!({"outer": ["prefix CANARYJsonKeyOne", 42]});
+    let overlapping = Redactions::new(["CANARYJsonKeyOne".into(), "redact".into()]);
+    for _ in 0..2 {
+        overlapping.scrub_value(&mut nested);
+        assert_eq!(nested, json!({"outer": [REDACTED, 42]}));
+    }
+    let mut no_safe_key = json!({"outer": {"CANARYJsonKeyOne": 1, (REDACTED): 2}});
+    Redactions::new(["CANARYJsonKeyOne".into(), "redacted".into()]).scrub_value(&mut no_safe_key);
+    assert_eq!(no_safe_key, json!({"outer": REDACTED}));
 }
 
 #[test]

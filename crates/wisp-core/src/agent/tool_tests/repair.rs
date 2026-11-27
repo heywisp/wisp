@@ -185,6 +185,85 @@ async fn a_crash_during_the_second_of_three_calls_closes_the_turn() {
 }
 
 #[tokio::test]
+async fn repair_scrubs_saved_and_reconstructed_hook_blocks_before_first_commit() {
+    use crate::session::{Redactions, held, register};
+
+    let env = Env::new("repair-hook-blocks");
+    let calls = ["c1", "c2", "c3", "c4"].map(|id| call(id, "echo", json!({"text": "original"})));
+    let (saved, _) = live_turn(&env, calls.into()).await;
+    let mut cut = before(&saved, |event| {
+        matches!(event, LogEvent::MessageCommitted { message, .. }
+        if message.content.iter().any(|block| matches!(block, LoggedBlock::ToolResult { .. })))
+    });
+    let key = "sk-CANARYLegacyBlockedRepair1234567890";
+    let mail = ["CANARYlegacy-repair", "example.invalid"].join("@");
+    let held_key = "CANARYOpaqueHeldOnlyBlockedRepair";
+    let ordinary = format!("Blocked by aa/g: {mail}");
+    for record in &mut cut {
+        if let LogEvent::ToolCallFinished {
+            call_id,
+            outcome,
+            result,
+            notes,
+            ..
+        } = &mut record.event
+        {
+            let blocked = |reason: &str| format!("Blocked by aa/g: {reason}");
+            let (message, saved) = match call_id.as_str() {
+                "c1" => (
+                    "older outcome without block wording".into(),
+                    Some(blocked(key)),
+                ),
+                "c2" => (blocked(&mail), None),
+                "c3" => (blocked(held_key), Some(blocked(held_key))),
+                _ => {
+                    *result = Some(ordinary.clone());
+                    continue;
+                }
+            };
+            *outcome = ToolOutcome::Failed {
+                message,
+                before_start: true,
+            };
+            *result = saved;
+            *notes = None;
+        }
+    }
+    let mut resumed = Resumed::new(&env, &cut);
+    register(&Redactions::held_only([held_key.to_owned()]));
+    assert_eq!(held().mask(held_key), held_key);
+    let written = resumed.next().await;
+    let clean = "Blocked by aa/g: [redacted]";
+    let expected = [
+        ("c1".to_owned(), clean.to_owned(), true),
+        ("c2".to_owned(), clean.to_owned(), true),
+        ("c3".to_owned(), clean.to_owned(), true),
+        ("c4".to_owned(), ordinary, false),
+    ];
+    assert_eq!(resumed.sent_results(), expected);
+    let committed = written
+        .iter()
+        .find_map(|event| match event {
+            LogEvent::MessageCommitted {
+                turn: 1, message, ..
+            } if message
+                .content
+                .iter()
+                .any(|block| matches!(block, LoggedBlock::ToolResult { .. })) =>
+            {
+                message.inline()
+            }
+            _ => None,
+        })
+        .unwrap();
+    let committed = results(&committed)
+        .into_iter()
+        .map(|(id, text, error)| (id.to_owned(), text.to_owned(), error))
+        .collect::<Vec<_>>();
+    assert_eq!(committed, expected);
+}
+
+#[tokio::test]
 async fn a_crash_right_after_the_reply_was_saved_runs_none_of_its_calls() {
     let env = Env::new("repair-none");
     let (records, _) = live_turn(&env, three_calls()).await;

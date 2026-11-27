@@ -13,6 +13,9 @@ use super::sections::Limits;
 use crate::plugin::caller::Caller;
 use crate::plugin::panicked;
 
+pub(crate) const STRATEGY_REFUSED: &str =
+    " strategy refused the summary, so Wisp kept the conversation as it was: ";
+
 pub const STRATEGY_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub const MAX_STRATEGY_BYTES: usize = 64 * 1024;

@@ -11,3 +11,5 @@ pub use engine::{
     What,
 };
 pub use resolve::Name;
+
+pub(crate) const BLOCKED_BY: &str = "Blocked by ";

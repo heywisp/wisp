@@ -21,6 +21,158 @@ fn records(events: Vec<LogEvent>) -> Vec<LogRecord> {
         .collect()
 }
 
+#[test]
+fn replay_scrubs_legacy_hook_block_messages_and_results_independently() {
+    let email = ["CANARYlegacy", "example.invalid"].join("@");
+    let finished = |message: String, result: Option<String>| {
+        let mut event = AgentEvent::call_finished(
+            "c1",
+            wisp_protocol::ToolOutcome::Failed {
+                message,
+                before_start: true,
+            },
+        );
+        if let AgentEvent::ToolCallFinished { result: slot, .. } = &mut event {
+            *slot = result;
+        }
+        event
+    };
+    let blocked = format!("Blocked by aa/h: {email}");
+    let without_result = finished(blocked.clone(), None);
+    let with_result = finished("failed".into(), Some(blocked));
+    let logs = records(
+        [without_result, with_result]
+            .iter()
+            .map(|event| crate::session::mirror::log_record(event, Some(1)).unwrap())
+            .collect(),
+    );
+    let events = transcript(&logs, &Toolbox::default(), None);
+    let clean = "Blocked by aa/h: [redacted]".to_owned();
+    assert!(events.contains(&finished(clean.clone(), None)));
+    assert!(events.contains(&finished("failed".into(), Some(clean))));
+    assert!(serde_json::to_string(&logs).unwrap().contains(&email));
+}
+
+#[test]
+fn replay_scrubs_terminal_compaction_refusals_even_without_a_visible_failure() {
+    use wisp_protocol::{SessionView, link::ToClient};
+
+    let raw = ["CANARYterminal", "example.invalid"].join("@");
+    let blocked = format!("Blocked by aa/g: {raw}");
+    let strategy = format!(
+        "The aa strategy refused the summary, so Wisp kept the conversation as it was: {raw}"
+    );
+    let compaction = |turn, kind, message: &str| {
+        serde_json::from_value::<LogEvent>(json!({
+            "type": "compaction_failed", "turn": turn, "trigger": "auto", "kind": kind, "message": message
+        })).unwrap()
+    };
+    let end = |turn, error_kind, given: &str| {
+        let mut event = failed(turn, None);
+        if let LogEvent::TurnEnded {
+            outcome: TurnOutcome::Error { kind, message, .. },
+            ..
+        } = &mut event
+        {
+            *kind = error_kind;
+            *message = given.to_owned();
+        }
+        event
+    };
+    let check = |turn, given: &str| end(turn, ErrorKind::InvalidResponse, given);
+    let older = "CANARYOpaqueCredentialBefore";
+    let newer = "CANARYOpaqueCredentialAfter";
+    let late_at_open = "CANARYOpaqueLegacyLinkSecretNowKnown";
+    let old = Redactions::new([older.to_owned()]);
+    let newer_registry = Redactions::new([older.to_owned(), newer.to_owned()]);
+    let both = format!("{older} joining {newer}");
+    let merged_registry = Redactions::new([older.to_owned(), newer.to_owned(), both.clone()]);
+    let mixed = format!("{older} {raw}");
+    let later_mixed = old.scrub(&mixed);
+    assert_eq!(later_mixed, format!("{REDACTED} {raw}"));
+    let with_existing = format!("start {both}; then {newer}; end {raw}");
+    let earlier_existing = old.scrub(&with_existing);
+    let later_existing = merged_registry.scrub(&with_existing);
+    assert_eq!(
+        later_existing,
+        format!("start {REDACTED}; then {REDACTED}; end {raw}")
+    );
+    let late = format!("{older} {late_at_open}");
+    let late_terminal = old.scrub(&late);
+    let proxy = format!("Blocked by gateway: {raw}");
+    let unrelated = format!("start {REDACTED}; now {raw}");
+    let logs = records(vec![
+        compaction(1, "blocked", &blocked),
+        end(1, ErrorKind::Other, &blocked),
+        compaction(2, "check_failed", &strategy),
+        check(2, &strategy),
+        compaction(3, "check_failed", &raw),
+        check(3, &raw),
+        compaction(4, "check_failed", &mixed),
+        check(4, &later_mixed),
+        compaction(5, "check_failed", &earlier_existing),
+        check(5, &later_existing),
+        compaction(6, "check_failed", older),
+        check(6, &newer_registry.scrub(older)),
+        compaction(7, "check_failed", &late),
+        check(7, &late_terminal),
+        check(8, &later_mixed),
+        end(9, ErrorKind::Auth, &proxy),
+        check(10, &proxy),
+        compaction(11, "check_failed", &mixed),
+        end(11, ErrorKind::Auth, &later_mixed),
+        compaction(12, "check_failed", &earlier_existing),
+        check(12, &unrelated),
+        end(13, ErrorKind::Auth, &blocked),
+    ]);
+    let original = serde_json::to_string(&logs).unwrap();
+    let shown = transcript(&logs, &Toolbox::default(), None);
+    assert!(
+        shown
+            .iter()
+            .all(|event| matches!(event, AgentEvent::TurnEnded { .. }))
+    );
+    let messages = |events: &[AgentEvent]| pick!(events, AgentEvent::TurnEnded { outcome: TurnOutcome::Error { message, .. }, .. } => message.clone());
+    let mut expected = vec![
+        "Blocked by aa/g: [redacted]".to_owned(),
+        "The aa strategy refused the summary, so Wisp kept the conversation as it was: [redacted]"
+            .to_owned(),
+        "Compaction stopped: [redacted]".to_owned(),
+        "Compaction stopped: [redacted]".to_owned(),
+        "Compaction stopped: [redacted]".to_owned(),
+        REDACTED.to_owned(),
+        format!("Compaction stopped: {late_terminal}"),
+        later_mixed.clone(),
+        proxy.clone(),
+        proxy,
+        later_mixed,
+        unrelated,
+        blocked,
+    ];
+    assert_eq!(messages(&shown), expected);
+    let opening = serde_json::from_str(include_str!(
+        "../../../../wisp-protocol/tests/fixtures/opening.json"
+    ))
+    .unwrap();
+    let mut frames = [ToClient::Opened {
+        opening,
+        view: SessionView {
+            events: shown,
+            ..SessionView::default()
+        },
+        now: None,
+    }];
+    crate::session::register_secrets([late_at_open.to_owned()]);
+    expected[6] = "Compaction stopped: [redacted]".to_owned();
+    crate::agent::with_scrubbed_link_frames(&mut frames, None, |frames| {
+        let [ToClient::Opened { view, .. }] = frames else {
+            panic!("expected opening replay frame")
+        };
+        assert_eq!(messages(&view.events), expected);
+    });
+    assert_eq!(serde_json::to_string(&logs).unwrap(), original);
+}
+
 fn started(value: serde_json::Value) -> LogEvent {
     let mut value = value;
     value["type"] = json!("turn_started");

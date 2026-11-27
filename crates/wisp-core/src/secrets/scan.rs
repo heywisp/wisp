@@ -29,11 +29,7 @@ pub(crate) fn contains_secret_or_identity_with(
         || has_home_path(text, home)
 }
 
-pub(crate) fn scrub_todo_text(
-    raw: &str,
-    home: Option<&Path>,
-    held: &session::Redactions,
-) -> String {
+pub(crate) fn scrub_field(raw: &str, home: Option<&Path>, held: &session::Redactions) -> String {
     if raw == REDACTED || contains_secret_or_identity_with(raw, home, held) {
         return REDACTED.to_owned();
     }
@@ -54,9 +50,9 @@ pub(crate) fn scrub_todo_fields(
     home: Option<&Path>,
     held: &session::Redactions,
 ) {
-    *text = scrub_todo_text(text, home, held);
+    *text = scrub_field(text, home, held);
     if let Some(section) = section {
-        *section = scrub_todo_text(section, home, held);
+        *section = scrub_field(section, home, held);
     }
 }
 

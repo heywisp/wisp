@@ -44,7 +44,11 @@ pub(super) enum Busy {
 
 #[derive(Debug, Clone)]
 pub(super) enum Deferred {
-    Point { point: &'static str, event: Event },
+    Point {
+        point: &'static str,
+        event: Event,
+        hook_failure: bool,
+    },
     Command(Asked),
 }
 
@@ -395,7 +399,7 @@ impl Agent {
 
     async fn await_hooks_unboxed(
         &mut self,
-        fire: Fire,
+        mut fire: Fire,
         commands: &mut mpsc::Receiver<ClientCommand>,
         events: &mpsc::Sender<AgentEvent>,
         mode: Mode,
@@ -410,6 +414,7 @@ impl Agent {
             }
             return (progress, false);
         }
+        self.prepare_gate_home(&mut fire);
         let point = fire.point.clone();
         let at = fire.at.clone();
         let cancel = fire.cancel.clone();
@@ -474,6 +479,7 @@ impl Agent {
             return progress;
         }
         fire.budget = Some(tokio::time::Instant::now() + OUTSIDE_BUDGET);
+        self.prepare_gate_home(&mut fire);
         let point = fire.point.clone();
         let at = fire.at.clone();
         let processes = self.processes.clone();
@@ -497,6 +503,17 @@ impl Agent {
         self.end_run(&engine, &mut progress, point, at, events)
             .await;
         progress
+    }
+
+    fn prepare_gate_home(&self, fire: &mut Fire) {
+        if fire.command_workspace_home.is_none()
+            && crate::plugin::hooks::points::core(&fire.point).is_some_and(|point| point.gate)
+        {
+            fire.command_workspace_home = self
+                .tools
+                .as_ref()
+                .and_then(|env| env.workspace.home.clone());
+        }
     }
 
     async fn end_run(
@@ -710,19 +727,25 @@ impl Agent {
     }
 
     pub(super) fn defer(&mut self, point: &'static str, event: Event) {
+        self.defer_point(point, event, false);
+    }
+
+    pub(super) fn defer_point(&mut self, point: &'static str, event: Event, hook_failure: bool) {
         if self.hooks.busy_with.is_none() {
             self.reach(point, false);
         } else if !self.is_child() {
             self.hooks.held_points.insert(point.to_owned());
         }
         if self.hooks.engine.attached(point) {
-            self.hooks
-                .deferred
-                .push_back(Deferred::Point { point, event });
+            self.hooks.deferred.push_back(Deferred::Point {
+                point,
+                event,
+                hook_failure,
+            });
         }
     }
 
-    pub(super) fn after_compact(&self, record: &LogEvent) -> Option<Event> {
+    pub(super) fn after_compact(&self, record: &LogEvent) -> Option<(Event, bool)> {
         let info = match record {
             LogEvent::ContextCompacted {
                 epoch,
@@ -770,7 +793,9 @@ impl Agent {
             }
             _ => None,
         };
-        info.map(Event::AfterCompact)
+        let hook_failure = matches!(record, LogEvent::CompactionFailed { kind, .. }
+            if crate::session::hook_compaction_error_kind(kind).is_some());
+        info.map(|info| (Event::AfterCompact(info), hook_failure))
     }
 
     pub(super) fn defer_settings_changed(&mut self, names: Vec<String>) {
@@ -800,10 +825,11 @@ impl Agent {
         }
     }
 
-    fn deferred_fire(&self, point: &str, event: Event, at: At) -> Fire {
+    fn deferred_fire(&self, point: &str, event: Event, at: At, hook_failure: bool) -> Fire {
         let command = matches!(event, Event::Command(_));
         let mut fire = Fire::new(point, What::Event(event), at);
-        if command {
+        fire.scrub_compaction_failure = hook_failure;
+        if command || hook_failure {
             fire.command_workspace_home = self
                 .tools
                 .as_ref()
@@ -824,9 +850,13 @@ impl Agent {
                     break;
                 };
                 match deferred {
-                    Deferred::Point { point, event } => {
+                    Deferred::Point {
+                        point,
+                        event,
+                        hook_failure,
+                    } => {
                         let at = self.at(None, None);
-                        let fire = self.deferred_fire(point, event, at);
+                        let fire = self.deferred_fire(point, event, at, hook_failure);
                         self.await_hooks(fire, commands, events).await;
                     }
                     Deferred::Command(asked) => self.enter_lane(asked, events).await,
@@ -847,8 +877,12 @@ impl Agent {
                     break;
                 };
                 match deferred {
-                    Deferred::Point { point, event } => {
-                        let fire = self.deferred_fire(point, event, At::default());
+                    Deferred::Point {
+                        point,
+                        event,
+                        hook_failure,
+                    } => {
+                        let fire = self.deferred_fire(point, event, At::default(), hook_failure);
                         self.await_outside(fire, events).await;
                     }
                     Deferred::Command(asked) => self.enter_lane(asked, events).await,

@@ -136,14 +136,21 @@ async fn a_blocked_call_gets_one_failed_result_and_never_runs() {
     let provider = scripted(vec![uses(&[echo("c1", "A")]), done("ok")]);
     let calls = Calls::default();
     let after = Calls::default();
-    let mut sources = one("before-tool", replying(Reply::Block("no".into())), &calls);
+    let cap = crate::plugin::hooks::points::MAX_APPEND_CHARS;
+    let reason = format!(
+        "{}{}",
+        "x ".repeat(cap / 2),
+        ["CANARYhookblock", "example.invalid"].join("@")
+    );
+    let mut sources = one("before-tool", replying(Reply::Block(reason)), &calls);
     sources.push(hook_source(
         "bb",
         &hook_body("seen", "after-tool", ""),
         replying(Reply::None),
         &after,
     ));
-    let mut agent = hooked(provider.clone(), &env, sources);
+    let store = MemoryStore::default();
+    let mut agent = with_test_hooks(logged(provider.clone(), &env, &store), sources);
     let (outcome, events) = turn(&mut agent, "go").await;
     assert!(
         matches!(outcome, TurnOutcome::Completed { .. }),
@@ -156,17 +163,100 @@ async fn a_blocked_call_gets_one_failed_result_and_never_runs() {
         [(
             "c1".to_owned(),
             ToolOutcome::Failed {
-                message: "Blocked by aa/h: no".into(),
+                message: "Blocked by aa/h: [redacted]".into(),
                 before_start: true,
             }
         )]
     );
     assert_eq!(
         last_results(&provider),
-        [("c1".to_owned(), "Blocked by aa/h: no".to_owned(), true)]
+        [(
+            "c1".to_owned(),
+            "Blocked by aa/h: [redacted]".to_owned(),
+            true
+        )]
     );
+    assert!(events.iter().any(|event| matches!(event, AgentEvent::HookRan { outcome: wisp_protocol::HookOutcome::Blocked { reason }, .. } if reason == crate::session::REDACTED)));
+    assert!(store.read("s1").unwrap().iter().any(|record| matches!(&record.event,
+        LogEvent::ToolCallFinished { result: Some(result), .. } if result == "Blocked by aa/h: [redacted]")));
     assert!(applied(&events).is_empty());
     assert_eq!(after.count("seen"), 0);
+}
+
+#[tokio::test]
+async fn a_late_hook_block_secret_stays_out_of_the_first_tool_result_commit() {
+    use crate::session::{Redactions, register};
+
+    let canary = "CANARYOpaqueLateBlockResultSecret";
+    let env = Env::new("hook-block-pending-result");
+    let provider = scripted(vec![
+        uses(&[echo("c1", "one"), echo("c2", "ordinary")]),
+        done("ok"),
+    ]);
+    let calls = Calls::default();
+    let block_first: HookScript = Arc::new(move |_, _, event| {
+        let reply = match event {
+            Event::BeforeTool(call) if call.call_id == "c1" => Reply::Block(canary.to_owned()),
+            _ => Reply::None,
+        };
+        Box::pin(async move { reply })
+    });
+    let store = MemoryStore::default();
+    let mut agent = with_test_hooks(
+        logged(provider.clone(), &env, &store),
+        one("before-tool", block_first, &calls),
+    );
+    let (_cmd, mut commands) = mpsc::channel(1);
+    let (tx, mut rx) = mpsc::channel(1);
+    let mut run = std::pin::pin!(agent.run_turn("go".into(), &mut commands, &tx));
+    let mut events = Vec::new();
+    within("the blocked call waiting to publish", async {
+        loop {
+            assert!(futures::poll!(run.as_mut()).is_pending());
+            if log_events(&store).iter().any(|event| {
+                matches!(event, LogEvent::ToolCallFinished {
+                call_id, result: Some(result), ..
+            } if call_id == "c1" && result.ends_with(canary))
+            }) {
+                assert_eq!(tx.capacity(), 0);
+                break;
+            }
+            if let Ok(event) = rx.try_recv() {
+                events.push(event);
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    register(&Redactions::held_only([canary.to_owned()]));
+    let outcome = within("the blocked call's turn", async {
+        loop {
+            tokio::select! {
+                outcome = &mut run => break outcome,
+                Some(event) = rx.recv() => events.push(event),
+            }
+        }
+    })
+    .await;
+    assert!(matches!(outcome, Some(TurnOutcome::Completed { .. })));
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
+    let clean = "Blocked by aa/h: [redacted]";
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, AgentEvent::ToolCallFinished {
+        call_id, outcome: ToolOutcome::Failed { message, .. }, result: Some(result), ..
+    } if call_id == "c1" && message == clean && result == clean))
+    );
+    let committed = pick!(log_events(&store), LogEvent::MessageCommitted { message, .. } => serde_json::to_string(&message).unwrap());
+    assert!(committed.iter().any(|message| message.contains(clean)));
+    assert!(committed.iter().all(|message| !message.contains(canary)));
+    let body = &provider.texts()[1];
+    assert!(body.contains(clean) && !body.contains(canary));
+    assert_eq!(last_results(&provider).len(), 2);
+    assert!(!last_results(&provider)[1].2);
 }
 
 #[tokio::test]
@@ -250,6 +340,62 @@ async fn a_rewritten_input_runs_while_the_models_tool_use_stays_as_sent() {
     let history = serde_json::to_string(&*agent.history()).unwrap();
     assert!(history.contains(r#""input":{"text":"A"}"#));
     assert!(!history.contains(r#""input":{"text":"B"}"#));
+}
+
+#[tokio::test]
+async fn hook_input_audit_scrubs_unregistered_nested_keys_and_values_without_changing_the_call() {
+    use crate::session::REDACTED;
+
+    let env = Env::new("hook-input-privacy");
+    let provider = scripted(vec![uses(&[echo("c1", "A")]), done("ok")]);
+    let store = MemoryStore::default();
+    let calls = Calls::default();
+    let key = "sk-CANARYHookAuditFake1234567890";
+    let email = ["CANARYhook", "example.invalid"].join("@");
+    let path = env.root.join("CANARY-private");
+    let nested = json!({"text": [{(key): key, (email.clone()): email, (path.display().to_string()): path, (REDACTED): "literal"}]});
+    let sources = [
+        hook_source(
+            "aa",
+            &hook_body("h", "before-tool", ""),
+            replying(Reply::Rewrite(nested.to_string())),
+            &calls,
+        ),
+        hook_source(
+            "bb",
+            &hook_body("h", "before-tool", ""),
+            rewrite_text(key),
+            &calls,
+        ),
+    ];
+    let mut agent = with_test_hooks(logged(provider.clone(), &env, &store), sources.into());
+    let (_, events) = turn(&mut agent, "go").await;
+    let redacted = json!({"text": [{(REDACTED): "literal", "[redacted] (2)": REDACTED,
+        "[redacted] (3)": REDACTED, "[redacted] (4)": REDACTED}]});
+    assert_eq!(
+        applied(&events),
+        [
+            (
+                "aa/h".into(),
+                HookChange::Input {
+                    before: json!({"text": "A"}),
+                    after: redacted.clone()
+                }
+            ),
+            (
+                "bb/h".into(),
+                HookChange::Input {
+                    before: redacted.clone(),
+                    after: json!({"text": REDACTED})
+                }
+            ),
+        ]
+    );
+    let records = store.read("s1").unwrap();
+    let logged = pick!(records, LogRecord { event: LogEvent::HookApplied { hook, change, .. }, .. } => (hook.clone(), change.clone()));
+    assert_eq!(logged, applied(&events));
+    assert!(last_results(&provider)[0].1.contains(key));
+    assert!(provider.texts()[1].contains(r#""input":{"text":"A"}"#));
 }
 
 #[tokio::test]

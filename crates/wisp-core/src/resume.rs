@@ -43,6 +43,7 @@ pub use recover::{
     FellBack, LAYOUT_PLACEHOLDER, Lost, Providers, Recovered, carried, cut, ended_records,
     image_note, lookup_records, lost_notes, recover, turn_of, turns_seen, with_notes,
 };
+pub(crate) use repair::repair_calls_with_hooks;
 pub use repair::{
     Context as RepairContext, NOT_RUN, RepairedCall, UNKNOWN, recovered_text, repair_calls,
 };

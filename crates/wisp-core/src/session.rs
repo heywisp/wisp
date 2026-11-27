@@ -18,6 +18,11 @@ use wisp_protocol::{BlobRef, ImageType, MediaSource, Mime, valid_id};
 
 mod redaction;
 
+pub(crate) use redaction::{
+    HookAudit, agent_hook_audit, compaction_terminal_message, hook_blocked_tool_fields,
+    hook_compaction_error_kind, log_hook_audit, scrub_hook_failure, turn_hook_audit,
+};
+
 use crate::runtime::in_parallel;
 use crate::secrets::scan::is_token_char;
 
@@ -2031,22 +2036,72 @@ impl Redactions {
     }
 
     pub(crate) fn scrub_value(&self, value: &mut serde_json::Value) {
-        match value {
-            serde_json::Value::String(s) => *s = self.scrub(s),
-            serde_json::Value::Array(items) => items.iter_mut().for_each(|v| self.scrub_value(v)),
-            serde_json::Value::Object(map) => map.values_mut().for_each(|v| self.scrub_value(v)),
-            _ => {}
-        }
+        scrub_json_strings(value, &|text| {
+            let clean = self.scrub(text);
+            if clean != text && self.scrub(&clean) != clean {
+                REDACTED.to_owned()
+            } else {
+                clean
+            }
+        });
     }
 
+    #[cfg(test)]
     fn scrub_event(&self, event: LogEvent) -> LogEvent {
-        redaction::scrub(self, event)
+        redaction::scrub(self, event, None)
     }
 }
 
 impl std::fmt::Debug for Redactions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Redactions({} items)", self.0.len())
+    }
+}
+
+pub(crate) fn scrub_json_strings(value: &mut serde_json::Value, scrub: &impl Fn(&str) -> String) {
+    use serde_json::Value;
+
+    match value {
+        Value::String(text) if text != REDACTED => *text = scrub(text),
+        Value::Array(items) => {
+            for item in items {
+                scrub_json_strings(item, scrub);
+            }
+        }
+        Value::Object(map) => {
+            let mut renamed = Vec::new();
+            map.retain(|key, item| {
+                scrub_json_strings(item, scrub);
+                if key == REDACTED {
+                    return true;
+                }
+                let clean = scrub(key);
+                if clean == *key {
+                    return true;
+                }
+                renamed.push((clean, item.take()));
+                false
+            });
+            let max_suffix = map.len() + renamed.len() + 1;
+            let mut next_suffix = BTreeMap::new();
+            for (stem, item) in renamed {
+                if !map.contains_key(&stem) {
+                    map.insert(stem, item);
+                    continue;
+                }
+                let next = next_suffix.entry(stem.clone()).or_insert(2);
+                let Some((suffix, key)) = (*next..=max_suffix).find_map(|suffix| {
+                    let key = format!("{stem} ({suffix})");
+                    (!map.contains_key(&key) && scrub(&key) == key).then_some((suffix, key))
+                }) else {
+                    *value = Value::String(REDACTED.to_owned());
+                    return;
+                };
+                *next = suffix + 1;
+                map.insert(key, item);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -2109,10 +2164,18 @@ impl SessionLog {
     }
 
     pub fn record(&mut self, event: LogEvent) -> Option<String> {
+        self.record_with_home(event, None)
+    }
+
+    pub(crate) fn record_with_home(
+        &mut self,
+        event: LogEvent,
+        home: Option<&Path>,
+    ) -> Option<String> {
         if self.failed {
             return None;
         }
-        let event = held().scrub_event(event);
+        let event = redaction::scrub(&held(), event, home);
         let record = LogRecord {
             schema_version: LOG_SCHEMA_VERSION,
             seq: self.seq,
