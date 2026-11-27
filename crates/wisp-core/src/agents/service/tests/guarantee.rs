@@ -474,6 +474,7 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
         "guarantee-moved",
         Setup {
             endpoints: vec![
+                subscription("root"),
                 subscription("first"),
                 openai("spare", wisp_protocol::Billing::Metered),
                 subscription("second"),
@@ -489,7 +490,7 @@ async fn a_used_up_child_moves_to_its_first_choice_with_room_and_tells_its_paren
             ("first:/worker", failing(&gates[0], now, now + 3600)),
             ("spare:/worker", failing(&gates[1], now, now + 7200)),
             ("first:/unheld", failing(&gates[2], now, now + 3600)),
-            ("first:/", vec![done("noted"); 2]),
+            ("root:/", vec![done("noted"); 2]),
         ],
     )
     .await;

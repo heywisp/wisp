@@ -3583,7 +3583,9 @@ async fn a_resumed_child_moves_by_the_choices_in_its_spawn_record() {
     let now = 1_800_000_000;
     let clock = Arc::new(ShiftedClock::at(Timestamp::from_second(now).unwrap(), None));
     let setup = |cache: &PlanUsageCache| Setup {
-        endpoints: ["first", "second", "third"].map(subscription).into(),
+        endpoints: ["root", "first", "second", "third"]
+            .map(subscription)
+            .into(),
         clock: Some(clock.clone()),
         plan_usage: cache.clone(),
         preset_config: Some(
@@ -3607,7 +3609,7 @@ async fn a_resumed_child_moves_by_the_choices_in_its_spawn_record() {
             ("first:/a", failing(&gate, now, now + 3600)),
             ("third:/a", vec![uses(&[report_call("r1", "a done")])]),
             ("third:/b", vec![uses(&[report_call("r2", "b done")])]),
-            ("first:/", vec![done("noted"); 4]),
+            ("root:/", vec![done("noted"); 4]),
         ],
     )
     .await;
@@ -3630,7 +3632,7 @@ async fn a_resumed_child_moves_by_the_choices_in_its_spawn_record() {
         setup(&cache),
         vec![
             (
-                "first:/",
+                "root:/",
                 vec![
                     uses(&[send_call("m1", "b", "Again.")]),
                     done("sent"),

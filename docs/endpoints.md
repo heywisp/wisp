@@ -1291,6 +1291,13 @@ Gemini subscription quota refusals use the body's retry delay or quota reset tim
 or stop without a reset when the provider says `QUOTA_EXHAUSTED`. A short retry
 stays a retry. The chat holds used-up limits until their reset, or for 15 minutes
 without one: Gemini's applies to the request's model, OpenAI's to the whole account.
+A later request on a covered model clears the hold if it starts after the refusal
+and completes successfully. A local usage lookup started after the refusal also
+clears the hold if the account is not reported limited and the lookup itself
+returns fresh windows for that exact scope, all newer than the refusal and below
+100%. The merged reading must still confirm room for that scope.
+An all-models summary never clears a model-specific hold, and readings from the
+shared disk cache never clear holds. A new refusal sets the hold again.
 An unnamed Anthropic subscription 429 with a long retry delay does not identify a usage limit: it guards only the sent model until its retry time, unless a later request on that account and model completes successfully or a fresh, confirmed usage reading taken after the refusal shows room in every window covering that model; a renewed refusal sets the guard again. A fresh used-up reading blocks the models its window covers independently; Anthropic family windows apply only through shipped `weekly_limits`.
 The refusal shows the retry time, then the model's own used-up reading and its separate reset when that account binding has confirmed one. Signing in again clears holds; other chats learn independently.
 An opt-in `--retry-budget USD` still stops a possibly billed retry when
