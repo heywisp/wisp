@@ -46,6 +46,20 @@ pub fn todo(item: wisp_plugin_api::host::Todo) -> TodoItem {
     }
 }
 
+pub fn todo_to_api(item: &TodoItem) -> wisp_plugin_api::host::Todo {
+    use wisp_plugin_api::host::{Todo, TodoStatus as Api};
+    Todo {
+        text: item.text.clone(),
+        status: match item.status {
+            TodoStatus::Pending => Api::Pending,
+            TodoStatus::InProgress => Api::InProgress,
+            TodoStatus::Completed => Api::Completed,
+            TodoStatus::Cancelled => Api::Cancelled,
+        },
+        section: item.section.clone(),
+    }
+}
+
 pub fn signal(kind: api::SignalKind) -> SignalKind {
     match kind {
         api::SignalKind::Interrupt => SignalKind::Interrupt,

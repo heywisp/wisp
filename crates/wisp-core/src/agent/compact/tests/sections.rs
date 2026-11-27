@@ -2,10 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use tokio::sync::Notify;
+use wisp_plugin_api::host::Todos as _;
+use wisp_plugin_api::manifest::Origin;
 use wisp_plugin_api::prompt::{At, Prior};
 use wisp_plugin_testkit::hooks::{self as kit, Calls, Knob, Section};
+use wisp_protocol::TodoStatus;
 use wisp_protocol::log::{LEAD_ENVIRONMENT, LogRecord, SectionSnapshot};
 
+use super::attachments::named_call;
 use super::auto::{LOW, no_retries};
 use super::background::{
     Landing, NEAR, POINT, WIDE_NEAR, WIDE_POINT, agent_with, background, discarded, extends,
@@ -14,11 +18,11 @@ use super::background::{
 use super::overflow::cut_off;
 use super::rewind::started_at;
 use super::*;
-use crate::plugin::testing::hook_body;
-use crate::plugin::{KernelHost, Make, PluginConfig, Registry};
+use crate::agent::testing::todo_item;
+use crate::plugin::testing::{hook_body, plugin_switch};
+use crate::plugin::{KernelHost, Make, PluginConfig, PluginHost, Registry, Source};
 
 const NOTES: &str = "bb/notes";
-const WISP: &str = "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n";
 
 #[derive(Default)]
 struct Gate {
@@ -224,11 +228,7 @@ async fn resumed_points_hold_what_the_log_held_before_each_turn() {
     assert!(matches!(done, AgentEvent::Compacted { .. }), "{done:?}");
     assert!(completed(&live.turn("u6", "six").await));
     assert!(completed(&live.turn("u7", "seven").await));
-    live.send(crate::agent::tool_tests::rewind(5, 8)).await;
-    let done = live
-        .until(|e| matches!(e, AgentEvent::Rewound { .. } | AgentEvent::Rejected { .. }))
-        .await;
-    assert!(matches!(done, AgentEvent::Rewound { .. }), "{done:?}");
+    rewind_to(&mut live, 5, 8).await;
     let done = live.compact(6, None).await;
     assert!(matches!(done, AgentEvent::Compacted { .. }), "{done:?}");
     assert!(completed(&live.turn("u8", "seven again").await));
@@ -687,12 +687,6 @@ async fn a_retry_replays_a_replay_hooks_entry_without_calling_it() {
     assert_rebuilds(&store, &agent);
 }
 
-fn bb_enabled() -> wisp_protocol::settings::SettingTarget {
-    wisp_protocol::settings::SettingTarget::Path(
-        wisp_protocol::settings::SitePath::plugin_switch("bb", "enabled").unwrap(),
-    )
-}
-
 fn bb_off_at_start() -> crate::settings::host::StartLayers {
     crate::settings::host::StartLayers {
         flags: vec![crate::settings::Given {
@@ -707,44 +701,16 @@ fn bb_off_at_start() -> crate::settings::host::StartLayers {
 }
 
 async fn switch_bb(live: &mut Live, on: bool, request: u64) {
-    live.send(ClientCommand::ChangeSettings {
-        request: RequestId(request),
-        changes: vec![SettingChange {
-            target: bb_enabled(),
-            value: Some(SettingValue::Bool(on)),
-        }],
-        save: false,
-    })
-    .await;
-    live.until(|e| {
-        matches!(
-            e,
-            AgentEvent::SettingsChanged {
-                answers: Some(RequestId(r)),
-                ..
-            } if *r == request
-        )
-    })
-    .await;
+    change_setting(live, plugin_switch(request, "bb", "enabled", on), request).await;
 }
 
 async fn effort_low(live: &mut Live) {
-    live.send(ClientCommand::ChangeSettings {
+    let command = ClientCommand::ChangeSettings {
         request: RequestId(70),
         changes: vec![SettingChange::named("effort", SettingValue::Text("low".into())).unwrap()],
         save: false,
-    })
-    .await;
-    live.until(|e| {
-        matches!(
-            e,
-            AgentEvent::SettingsChanged {
-                answers: Some(RequestId(70)),
-                ..
-            }
-        )
-    })
-    .await;
+    };
+    change_setting(live, command, 70).await;
 }
 
 #[tokio::test]
@@ -1021,14 +987,8 @@ async fn esc_in_a_converts_head_step_sends_nothing_more_and_cancels_the_turn() {
 }
 
 fn with_lines(agent: Agent, lines: &[&str]) -> Agent {
-    let dir = std::env::temp_dir();
-    let workspace = crate::workspace::Workspace {
-        root: dir.clone(),
-        home: None,
-        temp: dir,
-    };
     agent
-        .with_tools(crate::tool::testkit::toolbox(&["echo"]), workspace)
+        .with_tools(crate::tool::testkit::toolbox(&["echo"]), temp_workspace())
         .with_platform("Linux")
         .with_resources(None)
         .with_agents(
@@ -1444,27 +1404,7 @@ async fn esc_in_a_resumes_refresh_cancels_the_render_and_the_session_goes_on() {
 }
 
 async fn switch_workspace(live: &mut Live, key: &str, on: bool, request: u64) {
-    live.send(crate::plugin::testing::plugin_switch(
-        request,
-        "workspace",
-        key,
-        on,
-    ))
-    .await;
-    let done = live
-        .until(|e| {
-            matches!(
-                e,
-                AgentEvent::SettingsChanged { answers: Some(RequestId(r)), .. }
-                    | AgentEvent::Rejected { request: Some(RequestId(r)), .. }
-                    if *r == request
-            )
-        })
-        .await;
-    assert!(
-        matches!(done, AgentEvent::SettingsChanged { .. }),
-        "{done:?}"
-    );
+    change_setting(live, plugin_switch(request, "workspace", key, on), request).await;
 }
 
 fn environments_in(body: &Value) -> usize {
@@ -1776,15 +1716,7 @@ async fn a_resume_and_a_rewind_restore_the_seen_size_without_sending_it_again() 
     live.send(terminal(80, 24)).await;
     assert!(completed(&live.turn("u2", "second").await));
     live.send(terminal(121, 40)).await;
-    live.send(ClientCommand::Rewind {
-        to: wisp_protocol::RewindPoint::Turn { turn: 2 },
-        request: RequestId(7),
-    })
-    .await;
-    let done = live
-        .until(|e| matches!(e, AgentEvent::Rewound { .. } | AgentEvent::Rejected { .. }))
-        .await;
-    assert!(matches!(done, AgentEvent::Rewound { .. }), "{done:?}");
+    rewind_to(&mut live, 7, 2).await;
     assert!(completed(&live.turn("u2b", "second again").await));
     live.close().await;
     assert_eq!(terminal_lines(&provider.body(1)), [NARROW_LINE]);
@@ -1803,4 +1735,764 @@ async fn a_resume_and_a_rewind_restore_the_seen_size_without_sending_it_again() 
         "{}",
         provider.body(3)
     );
+}
+
+async fn with_todos(agent: Agent, extra: Option<Source>) -> Agent {
+    let sources = [Source::bundled(wisp_plugin_todos::bundled())]
+        .into_iter()
+        .chain(extra)
+        .collect();
+    let (registry, problems) = Registry::from_origins(sources, &PluginConfig::default());
+    assert!(problems.is_empty(), "{problems:?}");
+    let started = registry
+        .start(&registry.default_on(), Arc::new(KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+    agent
+        .with_clock(Arc::new(crate::clock::StillClock))
+        .with_hooks(started.hooks, started.host)
+        .with_catalog(started.catalog)
+        .with_tools(started.toolbox, temp_workspace())
+}
+
+async fn resume_todos(agent: Agent, store: &MemoryStore, extra: Option<Source>) -> Agent {
+    let records = store.read("s1").unwrap();
+    let log = SessionLog::continuing(Box::new(store.clone()), "s1", records.last().unwrap().seq);
+    with_todos(agent.with_log(log, log_context()), extra)
+        .await
+        .resume(&records, 0)
+        .unwrap()
+}
+
+fn checklist_host(agent: &Agent) -> PluginHost {
+    PluginHost::new("probe", "0.4.0", &[], agent.hooks.host.clone().unwrap())
+}
+
+const CHECKLIST: &str = "todos/checklist";
+const CHECKLIST_TAG: &str = "<checklist>";
+
+async fn compact_checklist(live: &mut Live, request: u64) {
+    let result = live.compact(request, None).await;
+    assert!(matches!(result, AgentEvent::Compacted { .. }), "{result:?}");
+}
+
+async fn rewind_to(live: &mut Live, request: u64, turn: u64) {
+    live.send(crate::agent::tool_tests::rewind(request, turn))
+        .await;
+    let result = live
+        .until(|e| {
+            matches!(e,
+                AgentEvent::Rewound { answers: Some(RequestId(r)), .. }
+                | AgentEvent::Rejected { request: Some(RequestId(r)), .. } if *r == request
+            )
+        })
+        .await;
+    assert!(matches!(result, AgentEvent::Rewound { .. }), "{result:?}");
+}
+
+async fn change_setting(live: &mut Live, command: ClientCommand, request: u64) {
+    live.send(command).await;
+    let result = live
+        .until(|e| {
+            matches!(e,
+                AgentEvent::SettingsChanged { answers: Some(RequestId(r)), .. }
+                | AgentEvent::Rejected { request: Some(RequestId(r)), .. } if *r == request
+            )
+        })
+        .await;
+    assert!(
+        matches!(result, AgentEvent::SettingsChanged { .. }),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_compaction_head_shows_the_saved_checklist_once_and_replaces_it_on_later_compactions() {
+    for native in [false, true] {
+        let baseline = MemoryStore::default();
+        let empty = scripted(vec![answer("Ready.", 1_000), done(native)]);
+        let agent = with_todos(engine(native, &empty, &baseline), None).await;
+        let mut live = Live::start(agent);
+        assert!(completed(&live.turn("u1", "first").await));
+        compact_checklist(&mut live, 80).await;
+        let (agent, _) = live.close().await;
+        let empty_tokens = agent.head_section_tokens();
+        assert!(!head_text(&agent).contains(CHECKLIST_TAG));
+        assert_eq!(logged_sections(&baseline), [Vec::new()]);
+
+        let store = MemoryStore::default();
+        let items = [todo_item("Review <draft>", TodoStatus::InProgress)];
+        let closed = [
+            todo_item("Final review", TodoStatus::Completed),
+            todo_item("Skip draft", TodoStatus::Cancelled),
+        ];
+        let provider = scripted(vec![
+            named_call(
+                "todo-a",
+                wisp_plugin_todos::NAME,
+                json!({ "todos": items }),
+                1_000,
+            ),
+            answer("Ready.", 1_200),
+            done(native),
+            named_call(
+                "todo-b",
+                wisp_plugin_todos::NAME,
+                json!({ "todos": closed }),
+                1_400,
+            ),
+            answer("Done.", 1_600),
+            done(native),
+            answer("Again.", 1_800),
+            answer("Back.", 2_000),
+        ]);
+        let mut live = Live::start(with_todos(engine(native, &provider, &store), None).await);
+        assert!(completed(&live.turn("u1", "first").await));
+        let (agent, _) = live.close().await;
+        assert!(agent.head_section_tokens() > empty_tokens);
+        extends(&provider, 0, 1);
+        for field in ["system", "tools", "messages"] {
+            assert_eq!(provider.body(0)[field], empty.body(0)[field], "{field}");
+        }
+        assert!(!provider.body(1).to_string().contains(CHECKLIST_TAG));
+        let mut live = Live::start(agent);
+        compact_checklist(&mut live, 81).await;
+        assert!(completed(&live.turn("u2", "second").await));
+        let first = provider.body(3);
+        let messages = first["messages"].as_array().unwrap();
+        let content = messages[0]["content"].as_array().unwrap();
+        let mut blocks = content.iter();
+        if native {
+            assert_eq!(blocks.next().unwrap()["type"], "compaction");
+        }
+        let checklist = blocks.next().unwrap()["text"].as_str().unwrap();
+        assert!(checklist.starts_with(CHECKLIST_TAG), "{content:?}");
+        assert!(checklist.contains("- [in_progress] Review &lt;draft&gt;"));
+        assert!(
+            blocks.next().unwrap()["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("<compacted_context")
+        );
+        assert_eq!(first.to_string().matches(CHECKLIST_TAG).count(), 1);
+        compact_checklist(&mut live, 82).await;
+        assert!(completed(&live.turn("u3", "third").await));
+        let (agent, _) = live.close().await;
+        let second = provider.body(6).to_string();
+        assert_eq!(second.matches(CHECKLIST_TAG).count(), 1);
+        assert!(!second.contains("Review &lt;draft&gt;"));
+        for text in [
+            "Saved checklist (1 of 2 completed)",
+            "- [completed] Final review",
+            "- [cancelled] Skip draft",
+        ] {
+            assert!(second.contains(text), "{second}");
+        }
+        let section = SectionSnapshot {
+            name: CHECKLIST.into(),
+            snapshot: String::new(),
+        };
+        assert_eq!(
+            logged_sections(&store),
+            [vec![section.clone()], vec![section]]
+        );
+        assert_rebuilds(&store, &agent);
+        let resumed = resume_todos(engine(native, &provider, &store), &store, None).await;
+        assert_eq!(resumed.todos, closed);
+        assert_eq!(resumed.view_messages(), agent.view_messages());
+        let mut live = Live::start(resumed);
+        assert!(completed(&live.turn("u4", "fourth").await));
+        live.close().await;
+        extends(&provider, 6, 7);
+    }
+}
+
+#[tokio::test]
+async fn checklist_head_follows_empty_child_prefill_rewind_and_switches() {
+    let a = [todo_item("Earlier checklist row", TodoStatus::Pending)];
+    let b = [todo_item("Discarded checklist row", TodoStatus::InProgress)];
+    let brief = "Start here.\n\nChecklist:\n- [ ] Earlier checklist row";
+    let mut child_item = a[0].clone();
+    child_item.section = Some("Local child heading".into());
+    let mut scrubbed_child = child_item.clone();
+    scrubbed_child.text = "Review [redacted]/acct-child/notes".into();
+    let mut baseline = None;
+    for prefill in [
+        Vec::new(),
+        vec![child_item.clone()],
+        vec![scrubbed_child.clone()],
+    ] {
+        let marked = prefill.first() == Some(&scrubbed_child);
+        let text = if marked {
+            scrubbed_child.text.as_str()
+        } else {
+            a[0].text.as_str()
+        };
+        let child_brief = if marked {
+            format!("Start here.\n\nChecklist:\n- [ ] {text}")
+        } else {
+            brief.into()
+        };
+        let child_head = |text: &str| format!("## [redacted]\n- [pending] {text}");
+        let store = MemoryStore::default();
+        let provider = scripted(vec![
+            answer("Ready.", 1_000),
+            compaction(SUMMARY),
+            answer("Continuing.", 1_200),
+        ]);
+        let agent = with_todos(logged(provider.clone(), &store), None).await;
+        let mut parent = super::hooks::child_link();
+        parent.todos.clone_from(&prefill);
+        let empty = prefill.is_empty();
+        let agent = agent.with_parent(parent.clone()).with_checklist(prefill);
+        let host = checklist_host(&agent);
+        let mut child = Live::start(agent);
+        assert!(completed(&child.turn("child", &child_brief).await));
+        if !empty {
+            let mut visible = crate::plugin::convert::todo_to_api(&parent.todos[0]);
+            visible.section = Some(crate::session::REDACTED.into());
+            assert_eq!(host.checklist(), [visible]);
+        }
+        compact_checklist(&mut child, 90).await;
+        assert!(completed(&child.turn("child-next", "Continue.").await));
+        let (child, _) = child.close().await;
+        let first = provider.body(0);
+        let sent = first["messages"].to_string();
+        assert_eq!(sent.matches("Checklist:").count(), 1);
+        assert_eq!(sent.matches(text).count(), 1);
+        assert!(!sent.contains(CHECKLIST_TAG));
+        if !marked {
+            if let Some(baseline) = &baseline {
+                assert_eq!(&first, baseline);
+            } else {
+                baseline = Some(first);
+            }
+        }
+        assert_eq!(
+            head_text(&child).matches(CHECKLIST_TAG).count(),
+            usize::from(!empty)
+        );
+        if !empty {
+            assert!(head_text(&child).contains(&child_head(text)));
+            assert!(
+                !log_events(&store)
+                    .iter()
+                    .any(|event| matches!(event, LogEvent::TodosUpdated { .. }))
+            );
+            let records = store.read("s1").unwrap();
+            let provider = scripted(vec![compaction(SUMMARY)]);
+            let expected = parent.todos.clone();
+            let resumed =
+                resume_todos(logged(provider, &store).with_parent(parent), &store, None).await;
+            assert_eq!(resumed.todos, expected);
+            let mut live = Live::start(resumed);
+            compact_checklist(&mut live, 90).await;
+            let (resumed, _) = live.close().await;
+            let head = head_text(&resumed);
+            assert!(head.contains(&child_head(if marked {
+                crate::session::REDACTED
+            } else {
+                text
+            })));
+            assert!(!head.contains("acct-child"));
+            assert!(store.read("s1").unwrap().starts_with(&records));
+        }
+    }
+
+    for off in [false, true] {
+        let store = MemoryStore::default();
+        let mut steps = vec![
+            named_call(
+                "todo-a",
+                wisp_plugin_todos::NAME,
+                json!({ "todos": a }),
+                1_000,
+            ),
+            answer("Ready.", 1_100),
+            named_call(
+                "todo-b",
+                wisp_plugin_todos::NAME,
+                json!({ "todos": b }),
+                1_200,
+            ),
+            answer("Updated.", 1_300),
+            if off {
+                answer("Off.", 1_400)
+            } else {
+                compaction(SUMMARY)
+            },
+            if off {
+                compaction(SUMMARY)
+            } else {
+                answer("Reset.", 1_400)
+            },
+            if off {
+                answer("On.", 1_500)
+            } else {
+                compaction(SUMMARY)
+            },
+        ];
+        if off {
+            steps.push(compaction(SUMMARY));
+        }
+        let provider = scripted(steps);
+        let ask_user = Source::bundled(wisp_plugin_ask_user::bundled());
+        let mut agent = with_todos(logged(provider, &store), Some(ask_user.clone())).await;
+        let host = checklist_host(&agent);
+        agent.settings.layers.full_screen = true;
+        agent.note_tool_baseline();
+        assert!(agent.switchable());
+        let mut live = Live::start(agent);
+        assert!(completed(&live.turn("u1", "first").await));
+        assert!(completed(&live.turn("u2", "second").await));
+        let tools = |request, names| ClientCommand::ChangeSettings {
+            request: RequestId(request),
+            changes: vec![SettingChange::named("tools", SettingValue::List(names)).unwrap()],
+            save: false,
+        };
+        if off {
+            assert_eq!(
+                host.checklist(),
+                b.iter()
+                    .map(crate::plugin::convert::todo_to_api)
+                    .collect::<Vec<_>>()
+            );
+            change_setting(
+                &mut live,
+                tools(91, vec![wisp_plugin_ask_user::NAME.into()]),
+                91,
+            )
+            .await;
+            assert!(completed(&live.turn("u3", "turn the switch off").await));
+            assert!(host.checklist().is_empty());
+        }
+        rewind_to(&mut live, 92, 2).await;
+        compact_checklist(&mut live, 93).await;
+        let heads = pick!(log_events(&store), LogEvent::ContextCompacted { head, .. } => head);
+        let [head] = heads.as_slice() else {
+            panic!("expected the first compaction");
+        };
+        let text = reply_text(&head.content).unwrap_or_default();
+        assert_eq!(text.contains(&a[0].text), !off);
+        assert!(!text.contains(&b[0].text));
+        if off {
+            change_setting(
+                &mut live,
+                tools(
+                    94,
+                    vec![
+                        wisp_plugin_ask_user::NAME.into(),
+                        wisp_plugin_todos::NAME.into(),
+                    ],
+                ),
+                94,
+            )
+            .await;
+        } else {
+            rewind_to(&mut live, 94, 1).await;
+        }
+        assert!(completed(&live.turn("u4", "continue").await));
+        compact_checklist(&mut live, 95).await;
+        let (agent, _) = live.close().await;
+        assert!(agent.has_todos());
+        assert!(agent.todos.is_empty());
+        assert!(!head_text(&agent).contains(CHECKLIST_TAG));
+        assert_eq!(rebuilt(&store), *agent.history());
+        if off {
+            let resumed =
+                resume_todos(logged(scripted(Vec::new()), &store), &store, Some(ask_user)).await;
+            assert!(resumed.has_todos());
+            assert_eq!(resumed.todos, a);
+        }
+    }
+
+    let store = MemoryStore::default();
+    let provider = scripted(vec![
+        answer("Ready.", 1_000),
+        compaction(SUMMARY),
+        answer("Continuing.", 1_200),
+        compaction(SUMMARY),
+    ]);
+    let mut local = todo_item("Ask Rowan Checklistfixture", TodoStatus::Pending);
+    local.section = Some("Rowan Checklistfixture".into());
+    let agent = with_todos(logged(provider.clone(), &store), None)
+        .await
+        .with_checklist(vec![local.clone()]);
+    assert!(agent.parent().is_none());
+    assert_eq!(agent.todos, [local.clone()]);
+    let host = checklist_host(&agent);
+    let mut live = Live::start(agent);
+    assert!(completed(&live.turn("u1", "first").await));
+    let mut masked = crate::plugin::convert::todo_to_api(&local);
+    masked.text = crate::session::REDACTED.into();
+    masked.section = Some(crate::session::REDACTED.into());
+    assert_eq!(host.checklist(), [masked]);
+    compact_checklist(&mut live, 96).await;
+    assert!(completed(&live.turn("u2", "second").await));
+    let sent = provider.body(2).to_string();
+    assert!(sent.contains("## [redacted]\\n- [pending] [redacted]"));
+    assert!(!sent.contains("Rowan Checklistfixture"));
+    let disable = plugin_switch(97, "todos", "enabled", false);
+    change_setting(&mut live, disable, 97).await;
+    compact_checklist(&mut live, 98).await;
+    let (agent, _) = live.close().await;
+    assert_eq!(agent.todos, [local]);
+    assert!(!head_text(&agent).contains(CHECKLIST_TAG));
+    let sections = logged_sections(&store);
+    assert_eq!(sections.len(), 2);
+    assert_eq!(sections[0][0].name, CHECKLIST);
+    assert!(sections[1].is_empty());
+}
+
+#[tokio::test]
+async fn a_non_todos_writers_private_checklist_fields_are_redacted_in_head_and_background_swap() {
+    use crate::plugin::testing::{self, Call, TestTool};
+    use wisp_plugin_api::host::{CallContext, Host};
+    use wisp_plugin_api::tools::Prepared;
+    use wisp_plugin_api::types::ToolRun;
+
+    const SECRET: &str = "CANARY-private-checklist-writer-credential";
+    const ROUTE: &str = "/checklist-writer-gateway";
+    const QUERY: &str = "route=writer-fixture";
+    const ASSIGNEE: &str = "Morgan Checklistfixture";
+    const HOME: &str = "/srv/wisp-checklist-home";
+    const KEY: &str = "sk-CANARY-generic-checklist-fixture";
+    const SAFE_TEXT: &str = "Check the public build steps";
+    const SAFE_SECTION: &str = "Build review";
+    const TOOL: &str = "private_checklist_writer";
+
+    #[derive(Default)]
+    struct Writer {
+        host: Mutex<Option<Arc<dyn Host>>>,
+        email: String,
+    }
+
+    impl TestTool for Writer {
+        fn name(&self) -> String {
+            TOOL.to_owned()
+        }
+
+        fn prepare(&self, input: &str) -> Result<Box<dyn Prepared>, String> {
+            Ok(Call::boxed(testing::fallback(TOOL, input), ()))
+        }
+
+        fn attach(&self, host: Arc<dyn Host>) {
+            *self.host.lock().unwrap() = Some(host);
+        }
+
+        fn run<'a>(
+            &'a self,
+            _call: Box<dyn Prepared>,
+            ctx: &'a dyn CallContext,
+        ) -> BoxFuture<'a, ToolRun> {
+            let mut private = todo_item(SECRET, TodoStatus::InProgress);
+            private.section = Some(self.email.clone());
+            let mut route = todo_item(
+                &format!("Check path {ROUTE} and query {QUERY}"),
+                TodoStatus::Pending,
+            );
+            route.section = Some(ASSIGNEE.into());
+            let mut key = todo_item(KEY, TodoStatus::Cancelled);
+            key.section = Some(format!("Use {ROUTE} and {QUERY}"));
+            let mut flag = todo_item(&format!("-I{HOME}/inc"), TodoStatus::Pending);
+            flag.section = Some(SAFE_SECTION.into());
+            let mut safe = todo_item(SAFE_TEXT, TodoStatus::Completed);
+            safe.section = Some(SAFE_SECTION.into());
+            let items = [&private, &route, &key, &flag, &safe]
+                .into_iter()
+                .map(crate::plugin::convert::todo_to_api)
+                .collect();
+            self.host
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .replace(items, ctx)
+                .unwrap();
+            Box::pin(async { ToolRun::completed() })
+        }
+    }
+
+    let email = ["CANARY-checklist-writer", "example.invalid"].join("@");
+    let flag = format!("-I{HOME}/inc");
+    assert!([ASSIGNEE, &flag, KEY].into_iter().all(|marker| {
+        !crate::secrets::scan::contains_secret_or_identity(marker, Some(std::path::Path::new(HOME)))
+    }));
+    let no_markers = |text: &str| {
+        assert!(
+            [SECRET, &email, ROUTE, QUERY, ASSIGNEE, &flag, KEY]
+                .into_iter()
+                .all(|marker| !text.contains(marker))
+        );
+    };
+    let projected = |text: &str| {
+        no_markers(text);
+        assert_eq!(text.matches(CHECKLIST_TAG).count(), 1);
+        assert_eq!(text.matches("## [redacted]").count(), 1);
+        assert!(text.contains("Saved checklist (1 of 5 completed)"));
+        assert!(text.contains("- [in_progress] [redacted]"));
+        assert_eq!(text.matches("- [pending] [redacted]").count(), 2);
+        assert!(text.contains("- [cancelled] [redacted]"));
+        assert!(text.contains(&format!("## {SAFE_SECTION}")));
+        assert!(text.contains(&format!("- [completed] {SAFE_TEXT}")));
+    };
+    for swap in [false, true] {
+        let store = MemoryStore::default();
+        let provider = documented(vec![
+            named_call(
+                "foreign-write",
+                TOOL,
+                json!({
+                    "steps": [{"text": format!(" {SAFE_TEXT} ")}], "section": SAFE_SECTION,
+                }),
+                1_000,
+            ),
+            answer("Ready.", if swap { NEAR } else { 1_100 }),
+            compaction(SUMMARY),
+            answer("Next.", 300),
+        ]);
+        let agent = if swap {
+            background(&provider, &store)
+        } else {
+            logged(provider.clone(), &store)
+        };
+        let gateway =
+            crate::endpoints::url_redactions(&format!("https://example.invalid{ROUTE}?{QUERY}"));
+        let context = LogContext {
+            redactions: Redactions::new([SECRET.to_owned()]).union([&gateway]),
+            ..log_context()
+        };
+        let agent = agent.with_log(SessionLog::new(Box::new(store.clone()), "s1"), context);
+        let (manifest, make) = testing::source(Arc::new(Writer {
+            email: email.clone(),
+            ..Writer::default()
+        }));
+        let writer = Source::in_process(manifest, make, Origin::Bundled);
+        let agent = with_todos(agent, Some(writer.clone())).await;
+        let host = checklist_host(&agent);
+        agent
+            .hooks
+            .host
+            .as_ref()
+            .unwrap()
+            .set_fallback_home(Some(HOME.into()));
+        let mut live = Live::start(agent);
+        assert!(completed(&live.turn("u1", "first").await));
+        let read = host.checklist();
+        assert!(!read.is_empty());
+        projected(&wisp_tool_text::todos::checklist(&read).unwrap());
+        if swap {
+            live.until(prepared).await;
+        } else {
+            compact_checklist(&mut live, 98).await;
+        }
+        assert!(completed(&live.turn("u2", "second").await));
+        let (agent, seen) = live.close().await;
+        assert_eq!(swapped_in(&seen, 2), swap);
+        for sent in provider.sent() {
+            no_markers(&sent.text());
+        }
+        projected(&provider.body(3).to_string());
+        let heads = pick!(log_events(&store), LogEvent::ContextCompacted { head, additions, .. } => (head, additions));
+        let [(head, additions)] = heads.as_slice() else {
+            panic!("expected one compacted context");
+        };
+        no_markers(&serde_json::to_string(head).unwrap());
+        no_markers(&serde_json::to_string(additions).unwrap());
+        let saved = if swap { additions } else { &head.content };
+        projected(&serde_json::to_string(saved).unwrap());
+        assert_rebuilds(&store, &agent);
+        no_markers(&serde_json::to_string(&agent.view_messages()).unwrap());
+        assert_eq!(agent.todos[1].section.as_deref(), Some(ASSIGNEE));
+        assert_eq!(agent.todos[2].text, KEY);
+        assert_eq!(agent.todos[3].text, flag);
+
+        let recorded = store.read("s1").unwrap();
+        let next = documented(vec![compaction(SUMMARY), answer("Still here.", 300)]);
+        let resumed = resume_todos(logged(next.clone(), &store), &store, Some(writer)).await;
+        assert_eq!(resumed.view_messages(), agent.view_messages());
+        let mut live = Live::start(resumed);
+        compact_checklist(&mut live, 99).await;
+        assert!(completed(&live.turn("u3", "third").await));
+        let (resumed, _) = live.close().await;
+        for sent in next.sent() {
+            no_markers(&sent.text());
+        }
+        projected(&next.body(1).to_string());
+        projected(&head_text(&resumed));
+        assert_rebuilds(&store, &resumed);
+        assert!(store.read("s1").unwrap().starts_with(&recorded));
+    }
+}
+
+#[tokio::test]
+async fn a_legacy_checklist_without_committed_tool_input_keeps_only_status_and_order_on_new_heads()
+{
+    let store = MemoryStore::default();
+    let provider = scripted(vec![
+        answer("Ready.", 1_000),
+        compaction(SUMMARY),
+        answer("Again.", 1_100),
+    ]);
+    let mut live = Live::start(with_todos(logged(provider, &store), None).await);
+    assert!(completed(&live.turn("u1", "first").await));
+    compact_checklist(&mut live, 100).await;
+    assert!(completed(&live.turn("u2", "second").await));
+    let (agent, _) = live.close().await;
+    let mut legacy = todo_item("Local legacy step", TodoStatus::Cancelled);
+    legacy.section = Some("Local legacy heading".into());
+    let items = [
+        todo_item("First legacy step", TodoStatus::Completed),
+        legacy,
+    ];
+    let records = store.read("s1").unwrap();
+    let update = serde_json::to_value(LogEvent::TodosUpdated {
+        turn: 2,
+        call_id: "unrecorded-call".into(),
+        items: items.to_vec(),
+    })
+    .unwrap();
+    let records = spliced(records.clone(), vec![(records.len() - 1, update)]);
+    let store = stored(&records);
+    let provider = scripted(vec![compaction(SUMMARY), answer("Continue.", 300)]);
+    let resumed = resume_todos(logged(provider.clone(), &store), &store, None).await;
+    assert_eq!(resumed.todos, items);
+    assert_eq!(resumed.view_messages(), agent.view_messages());
+    let mut live = Live::start(resumed);
+    compact_checklist(&mut live, 101).await;
+    assert!(completed(&live.turn("u3", "third").await));
+    let (agent, _) = live.close().await;
+    let head = head_text(&agent);
+    assert!(head.contains("- [completed] [redacted]\n## [redacted]\n- [cancelled] [redacted]"));
+    for marker in [
+        "First legacy step",
+        "Local legacy step",
+        "Local legacy heading",
+    ] {
+        assert!(!head.contains(marker));
+        assert!(!provider.body(1).to_string().contains(marker));
+    }
+    assert!(store.read("s1").unwrap().starts_with(&records));
+    assert_rebuilds(&store, &agent);
+}
+
+#[tokio::test]
+async fn a_saved_checklist_hides_replayed_masks_without_changing_live_partial_redaction() {
+    const ROUTE: &str = "/checklist-replay-gateway";
+    const QUERY: &str = "route=replay-fixture";
+    const HELD: &str = "CANARY-held-checklist-replay-credential";
+    const HOME: &str = "/srv/wisp-managed/acct-alpha";
+    const HOME_GATEWAY: &str = "https://example.invalid/srv/wisp-managed";
+    const STAGE_GATEWAY: &str = "https://example.invalid/srv/wisp-staging";
+    let gateway = format!("https://example.invalid{ROUTE}?{QUERY}");
+    let mut route = todo_item(
+        &format!("Review the response at {gateway}"),
+        TodoStatus::Pending,
+    );
+    route.section = Some(format!("Check {ROUTE} and {QUERY}"));
+    let mut secret = todo_item(&format!("Hold {HELD} back"), TodoStatus::InProgress);
+    secret.section = Some(format!("Review {HELD}"));
+    let mut private_home = todo_item(&format!("Check {HOME}/notes"), TodoStatus::Pending);
+    private_home.section = Some(format!("Files at {HOME}/notes"));
+    let stage = "/srv/wisp-staging/acct-alpha";
+    let mut alternate = todo_item(&format!("Check {stage}/notes"), TodoStatus::Pending);
+    alternate.section = Some(format!("Files at {stage}/notes"));
+    let items = [route, secret, private_home, alternate];
+    let store = MemoryStore::default();
+    let provider = scripted(vec![
+        named_call(
+            "todo",
+            wisp_plugin_todos::NAME,
+            json!({ "todos": items }),
+            1_000,
+        ),
+        answer("Ready.", 1_100),
+        compaction(SUMMARY),
+        answer("Continue.", 300),
+    ]);
+    let log_only = crate::endpoints::url_redactions(&gateway);
+    let home_gateway = crate::endpoints::url_redactions(HOME_GATEWAY);
+    let stage_gateway = crate::endpoints::url_redactions(STAGE_GATEWAY);
+    let context = LogContext {
+        redactions: Redactions::new([HELD.into()]).union([
+            &log_only,
+            &home_gateway,
+            &stage_gateway,
+        ]),
+        ..log_context()
+    };
+    let agent =
+        logged(provider, &store).with_log(SessionLog::new(Box::new(store.clone()), "s1"), context);
+    let bind_home = |agent: &mut Agent| {
+        let workspace = &mut agent.tools.as_mut().unwrap().workspace;
+        workspace.home = Some(HOME.into());
+        agent
+            .hooks
+            .host
+            .as_ref()
+            .unwrap()
+            .bind(&agent.processes, workspace);
+    };
+    let mut agent = with_todos(agent, None).await;
+    bind_home(&mut agent);
+    let host = checklist_host(&agent);
+    let mut live = Live::start(agent);
+    assert!(completed(&live.turn("u1", "first").await));
+    let mut expected = items.each_ref().map(crate::plugin::convert::todo_to_api);
+    expected[0].text = "Review the response at https://example.invalid[redacted]?[redacted]".into();
+    expected[0].section = Some("Check [redacted] and [redacted]".into());
+    let hide = |item: &mut wisp_plugin_api::host::Todo| {
+        item.text = crate::session::REDACTED.into();
+        item.section = Some(crate::session::REDACTED.into());
+    };
+    for item in &mut expected[1..3] {
+        hide(item);
+    }
+    expected[3].text = "Check [redacted]/acct-alpha/notes".into();
+    expected[3].section = Some("Files at [redacted]/acct-alpha/notes".into());
+    let assert_projected = |host: &PluginHost, expected: &[wisp_plugin_api::host::Todo]| {
+        assert_eq!(host.checklist(), expected);
+        let heads = pick!(log_events(&store), LogEvent::ContextCompacted { head, .. } => head);
+        let text = reply_text(&heads.last().unwrap().content).unwrap();
+        assert!(text.contains(&wisp_tool_text::todos::checklist(expected).unwrap()));
+        text
+    };
+    compact_checklist(&mut live, 102).await;
+    assert_projected(&host, &expected);
+    assert!(completed(&live.turn("u2", "second").await));
+    let (agent, _) = live.close().await;
+    let records = store.read("s1").unwrap();
+    let saved =
+        pick!(&records, LogRecord { event: LogEvent::TodosUpdated { items, .. }, .. } => items);
+    assert!(saved[0][1].text.contains("Hold [redacted] back"));
+    assert_eq!(saved[0][1].section.as_deref(), Some("Review [redacted]"));
+    assert_eq!(saved[0][2].text, "Check [redacted]/acct-alpha/notes");
+    assert_eq!(
+        saved[0][2].section.as_deref(),
+        Some("Files at [redacted]/acct-alpha/notes")
+    );
+    assert_eq!(saved[0][2], saved[0][3]);
+    for item in &mut expected {
+        hide(item);
+    }
+    let provider = scripted(vec![
+        compaction(SUMMARY),
+        answer("Rewound.", 1_100),
+        compaction(SUMMARY),
+    ]);
+    let mut resumed = resume_todos(logged(provider, &store), &store, None).await;
+    bind_home(&mut resumed);
+    assert_eq!(resumed.view_messages(), agent.view_messages());
+    assert_eq!(&resumed.todos, saved[0]);
+    let host = checklist_host(&resumed);
+    let mut live = Live::start(resumed);
+    compact_checklist(&mut live, 103).await;
+    assert!(!assert_projected(&host, &expected).contains("acct-alpha"));
+    rewind_to(&mut live, 104, 2).await;
+    assert!(completed(&live.turn("u2b", "second again").await));
+    compact_checklist(&mut live, 105).await;
+    assert!(!assert_projected(&host, &expected).contains("acct-alpha"));
+    let (rewound, _) = live.close().await;
+    assert_eq!(&rewound.todos, saved[0]);
+    assert!(store.read("s1").unwrap().starts_with(&records));
 }

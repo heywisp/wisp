@@ -368,15 +368,6 @@ fn release_tools(ask_user: bool) -> crate::tool::Toolbox {
     crate::tool::testkit::bundled(on).with_web_search(true)
 }
 
-fn temp_workspace() -> crate::workspace::Workspace {
-    let dir = std::env::temp_dir();
-    crate::workspace::Workspace {
-        root: dir.clone(),
-        home: None,
-        temp: dir,
-    }
-}
-
 #[tokio::test]
 async fn a_log_from_before_ask_user_was_on_rebuilds_once_unless_it_is_turned_off() {
     let clock = shifted();

@@ -12,9 +12,13 @@ fn snap_call(id: &str, input: Value, tokens: u64) -> Step {
 }
 
 pub(super) fn named_call(id: &str, name: &str, input: Value, tokens: u64) -> Step {
+    named_call_with(id, name, input, tokens, 20)
+}
+
+pub(super) fn named_call_with(id: &str, name: &str, input: Value, tokens: u64, out: u64) -> Step {
     let mut script = vec![start(tokens, 0)];
     script.extend(tool_use(0, id, name, &[&input.to_string()]));
-    script.extend(finish(StopReason::ToolUse, tokens, 0, 20));
+    script.extend(finish(StopReason::ToolUse, tokens, 0, out));
     Step::from(script)
 }
 

@@ -10,6 +10,7 @@ use wisp_protocol::{
     SpawnRequest, TodoItem, TurnOutcome, TurnStats,
 };
 
+use super::todo_provenance::starting_provenance;
 use super::{Agent, Pending, emit};
 use crate::agents::news::{ReportNews, TreeNews};
 use crate::agents::state::Change;
@@ -206,6 +207,7 @@ impl Agent {
     #[must_use]
     pub fn with_checklist(mut self, items: Vec<TodoItem>) -> Self {
         if !items.is_empty() && self.has_todos() {
+            self.todos_provenance = starting_provenance(&items, self.parent.as_ref());
             self.todos = items;
             self.todos_unannounced = true;
         }

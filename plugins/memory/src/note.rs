@@ -1,5 +1,3 @@
-use std::fmt::Write as _;
-
 use jiff::Timestamp;
 use jiff::civil::Date;
 use jiff::tz::TimeZone;
@@ -134,20 +132,4 @@ pub(super) fn decode(scope: Scope, name: &str, raw: &str) -> Option<(Note, Strin
         },
         parsed.body,
     ))
-}
-
-pub(super) fn escape(text: &str) -> String {
-    let mut out = String::new();
-    for ch in text.chars() {
-        match ch {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            ch if ch.is_control() => {
-                let _ = write!(out, "\\u{{{:x}}}", u32::from(ch));
-            }
-            ch => out.push(ch),
-        }
-    }
-    out
 }

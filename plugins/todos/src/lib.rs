@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 use wisp_plugin_api::host::{CallContext, Host, Todo};
+use wisp_plugin_api::prompt::{At, Prior, Rendered};
 use wisp_plugin_api::tools::{
     BuildContext, ClientTool, Effect, Prepared, Purpose, Tags, Timeouts, ToolDef, ToolKind,
     ToolMeta,
@@ -17,6 +18,8 @@ use wisp_tool_text::todos::{
 pub use wisp_tool_text::todos::NAME;
 
 pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
+
+pub const SECTION: &str = "checklist";
 
 const TIME_LIMIT_MS: u64 = 5_000;
 
@@ -202,6 +205,24 @@ impl Prepared for Writing {
 }
 
 impl Plugin for Todos {
+    fn render_section<'a>(
+        &'a self,
+        name: &'a str,
+        at: At,
+        _previous: Prior,
+        _target: Option<&'a str>,
+    ) -> BoxFuture<'a, Rendered> {
+        Box::pin(async move {
+            if name != SECTION || at != At::Head {
+                return Rendered::default();
+            }
+            Rendered {
+                snapshot: String::new(),
+                text: wisp_tool_text::todos::checklist(&self.host.checklist()),
+            }
+        })
+    }
+
     fn describe<'a>(&'a self, _ctx: &'a BuildContext) -> BoxFuture<'a, Vec<ToolDef>> {
         Box::pin(async { vec![def()] })
     }

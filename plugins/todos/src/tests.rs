@@ -1,6 +1,6 @@
 use futures::executor::block_on;
 use wisp_plugin_api::host::TodoStatus;
-use wisp_plugin_api::manifest::{Manifest, Origin, Switch};
+use wisp_plugin_api::manifest::{Manifest, Origin, PromptSection, SectionPlace, Switch};
 use wisp_plugin_api::types::Completed;
 use wisp_plugin_testkit::host::{FakeCall, FakeHost};
 
@@ -249,4 +249,48 @@ fn the_definition_is_static_and_on_by_default() {
     assert_eq!(manifest.tools[0].name, NAME);
     assert_eq!(manifest.tools[0].default, Switch::On);
     assert!(manifest.system.is_none());
+    assert_eq!(
+        manifest.prompt_sections,
+        [PromptSection {
+            name: SECTION.into(),
+            place: SectionPlace::Lead,
+            sets: vec!["core/state".into()],
+            after: ["workspace/environment", "workspace/terminal", "memory/list"]
+                .map(str::to_owned)
+                .to_vec(),
+            before: Vec::new(),
+            continues: None,
+        }]
+    );
+}
+
+#[test]
+fn checklist_section_renders_only_at_head_when_non_empty() {
+    let empty = plugin(&FakeHost::default());
+    assert_eq!(
+        block_on(empty.render_section(SECTION, At::Head, Prior::None, None)),
+        Rendered::default()
+    );
+    let items = vec![todo("Read the plan", TodoStatus::Completed)];
+    let full = plugin(&FakeHost {
+        checklist: items.clone(),
+        ..FakeHost::default()
+    });
+    for (name, at) in [
+        (SECTION, At::Start),
+        (SECTION, At::Turn),
+        ("unknown", At::Head),
+    ] {
+        assert_eq!(
+            block_on(full.render_section(name, at, Prior::None, None)),
+            Rendered::default()
+        );
+    }
+    assert_eq!(
+        block_on(full.render_section(SECTION, At::Head, Prior::None, None)),
+        Rendered {
+            snapshot: String::new(),
+            text: wisp_tool_text::todos::checklist(&items)
+        }
+    );
 }

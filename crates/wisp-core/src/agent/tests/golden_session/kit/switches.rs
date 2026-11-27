@@ -5,7 +5,7 @@ use super::super::keep_warm::an_hour_later;
 use super::*;
 use crate::agent::tests::kinds as logged_kinds;
 use crate::provider::anthropic::{COMPACTION_BETA, FALLBACK_BETA, INLINE_TOOLS_BETA};
-use crate::test_guard::until_event;
+use crate::test_guard::{WISP, until_event};
 
 const CAPABLE: &str = "claude-opus-5-5";
 const PLAIN: &str = "claude-opus-4-7";
@@ -1197,7 +1197,7 @@ async fn an_addition_dropped_by_a_wisp_compaction_is_restated_once_with_no_chang
         ),
     ));
     kit.start_layers.flags.push(removed_flag("time"));
-    kit.models = models("[models.\"claude-opus-5-5\"]\nnative_compaction = false\n");
+    kit.models = models(WISP);
     let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;
@@ -1287,7 +1287,7 @@ async fn a_head_built_at_an_opening_restates_the_tool_change_beside_a_late_marke
     let env = Env::new("switch-late-marker");
     let store = MemoryStore::default();
     let mut kit = switching(&server, &env, &store);
-    kit.models = models("[models.\"claude-opus-5-5\"]\nnative_compaction = false\n");
+    kit.models = models(WISP);
     let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;
@@ -1609,7 +1609,7 @@ async fn a_head_built_at_an_opening_restates_the_tool_change_beside_a_marker_sen
     let env = Env::new("switch-marker-on-time");
     let store = MemoryStore::default();
     let mut kit = switching(&server, &env, &store);
-    kit.models = models("[models.\"claude-opus-5-5\"]\nnative_compaction = false\n");
+    kit.models = models(WISP);
     let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;
@@ -1893,7 +1893,11 @@ async fn a_note_dropped_by_a_rewind_is_restated_at_the_next_turn() {
 
 #[tokio::test]
 async fn the_tools_note_is_written_with_no_plugin_hooks_at_the_turn() {
-    let kept = ["id = \"show-diff\"", "id = \"view-file\"", "id = \"todos\""];
+    let kept = [
+        "id = \"show-diff\"",
+        "id = \"view-file\"",
+        "id = \"ask-user\"",
+    ];
     let sources = wisp_plugins::bundled()
         .into_iter()
         .filter(|b| kept.iter().any(|k| b.manifest.starts_with(k)))
@@ -2095,7 +2099,7 @@ async fn the_summary_fork_after_an_inline_change_sends_the_turns_tools_system_an
     .await;
     let store = MemoryStore::default();
     let mut kit = switching(&server, &env, &store);
-    kit.models = models("[models.\"claude-opus-5-5\"]\nnative_compaction = false\n");
+    kit.models = models(WISP);
     let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;
@@ -2141,7 +2145,7 @@ async fn turning_bash_off_takes_its_shell_line_out_of_the_next_environment() {
     .await;
     let store = MemoryStore::default();
     let mut kit = switching(&server, &env, &store);
-    kit.models = models("[models.\"claude-opus-5-5\"]\nnative_compaction = false\n");
+    kit.models = models(WISP);
     let built = kit.build(on(CAPABLE, kit::Start::Fresh)).await.unwrap();
     let mut session = Session::start(built.agent);
     session.turn("u1", "one").await;

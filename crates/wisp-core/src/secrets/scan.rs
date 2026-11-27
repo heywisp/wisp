@@ -13,7 +13,15 @@ mod tests;
 pub(crate) use tests::email_regression_cases;
 
 pub(crate) fn contains_secret_or_identity(text: &str, home: Option<&Path>) -> bool {
-    session::held().has_secret_check_match(text)
+    contains_secret_or_identity_with(text, home, &session::held())
+}
+
+pub(crate) fn contains_secret_or_identity_with(
+    text: &str,
+    home: Option<&Path>,
+    held: &session::Redactions,
+) -> bool {
+    held.has_secret_check_match(text)
         || any_token(text, |token| {
             wisp_protocol::has_known_key_prefix(token) || is_account_id(token)
         })

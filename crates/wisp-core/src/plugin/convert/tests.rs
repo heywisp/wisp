@@ -364,3 +364,33 @@ fn every_node_state_round_trips_and_an_account_queued_agent_answers_working() {
         );
     }
 }
+
+#[test]
+fn every_todo_status_round_trips_and_matches_wire_name_and_progress_counts() {
+    use wisp_plugin_api::host::Todo;
+    use wisp_tool_text::todos::{STATUSES, completed, progress, status_name, target};
+
+    let api = STATUSES.map(|(name, status)| Todo {
+        text: name.to_owned(),
+        status,
+        section: Some("Next".to_owned()),
+    });
+    let proto = api.clone().map(todo);
+    for (item, converted) in api.iter().zip(&proto) {
+        assert_eq!(todo_to_api(converted), *item);
+        assert_eq!(converted.status.as_str(), status_name(item.status));
+        let count = wisp_protocol::todos::progress(std::slice::from_ref(converted));
+        assert_eq!(
+            (count.completed, count.total),
+            (completed(std::slice::from_ref(item)), 1)
+        );
+        assert_eq!(
+            count.completed,
+            usize::from(converted.status == TodoStatus::Completed)
+        );
+    }
+    let count = wisp_protocol::todos::progress(&proto);
+    assert_eq!(count.completed, 1);
+    assert_eq!((count.completed, count.total), (completed(&api), api.len()));
+    assert_eq!(target(&api), progress(count.completed, count.total));
+}

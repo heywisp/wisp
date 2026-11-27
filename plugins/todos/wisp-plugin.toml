@@ -6,3 +6,10 @@ summary = "Keeps the agent's checklist for multi-step work"
 [[tools]]
 name = "write_todos"
 provides = ["todos"]
+
+[[prompt_sections]]
+name = "checklist"
+place = "lead"
+in = ["core/state"]
+after = ["workspace/environment", "workspace/terminal", "memory/list"]
+before = []

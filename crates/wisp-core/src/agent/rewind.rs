@@ -24,6 +24,7 @@ use super::epoch::{Entry, EpochAt, PrefixKey};
 use super::inbox::Input;
 use super::question::{Posted, PostedFold};
 use super::resume::HeadTurns;
+use super::todo_provenance::{TodoFold, TodoProvenance};
 use super::{Agent, LastRequest, emit};
 use crate::context::{blocks_tokens, ttl_span};
 use crate::plugin::hooks::points::REWOUND as HOOK_REWOUND;
@@ -94,6 +95,7 @@ pub(super) struct PointMark {
     failed_tail: Option<BTreeSet<String>>,
     ledger: Ledger,
     pub(super) todos: Vec<TodoItem>,
+    pub(super) todos_provenance: Vec<TodoProvenance>,
     pub(super) posted: Option<Posted>,
     arrival: Option<u64>,
 }
@@ -227,6 +229,7 @@ impl Agent {
             failed_tail: opening.failed_tail,
             ledger: self.compaction.calls_now(),
             todos: self.todos.clone(),
+            todos_provenance: self.todos_provenance.clone(),
             posted: self.posted.clone(),
             arrival: opening.arrival,
         };
@@ -666,9 +669,7 @@ impl Agent {
             .heads
             .truncate(mark.head.map_or(0, |i| i.saturating_add(1)));
         self.sections.restore(mark.sections.clone());
-        if self.has_todos() {
-            self.todos.clone_from(&mark.todos);
-        }
+        self.restore_todos(&mark.todos, &mark.todos_provenance);
         if let Some(env) = &mut self.tools {
             env.cwd.clone_from(&mark.cwd);
         }
@@ -692,6 +693,16 @@ impl Agent {
 
     pub(super) fn has_todos(&self) -> bool {
         self.toolbox.provider_of(crate::tool::TODOS).is_some()
+    }
+
+    pub(super) fn restore_todos(&mut self, items: &[TodoItem], provenance: &[TodoProvenance]) {
+        if self.has_todos() {
+            items.clone_into(&mut self.todos);
+            provenance.clone_into(&mut self.todos_provenance);
+        } else {
+            self.todos.clear();
+            self.todos_provenance.clear();
+        }
     }
 
     pub(super) fn rewound_news(&self) -> Vec<RewoundJob> {
@@ -866,6 +877,7 @@ impl Agent {
             failed_tail,
             ledger: Ledger::new(),
             todos: before.todos,
+            todos_provenance: before.todos_provenance,
             posted: before.posted.posted(),
             arrival: None,
         })
@@ -947,6 +959,7 @@ struct Before {
     heard: BTreeSet<u32>,
     top: Option<u32>,
     todos: Vec<TodoItem>,
+    todos_provenance: Vec<TodoProvenance>,
     posted: PostedFold,
 }
 
@@ -965,9 +978,6 @@ impl Before {
             LogEvent::ProcessHeard { ids, .. } => self.heard.extend(ids.iter().copied()),
             _ => {}
         }
-        if let Some(items) = wisp_protocol::todos::listed(event) {
-            self.todos = items.to_vec();
-        }
     }
 }
 
@@ -980,11 +990,19 @@ fn folded(
 ) -> (BTreeMap<usize, Before>, Spans) {
     let sources: BTreeSet<usize> = points.iter().map(|p| p.source).collect();
     let mut before = Before::default();
+    let mut todos = TodoFold::default();
     let mut head = HeadTurns::default();
     let (mut at_points, mut spans) = (BTreeMap::new(), BTreeMap::new());
     for (at, (record, masked)) in records.iter().zip(masked).enumerate() {
         if sources.contains(&at) {
-            at_points.insert(at, before.clone());
+            at_points.insert(
+                at,
+                Before {
+                    todos: todos.todos.clone(),
+                    todos_provenance: todos.provenance.clone(),
+                    ..before.clone()
+                },
+            );
         }
         if let LogEvent::ProcessStarted { id, .. }
         | LogEvent::ToolCallFinished {
@@ -995,6 +1013,7 @@ fn folded(
         }
         if !masked {
             before.see(&record.event);
+            todos.see(&record.event);
             head.see(&record.event);
         }
         if matches!(record.event, LogEvent::ContextCompacted { .. }) {

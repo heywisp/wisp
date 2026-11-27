@@ -85,6 +85,7 @@ pub struct FakeHost {
     pub estimate: Option<Arc<EstimateFn>>,
     pub spend: SpendTotals,
     pub todos: Replaced,
+    pub checklist: Vec<Todo>,
     pub refuse_todos: Option<String>,
     pub fetch: Option<Arc<FetchFn>>,
     pub captured: Option<Captured>,
@@ -344,6 +345,10 @@ impl Jobs for FakeHost {
 }
 
 impl Todos for FakeHost {
+    fn checklist(&self) -> Vec<Todo> {
+        self.checklist.clone()
+    }
+
     fn replace(&self, items: Vec<Todo>, ctx: &dyn CallContext) -> Result<(), String> {
         if let Some(why) = &self.refuse_todos {
             return Err(why.clone());

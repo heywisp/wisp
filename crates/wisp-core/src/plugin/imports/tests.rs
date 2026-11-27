@@ -253,7 +253,10 @@ fn a_quiet_jobs_call_lists_jobs_quietly_and_leaves_every_other_import_allowed() 
             .collect::<Vec<_>>()
     });
     for (import, inside) in describing {
-        let expected = if matches!(import, Import::ProjectKey | Import::SecretCheckCheck) {
+        let expected = if matches!(
+            import,
+            Import::ProjectKey | Import::SecretCheckCheck | Import::TodosChecklist
+        ) {
             Inside::Unavailable
         } else {
             Inside::Allowed

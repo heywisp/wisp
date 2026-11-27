@@ -146,6 +146,7 @@ Ok(
         started_tools: [],
         tool_cwd: None,
         todos: [],
+        todos_provenance: [],
         posted: None,
         rendered: {},
         unreadable: {},

@@ -2573,6 +2573,7 @@ probe!(jobs_methods, impl Jobs {
 });
 
 probe!(todos_methods, impl Todos {
+    fn checklist(&self) -> Vec<Todo> { Vec::new() }
     fn replace(&self, _items: Vec<Todo>, _ctx: &dyn CallContext) -> Result<(), String> { Ok(()) }
 });
 

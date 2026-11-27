@@ -1703,9 +1703,7 @@ async fn a_summarise_that_converts_runs_the_discard_it_was_handed_at_once() {
     let (sink, mut events) = mpsc::channel(64);
     agent.background_after_turn(&outcome, &sink).await;
     assert!(agent.compaction.background.running());
-    let mut agent = agent.with_model_settings(models(
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    ));
+    let mut agent = agent.with_model_settings(models(WISP));
     agent.compaction.head = Some(Head {
         epoch: 1,
         from: 0,

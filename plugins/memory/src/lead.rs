@@ -8,7 +8,7 @@ use wisp_plugin_api::manifest::{Manifest, Origin, RowDefault};
 use wisp_plugin_api::prompt::{Prior, Rendered};
 use wisp_tool_text::compaction::{BYTES_PER_TOKEN, text_tokens};
 
-use crate::note::{self, Identity, Note, Scope};
+use crate::note::{Identity, Note, Scope};
 use crate::store::{self, NoteStatus, Store};
 
 pub(super) const NAME: &str = "list";
@@ -85,7 +85,7 @@ fn row(note: &Note, prefix: &str) -> String {
         note.id.scope.label(),
         note.id.name,
         note.saved,
-        note::escape(&note.fact)
+        wisp_tool_text::escape_xml(&note.fact)
     )
 }
 

@@ -438,10 +438,9 @@ fn facts(agent: &AgentRow, with_state: bool) -> Vec<String> {
         ));
     }
     if let Some(progress) = agent.checklist {
-        parts.push(format!(
-            "todos {} of {} completed",
-            progress.completed, progress.total
-        ));
+        let done = usize::try_from(progress.completed).unwrap_or(usize::MAX);
+        let total = usize::try_from(progress.total).unwrap_or(usize::MAX);
+        parts.push(format!("todos {}", crate::todos::progress(done, total)));
     }
     if let Some(cwd) = &agent.cwd {
         parts.push(format!("in {cwd}"));

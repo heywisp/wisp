@@ -14,6 +14,14 @@ fn plugin_host(owned: &[&str], kernel: &Arc<KernelHost>) -> PluginHost {
     PluginHost::new("probe", "0.2.0", &owned, kernel.clone())
 }
 
+fn todo() -> Vec<Todo> {
+    vec![Todo {
+        text: "a".to_owned(),
+        status: wisp_plugin_api::host::TodoStatus::Pending,
+        section: None,
+    }]
+}
+
 fn spawn_spec() -> SpawnSpec {
     SpawnSpec {
         program: "true".to_owned(),
@@ -647,13 +655,6 @@ async fn a_render_that_kept_a_running_calls_id_gets_nothing_that_needs_a_call() 
         id: id.to_owned(),
         ..FakeCall::default()
     };
-    let todo = || {
-        vec![Todo {
-            text: "a".to_owned(),
-            status: wisp_plugin_api::host::TodoStatus::Pending,
-            section: None,
-        }]
-    };
     let probe = ctx("toolu_probe");
     let (spawned, adopted, replaced) = rendering(async {
         let spawned = host.spawn(spawn_spec(), &probe).await.err();
@@ -805,6 +806,7 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
             spend: SPENT,
         },
         terminal: Some(Size { cols: 80, rows: 24 }),
+        todos: Arc::from(todo()),
         ..counting_snapshot()
     });
     let host = plugin_host(&["time"], &kernel);
@@ -906,6 +908,7 @@ async fn a_start_render_gets_only_the_start_column_with_a_job_alive() {
                 Import::ContextEstimateText => assert!(host.estimate_text("some words") > 0),
                 Import::MediaTypes => assert!(host.media_types().is_empty()),
                 Import::MediaSlices => assert!(mcp.media_slices().is_empty()),
+                Import::TodosChecklist => assert!(mcp.checklist().is_empty()),
                 Import::MediaImageEdge => assert_eq!(host.image_edge(), None),
                 Import::MediaCountTokens => assert_eq!(
                     host.count_tokens("image/png".to_owned(), vec![1], None).await,
@@ -3698,4 +3701,84 @@ async fn a_late_live_source_stamp_change_discards_prior_rows_and_stops_open_fall
         wisp_tool_text::index::INVALID_TARGET
     );
     assert_eq!(last.opened.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn checklist_scopes_to_host_world_caller_and_redacts_private_fields() {
+    const HELD: &str = "CANARY-live-checklist-credential";
+    const KEY: &str = "sk-ant-api03-CANARY-checklist-prefix-test-key";
+    const FALLBACK: &str = "/srv/wisp-checklist-fallback";
+    const BOUND: &str = "/srv/wisp-checklist-bound";
+    const ROUTE: &str = "/private-checklist-gateway";
+    const QUERY: &str = "route=checklist-fixture";
+    let email = ["CANARY-checklist", "example.invalid"].join("@");
+    let kernel = Arc::new(KernelHost::new());
+    kernel.set_fallback_home(Some(FALLBACK.into()));
+    let item = |text: &str, section: Option<&str>| Todo {
+        text: text.to_owned(),
+        section: section.map(str::to_owned),
+        status: wisp_plugin_api::host::TodoStatus::Completed,
+    };
+    let path = format!("Check {FALLBACK}/work");
+    let bound_path = format!("Check {BOUND}/work");
+    let route = format!("Route {ROUTE} with {QUERY}");
+    let redacted = crate::session::REDACTED;
+    kernel.publish(Snapshot {
+        todos: Arc::from([
+            todo()[0].clone(),
+            item(HELD, Some("Safe heading")),
+            item("Safe row", Some(KEY)),
+            item(&email, Some(&email)),
+            item(&path, Some(&path)),
+            item(&bound_path, Some(&bound_path)),
+            item(&route, Some(&route)),
+        ]),
+        ..Snapshot::default()
+    });
+    let host = PluginHost::new("probe", "0.4.0", &[], kernel.clone());
+    assert_eq!(host.checklist()[1].text, HELD);
+    let separate = PluginHost::new("probe", "0.4.0", &[], Arc::new(KernelHost::new()));
+    assert!(separate.checklist().is_empty());
+    crate::session::register_secrets([HELD.to_owned()]);
+    crate::session::register(&crate::endpoints::url_redactions(&format!(
+        "https://example.invalid{ROUTE}?{QUERY}"
+    )));
+    assert!(!crate::secrets::scan::contains_secret_or_identity(
+        &route,
+        Some(Path::new(FALLBACK))
+    ));
+    let safe_route = format!("Route {redacted} with {redacted}");
+    let mut expected = vec![
+        todo()[0].clone(),
+        item(redacted, Some("Safe heading")),
+        item("Safe row", Some(redacted)),
+        item(redacted, Some(redacted)),
+        item(redacted, Some(redacted)),
+        item(&bound_path, Some(&bound_path)),
+        item(&safe_route, Some(&safe_route)),
+    ];
+    for origin in [Origin::Bundled, Origin::External] {
+        let older = PluginHost::new("probe", "0.3.0", &[], kernel.clone()).origin(origin);
+        assert!(older.checklist().is_empty());
+        let loaded = PluginHost::new("probe", "0.4.0", &[], kernel.clone()).origin(origin);
+        assert_eq!(loaded.checklist(), expected);
+        for caller in [
+            Caller::rendering(Render::Start),
+            Caller::rendering(Render::Slot),
+            Caller::describing(),
+        ] {
+            assert!(caller.sync_scope(|| loaded.checklist()).is_empty());
+        }
+    }
+    kernel.bind(
+        &Processes::default(),
+        &KernelWorkspace {
+            root: "/workspace".into(),
+            home: Some(BOUND.into()),
+            temp: "/tmp".into(),
+        },
+    );
+    expected[4] = item(&path, Some(&path));
+    expected[5] = item(redacted, Some(redacted));
+    assert_eq!(host.checklist(), expected);
 }

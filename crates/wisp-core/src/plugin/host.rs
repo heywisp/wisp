@@ -90,6 +90,7 @@ pub struct Snapshot {
     pub gate: Arc<dyn Gate>,
     pub environment: Option<EnvironmentFacts>,
     pub terminal: Option<Size>,
+    pub todos: Arc<[Todo]>,
     pub usage_accounts: Vec<UsageAccount>,
     pub usage_cache: crate::plan_usage::PlanUsageCache,
     pub no_rename: Option<&'static str>,
@@ -132,6 +133,7 @@ impl Default for Snapshot {
             gate: Arc::new(AllowAll),
             environment: None,
             terminal: None,
+            todos: Arc::from([]),
             usage_accounts: Vec::new(),
             usage_cache: crate::plan_usage::PlanUsageCache::default(),
             no_rename: Some(text::NOT_SAVED),
@@ -1178,6 +1180,21 @@ impl Jobs for PluginHost {
     }
 }
 
+fn safe_todo(item: &Todo, home: Option<&Path>, held: &crate::session::Redactions) -> Todo {
+    let safe = |raw: &str| {
+        if crate::secrets::scan::contains_secret_or_identity_with(raw, home, held) {
+            crate::session::REDACTED.to_owned()
+        } else {
+            held.scrub(raw)
+        }
+    };
+    Todo {
+        text: safe(&item.text),
+        status: item.status,
+        section: item.section.as_deref().map(safe),
+    }
+}
+
 impl Todos for PluginHost {
     fn replace(&self, items: Vec<Todo>, ctx: &dyn CallContext) -> Result<(), String> {
         if Import::TodosReplace.refused() {
@@ -1190,6 +1207,22 @@ impl Todos for PluginHost {
         wisp_tool_text::todos::check(&items)?;
         *locked(&call.todos) = Some(wisp_tool_text::todos::normal(items));
         Ok(())
+    }
+
+    fn checklist(&self) -> Vec<Todo> {
+        if self.refuses(Import::TodosChecklist) {
+            return Vec::new();
+        }
+        let todos = self.kernel.snapshot().todos;
+        if todos.is_empty() {
+            return Vec::new();
+        }
+        let home = self.kernel.secret_check_home();
+        let held = crate::session::held();
+        todos
+            .iter()
+            .map(|item| safe_todo(item, home.as_deref(), &held))
+            .collect()
     }
 }
 

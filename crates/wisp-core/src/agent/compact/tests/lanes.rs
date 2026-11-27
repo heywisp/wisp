@@ -62,12 +62,7 @@ async fn a_native_compaction_takes_a_slot() {
 
 #[tokio::test]
 async fn wisps_own_compaction_takes_a_slot() {
-    takes_a_slot(
-        written(WRITTEN, 60_000),
-        CompactionEngine::Wisp,
-        "[models.\"claude-opus-5-5\"]\nnative_compaction = false\n",
-    )
-    .await;
+    takes_a_slot(written(WRITTEN, 60_000), CompactionEngine::Wisp, WISP).await;
 }
 
 #[tokio::test(start_paused = true)]
