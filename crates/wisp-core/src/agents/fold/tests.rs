@@ -4,6 +4,26 @@ use wisp_protocol::TodoStatus;
 use super::*;
 use crate::test_guard::path;
 
+#[test]
+fn legacy_checklists_scrub_detected_fields_in_live_and_ended_folds() {
+    use crate::session::REDACTED;
+
+    let email = ["CANARY-fold", "example.invalid"].join("@");
+    let log = Log::new().push(json!({
+        "type": "todos_updated", "turn": 1, "call_id": "todos",
+        "items": [
+            {"text": "ops_CANARY12345678901234567890", "status": "pending", "section": email},
+            {"text": "Keep the ordinary step", "status": "completed"},
+        ]
+    }));
+    let folded = fold(&path("/child"), &log.records, &[]);
+    assert_eq!(folded.checklist, ended_row(&log.records).checklist);
+    assert_eq!(folded.checklist[0].text, REDACTED);
+    assert_eq!(folded.checklist[0].section.as_deref(), Some(REDACTED));
+    assert_eq!(folded.checklist[1].text, "Keep the ordinary step");
+    assert_eq!(folded.checklist[1].status, TodoStatus::Completed);
+}
+
 struct Log {
     records: Vec<LogRecord>,
 }

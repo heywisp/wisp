@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::ops::ControlFlow;
+use std::path::PathBuf;
 use std::pin::Pin;
 
 use tokio::sync::mpsc;
@@ -19,6 +20,8 @@ use crate::agents::{
     ToParent, cut_report, decide, needs_cut,
 };
 use crate::provider::reply_text;
+use crate::secrets::scan::scrub_todos;
+use crate::session::held;
 
 pub(crate) const MAX_NUDGES: u32 = 2;
 
@@ -193,9 +196,23 @@ impl Agent {
         }
     }
 
+    pub(crate) fn secret_check_home(&self) -> Option<PathBuf> {
+        crate::plugin::host::secret_check_home(
+            self.hooks.host.as_deref(),
+            self.tools
+                .as_ref()
+                .and_then(|env| env.workspace.home.as_deref()),
+        )
+    }
+
     #[must_use]
-    pub fn with_parent(mut self, link: ParentLink) -> Self {
+    pub fn with_parent(mut self, mut link: ParentLink) -> Self {
         self.processes.set_child();
+        scrub_todos(
+            &mut link.todos,
+            self.secret_check_home().as_deref(),
+            &held(),
+        );
         self.parent = Some(link);
         if let Some(host) = &self.hooks.host {
             host.scope_mcp();
@@ -205,8 +222,9 @@ impl Agent {
     }
 
     #[must_use]
-    pub fn with_checklist(mut self, items: Vec<TodoItem>) -> Self {
+    pub fn with_checklist(mut self, mut items: Vec<TodoItem>) -> Self {
         if !items.is_empty() && self.has_todos() {
+            scrub_todos(&mut items, self.secret_check_home().as_deref(), &held());
             self.todos_provenance = starting_provenance(&items, self.parent.as_ref());
             self.todos = items;
             self.todos_unannounced = true;
@@ -218,11 +236,7 @@ impl Agent {
         if !std::mem::take(&mut self.todos_unannounced) {
             return;
         }
-        let event = AgentEvent::TodosUpdated {
-            call_id: None,
-            items: self.todos.clone(),
-        };
-        emit(events, event).await;
+        self.emit_todos_updated(events, None).await;
     }
 
     pub fn parent(&self) -> Option<&ParentLink> {

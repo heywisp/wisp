@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use serde_json::Value;
 use wisp_protocol::log::{LogEvent, LogRecord, LoggedBlock, LoggedInput, LoggedMessage};
@@ -11,7 +12,9 @@ use wisp_protocol::{
 use super::{FeatureFact, feature_state, opening_of};
 use crate::agent::state_event;
 use crate::provider::{forms, quiet_end};
+use crate::secrets::scan::{os_detection_home, scrub_todos};
 use crate::session::mirror::live_event;
+use crate::session::{Redactions, held};
 use crate::tool::Toolbox;
 
 pub(crate) fn replayed(event: &LogEvent) -> Option<(u64, AgentEvent)> {
@@ -133,6 +136,8 @@ struct Replay<'a> {
     records: &'a [LogRecord],
     toolbox: &'a Toolbox,
     todos: Vec<TodoItem>,
+    home: Option<&'a Path>,
+    redactions: Redactions,
 }
 
 impl Replay<'_> {
@@ -298,13 +303,14 @@ impl Replay<'_> {
 
     fn rebuild_todos(&mut self, through: usize) {
         let records = self.records.get(..=through).unwrap_or(self.records);
-        let items = wisp_protocol::todos::checklist(records);
-        if items != self.todos {
+        self.show_todos(None, wisp_protocol::todos::checklist(records));
+    }
+
+    fn show_todos(&mut self, call_id: Option<String>, mut items: Vec<TodoItem>) {
+        scrub_todos(&mut items, self.home, &self.redactions);
+        if call_id.is_some() || items != self.todos {
             self.todos.clone_from(&items);
-            self.out.push(AgentEvent::TodosUpdated {
-                call_id: None,
-                items,
-            });
+            self.out.push(AgentEvent::TodosUpdated { call_id, items });
         }
     }
 
@@ -622,11 +628,7 @@ impl Replay<'_> {
             }
             LogEvent::TodosUpdated { call_id, items, .. } => {
                 self.flush_end();
-                self.todos.clone_from(items);
-                self.out.push(AgentEvent::TodosUpdated {
-                    call_id: Some(call_id.clone()),
-                    items: items.clone(),
-                });
+                self.show_todos(Some(call_id.clone()), items.clone());
             }
             LogEvent::AgentRenamed { agent, to, .. } => {
                 self.flush_end();
@@ -766,6 +768,15 @@ pub fn transcript(
     toolbox: &Toolbox,
     offer: Option<(u64, RetryOffer)>,
 ) -> Vec<AgentEvent> {
+    transcript_with_home(records, toolbox, offer, os_detection_home().as_deref())
+}
+
+pub(crate) fn transcript_with_home(
+    records: &[LogRecord],
+    toolbox: &Toolbox,
+    offer: Option<(u64, RetryOffer)>,
+    home: Option<&Path>,
+) -> Vec<AgentEvent> {
     Replay {
         inputs: Inputs::read(run_of(records, 0)),
         offer,
@@ -782,6 +793,8 @@ pub fn transcript(
         records,
         toolbox,
         todos: Vec::new(),
+        home,
+        redactions: held(),
     }
     .run()
 }

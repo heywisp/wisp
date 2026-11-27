@@ -5447,6 +5447,7 @@ fn kept_fixtures_cover_the_ended_logs_costs_rows_and_links() {
         Some("Typed-report placeholder")
     );
     assert_eq!(facts[3].row.running_ms, Some(33));
+    crate::session::register(&Redactions::log_only(["Written placeholder".into()]));
     assert_eq!(
         kept_version().unwrap(),
         crate::session::sha256_bytes_hex(&serde_json::to_vec(&facts).unwrap())
@@ -5456,11 +5457,12 @@ fn kept_fixtures_cover_the_ended_logs_costs_rows_and_links() {
 #[tokio::test(start_paused = true)]
 async fn kept_ended_rows_skip_their_logs_and_keep_the_tree_names_and_mail() {
     use super::super::load::{keep, read_kept};
+    use tokio::sync::Notify;
     let mut run = start(
         "resume-kept",
         Setup::default(),
         vec![
-            ("/", vec![done("noted"); 4]),
+            ("/", vec![done("noted"); 5]),
             (
                 "/finished",
                 vec![
@@ -5477,12 +5479,18 @@ async fn kept_ended_rows_skip_their_logs_and_keep_the_tree_names_and_mail() {
                 "/later",
                 vec![uses(&[report_call("r", "Later placeholder")])],
             ),
+            (
+                "/active",
+                vec![uses(&[report_call("r", "Active placeholder")])],
+            ),
         ],
     )
     .await;
     run.spawn(spawn_request("finished", "Placeholder task"))
         .await;
     run.spawn(spawn_request("later", "Placeholder task")).await;
+    run.spawn(spawn_request("active", "Placeholder task")).await;
+    reported(&mut run, "/active").await;
     reported(&mut run, "/finished/kid").await;
     reported(&mut run, "/finished").await;
     reported(&mut run, "/later").await;
@@ -5512,35 +5520,75 @@ async fn kept_ended_rows_skip_their_logs_and_keep_the_tree_names_and_mail() {
     let root = session_name("/");
     let mut facts = read_kept(&logs, &root);
     assert_eq!(facts.len(), 2);
-    facts
-        .get_mut(&session_name("/finished"))
-        .unwrap()
-        .1
-        .row
-        .last_report = Some("Kept placeholder".to_owned());
+    let child_id = session_name("/finished");
+    let source = logs.read(&child_id).unwrap();
+    let late_value = "CANARYOpaqueFromLiveSiblingResume";
+    assert!(!crate::secrets::scan::contains_secret_or_identity(
+        late_value, None
+    ));
+    let (stamp, log) = facts.get_mut(&child_id).unwrap();
+    let stamp = *stamp;
+    log.row.last_report = Some("Kept placeholder".to_owned());
+    log.row.checklist = vec![
+        TodoItem {
+            text: "sk-CANARY-stamped-sidecar-fixture".into(),
+            status: TodoStatus::Pending,
+            section: Some(late_value.into()),
+        },
+        TodoItem {
+            text: "Keep this sibling".into(),
+            status: TodoStatus::Completed,
+            section: None,
+        },
+    ];
+    let mut safe_items = log.row.checklist.clone();
+    safe_items[0].text = crate::session::REDACTED.into();
+    safe_items[0].section = Some(crate::session::REDACTED.into());
     keep(&logs, &root, &facts);
     end_agent(&mut back.run, "/later").await;
-    let highest = ["/", "/finished", "/finished/kid", "/later"]
+    let highest = ["/", "/finished", "/finished/kid", "/later", "/active"]
         .iter()
         .flat_map(|p| mail_ids(&back.run, p))
         .max()
         .unwrap();
-    let mut back = resume(
+    let starts = ToolStarts::default();
+    let release = Arc::new(Notify::new());
+    let loading = resume(
         back.run.quit().await,
-        Setup::default(),
+        Setup {
+            child_gate: Some(release.clone()),
+            tool_starts: starts.clone(),
+            ..Setup::default()
+        },
         vec![(
             "/fresh",
             vec![uses(&[report_call("r", "Fresh placeholder")])],
         )],
-    )
-    .await;
+    );
+    let register_during_build = async {
+        within("the live sibling's resume build", async {
+            while !starts.lock().unwrap().contains_key("/active") {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await;
+        crate::session::register_secrets([late_value.to_owned()]);
+        release.notify_one();
+    };
+    let (mut back, ()) = tokio::join!(loading, register_during_build);
+    assert!(back.live.iter().any(|path| path == "/active"));
     let after = list(&mut back.run).await;
     let mut changed = entry(&before, "/past");
     changed.last_report = Some("Kept placeholder".to_owned());
+    changed.checklist = checklist_of(&safe_items);
     assert_eq!(entry(&after, "/past"), changed);
     assert_eq!(entry(&after, "/past/kid"), entry(&before, "/past/kid"));
     assert_eq!(entry(&after, "/later").state, AgentState::Ended);
-    assert_eq!(read_kept(&logs, &root).len(), 3);
+    let rewritten = read_kept(&logs, &root);
+    assert_eq!(rewritten.len(), 3);
+    assert_eq!(rewritten[&child_id].0, stamp);
+    assert_eq!(rewritten[&child_id].1.row.checklist, safe_items);
+    assert_eq!(logs.read(&child_id).unwrap(), source);
     let refusal = super::refusals::refused(&mut back.run, spawn_request("finished", "Again")).await;
     assert!(
         refusal.contains("already has an agent named finished"),
@@ -5549,6 +5597,7 @@ async fn kept_ended_rows_skip_their_logs_and_keep_the_tree_names_and_mail() {
     back.run
         .spawn(spawn_request("fresh", "Placeholder task"))
         .await;
+    release.notify_one();
     reported(&mut back.run, "/fresh").await;
     assert_eq!(mail_ids(&back.run, "/fresh")[0], highest + 1);
     let _ = back.run.quit().await;
@@ -5578,11 +5627,19 @@ fn jsonl_ended_facts_survive_a_reopen_and_fall_back_per_stale_or_bad_line() {
     let root = crate::session::new_session_id();
     let mut facts = Kept::new();
     for spawned in [&child, &other] {
-        let (stamp, log) = ended_facts(&logs, spawned, &facts);
+        let (stamp, log) = ended_facts(&logs, spawned, &facts, None);
         let mut log = log.unwrap();
         log.row.last_report = Some("Kept placeholder".to_owned());
         facts.insert(spawned.session_id.clone(), (stamp.unwrap(), log));
     }
+    let home = Path::new("/srv/CANARY-ended-checklist-home");
+    let dirty = &mut facts.get_mut(&child.session_id).unwrap().1.row.checklist;
+    let safe = dirty[0].clone();
+    dirty.push(TodoItem {
+        text: format!("Inspect {}/notes", home.display()),
+        status: TodoStatus::Pending,
+        section: Some(["CANARY-cache-checklist", "example.invalid"].join("@")),
+    });
     keep(&logs, &root, &facts);
     let reopened = JsonlLogs {
         root_id: None,
@@ -5590,8 +5647,15 @@ fn jsonl_ended_facts_survive_a_reopen_and_fall_back_per_stale_or_bad_line() {
         dir: logs.dir.clone(),
     };
     let kept = read_kept(&reopened, &root);
+    let (stamp, scrubbed) = ended_facts(&reopened, &child, &kept, Some(home));
+    assert_eq!(stamp, Some(kept[&child.session_id].0));
+    let items = scrubbed.unwrap().row.checklist;
+    assert_eq!(items[0], safe);
+    assert_eq!(items[1].text, crate::session::REDACTED);
+    assert_eq!(items[1].section.as_deref(), Some(crate::session::REDACTED));
+    assert_ne!(items, kept[&child.session_id].1.row.checklist);
     let report = |spawned: &crate::agents::fold::SpawnedRecord, kept: &Kept| {
-        ended_facts(&reopened, spawned, kept)
+        ended_facts(&reopened, spawned, kept, Some(home))
             .1
             .unwrap()
             .row

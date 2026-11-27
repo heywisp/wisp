@@ -521,7 +521,7 @@ impl Agent {
                 |()| AgentEvent::refused(request, "couldn't read the session log"),
                 |event| *event,
             );
-            super::emit(events, event).await;
+            super::send_scrubbed(events, event, self.secret_check_home().as_deref()).await;
             return;
         }
         if let Done::Auth(mut event) = done {

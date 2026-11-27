@@ -204,16 +204,30 @@ pub(crate) fn lookup_is_safe(
     host: Option<&KernelHost>,
     workspace_home: Option<&Path>,
 ) -> bool {
+    !crate::secrets::scan::contains_secret_or_identity(
+        text,
+        secret_check_home(host, workspace_home).as_deref(),
+    )
+}
+
+pub(crate) fn secret_check_home(
+    host: Option<&KernelHost>,
+    workspace_home: Option<&Path>,
+) -> Option<PathBuf> {
+    configured_secret_check_home(host, workspace_home)
+        .or_else(crate::secrets::scan::os_detection_home)
+}
+
+fn configured_secret_check_home(
+    host: Option<&KernelHost>,
+    workspace_home: Option<&Path>,
+) -> Option<PathBuf> {
     let home = host
-        .and_then(KernelHost::secret_check_home)
-        .or_else(|| workspace_home.map(Path::to_path_buf))
-        .or_else(|| {
-            crate::secrets::scan::fallback_detection_home(
-                crate::workspace::home(),
-                std::env::var_os("USERPROFILE"),
-            )
-        });
-    !crate::secrets::scan::contains_secret_or_identity(text, home.as_deref())
+        .and_then(|host| host.workspace().and_then(|workspace| workspace.home))
+        .or_else(|| workspace_home.map(Path::to_path_buf));
+    #[cfg(any(test, feature = "test-support"))]
+    let home = home.or_else(|| host.and_then(|host| locked(&host.fallback_home).clone()));
+    home
 }
 
 impl KernelHost {
@@ -371,14 +385,10 @@ impl KernelHost {
     }
 
     pub(crate) fn secret_check_home(&self) -> Option<PathBuf> {
-        if let Some(home) = self.workspace().and_then(|workspace| workspace.home) {
-            return Some(home);
-        }
-        #[cfg(any(test, feature = "test-support"))]
-        let fallback = locked(&self.fallback_home).clone();
+        let home = configured_secret_check_home(Some(self), None);
         #[cfg(not(any(test, feature = "test-support")))]
-        let fallback = crate::secrets::scan::os_detection_home();
-        fallback
+        let home = home.or_else(crate::secrets::scan::os_detection_home);
+        home
     }
 
     pub(crate) fn lookup_is_safe(&self, text: &str) -> bool {
@@ -1180,21 +1190,6 @@ impl Jobs for PluginHost {
     }
 }
 
-fn safe_todo(item: &Todo, home: Option<&Path>, held: &crate::session::Redactions) -> Todo {
-    let safe = |raw: &str| {
-        if crate::secrets::scan::contains_secret_or_identity_with(raw, home, held) {
-            crate::session::REDACTED.to_owned()
-        } else {
-            held.scrub(raw)
-        }
-    };
-    Todo {
-        text: safe(&item.text),
-        status: item.status,
-        section: item.section.as_deref().map(safe),
-    }
-}
-
 impl Todos for PluginHost {
     fn replace(&self, items: Vec<Todo>, ctx: &dyn CallContext) -> Result<(), String> {
         if Import::TodosReplace.refused() {
@@ -1221,7 +1216,16 @@ impl Todos for PluginHost {
         let held = crate::session::held();
         todos
             .iter()
-            .map(|item| safe_todo(item, home.as_deref(), &held))
+            .cloned()
+            .map(|mut item| {
+                crate::secrets::scan::scrub_todo_fields(
+                    &mut item.text,
+                    &mut item.section,
+                    home.as_deref(),
+                    &held,
+                );
+                item
+            })
             .collect()
     }
 }

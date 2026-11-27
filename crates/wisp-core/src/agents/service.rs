@@ -29,8 +29,9 @@ use super::news::{News, StateNews, StopNews, TreeNews};
 use super::report;
 use super::state::{self, Change, Watch};
 use super::{CheckedPresets, Limits, PresetProblem, tool_off};
-use crate::agent::{self, Agent, AgentTask, Mail};
+use crate::agent::{self, Agent, AgentTask, Mail, send_scrubbed};
 use crate::kit::{ChildSpec, InstructionsChoice, Kit, KitError, PresetSource};
+use crate::secrets::scan::scrub_todos;
 
 pub const NOT_FOR_AGENTS: &str = "not_for_agents";
 pub use wisp_protocol::agents::NO_SUCH_AGENT;
@@ -1073,7 +1074,8 @@ impl AgentsService {
         });
         let tools = inherited_tools(caller, &tools_off, spawn, &self.shared.followers);
         let todos = if tools.iter().any(|t| t == WRITE_TODOS) {
-            request
+            let home = crate::plugin::host::secret_check_home(None, caller.home.as_deref());
+            let mut todos: Vec<_> = request
                 .todos
                 .iter()
                 .map(|text| TodoItem {
@@ -1081,7 +1083,9 @@ impl AgentsService {
                     status: TodoStatus::Pending,
                     section: None,
                 })
-                .collect()
+                .collect();
+            scrub_todos(&mut todos, home.as_deref(), &crate::session::held());
+            todos
         } else {
             Vec::new()
         };
@@ -1379,31 +1383,44 @@ impl AgentsService {
         mut commands: mpsc::Receiver<ClientCommand>,
         root: Option<mpsc::Sender<AgentEvent>>,
     ) -> [JoinHandle<()>; 2] {
-        let (events, mut child_events) = mpsc::channel(CHILD_EVENTS);
+        let (events, child_events) = mpsc::channel(CHILD_EVENTS);
+        let home = child.secret_check_home();
         let serve = tokio::spawn(async move {
             child.serve(&mut commands, &events).await;
         });
         let service = self.clone();
         let forward = tokio::spawn(async move {
-            while let Some(event) = child_events.recv().await {
-                let path = path.borrow().clone();
-                let changed = service.observe(&path, &event);
-                let recount = Watch::reads(&event);
-                let Some(root) = &root else {
-                    continue;
-                };
-                if let Some(event) = service.forwarded(&path, event) {
-                    let _ = root.send(event).await;
-                }
-                if let Some(changed) = changed {
-                    let _ = root.send(changed).await;
-                }
-                if recount {
-                    service.shared.recount.notify_one();
-                }
-            }
+            service
+                .forward_child(path, child_events, root, home.as_deref())
+                .await;
         });
         [serve, forward]
+    }
+
+    async fn forward_child(
+        &self,
+        path: watch::Receiver<AgentPath>,
+        mut child_events: mpsc::Receiver<AgentEvent>,
+        root: Option<mpsc::Sender<AgentEvent>>,
+        home: Option<&Path>,
+    ) {
+        while let Some(event) = child_events.recv().await {
+            let path = path.borrow().clone();
+            let changed = self.observe(&path, &event);
+            let recount = Watch::reads(&event);
+            let Some(root) = &root else {
+                continue;
+            };
+            if let Some(event) = self.forwarded(&path, event) {
+                send_scrubbed(root, event, home).await;
+            }
+            if let Some(changed) = changed {
+                let _ = root.send(changed).await;
+            }
+            if recount {
+                self.shared.recount.notify_one();
+            }
+        }
     }
 
     fn forwarded(&self, path: &AgentPath, event: AgentEvent) -> Option<AgentEvent> {
@@ -2868,6 +2885,7 @@ pub fn start_root(
     service.watch_bound(agent.queue_watch());
     let worst = service.shared.worst.subscribe();
     let observer = service.clone();
+    let home = agent.secret_check_home();
     let forward = tokio::spawn(async move {
         loop {
             let event = tokio::select! {
@@ -2894,7 +2912,7 @@ pub fn start_root(
                 tree.restart_rows = None;
             } else {
                 observer.observe(&AgentPath::root(), &event);
-                let _ = host.send(event).await;
+                send_scrubbed(&host, event, home.as_deref()).await;
             }
             if recount && let Some(report) = observer.report() {
                 let _ = host.send(report).await;

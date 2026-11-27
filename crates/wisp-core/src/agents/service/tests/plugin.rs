@@ -306,7 +306,14 @@ async fn list_agents_shows_the_parent_the_siblings_and_the_subtree_and_nothing_e
 
 #[tokio::test(start_paused = true)]
 async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed() {
-    let todos = vec!["Read the plan".to_owned(), "Write it".to_owned()];
+    use crate::session::REDACTED;
+
+    let todos = vec![
+        "Read the plan".to_owned(),
+        ["CANARY-child-checklist", "example.invalid"].join("@"),
+        "sk-CANARY-stamped-child-checklist-fixture".into(),
+        "-iframework/Users/CANARY/Frameworks".into(),
+    ];
     let pending = |text: &str| TodoItem {
         text: text.to_owned(),
         status: TodoStatus::Pending,
@@ -354,7 +361,7 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
         agent.checklist,
         Some(TodoProgress {
             completed: 0,
-            total: 2
+            total: 4
         })
     );
     let prefilled = run
@@ -368,13 +375,14 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
     let Some(AgentEvent::TodosUpdated { items, .. }) = inner(&prefilled, "/a") else {
         unreachable!()
     };
-    assert_eq!(items, &[pending("Read the plan"), pending("Write it")]);
+    let initial = [
+        pending("Read the plan"),
+        pending(REDACTED),
+        pending(REDACTED),
+        pending(REDACTED),
+    ];
+    assert_eq!(items, &initial);
     run.child_ended("/a").await;
-    let first = run.requests("/a")[0].first_user_texts().join("\n");
-    assert!(
-        first.contains("Checklist:\n- [ ] Read the plan\n- [ ] Write it"),
-        "{first}"
-    );
     let request = run.request();
     run.send(ClientCommand::ListAgents { request }).await;
     let snapshot = run
@@ -401,14 +409,8 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
     else {
         panic!("{records:?}");
     };
-    assert_eq!(
-        parent.todos,
-        [pending("Read the plan"), pending("Write it")]
-    );
-    assert_eq!(
-        checklist(&records[..1]),
-        [pending("Read the plan"), pending("Write it")]
-    );
+    assert_eq!(parent.todos, initial);
+    assert_eq!(checklist(&records[..1]), initial);
     assert_eq!(checklist(&records)[0].status, TodoStatus::Completed);
 
     let mut run = start(
@@ -447,6 +449,59 @@ async fn a_spawns_todos_become_the_childs_checklist_and_its_progress_is_listed()
         panic!("{records:?}");
     };
     assert!(parent.todos.is_empty());
+}
+
+#[tokio::test]
+async fn a_child_forwarder_refreshes_nested_todos_after_waiting_for_root_capacity() {
+    use crate::session::{REDACTED, register_secrets};
+
+    let canary = "CANARYOpaqueAtChildForwardCapacity";
+    assert!(!crate::secrets::scan::contains_secret_or_identity(
+        canary, None
+    ));
+    let Rooted { kit, tree, .. } =
+        rooted("todos-child-forward", Setup::default(), Vec::new()).await;
+    let (root, mut received) = mpsc::channel(1);
+    let service = AgentsService::new(Arc::new(kit), tree, root.clone(), false);
+    let (sent, child) = mpsc::channel(1);
+    let (_path, watch) = tokio::sync::watch::channel(path("/a"));
+    let item = |text: &str, status| TodoItem {
+        text: text.into(),
+        section: None,
+        status,
+    };
+    let safe = item("Verify the build", TodoStatus::Completed);
+    let private = item(canary, TodoStatus::Pending);
+    sent.try_send(AgentEvent::Agent {
+        agent: path("/a/b"),
+        event: Box::new(AgentEvent::TodosUpdated {
+            call_id: None,
+            items: vec![safe.clone(), private],
+        }),
+    })
+    .unwrap();
+    root.try_send(AgentEvent::LogDisabled {
+        reason: "test capacity".into(),
+    })
+    .unwrap();
+    let mut forward = std::pin::pin!(service.forward_child(watch, child, Some(root.clone()), None));
+    assert!(futures::poll!(forward.as_mut()).is_pending());
+    assert_eq!(sent.capacity(), 1);
+    assert_eq!(root.capacity(), 0);
+    register_secrets([canary.to_owned()]);
+    assert!(matches!(
+        received.try_recv(),
+        Ok(AgentEvent::LogDisabled { .. })
+    ));
+    drop(sent);
+    let ((), event) = tokio::join!(forward, received.recv());
+    let event = event.unwrap();
+    let Some(AgentEvent::TodosUpdated { items, .. }) =
+        inner(&event, "/a").and_then(|e| inner(e, "/a/b"))
+    else {
+        panic!("expected a nested checklist update");
+    };
+    assert_eq!(items, &[safe, item(REDACTED, TodoStatus::Pending)]);
 }
 
 #[tokio::test(start_paused = true)]

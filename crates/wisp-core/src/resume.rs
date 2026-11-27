@@ -46,8 +46,8 @@ pub use recover::{
 pub use repair::{
     Context as RepairContext, NOT_RUN, RepairedCall, UNKNOWN, recovered_text, repair_calls,
 };
-pub(crate) use transcript::replayed;
 pub use transcript::transcript;
+pub(crate) use transcript::{replayed, transcript_with_home};
 
 pub const STILL_OPEN_MINUTES: i64 = 10;
 const COMPACTION_SCHEMA: u16 = 19;

@@ -1742,10 +1742,19 @@ fn secret_check_uses_live_held_credentials_and_bound_or_unbound_home() {
     };
     let fallback_path = format!("{FALLBACK}/note");
     let bound_path = format!("{BOUND}/note");
+    let workspace_home = Path::new("/srv/wisp-check-workspace");
     kernel.set_fallback_home(Some(FALLBACK.into()));
+    assert_eq!(
+        secret_check_home(Some(&kernel), Some(workspace_home)).as_deref(),
+        Some(workspace_home)
+    );
     assert_eq!(check(&fallback_path), Verdict::Refused);
     assert_eq!(check(&bound_path), Verdict::Safe);
     bind(Some(BOUND.into()));
+    assert_eq!(
+        secret_check_home(Some(&kernel), Some(workspace_home)).as_deref(),
+        Some(Path::new(BOUND))
+    );
     assert_eq!(check(&fallback_path), Verdict::Safe);
     assert_eq!(check(&bound_path), Verdict::Refused);
     bind(None);

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -18,7 +19,7 @@ use super::{
 use crate::agent::{Agent, MailSender};
 use crate::agents::endpoints::{EndpointView, ExactAccount, LoggedKind};
 use crate::agents::fold::{
-    EndedRow, Folded, Links, LoggedEnd, SpawnedRecord, ended_above, ended_row, fold, links,
+    EndedRow, Folded, Links, LoggedEnd, SpawnedRecord, ended_above, ended_row_with, fold, links,
 };
 use crate::endpoints::goes::{shown, starts_charging};
 use crate::kit::{
@@ -28,7 +29,8 @@ use crate::kit::{
 use crate::provider::Provider;
 use crate::resume::{LoggedSession, billing_mode, carried, recover};
 use crate::runtime::in_parallel;
-use crate::session::{ResumeLock, Stamp, sha256_bytes_hex};
+use crate::secrets::scan::{os_detection_home, scrub_todos};
+use crate::session::{Redactions, ResumeLock, Stamp, held, sha256_bytes_hex};
 use wisp_protocol::subscription_auth::{CANT_BE_READ, Followed, Stayed, Unusable};
 
 pub(super) struct Known {
@@ -165,9 +167,13 @@ pub(super) struct EndedLog {
 }
 
 pub(super) fn ended_log(records: &[LogRecord]) -> EndedLog {
+    ended_log_with(records, os_detection_home().as_deref(), &held())
+}
+
+fn ended_log_with(records: &[LogRecord], home: Option<&Path>, redactions: &Redactions) -> EndedLog {
     EndedLog {
         spend: own_spend(records),
-        row: ended_row(records),
+        row: ended_row_with(records, home, redactions),
         links: links(records),
     }
 }
@@ -183,9 +189,13 @@ pub(super) fn kept_version() -> Option<&'static str> {
     static VERSION: OnceLock<Option<String>> = OnceLock::new();
     VERSION
         .get_or_init(|| {
+            let empty = Redactions::default();
             let facts: Vec<_> = FIXTURES
                 .iter()
-                .map(|log| ended_lines(log.as_bytes()).map(|records| ended_log(&records)))
+                .map(|log| {
+                    ended_lines(log.as_bytes())
+                        .map(|records| ended_log_with(&records, None, &empty))
+                })
                 .collect::<Result<_, _>>()
                 .ok()?;
             Some(sha256_bytes_hex(&serde_json::to_vec(&facts).ok()?))
@@ -227,14 +237,24 @@ pub(super) fn ended_facts(
     logs: &dyn OpenLog,
     spawned: &SpawnedRecord,
     kept: &Kept,
+    home: Option<&Path>,
 ) -> (Option<Stamp>, Option<EndedLog>) {
     let id = &spawned.session_id;
     let stamp = logs.stamp(id);
+    let redactions = held();
     let log = kept
         .get(id)
         .filter(|(known, _)| Some(*known) == stamp)
-        .map(|(_, log)| log.clone())
-        .or_else(|| logs.read(id).ok().map(|records| ended_log(&records)));
+        .map(|(_, log)| {
+            let mut log = log.clone();
+            scrub_todos(&mut log.row.checklist, home, &redactions);
+            log
+        })
+        .or_else(|| {
+            logs.read(id)
+                .ok()
+                .map(|records| ended_log_with(&records, home, &redactions))
+        });
     (stamp, log)
 }
 
@@ -758,6 +778,12 @@ pub async fn load_tree(
         rebuilt: Vec::new(),
         follow,
     };
+    let workspace_home = kit
+        .workspace
+        .as_ref()
+        .ok()
+        .and_then(|workspace| workspace.home.as_deref());
+    let home = crate::plugin::host::secret_check_home(None, workspace_home);
     let kept = read_kept(kit.logs.as_ref(), root.session_id());
     let mut facts = Kept::new();
     let mut level = Vec::new();
@@ -767,11 +793,13 @@ pub async fn load_tree(
         let mut next = Vec::new();
         let logs = walk.kit.logs.as_ref();
         let read = in_parallel(&level, |(spawned, _)| {
-            ended_above(&walk.ended, &spawned.path).then(|| ended_facts(logs, spawned, &kept))
+            ended_above(&walk.ended, &spawned.path)
+                .then(|| ended_facts(logs, spawned, &kept, home.as_deref()))
         });
         for ((spawned, parent_session), log) in std::mem::take(&mut level).into_iter().zip(read) {
             if ended_above(&walk.ended, &spawned.path) {
-                let (stamp, log) = log.unwrap_or_else(|| ended_facts(logs, &spawned, &kept));
+                let (stamp, log) =
+                    log.unwrap_or_else(|| ended_facts(logs, &spawned, &kept, home.as_deref()));
                 if let Some(stamp) = stamp
                     && let Some(log) = &log
                     && log.spend.is_some()
@@ -784,6 +812,10 @@ pub async fn load_tree(
             }
         }
         level = next;
+    }
+    let redactions = held();
+    for (_, log) in facts.values_mut() {
+        scrub_todos(&mut log.row.checklist, home.as_deref(), &redactions);
     }
     if facts != kept {
         keep(kit.logs.as_ref(), root.session_id(), &facts);
