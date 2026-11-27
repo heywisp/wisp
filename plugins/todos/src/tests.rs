@@ -28,6 +28,8 @@ fn refusal(input: &Value) -> Option<String> {
 
 #[test]
 fn the_validation_table() {
+    let key = "sk-ant-api03-CANARY-unknown-field-test-key";
+    let email = ["CANARY-checklist-field", "example.invalid"].join("@");
     let fifty: Vec<Value> = (1..=50)
         .map(|i| item(&format!("step {i}"), "pending"))
         .collect();
@@ -82,12 +84,20 @@ fn the_validation_table() {
         (json!([]), Some("input must be an object")),
         (
             json!({"todos": [item("a", "pending")], "plan": 1}),
-            Some("unknown field `plan`"),
+            Some("unknown field"),
+        ),
+        (
+            json!({"todos": [item("a", "pending")], (key): 1}),
+            Some("unknown field"),
         ),
         (json!({"todos": ["a"]}), Some("item 1 must be an object")),
         (
             json!({"todos": [{"text": "a", "status": "pending", "id": 1}]}),
-            Some("unknown field `id` in item 1"),
+            Some("unknown field in item 1"),
+        ),
+        (
+            json!({"todos": [{"text": "a", "status": "pending", (email): 1}]}),
+            Some("unknown field in item 1"),
         ),
         (
             json!({"todos": [item("a", "pending"), {"status": "pending"}]}),
@@ -119,12 +129,27 @@ fn the_validation_table() {
     for (input, expected) in cases {
         assert_eq!(refusal(&input).as_deref(), expected, "{input}");
     }
+    let malformed = format!(r#"{{"text":"{key}""#);
     assert_eq!(
-        block_on(plugin(&FakeHost::default()).prepare(NAME, "{"))
+        block_on(plugin(&FakeHost::default()).prepare(NAME, &malformed))
             .err()
-            .map(|e| e.starts_with("input is not JSON")),
-        Some(true)
+            .as_deref(),
+        Some("input is not JSON")
     );
+}
+
+#[test]
+fn a_rejected_display_never_lists_input_keys() {
+    let long_key = format!(
+        "CANARY-{}-sk-ant-api03-CANARY-display-field-test-key",
+        "x".repeat(100)
+    );
+    let input = json!({(long_key): true});
+    let shown =
+        block_on(plugin(&FakeHost::default()).rejected_display(NAME, &input.to_string())).unwrap();
+    assert_eq!(shown.action, Action::Other(NAME.to_owned()));
+    assert_eq!(shown.target, "");
+    assert_eq!(shown.output, OutputKind::None);
 }
 
 #[test]
@@ -181,7 +206,7 @@ fn a_run_hands_the_list_to_the_host_and_answers_with_one_line() {
     );
     assert_eq!(
         run.result.as_deref(),
-        Some("Todos updated: 2 of 5 completed. In progress: \"Write the plan\".")
+        Some("Todos updated: 2 of 5 completed.")
     );
     let replaced = host.todos.lock().unwrap().clone();
     assert_eq!(replaced.len(), 1);

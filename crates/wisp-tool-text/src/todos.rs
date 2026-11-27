@@ -136,14 +136,7 @@ pub fn completed(items: &[Todo]) -> usize {
 }
 
 pub fn updated(items: &[Todo]) -> String {
-    let progress = target(items);
-    match items
-        .iter()
-        .find(|item| item.status == TodoStatus::InProgress)
-    {
-        Some(item) => format!("Todos updated: {progress}. In progress: \"{}\".", item.text),
-        None => format!("Todos updated: {progress}."),
-    }
+    format!("Todos updated: {}.", target(items))
 }
 
 pub fn target(items: &[Todo]) -> String {
