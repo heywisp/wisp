@@ -568,77 +568,18 @@ impl GeminiProvider {
             };
             let url = format!("{}/v1internal:fetchAvailableModels", self.base_url);
             let call = antigravity::antigravity_headers(
-                self.client.post(url).timeout(timeout).body("{}"),
+                self.client.post(url).body("{}"),
                 &token,
                 user_agent,
             );
-            let response = match call.send().await {
-                Ok(r) => r,
-                Err(e) => return CheckOutcome::Unreachable(unreachable(&e)),
-            };
-            let status = response.status().as_u16();
-            if status == 400 {
-                let auth_err = super::body::read(response)
-                    .await
-                    .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-                    .and_then(|v| parse_google_error(&v, Some(400)))
-                    .is_some_and(|g| g.kind == Some(ErrorKind::Auth));
-                return if auth_err {
-                    CheckOutcome::KeyRefused
-                } else {
-                    unexpected(400, Answer::Status)
-                };
-            }
-            if let Some(outcome) = status_outcome(status) {
-                return outcome;
-            }
-            let Some(bytes) = super::body::read(response).await else {
-                return unexpected(200, Answer::Unreadable);
-            };
-            return if serde_json::from_slice::<Value>(&bytes)
-                .is_ok_and(|v| v.get("models").is_some_and(Value::is_object))
-            {
-                CheckOutcome::Ok
-            } else {
-                unexpected(200, Answer::NotJson)
-            };
+            return probe_models(call, timeout, Value::is_object).await;
         }
 
         let url = format!("{}/v1beta/models?pageSize=1", self.base_url);
         let call = self
             .apply_api_auth(self.client.get(url), self.credential.secret())
-            .header("Accept", "application/json")
-            .timeout(timeout);
-        let response = match call.send().await {
-            Ok(r) => r,
-            Err(e) => return CheckOutcome::Unreachable(unreachable(&e)),
-        };
-        let status = response.status().as_u16();
-        if status == 400 {
-            let auth_err = super::body::read(response)
-                .await
-                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-                .and_then(|v| parse_google_error(&v, Some(400)))
-                .is_some_and(|g| g.kind == Some(ErrorKind::Auth));
-            return if auth_err {
-                CheckOutcome::KeyRefused
-            } else {
-                unexpected(400, Answer::Status)
-            };
-        }
-        if let Some(outcome) = status_outcome(status) {
-            return outcome;
-        }
-        let Some(bytes) = super::body::read(response).await else {
-            return unexpected(200, Answer::Unreadable);
-        };
-        if serde_json::from_slice::<Value>(&bytes)
-            .is_ok_and(|v| v.get("models").is_some_and(Value::is_array))
-        {
-            CheckOutcome::Ok
-        } else {
-            unexpected(200, Answer::NotJson)
-        }
+            .header("Accept", "application/json");
+        probe_models(call, timeout, Value::is_array).await
     }
 
     async fn fetch_models(
@@ -807,6 +748,38 @@ impl GeminiProvider {
         if let Some(list) = list {
             self.list.add_with_meta(&list, meta);
         }
+    }
+}
+
+async fn probe_models(
+    call: reqwest::RequestBuilder,
+    timeout: Duration,
+    models_match: fn(&Value) -> bool,
+) -> CheckOutcome {
+    let response = match call.timeout(timeout).send().await {
+        Ok(response) => response,
+        Err(e) => return CheckOutcome::Unreachable(unreachable(&e)),
+    };
+    let status = response.status().as_u16();
+    if status != 400
+        && let Some(outcome) = status_outcome(status)
+    {
+        return outcome;
+    }
+    let parsed = super::body::read(response)
+        .await
+        .map(|bytes| serde_json::from_slice::<Value>(&bytes));
+    match (status, parsed) {
+        (400, Some(Ok(value)))
+            if parse_google_error(&value, Some(status))
+                .is_some_and(|error| error.kind == Some(ErrorKind::Auth)) =>
+        {
+            CheckOutcome::KeyRefused
+        }
+        (400, _) => unexpected(status, Answer::Status),
+        (_, None) => unexpected(status, Answer::Unreadable),
+        (_, Some(Ok(value))) if value.get("models").is_some_and(models_match) => CheckOutcome::Ok,
+        (_, _) => unexpected(status, Answer::NotJson),
     }
 }
 
@@ -1682,6 +1655,11 @@ pub(crate) mod tests {
         });
         let server = http::serve(vec![
             http::Reply::Send(http::json("200 OK", &json!({"models": []}).to_string())),
+            http::Reply::Send(http::json("200 OK", r#"{"models":{}}"#)),
+            http::Reply::HeadThenHang(format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                super::super::body::LIMIT + 1
+            )),
             http::Reply::Send(http::json("200 OK", &page1.to_string())),
             http::Reply::Send(http::json("200 OK", &page2.to_string())),
         ])
@@ -1696,6 +1674,16 @@ pub(crate) mod tests {
             provider.probe(Duration::from_secs(5)).await,
             CheckOutcome::Ok
         );
+
+        for answer in [Answer::NotJson, Answer::Unreadable] {
+            assert_eq!(
+                provider.probe(Duration::from_secs(5)).await,
+                CheckOutcome::Unexpected {
+                    status: 200,
+                    answer,
+                }
+            );
+        }
 
         let ids = provider.model_ids().await.unwrap();
         assert_eq!(
@@ -1826,10 +1814,10 @@ pub(crate) mod tests {
 
         let valid_profile = antigravity_profile(&cred_dir, None);
         let valid_payload = std::fs::read_to_string(&valid_profile).unwrap();
-        let s_ok = http::serve(vec![http::Reply::Send(http::json(
-            "200 OK",
-            &json!({"models": {}}).to_string(),
-        ))])
+        let s_ok = http::serve(vec![
+            http::Reply::Send(http::json("200 OK", &json!({"models": {}}).to_string())),
+            http::Reply::Send(http::json("200 OK", r#"{"models":[]}"#)),
+        ])
         .await;
         let saved = Record {
             version: ClientVersion::parse("1.5.11"),
@@ -1859,6 +1847,15 @@ pub(crate) mod tests {
         );
         let on_disk = std::fs::read_to_string(&valid_profile).unwrap();
         assert_eq!(on_disk, valid_payload);
+
+        let provider = GeminiProvider::from_endpoint(&sub_endpoint(&s_ok.url, None)).unwrap();
+        assert_eq!(
+            provider.probe(Duration::from_secs(2)).await,
+            CheckOutcome::Unexpected {
+                status: 200,
+                answer: Answer::NotJson,
+            }
+        );
     }
 
     #[test]
@@ -1942,6 +1939,12 @@ pub(crate) mod tests {
 
         let server = http::serve(vec![
             http::Reply::Send(http::json("400 Bad Request", &bad_key_body)),
+            http::Reply::Send(http::json("400 Bad Request", &overflow_body)),
+            http::Reply::Send(http::json("400 Bad Request", "<html>Bad request</html>")),
+            http::Reply::HeadThenHang(format!(
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                super::super::body::LIMIT + 1
+            )),
             http::Reply::Send(http::json("400 Bad Request", &bad_key_body)),
             http::Reply::Send(http::json("400 Bad Request", &overflow_body)),
             http::Reply::Send(http::json("429 Too Many Requests", &retry_body)),
@@ -1959,6 +1962,15 @@ pub(crate) mod tests {
             provider.probe(Duration::from_secs(2)).await,
             CheckOutcome::KeyRefused
         );
+        for _ in 0..3 {
+            assert_eq!(
+                provider.probe(Duration::from_secs(2)).await,
+                CheckOutcome::Unexpected {
+                    status: 400,
+                    answer: Answer::Status,
+                }
+            );
+        }
 
         let session = test_session();
         let messages = [Message::user_text("hi")];
