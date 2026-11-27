@@ -599,6 +599,63 @@ fn log_lines_escape_del_and_c1_controls() {
 }
 
 #[test]
+fn both_logged_checklists_scrub_unregistered_values_without_a_registry() {
+    use wisp_protocol::{AgentPath, ParentLink, TodoItem, TodoStatus};
+
+    let safe = TodoItem {
+        text: "Verify the build".into(),
+        status: TodoStatus::Completed,
+        section: None,
+    };
+    let sensitive = TodoItem {
+        text: "sk-ant-api03-CANARY-direct-log-checklist-fixture".into(),
+        status: TodoStatus::Pending,
+        section: Some(["CANARY-direct-log-checklist", "example.invalid"].join("@")),
+    };
+    let attached = TodoItem {
+        text: "-iframework/Users/CANARY/Frameworks".into(),
+        status: TodoStatus::InProgress,
+        section: Some(r"line\n-I/Users/CANARY/inc".into()),
+    };
+    let items = vec![safe.clone(), sensitive, attached];
+    let update = LogEvent::TodosUpdated {
+        turn: 1,
+        call_id: "call".into(),
+        items: items.clone(),
+    };
+    let mut child_start = started();
+    if let LogEvent::SessionStarted { parent, .. } = &mut child_start {
+        *parent = Some(Box::new(ParentLink {
+            session_id: "parent".into(),
+            agent: AgentPath::new("/child"),
+            depth: 1,
+            config: Default::default(),
+            todos: items,
+        }));
+    }
+    let redactions = Redactions::default();
+    let store = MemoryStore::default();
+    let mut log = SessionLog::new(Box::new(store.clone()), "typed-checklists");
+    let assert_scrubbed = |event: &LogEvent| {
+        let items = wisp_protocol::todos::listed(event).unwrap();
+        assert_eq!(items[0], safe);
+        assert_eq!(items[1].text, REDACTED);
+        assert_eq!(items[1].section.as_deref(), Some(REDACTED));
+        assert_eq!(items[1].status, TodoStatus::Pending);
+        assert_eq!(items[2].text, REDACTED);
+        assert_eq!(items[2].section.as_deref(), Some(REDACTED));
+        assert_eq!(items[2].status, TodoStatus::InProgress);
+    };
+    for event in [update, child_start] {
+        assert_scrubbed(&redactions.scrub_event(event.clone()));
+        assert_eq!(log.record(event), None);
+    }
+    for record in store.read("typed-checklists").unwrap() {
+        assert_scrubbed(&record.event);
+    }
+}
+
+#[test]
 fn redactions_scrub_every_string_but_the_conversation() {
     register_secrets([
         "/p/secret".to_owned(),

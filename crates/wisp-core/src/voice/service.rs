@@ -510,7 +510,7 @@ impl Service {
             return;
         }
         self.read(&event).await;
-        let _ = self.client.send(event).await;
+        crate::agent::send_scrubbed(&self.client, event, None).await;
     }
 
     async fn read(&mut self, event: &AgentEvent) {

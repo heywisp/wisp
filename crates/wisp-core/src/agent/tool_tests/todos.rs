@@ -238,6 +238,97 @@ async fn a_rewind_past_an_update_restores_the_earlier_list_and_a_resume_shows_th
 }
 
 #[tokio::test]
+async fn rewind_refreshes_todos_after_waiting_for_live_event_capacity() {
+    use crate::session::REDACTED;
+
+    let canary = "CANARYOpaqueDuringRewindEventBackpressure";
+    let mut first = first_list();
+    first[1].text = canary.into();
+    let provider = scripted(vec![
+        uses(&[call("t1", NAME, input(&first))]),
+        done("planned"),
+        uses(&[call("t2", NAME, input(&second_list()))]),
+        done("moved on"),
+    ]);
+    let env = Env::new("todos-rewind-backpressure");
+    let store = MemoryStore::default();
+    let mut agent = checklisting(provider, &env).with_log(
+        SessionLog::new(Box::new(store.clone()), "s1"),
+        log_context(),
+    );
+    turn(&mut agent, "plan it").await;
+    turn(&mut agent, "go on").await;
+    assert!(!crate::secrets::scan::contains_secret_or_identity(
+        canary, None
+    ));
+    let original = store.read("s1").unwrap();
+    let (tx, mut rx) = mpsc::channel(1);
+    let mut seen = Vec::new();
+    {
+        let rewind = agent.rewind_command(RequestId(1), RewindPoint::Turn { turn: 2 }, false, &tx);
+        let mut rewind = std::pin::pin!(rewind);
+        assert!(futures::poll!(rewind.as_mut()).is_pending());
+        assert_eq!(tx.capacity(), 0);
+        crate::session::register_secrets([canary.to_owned()]);
+        assert!(matches!(rx.try_recv(), Ok(AgentEvent::Rewound { .. })));
+        loop {
+            tokio::select! {
+                _ = rewind.as_mut() => break,
+                Some(event) = rx.recv() => seen.push(event),
+            }
+        }
+    }
+    seen.extend(std::iter::from_fn(|| rx.try_recv().ok()));
+    first[1].text = REDACTED.into();
+    assert_eq!(updates(&seen), [(None, first.clone())]);
+    assert_eq!(agent.todos, first);
+    assert!(store.read("s1").unwrap().starts_with(&original));
+}
+
+#[tokio::test]
+async fn describe_refreshes_checklists_after_waiting_for_snapshot_capacity() {
+    use crate::session::{REDACTED, register_secrets};
+
+    let canary = "CANARYOpaqueAtSessionSnapshotCapacity";
+    let mut list = first_list();
+    list[1].text = canary.into();
+    let provider = scripted(vec![
+        uses(&[call("t1", NAME, input(&list))]),
+        done("planned"),
+    ]);
+    let env = Env::new("todos-snapshot-backpressure");
+    let store = MemoryStore::default();
+    let mut agent = checklisting(provider, &env).with_log(
+        SessionLog::new(Box::new(store.clone()), "s1"),
+        log_context(),
+    );
+    turn(&mut agent, "plan it").await;
+    agent.cut_view();
+    let original = store.read("s1").unwrap();
+    assert_eq!(
+        updates(&agent.view(&original).events),
+        [(Some("t1".into()), list.clone())]
+    );
+    let (tx, mut rx) = mpsc::channel(1);
+    tx.try_send(AgentEvent::LogDisabled {
+        reason: "test capacity".into(),
+    })
+    .unwrap();
+    let mut describe = std::pin::pin!(agent.describe(RequestId(1), &tx));
+    assert!(futures::poll!(describe.as_mut()).is_pending());
+    assert_eq!(tx.capacity(), 0);
+    register_secrets([canary.to_owned()]);
+    assert!(matches!(rx.try_recv(), Ok(AgentEvent::LogDisabled { .. })));
+    let ((), event) = tokio::join!(describe, rx.recv());
+    let Some(AgentEvent::SessionSnapshot { view, .. }) = event else {
+        panic!("expected a session snapshot");
+    };
+    list[1].text = REDACTED.into();
+    assert_eq!(updates(&view.events), [(Some("t1".into()), list)]);
+    assert_eq!(store.read("s1").unwrap(), original);
+}
+
+#[tokio::test]
 async fn a_resumed_agent_rewinds_to_the_list_it_rebuilt_and_keeps_one_prefix() {
     let env = Env::new("todos-resumed-rewind");
     let store = MemoryStore::default();

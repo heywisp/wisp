@@ -646,6 +646,20 @@ Tests run sessions with a canary key, URL password, path, query and env-file
 value, including connection failures and a server that hangs up, and check
 that none of them appear in the file.
 
+## Checklist privacy
+
+Wisp replaces a whole checklist field (step text or section name) with
+`[redacted]` if it detects a credential or identity, including unregistered
+key-shaped tokens, email addresses, or home paths. Other registered log-only
+matches are masked in place. Step order, status, and progress do not change.
+
+This applies before a successful checklist update or a child's starting list is
+published.
+The log applies the same check to `todos_updated` and `session_started.parent.todos`.
+Resume and rewind mask restored and replayed lists without changing the source
+log or committed messages. An ended-child cache row is also checked when read;
+if its checklist changes, Wisp replaces the cached row, not the session log.
+
 ## Stability
 
 - Readers must ignore record types and fields they don't know. Adding either is

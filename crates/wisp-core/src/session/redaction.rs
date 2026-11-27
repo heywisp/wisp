@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde_json::Value;
 use wisp_protocol::ToolView;
@@ -6,25 +7,35 @@ use wisp_protocol::log::LogEvent;
 use wisp_protocol::plan_usage::{UsageScope, UsageWindow};
 
 use super::{RedactionKind, Redactions};
+use crate::secrets::scan::{os_detection_home, scrub_todo_fields};
+
+struct Scrub<'a> {
+    held: &'a Redactions,
+    home: Option<&'a Path>,
+}
 
 trait Content {
-    fn redact(&mut self, redactions: &Redactions);
+    fn redact(&mut self, redactions: &Scrub<'_>);
 }
 
 impl Content for String {
-    fn redact(&mut self, redactions: &Redactions) {
-        *self = redactions.scrub(self);
+    fn redact(&mut self, redactions: &Scrub<'_>) {
+        if !redactions.held.is_empty() {
+            *self = redactions.held.scrub(self);
+        }
     }
 }
 
 impl Content for Value {
-    fn redact(&mut self, redactions: &Redactions) {
-        redactions.scrub_value(self);
+    fn redact(&mut self, redactions: &Scrub<'_>) {
+        if !redactions.held.is_empty() {
+            redactions.held.scrub_value(self);
+        }
     }
 }
 
 impl<T: Content> Content for Option<T> {
-    fn redact(&mut self, redactions: &Redactions) {
+    fn redact(&mut self, redactions: &Scrub<'_>) {
         if let Some(value) = self {
             value.redact(redactions);
         }
@@ -32,7 +43,7 @@ impl<T: Content> Content for Option<T> {
 }
 
 impl<T: Content> Content for Vec<T> {
-    fn redact(&mut self, redactions: &Redactions) {
+    fn redact(&mut self, redactions: &Scrub<'_>) {
         for value in self {
             value.redact(redactions);
         }
@@ -40,13 +51,13 @@ impl<T: Content> Content for Vec<T> {
 }
 
 impl<T: Content> Content for Box<T> {
-    fn redact(&mut self, redactions: &Redactions) {
+    fn redact(&mut self, redactions: &Scrub<'_>) {
         self.as_mut().redact(redactions);
     }
 }
 
 impl<T: Content> Content for BTreeMap<String, T> {
-    fn redact(&mut self, redactions: &Redactions) {
+    fn redact(&mut self, redactions: &Scrub<'_>) {
         for value in self.values_mut() {
             value.redact(redactions);
         }
@@ -56,7 +67,7 @@ impl<T: Content> Content for BTreeMap<String, T> {
 macro_rules! content {
     ($ty:ty, $redactions:ident, {$($pattern:pat => [$($field:ident),*] $($extra:block)?),* $(,)?}) => {
         impl Content for $ty {
-            fn redact(&mut self, $redactions: &Redactions) {
+            fn redact(&mut self, $redactions: &Scrub<'_>) {
                 match self {
                     $($pattern => {
                         $($field.redact($redactions);)*
@@ -69,8 +80,13 @@ macro_rules! content {
 }
 
 pub(super) fn scrub(redactions: &Redactions, mut event: LogEvent) -> LogEvent {
-    if !redactions.is_empty() {
-        event.redact(redactions);
+    let has_todos = wisp_protocol::todos::listed(&event).is_some_and(|items| !items.is_empty());
+    if !redactions.is_empty() || has_todos {
+        let home = has_todos.then(os_detection_home).flatten();
+        event.redact(&Scrub {
+            held: redactions,
+            home: home.as_deref(),
+        });
     }
     event
 }
@@ -88,8 +104,11 @@ fn call(
     tool: &str,
     input: &mut Value,
     display: &mut wisp_protocol::ToolDisplay,
-    redactions: &Redactions,
+    redactions: &Scrub<'_>,
 ) {
+    if redactions.held.is_empty() {
+        return;
+    }
     let send = tool == wisp_protocol::agents::SEND_MESSAGE;
     let to = send.then(|| input.get_mut("to").map(Value::take)).flatten();
     let code = match &mut display.view {
@@ -342,8 +361,8 @@ content!(wisp_protocol::StreamDiagnostics, redactions, {
     } => [last_event_keys],
 });
 
-fn omit_redacted_window(window: &mut Option<Box<UsageWindow>>, redactions: &Redactions) {
-    let affected = |text: &str| redactions.has_match(text, RedactionKind::LogOnly);
+fn omit_redacted_window(window: &mut Option<Box<UsageWindow>>, redactions: &Scrub<'_>) {
+    let affected = |text: &str| redactions.held.has_match(text, RedactionKind::LogOnly);
     if window.as_deref().is_some_and(|w| {
         affected(&w.key)
             || affected(&w.label)
@@ -432,7 +451,9 @@ content!(wisp_protocol::settings::KeyVariable, redactions, {
 });
 
 content!(wisp_protocol::TodoItem, redactions, {
-    Self { text, status: _, section } => [text, section],
+    Self { text, status: _, section } => [] {
+        scrub_todo_fields(text, section, redactions.home, redactions.held);
+    },
 });
 
 content!(wisp_protocol::ToolAction, redactions, {

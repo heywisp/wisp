@@ -4,6 +4,7 @@ use std::sync::LazyLock;
 use std::{ffi::OsString, path::PathBuf};
 
 use regex::Regex;
+use wisp_protocol::TodoItem;
 
 use crate::session::{self, REDACTED};
 
@@ -22,12 +23,47 @@ pub(crate) fn contains_secret_or_identity_with(
     held: &session::Redactions,
 ) -> bool {
     held.has_secret_check_match(text)
-        || any_token(text, |token| {
-            wisp_protocol::has_known_key_prefix(token) || is_account_id(token)
-        })
+        || any_token(text, |token| is_key_token(token) || is_account_id(token))
         || wisp_protocol::has_url_password(text)
         || has_email(text)
         || has_home_path(text, home)
+}
+
+pub(crate) fn scrub_todo_text(
+    raw: &str,
+    home: Option<&Path>,
+    held: &session::Redactions,
+) -> String {
+    if raw == REDACTED || contains_secret_or_identity_with(raw, home, held) {
+        return REDACTED.to_owned();
+    }
+    let scrubbed = held.scrub(raw);
+    if scrubbed != raw
+        && (contains_secret_or_identity_with(&scrubbed, home, held)
+            || held.scrub(&scrubbed) != scrubbed)
+    {
+        REDACTED.to_owned()
+    } else {
+        scrubbed
+    }
+}
+
+pub(crate) fn scrub_todo_fields(
+    text: &mut String,
+    section: &mut Option<String>,
+    home: Option<&Path>,
+    held: &session::Redactions,
+) {
+    *text = scrub_todo_text(text, home, held);
+    if let Some(section) = section {
+        *section = scrub_todo_text(section, home, held);
+    }
+}
+
+pub(crate) fn scrub_todos(items: &mut [TodoItem], home: Option<&Path>, held: &session::Redactions) {
+    for item in items {
+        scrub_todo_fields(&mut item.text, &mut item.section, home, held);
+    }
 }
 
 pub(crate) fn fallback_detection_home(
@@ -41,13 +77,23 @@ pub(crate) fn fallback_detection_home(
     })
 }
 
-#[cfg(not(any(test, feature = "test-support")))]
 pub(crate) fn os_detection_home() -> Option<PathBuf> {
     fallback_detection_home(crate::workspace::home(), std::env::var_os("USERPROFILE"))
 }
 
 pub(crate) fn is_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '-' | '_')
+}
+
+const EXTRA_KEY_PREFIXES: &[&str] = &["sk-", "hf_", "ops_", "api_org_"];
+
+fn is_key_token(token: &str) -> bool {
+    wisp_protocol::has_known_key_prefix(token)
+        || EXTRA_KEY_PREFIXES.iter().any(|prefix| {
+            token
+                .strip_prefix(prefix)
+                .is_some_and(|tail| tail.len() >= wisp_protocol::KEY_SHAPED_MIN)
+        })
 }
 
 const ID_PREFIXES: &[&str] = &["org-", "user-", "proj_"];
@@ -78,6 +124,10 @@ impl TokenSpan<'_> {
     }
 }
 
+fn escaped_boundary(before: &[u8], token: &[u8]) -> bool {
+    before.ends_with(b"\\") && matches!(token.first(), Some(b'n' | b'r' | b't'))
+}
+
 fn token_spans(text: &str) -> impl Iterator<Item = TokenSpan<'_>> {
     let mut rest = text;
     std::iter::from_fn(move || {
@@ -86,7 +136,7 @@ fn token_spans(text: &str) -> impl Iterator<Item = TokenSpan<'_>> {
         let end = tail.find(|c| !is_token_char(c)).unwrap_or(tail.len());
         let (token, after) = tail.split_at(end);
         rest = after;
-        let escaped = before.ends_with('\\') && token.starts_with(['n', 'r', 't']);
+        let escaped = escaped_boundary(before.as_bytes(), token.as_bytes());
         let candidate = token.get(usize::from(escaped)..)?;
         Some(TokenSpan {
             start,
@@ -260,13 +310,31 @@ fn is_path_start(text: &[u8], at: usize) -> bool {
     let Some(before) = text.get(..at) else {
         return false;
     };
+    if path_delimiter(before) {
+        return true;
+    }
+    let start = before
+        .iter()
+        .rposition(|&byte| !is_token_char(char::from(byte)))
+        .map_or(0, |at| at + 1);
+    let start = start + usize::from(escaped_boundary(&before[..start], &before[start..]));
+    let (prefix, token) = before.split_at(start);
+    path_delimiter(prefix)
+        && token
+            .strip_prefix(b"--")
+            .or_else(|| token.strip_prefix(b"-"))
+            .is_some_and(|body| body.first().is_some_and(u8::is_ascii_alphabetic))
+}
+
+fn path_delimiter(before: &[u8]) -> bool {
     let Some((&previous, prefix)) = before.split_last() else {
         return true;
     };
     previous.is_ascii_whitespace()
         || b"`([{ \"'=:<,;|*>".contains(&previous)
         || (previous == b'@' && prefix.last().is_none_or(u8::is_ascii_whitespace))
-        || ["“", "‘", "file://", "file:///", r"\n", r"\r", r"\t"]
+        || escaped_boundary(prefix, &[previous])
+        || ["“", "‘", "file://", "file:///"]
             .iter()
             .any(|prefix| before.ends_with(prefix.as_bytes()))
 }
@@ -434,11 +502,12 @@ fn has_home_path(text: &str, home: Option<&Path>) -> bool {
     let needles = runtime_home_needles(home);
     let unix_home = needles.exact.filter(|path| path.starts_with('/'));
     text.char_indices().any(|(at, _)| {
-        is_path_start(text.as_bytes(), at)
-            && text.get(at..).is_some_and(|rest| {
-                matches_standard_home(rest)
+        text.get(at..).is_some_and(|rest| {
+            matches!(rest.as_bytes(), [b'/' | b'\\' | b'~', ..] | [_, b':', ..])
+                && is_path_start(text.as_bytes(), at)
+                && (matches_standard_home(rest)
                     || matches_wsl_unc_home(rest, unix_home)
-                    || matches_runtime_home(rest, &needles)
-            })
+                    || matches_runtime_home(rest, &needles))
+        })
     })
 }

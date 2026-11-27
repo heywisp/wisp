@@ -4,6 +4,40 @@ use super::*;
 use crate::session::Redactions;
 
 #[test]
+fn extra_key_prefixes_require_twenty_tail_characters_and_a_token_boundary() {
+    let held = Redactions::default();
+    let tail = "CANARY_1234567890-ab";
+    assert_eq!(tail.len(), 20);
+    for prefix in EXTRA_KEY_PREFIXES {
+        let key = format!("{prefix}{tail}");
+        for detected in [key.clone(), format!(r"Line\n{key}"), format!("({key})")] {
+            assert!(contains_secret_or_identity_with(&detected, None, &held));
+        }
+        for safe in [format!("{prefix}{}", &tail[..19]), format!("x{key}")] {
+            assert!(!contains_secret_or_identity_with(&safe, None, &held));
+        }
+    }
+}
+
+#[test]
+fn checklist_scrubbing_is_idempotent_when_a_log_only_match_overlaps_the_marker() {
+    let held = Redactions::log_only(["redact".to_owned()]);
+    let safe = scrub_todo_text("Use the redact command", None, &held);
+    assert_eq!(safe, REDACTED);
+    assert_eq!(scrub_todo_text(&safe, None, &held), safe);
+}
+
+#[test]
+fn scrubbing_a_todo_refuses_a_key_exposed_by_a_log_only_match() {
+    let log_only = Redactions::log_only(["CANARY-prefix".into()]);
+    let key = "sk-ant-api03-CANARY-todo-token-boundary-fixture";
+    let text = format!("Record CANARY-prefix{key}");
+    assert!(!contains_secret_or_identity_with(&text, None, &log_only));
+    assert_eq!(log_only.scrub(&text), format!("Record {REDACTED}{key}"));
+    assert_eq!(scrub_todo_text(&text, None, &log_only), REDACTED);
+}
+
+#[test]
 fn held_credentials_refuse_short_long_escaped_base64_and_project_id_but_allow_log_only_paths() {
     let long = "CANARYheldlongcredentialmaterial";
     let project_id = "CANARYprojectid12345";
@@ -275,6 +309,48 @@ fn email_and_account_id_checks_cover_unicode_wrappers_and_allow_versions_and_han
         "00000000-0000-0000-0000-000000000000".to_owned(),
     ] {
         assert!(!contains_secret_or_identity(&text, None), "{text}");
+    }
+}
+
+#[test]
+fn attached_path_flags_require_a_delimiter_and_find_home_paths_across_platforms() {
+    let home = Path::new("/srv/CANARY-checklist-home");
+    let held = Redactions::default();
+    let detected = |text| contains_secret_or_identity_with(text, Some(home), &held);
+    for text in [
+        "-I/home/CANARY/inc",
+        "compile -F/Users/CANARY/framework",
+        "-iframework/Users/CANARY/Frameworks",
+        "--sysroot/home/CANARY/sdk",
+        r"-LC:\Users\CANARY\lib",
+        "-C~CANARY-project/src",
+        "-I/srv/CANARY-checklist-home/inc",
+        "(-isystem/srv/CANARY-checklist-home/inc)",
+        r"-isysrootD:\Users\CANARY\sdk",
+        r"line\n-I/Users/CANARY/inc",
+        r"line\t-isystem/srv/CANARY-checklist-home/inc",
+        r"line\r--sysroot/srv/CANARY-checklist-home/sdk",
+        r"line\n-iframework/Users/CANARY/Frameworks",
+    ] {
+        assert!(detected(text), "{text}");
+    }
+    for text in [
+        "https://example.invalid/home/CANARY",
+        "https://a-b/home/CANARY",
+        "https://example.invalid/-x/home/CANARY",
+        "https://example.invalid/-isystem/home/CANARY",
+        "https://example.invalid/-iframework/Users/CANARY/Frameworks",
+        "foo-I/home/CANARY",
+        "foo-iframework/Users/CANARY/Frameworks",
+        "foo-isystem/srv/CANARY-checklist-home/inc",
+        "--/home/CANARY",
+        "-1/home/CANARY",
+        r"line\nfoo-I/Users/CANARY/inc",
+        r"line\n--/home/CANARY",
+        r"line\n-1/Users/CANARY/inc",
+        r"line\nhttps://example.invalid/-iframework/Users/CANARY/Frameworks",
+    ] {
+        assert!(!detected(text), "{text}");
     }
 }
 

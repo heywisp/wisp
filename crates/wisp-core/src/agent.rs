@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::ops::ControlFlow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -47,6 +47,7 @@ use crate::provider::{
     ProviderError, ProviderEvent, Refused, Rendering, Request, SearchSignal, View, has_content,
     may_end_quietly, quiet_end, reply_text, view,
 };
+use crate::secrets::scan::scrub_todos;
 use crate::session::mirror::log_record;
 use crate::session::{Redactions, SessionLog, new_session_id, now_rfc3339, rfc3339, sha256_hex};
 use crate::tool::{AskRequest, Attachment, PluginTool, Prepared, ToolRun, Toolbox, UserChannel};
@@ -1851,6 +1852,10 @@ impl Agent {
         if self.log.is_none() {
             return;
         }
+        let home = self.secret_check_home();
+        if let Some(parent) = &mut self.parent {
+            scrub_todos(&mut parent.todos, home.as_deref(), &crate::session::held());
+        }
         let context = &self.connection().context;
         let env = self.tools.as_ref();
         let event = LogEvent::SessionStarted {
@@ -1974,10 +1979,47 @@ impl Agent {
         event: AgentEvent,
         turn: Option<u64>,
     ) {
-        let seq = self.logged_seq();
-        self.log_event(events, &event, turn).await;
-        self.note_event(&event, seq);
+        self.record_event(events, &event, turn).await;
         emit(events, event).await;
+    }
+
+    async fn record_event(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        event: &AgentEvent,
+        turn: Option<u64>,
+    ) {
+        let seq = self.logged_seq();
+        self.log_event(events, event, turn).await;
+        self.note_event(event, seq);
+    }
+
+    fn scrub_live_todos(&mut self) {
+        let home = self.secret_check_home();
+        scrub_todos(&mut self.todos, home.as_deref(), &crate::session::held());
+    }
+
+    async fn emit_todos_updated(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        call_id: Option<String>,
+    ) {
+        if call_id.is_some() {
+            self.scrub_live_todos();
+            let event = AgentEvent::TodosUpdated {
+                call_id: call_id.clone(),
+                items: self.todos.clone(),
+            };
+            self.record_event(events, &event, self.running_turn()).await;
+        }
+        let permit = events.reserve().await.ok();
+        self.scrub_live_todos();
+        if let Some(permit) = permit {
+            permit.send(AgentEvent::TodosUpdated {
+                call_id,
+                items: self.todos.clone(),
+            });
+        }
     }
 
     pub fn with_plan_usage(
@@ -5356,14 +5398,10 @@ impl Agent {
         };
         self.emit(events, event).await;
         if let Some(items) = todos {
-            self.todos.clone_from(&items);
             let visible = call.model_visible.then(|| visible_strings(&call.input));
             self.todos_provenance = todo_provenance(&items, visible.as_ref());
-            let updated = AgentEvent::TodosUpdated {
-                call_id: Some(call.id.clone()),
-                items,
-            };
-            self.emit(events, updated).await;
+            self.todos = items;
+            self.emit_todos_updated(events, Some(call.id.clone())).await;
         }
         self.emit_notes(events).await;
         let mut content = vec![ContentBlock::Text {
@@ -6143,6 +6181,31 @@ fn already_started(
 
 async fn emit(events: &mpsc::Sender<AgentEvent>, event: AgentEvent) {
     let _ = events.send(event).await;
+}
+
+pub(crate) fn scrub_event_todos(event: &mut AgentEvent, home: Option<&Path>, held: &Redactions) {
+    match event {
+        AgentEvent::TodosUpdated { items, .. } => scrub_todos(items, home, held),
+        AgentEvent::Agent { event, .. } => scrub_event_todos(event, home, held),
+        AgentEvent::SessionSnapshot { view, state, .. } => {
+            for event in view.events.iter_mut().chain(state) {
+                scrub_event_todos(event, home, held);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) async fn send_scrubbed(
+    events: &mpsc::Sender<AgentEvent>,
+    mut event: AgentEvent,
+    home: Option<&Path>,
+) {
+    let Ok(permit) = events.reserve().await else {
+        return;
+    };
+    scrub_event_todos(&mut event, home, &crate::session::held());
+    permit.send(event);
 }
 
 type Stagger = std::pin::Pin<Box<dyn std::future::Future<Output = crate::warmth::Ticket> + Send>>;

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{Agent, PairState, emit};
+use super::{Agent, PairState, send_scrubbed};
 use crate::provider::pair_features;
 use tokio::sync::mpsc;
 use wisp_protocol::log::{LogEvent, LogRecord};
@@ -38,8 +38,10 @@ impl Agent {
         let mut suffix = self.restored_processes();
         suffix.push(self.context_now());
         let endpoint = self.endpoint_name().to_owned();
+        let home = self.secret_check_home();
         move |records| {
-            let mut events = crate::resume::transcript(records, &toolbox, offer);
+            let mut events =
+                crate::resume::transcript_with_home(records, &toolbox, offer, home.as_deref());
             events.retain(|event| {
                 let AgentEvent::FeatureStateChanged {
                     endpoint,
@@ -244,7 +246,7 @@ impl Agent {
                 Ok(records) => snapshot(records),
                 Err(_) => AgentEvent::refused(answers, "couldn't read the session log"),
             };
-            emit(events, event).await;
+            send_scrubbed(events, event, self.secret_check_home().as_deref()).await;
         }
     }
 

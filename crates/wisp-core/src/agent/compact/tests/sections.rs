@@ -21,6 +21,7 @@ use super::*;
 use crate::agent::testing::todo_item;
 use crate::plugin::testing::{hook_body, plugin_switch};
 use crate::plugin::{KernelHost, Make, PluginConfig, PluginHost, Registry, Source};
+use crate::session::REDACTED;
 
 const NOTES: &str = "bb/notes";
 
@@ -2155,8 +2156,10 @@ async fn a_non_todos_writers_private_checklist_fields_are_redacted_in_head_and_b
     const ROUTE: &str = "/checklist-writer-gateway";
     const QUERY: &str = "route=writer-fixture";
     const ASSIGNEE: &str = "Morgan Checklistfixture";
+    const LOCAL_TEXT: &str = "Keep the local checklist draft";
     const HOME: &str = "/srv/wisp-checklist-home";
     const KEY: &str = "sk-CANARY-generic-checklist-fixture";
+    const UNREGISTERED: &str = "sk-ant-api03-CANARY-checklist-writer-fixture";
     const SAFE_TEXT: &str = "Check the public build steps";
     const SAFE_SECTION: &str = "Build review";
     const TOOL: &str = "private_checklist_writer";
@@ -2187,18 +2190,15 @@ async fn a_non_todos_writers_private_checklist_fields_are_redacted_in_head_and_b
         ) -> BoxFuture<'a, ToolRun> {
             let mut private = todo_item(SECRET, TodoStatus::InProgress);
             private.section = Some(self.email.clone());
-            let mut route = todo_item(
-                &format!("Check path {ROUTE} and query {QUERY}"),
-                TodoStatus::Pending,
-            );
-            route.section = Some(ASSIGNEE.into());
+            let mut local = todo_item(LOCAL_TEXT, TodoStatus::Pending);
+            local.section = Some(ASSIGNEE.into());
             let mut key = todo_item(KEY, TodoStatus::Cancelled);
-            key.section = Some(format!("Use {ROUTE} and {QUERY}"));
+            key.section = Some(format!("Never disclose {UNREGISTERED}"));
             let mut flag = todo_item(&format!("-I{HOME}/inc"), TodoStatus::Pending);
             flag.section = Some(SAFE_SECTION.into());
             let mut safe = todo_item(SAFE_TEXT, TodoStatus::Completed);
             safe.section = Some(SAFE_SECTION.into());
-            let items = [&private, &route, &key, &flag, &safe]
+            let items = [&private, &local, &key, &flag, &safe]
                 .into_iter()
                 .map(crate::plugin::convert::todo_to_api)
                 .collect();
@@ -2215,14 +2215,27 @@ async fn a_non_todos_writers_private_checklist_fields_are_redacted_in_head_and_b
 
     let email = ["CANARY-checklist-writer", "example.invalid"].join("@");
     let flag = format!("-I{HOME}/inc");
-    assert!([ASSIGNEE, &flag, KEY].into_iter().all(|marker| {
-        !crate::secrets::scan::contains_secret_or_identity(marker, Some(std::path::Path::new(HOME)))
-    }));
+    let home = Some(std::path::Path::new(HOME));
+    let detected = |text| crate::secrets::scan::contains_secret_or_identity(text, home);
+    assert!(!detected(ASSIGNEE));
+    assert!(!detected(LOCAL_TEXT));
+    assert!(detected(&flag));
+    assert!(detected(KEY));
     let no_markers = |text: &str| {
         assert!(
-            [SECRET, &email, ROUTE, QUERY, ASSIGNEE, &flag, KEY]
-                .into_iter()
-                .all(|marker| !text.contains(marker))
+            [
+                SECRET,
+                &email,
+                ROUTE,
+                QUERY,
+                ASSIGNEE,
+                LOCAL_TEXT,
+                &flag,
+                KEY,
+                UNREGISTERED
+            ]
+            .into_iter()
+            .all(|marker| !text.contains(marker))
         );
     };
     let projected = |text: &str| {
@@ -2303,11 +2316,19 @@ async fn a_non_todos_writers_private_checklist_fields_are_redacted_in_head_and_b
         projected(&serde_json::to_string(saved).unwrap());
         assert_rebuilds(&store, &agent);
         no_markers(&serde_json::to_string(&agent.view_messages()).unwrap());
+        assert_eq!(agent.todos[0].text, REDACTED);
+        assert_eq!(agent.todos[0].section.as_deref(), Some(REDACTED));
+        assert_eq!(agent.todos[1].text, LOCAL_TEXT);
         assert_eq!(agent.todos[1].section.as_deref(), Some(ASSIGNEE));
-        assert_eq!(agent.todos[2].text, KEY);
-        assert_eq!(agent.todos[3].text, flag);
+        assert_eq!(agent.todos[2].section.as_deref(), Some(REDACTED));
+        assert_eq!(agent.todos[2].text, REDACTED);
+        assert_eq!(agent.todos[3].text, REDACTED);
 
+        let live = pick!(&seen, AgentEvent::TodosUpdated { items, .. } => items);
         let recorded = store.read("s1").unwrap();
+        let logged_items = pick!(&recorded, LogRecord { event: LogEvent::TodosUpdated { items, .. }, .. } => items);
+        assert_eq!(live, [&agent.todos]);
+        assert_eq!(logged_items, live);
         let next = documented(vec![compaction(SUMMARY), answer("Still here.", 300)]);
         let resumed = resume_todos(logged(next.clone(), &store), &store, Some(writer)).await;
         assert_eq!(resumed.view_messages(), agent.view_messages());
@@ -2339,12 +2360,15 @@ async fn a_legacy_checklist_without_committed_tool_input_keeps_only_status_and_o
     compact_checklist(&mut live, 100).await;
     assert!(completed(&live.turn("u2", "second").await));
     let (agent, _) = live.close().await;
+
+    let key = "sk-ant-api03-CANARY-legacy-checklist-fixture";
+    let email = ["CANARY-legacy-checklist", "example.invalid"].join("@");
     let mut legacy = todo_item("Local legacy step", TodoStatus::Cancelled);
-    legacy.section = Some("Local legacy heading".into());
-    let items = [
-        todo_item("First legacy step", TodoStatus::Completed),
-        legacy,
-    ];
+    legacy.section = Some(email.clone());
+    let items = [todo_item(key, TodoStatus::Completed), legacy];
+    let mut expected = items.clone();
+    expected[0].text = REDACTED.into();
+    expected[1].section = Some(REDACTED.into());
     let records = store.read("s1").unwrap();
     let update = serde_json::to_value(LogEvent::TodosUpdated {
         turn: 2,
@@ -2356,7 +2380,10 @@ async fn a_legacy_checklist_without_committed_tool_input_keeps_only_status_and_o
     let store = stored(&records);
     let provider = scripted(vec![compaction(SUMMARY), answer("Continue.", 300)]);
     let resumed = resume_todos(logged(provider.clone(), &store), &store, None).await;
-    assert_eq!(resumed.todos, items);
+    assert_eq!(resumed.todos, expected);
+    let view = resumed.view(&records);
+    let replayed = pick!(&view.events, AgentEvent::TodosUpdated { items, .. } => items);
+    assert_eq!(replayed, [&expected.to_vec()]);
     assert_eq!(resumed.view_messages(), agent.view_messages());
     let mut live = Live::start(resumed);
     compact_checklist(&mut live, 101).await;
@@ -2364,11 +2391,7 @@ async fn a_legacy_checklist_without_committed_tool_input_keeps_only_status_and_o
     let (agent, _) = live.close().await;
     let head = head_text(&agent);
     assert!(head.contains("- [completed] [redacted]\n## [redacted]\n- [cancelled] [redacted]"));
-    for marker in [
-        "First legacy step",
-        "Local legacy step",
-        "Local legacy heading",
-    ] {
+    for marker in [key, "Local legacy step", &email] {
         assert!(!head.contains(marker));
         assert!(!provider.body(1).to_string().contains(marker));
     }
@@ -2464,14 +2487,13 @@ async fn a_saved_checklist_hides_replayed_masks_without_changing_live_partial_re
     let records = store.read("s1").unwrap();
     let saved =
         pick!(&records, LogRecord { event: LogEvent::TodosUpdated { items, .. }, .. } => items);
-    assert!(saved[0][1].text.contains("Hold [redacted] back"));
-    assert_eq!(saved[0][1].section.as_deref(), Some("Review [redacted]"));
-    assert_eq!(saved[0][2].text, "Check [redacted]/acct-alpha/notes");
     assert_eq!(
-        saved[0][2].section.as_deref(),
-        Some("Files at [redacted]/acct-alpha/notes")
+        saved[0]
+            .iter()
+            .map(crate::plugin::convert::todo_to_api)
+            .collect::<Vec<_>>(),
+        expected
     );
-    assert_eq!(saved[0][2], saved[0][3]);
     for item in &mut expected {
         hide(item);
     }

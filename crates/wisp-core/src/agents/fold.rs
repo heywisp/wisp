@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,6 +13,8 @@ use wisp_tool_text::agents::WAKE;
 
 use super::service::{Reach, address, reach};
 use crate::provider::reply_text;
+use crate::secrets::scan::{os_detection_home, scrub_todos};
+use crate::session::{Redactions, held};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Folded {
@@ -379,6 +382,22 @@ fn resumed_since_named(records: &[LogRecord], turn: u64) -> bool {
 }
 
 pub fn fold(path: &AgentPath, records: &[LogRecord], renames: &[(AgentPath, AgentPath)]) -> Folded {
+    fold_with(
+        path,
+        records,
+        renames,
+        os_detection_home().as_deref(),
+        &held(),
+    )
+}
+
+fn fold_with(
+    path: &AgentPath,
+    records: &[LogRecord],
+    renames: &[(AgentPath, AgentPath)],
+    home: Option<&Path>,
+    redactions: &Redactions,
+) -> Folded {
     let mut state = State {
         path,
         renames,
@@ -415,11 +434,20 @@ pub fn fold(path: &AgentPath, records: &[LogRecord], renames: &[(AgentPath, Agen
     };
     folded.since = settled.map(|r| r.at.clone());
     folded.checklist = wisp_protocol::todos::checklist(records);
+    scrub_todos(&mut folded.checklist, home, redactions);
     folded
 }
 
 pub fn ended_row(records: &[LogRecord]) -> EndedRow {
-    let folded = fold(&AgentPath::root(), records, &[]);
+    ended_row_with(records, os_detection_home().as_deref(), &held())
+}
+
+pub(super) fn ended_row_with(
+    records: &[LogRecord],
+    home: Option<&Path>,
+    redactions: &Redactions,
+) -> EndedRow {
+    let folded = fold_with(&AgentPath::root(), records, &[], home, redactions);
     EndedRow {
         running_ms: folded.running_ms,
         last_report: folded.last_report,
