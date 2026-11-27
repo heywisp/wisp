@@ -1485,14 +1485,14 @@ pub(crate) fn held_generation() -> u64 {
     SECRETS_GENERATION.load(Ordering::Acquire)
 }
 
-fn process_secrets() -> &'static std::sync::Mutex<Redactions> {
-    static SECRETS: std::sync::OnceLock<std::sync::Mutex<Redactions>> = std::sync::OnceLock::new();
-    SECRETS.get_or_init(std::sync::Mutex::default)
+fn process_secrets() -> &'static std::sync::RwLock<Redactions> {
+    static SECRETS: std::sync::OnceLock<std::sync::RwLock<Redactions>> = std::sync::OnceLock::new();
+    SECRETS.get_or_init(std::sync::RwLock::default)
 }
 
 pub fn register(redactions: &Redactions) {
     let mut secrets = process_secrets()
-        .lock()
+        .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let updated = secrets.union([redactions]);
     if updated != *secrets {
@@ -1505,11 +1505,19 @@ pub fn register_secrets(items: impl IntoIterator<Item = String>) {
     register(&Redactions::new(items));
 }
 
-pub fn held() -> Redactions {
+pub(crate) fn read_held() -> std::sync::RwLockReadGuard<'static, Redactions> {
     process_secrets()
-        .lock()
+        .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+}
+
+pub fn held() -> Redactions {
+    read_held().clone()
+}
+
+#[cfg(test)]
+pub(crate) fn secrets_write_blocked() -> bool {
+    process_secrets().try_write().is_err()
 }
 
 pub(crate) fn without_registered_secrets(text: &str) -> String {

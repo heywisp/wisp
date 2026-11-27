@@ -49,10 +49,10 @@ struct Peer {
 }
 
 impl Peer {
-    fn send(&self, frames: Vec<ToClient>) -> bool {
+    fn send(&self, frames: &[ToClient]) -> bool {
         let counted = !matches!(frames.first(), Some(ToClient::Opened { .. }));
         for frame in frames {
-            let Ok(text) = jsonl::line(&frame) else {
+            let Ok(text) = jsonl::line(frame) else {
                 self.stop.send_replace(true);
                 return false;
             };
@@ -102,8 +102,11 @@ impl Handle {
     }
 }
 
+type Outbound = Box<dyn FnMut(&mut [ToClient], &mut dyn FnMut(&[ToClient])) + Send>;
+
 pub struct Host {
     session: Session,
+    outbound: Option<Outbound>,
     first: bool,
     peers: BTreeMap<u64, Peer>,
     window: Option<u64>,
@@ -124,6 +127,7 @@ impl Host {
         let (sent, received) = mpsc::channel(BACKLOG);
         Self {
             session,
+            outbound: None,
             first: true,
             peers: BTreeMap::new(),
             window: None,
@@ -138,6 +142,15 @@ impl Host {
             queued: VecDeque::new(),
             errors: PathBuf::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_outbound(
+        mut self,
+        outbound: impl FnMut(&mut [ToClient], &mut dyn FnMut(&[ToClient])) + Send + 'static,
+    ) -> Self {
+        self.outbound = Some(Box::new(outbound));
+        self
     }
 
     pub fn handle(&self) -> Handle {
@@ -275,8 +288,22 @@ impl Host {
         if self.peers.get(&id).is_some_and(Peer::behind) {
             self.note_cut();
             self.gone(id);
-        } else if self.peers.get(&id).is_some_and(|peer| !peer.send(frames)) {
-            self.gone(id);
+        } else if let Some(peer) = self.peers.get(&id) {
+            let mut sent = false;
+            if let Some(outbound) = &mut self.outbound {
+                let mut called = false;
+                outbound(&mut frames, &mut |frames| {
+                    if !called {
+                        called = true;
+                        sent = peer.send(frames);
+                    }
+                });
+            } else {
+                sent = peer.send(&frames);
+            }
+            if !sent {
+                self.gone(id);
+            }
         }
     }
 
@@ -515,7 +542,7 @@ impl Shutdown {
                         frames.push(ToClient::Restarting);
                     }
                     frames.push(ToClient::Ended { saved });
-                    peer.send(frames);
+                    peer.send(&frames);
                 }
                 let by = tokio::time::Instant::now() + WRITE_WAIT;
                 for peer in host.peers.values_mut() {

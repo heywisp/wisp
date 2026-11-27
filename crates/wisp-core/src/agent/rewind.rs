@@ -629,7 +629,7 @@ impl Agent {
         };
         emit(events, event).await;
         self.reopen_posted(mark.posted, events).await;
-        self.scrub_live_todos();
+        drop(self.scrub_live_todos());
         if self.todos != todos_before {
             self.emit_todos_updated(events, None).await;
         }
@@ -691,8 +691,7 @@ impl Agent {
     pub(super) fn restore_todos(&mut self, items: &[TodoItem], provenance: &[TodoProvenance]) {
         if self.has_todos() {
             items.clone_into(&mut self.todos);
-            let home = self.secret_check_home();
-            super::scrub_todos(&mut self.todos, home.as_deref(), &crate::session::held());
+            drop(self.scrub_live_todos());
             provenance.clone_into(&mut self.todos_provenance);
         } else {
             self.todos.clear();
