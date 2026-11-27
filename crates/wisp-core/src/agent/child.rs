@@ -21,7 +21,7 @@ use crate::agents::{
 };
 use crate::provider::reply_text;
 use crate::secrets::scan::scrub_todos;
-use crate::session::held;
+use crate::session::read_held;
 
 pub(crate) const MAX_NUDGES: u32 = 2;
 
@@ -196,7 +196,7 @@ impl Agent {
         }
     }
 
-    pub(crate) fn secret_check_home(&self) -> Option<PathBuf> {
+    pub fn secret_check_home(&self) -> Option<PathBuf> {
         crate::plugin::host::secret_check_home(
             self.hooks.host.as_deref(),
             self.tools
@@ -208,11 +208,13 @@ impl Agent {
     #[must_use]
     pub fn with_parent(mut self, mut link: ParentLink) -> Self {
         self.processes.set_child();
-        scrub_todos(
-            &mut link.todos,
-            self.secret_check_home().as_deref(),
-            &held(),
-        );
+        if !link.todos.is_empty() {
+            scrub_todos(
+                &mut link.todos,
+                self.secret_check_home().as_deref(),
+                &read_held(),
+            );
+        }
         self.parent = Some(link);
         if let Some(host) = &self.hooks.host {
             host.scope_mcp();
@@ -224,7 +226,11 @@ impl Agent {
     #[must_use]
     pub fn with_checklist(mut self, mut items: Vec<TodoItem>) -> Self {
         if !items.is_empty() && self.has_todos() {
-            scrub_todos(&mut items, self.secret_check_home().as_deref(), &held());
+            scrub_todos(
+                &mut items,
+                self.secret_check_home().as_deref(),
+                &read_held(),
+            );
             self.todos_provenance = starting_provenance(&items, self.parent.as_ref());
             self.todos = items;
             self.todos_unannounced = true;

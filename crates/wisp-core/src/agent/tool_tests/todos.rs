@@ -528,3 +528,229 @@ async fn the_checklist_follows_the_tool_providing_todos_whatever_its_name() {
         [(Some("t1".to_owned()), first_list()), (None, Vec::new())]
     );
 }
+
+#[test]
+fn scrub_event_todos_and_link_frames_load_held_lazily_and_reuse_one_snapshot_per_batch() {
+    use std::cell::Cell;
+    use wisp_protocol::SessionView;
+    use wisp_protocol::link::{CONTRACT, ToClient, Welcome};
+
+    let canary = "CANARYOpaqueInChecklistBatch";
+    let home = Path::new("/opt/wisp-test-home");
+    let home_field = "/opt/wisp-test-home/notes";
+    let redactions = Redactions::new([canary.to_owned()]);
+    let loads = Cell::new(0);
+    let load = || {
+        loads.set(loads.get() + 1);
+        &redactions
+    };
+    let delta = AgentEvent::TextDelta {
+        index: 0,
+        text: canary.into(),
+    };
+    let child = |event| AgentEvent::Agent {
+        agent: AgentPath::new("/worker"),
+        event: Box::new(event),
+    };
+    let checklist = |items| AgentEvent::TodosUpdated {
+        call_id: Some("t1".into()),
+        items,
+    };
+    let AgentEvent::SessionSnapshot { now, .. } = serde_json::from_str(include_str!(
+        "../../../../wisp-protocol/tests/fixtures/event_session_snapshot.json"
+    ))
+    .unwrap() else {
+        panic!("expected a session snapshot fixture");
+    };
+    let snapshot = |events, state| AgentEvent::SessionSnapshot {
+        answers: RequestId(1),
+        view: SessionView {
+            events,
+            ..SessionView::default()
+        },
+        state,
+        now: now.clone(),
+    };
+    for event in [
+        delta.clone(),
+        AgentEvent::ThinkingDelta {
+            index: 0,
+            text: canary.into(),
+        },
+        AgentEvent::ToolOutput {
+            call_id: "t1".into(),
+            text: canary.into(),
+        },
+        child(delta.clone()),
+        checklist(vec![]),
+        snapshot(vec![delta.clone()], vec![child(checklist(vec![]))]),
+    ] {
+        assert_eq!(
+            with_scrubbed_event_with(event.clone(), Some(home), load, std::convert::identity),
+            event
+        );
+        assert_eq!(loads.get(), 0);
+    }
+
+    let opening: Box<wisp_protocol::Opening> = serde_json::from_str(include_str!(
+        "../../../../wisp-protocol/tests/fixtures/opening.json"
+    ))
+    .unwrap();
+    let opened = |events| ToClient::Opened {
+        opening: opening.clone(),
+        view: SessionView {
+            events,
+            ..SessionView::default()
+        },
+        now: None,
+    };
+    let mut controls = [
+        ToClient::Welcome(Welcome {
+            contract: CONTRACT,
+            build: 7,
+            wisp: "test".into(),
+            session: "abcd-1234".into(),
+            first_request: RequestId(1),
+            folder: home.to_path_buf(),
+            window: false,
+            restart: false,
+        }),
+        ToClient::Refused {
+            contract: CONTRACT,
+            wisp: "test".into(),
+        },
+        opened(vec![checklist(vec![])]),
+        ToClient::event(delta.clone()),
+        ToClient::Taken,
+        ToClient::WindowOpen,
+        ToClient::Restarting,
+        ToClient::Ended { saved: true },
+    ];
+    let unchanged = controls.clone();
+    with_scrubbed_link_frames_with(&mut controls, Some(home), load, |frames| {
+        assert_eq!(frames, &unchanged)
+    });
+    assert_eq!(loads.get(), 0);
+
+    let safe = TodoItem {
+        section: Some("Next".into()),
+        ..item("Read the plan", TodoStatus::Completed)
+    };
+    let sensitive = |text, section| TodoItem {
+        section: Some(section),
+        ..item(text, TodoStatus::InProgress)
+    };
+    let raw = checklist(vec![
+        safe.clone(),
+        sensitive(canary, home_field.into()),
+        sensitive(home_field, canary.into()),
+    ]);
+    let scrubbed = checklist(vec![
+        safe,
+        sensitive(crate::session::REDACTED, crate::session::REDACTED.into()),
+        sensitive(crate::session::REDACTED, crate::session::REDACTED.into()),
+    ]);
+    let nested = |event: AgentEvent| {
+        snapshot(
+            vec![child(snapshot(vec![], vec![event.clone()]))],
+            vec![child(event)],
+        )
+    };
+    let actual = with_scrubbed_event_with(
+        nested(raw.clone()),
+        Some(home),
+        load,
+        std::convert::identity,
+    );
+    assert_eq!(actual, nested(scrubbed.clone()));
+    assert_eq!(loads.replace(0), 1);
+
+    let batch = |event: AgentEvent| {
+        [
+            opened(vec![event.clone()]),
+            ToClient::event(child(event)),
+            ToClient::event(delta.clone()),
+        ]
+    };
+    with_scrubbed_link_frames_with(&mut batch(raw), Some(home), load, |frames| {
+        assert_eq!(frames, &batch(scrubbed));
+    });
+    assert_eq!(loads.get(), 1);
+}
+
+#[test]
+fn scrubbed_link_publish_orders_secret_registration_against_synchronous_enqueue() {
+    use std::sync::Barrier;
+    use std::sync::atomic::AtomicBool;
+    use wisp_protocol::link::ToClient;
+
+    use crate::session::{REDACTED, read_held, register_secrets, secrets_write_blocked};
+
+    let canary = "CANARYOpaqueRegisteredDuringChecklistPublish";
+    let safe = item("Read the plan", TodoStatus::Completed);
+    let checklist = |secret| AgentEvent::TodosUpdated {
+        call_id: None,
+        items: vec![item(secret, TodoStatus::InProgress), safe.clone()],
+    };
+    let cached = [ToClient::event(checklist(canary))];
+    let in_publish = Barrier::new(2);
+    let probed = Barrier::new(2);
+    let enqueued = AtomicBool::new(false);
+    let mut outbound = cached.clone();
+    let line = std::thread::scope(|scope| {
+        let worker = scope.spawn(|| {
+            in_publish.wait();
+            let blocked = secrets_write_blocked();
+            probed.wait();
+            register_secrets([canary.to_owned()]);
+            let ordered = enqueued.load(Ordering::Acquire);
+            assert!(blocked, "checklist publish did not hold off a writer");
+            assert!(ordered, "registration finished before enqueue");
+        });
+        let line = with_scrubbed_link_frames(&mut outbound, None, |frames| {
+            in_publish.wait();
+            probed.wait();
+            let line = wisp_protocol::jsonl::line(&frames[0]).unwrap();
+            enqueued.store(true, Ordering::Release);
+            line
+        });
+        worker.join().unwrap();
+        line
+    });
+    assert!(
+        line.contains(canary),
+        "the first publish preceded registration"
+    );
+    let mut replay = cached;
+    with_scrubbed_link_frames(&mut replay, None, |frames| {
+        assert_eq!(frames, &[ToClient::event(checklist(REDACTED))]);
+    });
+
+    let delta = AgentEvent::TextDelta {
+        index: 0,
+        text: "still streaming".into(),
+    };
+    let mut frames = [ToClient::event(delta.clone())];
+    std::thread::scope(|scope| {
+        let worker = scope.spawn(|| {
+            in_publish.wait();
+            let blocked = secrets_write_blocked();
+            probed.wait();
+            assert!(!blocked, "delta publish acquired the registry lock");
+        });
+        with_scrubbed_link_frames(&mut frames, None, |_| {
+            in_publish.wait();
+            probed.wait();
+        });
+        worker.join().unwrap();
+    });
+
+    with_scrubbed_event_with(checklist(canary), None, read_held, |event| {
+        assert!(secrets_write_blocked());
+        assert_eq!(event, checklist(REDACTED));
+    });
+    with_scrubbed_event_with(delta.clone(), None, read_held, |event| {
+        assert!(!secrets_write_blocked());
+        assert_eq!(event, delta);
+    });
+}

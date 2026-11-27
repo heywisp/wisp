@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -15,6 +15,9 @@ use wisp_start::start::{self, StartAt};
 use wisp_tui::present::choose::{Chosen, Presenter};
 
 use crate::{Args, Setup, Stop};
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn no_restart_answer() -> String {
     format!(
@@ -158,13 +161,17 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
         .held_redactions(Some(&built.book.log_context().redactions))
         .union([&wisp_core::session::held()]);
     built.agent = built.agent.with_opening_replay();
+    let secret_home = built.agent.secret_check_home();
     let started = start::start(built);
-    let host = wispd::Host::new(wispd::Session {
-        opening: started.opening,
-        view: started.view.unwrap_or_default(),
-        session: id.clone(),
-        build: build(),
-    });
+    let host = build_host(
+        wispd::Session {
+            opening: started.opening,
+            view: started.view.unwrap_or_default(),
+            session: id.clone(),
+            build: build(),
+        },
+        secret_home,
+    );
     let _ = ready(Ready::Socket { path: path.clone() });
     let null = std::fs::OpenOptions::new()
         .write(true)
@@ -209,6 +216,12 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
         .await;
     }
     Ok(())
+}
+
+fn build_host(session: wispd::Session, secret_home: Option<PathBuf>) -> wispd::Host {
+    wispd::Host::new(session).with_outbound(move |frames, publish| {
+        wisp_core::agent::with_scrubbed_link_frames(frames, secret_home.as_deref(), publish);
+    })
 }
 
 pub(super) fn start_again<'a>(

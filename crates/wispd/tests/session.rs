@@ -4,235 +4,22 @@
     reason = "scripted-session helpers fail the test on setup, transport or assertion errors"
 )]
 
-#[path = "../../wisp-render/tests/support/events.rs"]
-mod events;
-#[path = "../../wisp-tui/tests/support/scratch.rs"]
-mod scratch;
+#[path = "support/script.rs"]
+mod script;
 #[path = "../../wisp-protocol/tests/support/mod.rs"]
 mod support;
 
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[path = "support/raw.rs"]
-mod raw;
-use raw::{Raw, WAIT};
-
-use scratch::ScratchDir;
+use script::{Raw, Script, WAIT, end, event, reopening, text};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
-use tokio::sync::{mpsc, oneshot, watch};
-use tokio::task::JoinHandle;
-use wisp_client::link::{self as client, Link, LinkEnd};
+use tokio::sync::{mpsc, oneshot};
+use wisp_client::link::{self as client, LinkEnd};
 use wisp_protocol::link::{self, CONTRACT, HOST_FIRST, REQUEST_RANGE, ToClient, ToHost};
-use wisp_protocol::{AgentEvent, ClientCommand, InputId, Opening, RequestId, SessionView};
-use wispd::{Host, Session};
-
-struct Script {
-    _scratch: ScratchDir,
-    path: PathBuf,
-    daemon: Option<PathBuf>,
-    handle: wispd::Handle,
-    commands: mpsc::Receiver<ClientCommand>,
-    events: mpsc::Sender<AgentEvent>,
-    ending: oneshot::Receiver<(bool, watch::Receiver<bool>)>,
-    saved: Option<oneshot::Sender<bool>>,
-    host: JoinHandle<bool>,
-}
-
-impl Script {
-    async fn new() -> Self {
-        let scratch = ScratchDir::new("wisp-host-", "link");
-        let mut socket = wispd::bind(&scratch.root).await.unwrap();
-        socket.publish("abcd-1234").unwrap();
-        let path = socket.path().to_owned();
-        let opening: Opening =
-            serde_json::from_str(&support::fixture_text("opening.json")).unwrap();
-        let view = SessionView {
-            events: vec![AgentEvent::turn_started(1), end()],
-            returned: vec![wisp_protocol::Returned {
-                id: Some(InputId("input-1".into())),
-                text: "waiting".into(),
-                ..Default::default()
-            }],
-            ..Default::default()
-        };
-        let host = Host::new(Session {
-            opening,
-            view,
-            session: "abcd-1234".into(),
-            build: 7,
-        });
-        let handle = host.handle();
-        let (commands, input) = mpsc::channel(16);
-        let (output, events) = mpsc::channel(16);
-        let (stop, ending) = oneshot::channel();
-        let (saved, save) = oneshot::channel();
-        let host = tokio::spawn(async move {
-            let shutdown = host.run(socket, commands, events).await.unwrap();
-            stop.send((shutdown.requested, shutdown.forced.clone()))
-                .unwrap();
-            shutdown
-                .finish(async move { save.await.unwrap_or(false) })
-                .await
-        });
-        Self {
-            _scratch: scratch,
-            path,
-            daemon: None,
-            handle,
-            commands: input,
-            events: output,
-            ending,
-            saved: Some(saved),
-            host,
-        }
-    }
-
-    async fn connection(&self, build: u64) -> client::Connection<BufReader<UnixStream>> {
-        if let Some(path) = &self.daemon {
-            client::daemon(path)
-                .await
-                .unwrap()
-                .open(link::session_of(&self.path).unwrap().to_owned(), build)
-                .await
-                .unwrap()
-        } else {
-            client::handshake(
-                BufReader::new(client::dial(&self.path).await.unwrap()),
-                build,
-            )
-            .await
-            .unwrap()
-        }
-    }
-
-    async fn open(&self) -> Link {
-        client::open(self.connection(7).await).await.unwrap()
-    }
-
-    async fn window(&self) -> Raw {
-        let mut raw = Raw::connect(&self.path).await;
-        raw.send(&ToHost::Hello {
-            contract: CONTRACT,
-            build: 7,
-        })
-        .await;
-        assert!(matches!(raw.next::<ToClient>().await, ToClient::Welcome(_)));
-        raw.send(&ToHost::Open).await;
-        assert!(matches!(
-            raw.next::<ToClient>().await,
-            ToClient::Opened { .. }
-        ));
-        raw
-    }
-
-    async fn ended(&mut self, raw: &mut Raw) {
-        raw.send(&ToHost::End { forced: false }).await;
-        let _ = tokio::time::timeout(WAIT, &mut self.ending)
-            .await
-            .unwrap()
-            .unwrap();
-        self.saved.take().unwrap().send(true).unwrap();
-        assert_eq!(
-            raw.next::<ToClient>().await,
-            ToClient::Ended { saved: true }
-        );
-    }
-
-    async fn command(&mut self) -> ClientCommand {
-        tokio::time::timeout(WAIT, self.commands.recv())
-            .await
-            .unwrap()
-            .unwrap()
-    }
-
-    async fn describe(&mut self) -> RequestId {
-        let ClientCommand::DescribeSession { request } = self.command().await else {
-            panic!("expected a description");
-        };
-        request
-    }
-
-    async fn snapshot(&self, request: RequestId, view: SessionView, state: Vec<AgentEvent>) {
-        let AgentEvent::SessionSnapshot { now, .. } =
-            serde_json::from_str(&support::fixture_text("event_session_snapshot.json")).unwrap()
-        else {
-            unreachable!()
-        };
-        self.events
-            .send(AgentEvent::SessionSnapshot {
-                answers: request,
-                view,
-                now,
-                state,
-            })
-            .await
-            .unwrap();
-    }
-
-    async fn close(&mut self, link: &mut Link, forced: bool) {
-        link.end.send(forced).await.unwrap();
-        self.finish(link, forced).await;
-    }
-
-    async fn finish(&mut self, link: &mut Link, forced: bool) {
-        let (requested, mut actual) = tokio::time::timeout(WAIT, &mut self.ending)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(requested);
-        if forced {
-            tokio::time::timeout(WAIT, actual.wait_for(|forced| *forced))
-                .await
-                .unwrap()
-                .unwrap();
-        }
-        assert_eq!(*actual.borrow(), forced);
-        assert!(self.commands.recv().await.is_none());
-        self.saved.take().unwrap().send(true).unwrap();
-        tokio::time::timeout(WAIT, async {
-            while link.ended.borrow().is_none() {
-                link.ended.changed().await.unwrap();
-            }
-        })
-        .await
-        .unwrap();
-        assert_eq!(*link.ended.borrow(), Some(LinkEnd::Ended { saved: true }));
-        assert!(!self.path.exists());
-        assert!((&mut self.host).await.unwrap());
-    }
-}
-
-impl Drop for Script {
-    fn drop(&mut self) {
-        self.host.abort();
-    }
-}
-
-fn end() -> AgentEvent {
-    events::turn_ended(events::End::default())
-}
-fn text(value: &str) -> AgentEvent {
-    AgentEvent::TextDelta {
-        index: 0,
-        text: value.into(),
-    }
-}
-async fn event(link: &mut Link) -> AgentEvent {
-    tokio::time::timeout(WAIT, link.channels.events.recv())
-        .await
-        .unwrap()
-        .unwrap()
-}
-async fn reopening(script: &Script) -> (tokio::task::JoinHandle<Link>, RequestId) {
-    let connection = script.connection(8).await;
-    let first = connection.welcome.first_request;
-    (
-        tokio::spawn(async move { client::open(connection).await.unwrap() }),
-        first,
-    )
-}
+use wisp_protocol::{AgentEvent, ClientCommand, InputId, SessionView};
+use wispd::Host;
 
 #[tokio::test]
 async fn opening_orders_view_state_since_cut_and_live_and_preserves_an_input_before_its_turn() {
@@ -1209,4 +996,75 @@ async fn shutdown_waits_until_the_ended_frame_is_written() {
                 .unwrap()
         );
     }
+}
+
+#[tokio::test]
+async fn outbound_hook_wraps_opening_replay_and_live_batches_and_fails_closed() {
+    let (seen, mut batches) = mpsc::unbounded_channel();
+    let omitted = ToClient::event(text("omit"));
+    let skip = omitted.clone();
+    let mut script = Script::with(SessionView::default(), 1, |session| {
+        Host::new(session).with_outbound(move |frames, publish| {
+            for frame in &mut *frames {
+                if let ToClient::Event(event) = frame
+                    && let AgentEvent::TextDelta { text, .. } = event.as_mut()
+                    && text == "live"
+                {
+                    *text = "projected".into();
+                }
+            }
+            if !matches!(frames, [ToClient::Welcome(_)]) {
+                seen.send(frames.to_vec()).unwrap();
+            }
+            if frames != [skip.clone()] {
+                publish(frames);
+                publish(frames);
+            }
+        })
+    })
+    .await;
+    let buffered = ToClient::event(text("pre-open"));
+    let connection = script.buffer_before_open(text("pre-open")).await;
+    let mut first = client::open(connection).await.unwrap();
+    assert_eq!(event(&mut first).await, text("pre-open"));
+    let batch = batches.try_recv().unwrap();
+    assert!(matches!(&batch[..], [ToClient::Opened { now: None, .. }, e] if *e == buffered));
+    drop(first);
+    assert_eq!(script.command().await, ClientCommand::WindowGone);
+
+    let (opening, _) = reopening(&script).await;
+    let request = script.describe().await;
+    let state = AgentEvent::AgentsSnapshot {
+        request: None,
+        agents: vec![],
+    };
+    script
+        .snapshot(request, SessionView::default(), vec![state.clone()])
+        .await;
+    let mut second = opening.await.unwrap();
+    assert_eq!(event(&mut second).await, state);
+    assert_eq!(event(&mut second).await, text("pre-open"));
+    let batch = batches.try_recv().unwrap();
+    assert!(
+        matches!(&batch[..], [ToClient::Opened { now: Some(_), .. }, s, e]
+        if *s == ToClient::event(state) && *e == buffered)
+    );
+
+    script.events.send(text("live")).await.unwrap();
+    assert_eq!(event(&mut second).await, text("projected"));
+    assert_eq!(
+        batches.try_recv().unwrap(),
+        [ToClient::event(text("projected"))]
+    );
+    script.events.send(text("omit")).await.unwrap();
+    assert_eq!(script.command().await, ClientCommand::WindowGone);
+    assert_eq!(batches.try_recv().unwrap(), [omitted]);
+    assert!(batches.try_recv().is_err());
+    assert_eq!(
+        tokio::time::timeout(WAIT, second.channels.events.recv())
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(*second.ended.borrow(), Some(LinkEnd::Lost));
 }

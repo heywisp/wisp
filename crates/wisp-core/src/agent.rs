@@ -1852,9 +1852,19 @@ impl Agent {
         if self.log.is_none() {
             return;
         }
-        let home = self.secret_check_home();
-        if let Some(parent) = &mut self.parent {
-            scrub_todos(&mut parent.todos, home.as_deref(), &crate::session::held());
+        if self
+            .parent
+            .as_ref()
+            .is_some_and(|parent| !parent.todos.is_empty())
+        {
+            let home = self.secret_check_home();
+            if let Some(parent) = &mut self.parent {
+                scrub_todos(
+                    &mut parent.todos,
+                    home.as_deref(),
+                    &crate::session::read_held(),
+                );
+            }
         }
         let context = &self.connection().context;
         let env = self.tools.as_ref();
@@ -1994,9 +2004,14 @@ impl Agent {
         self.note_event(event, seq);
     }
 
-    fn scrub_live_todos(&mut self) {
+    fn scrub_live_todos(&mut self) -> Option<std::sync::RwLockReadGuard<'static, Redactions>> {
+        if self.todos.is_empty() {
+            return None;
+        }
         let home = self.secret_check_home();
-        scrub_todos(&mut self.todos, home.as_deref(), &crate::session::held());
+        let guard = crate::session::read_held();
+        scrub_todos(&mut self.todos, home.as_deref(), &guard);
+        Some(guard)
     }
 
     async fn emit_todos_updated(
@@ -2005,7 +2020,7 @@ impl Agent {
         call_id: Option<String>,
     ) {
         if call_id.is_some() {
-            self.scrub_live_todos();
+            drop(self.scrub_live_todos());
             let event = AgentEvent::TodosUpdated {
                 call_id: call_id.clone(),
                 items: self.todos.clone(),
@@ -2013,13 +2028,14 @@ impl Agent {
             self.record_event(events, &event, self.running_turn()).await;
         }
         let permit = events.reserve().await.ok();
-        self.scrub_live_todos();
+        let guard = self.scrub_live_todos();
         if let Some(permit) = permit {
             permit.send(AgentEvent::TodosUpdated {
                 call_id,
                 items: self.todos.clone(),
             });
         }
+        drop(guard);
     }
 
     pub fn with_plan_usage(
@@ -6183,29 +6199,91 @@ async fn emit(events: &mpsc::Sender<AgentEvent>, event: AgentEvent) {
     let _ = events.send(event).await;
 }
 
-pub(crate) fn scrub_event_todos(event: &mut AgentEvent, home: Option<&Path>, held: &Redactions) {
+fn scrub_event_todos_with<G: std::ops::Deref<Target = Redactions>>(
+    event: &mut AgentEvent,
+    home: Option<&Path>,
+    held: &mut Option<G>,
+    load: &mut impl FnMut() -> G,
+) {
     match event {
-        AgentEvent::TodosUpdated { items, .. } => scrub_todos(items, home, held),
-        AgentEvent::Agent { event, .. } => scrub_event_todos(event, home, held),
+        AgentEvent::TodosUpdated { items, .. } if !items.is_empty() => {
+            let held = held.get_or_insert_with(load);
+            scrub_todos(items, home, held);
+        }
+        AgentEvent::Agent { event, .. } => scrub_event_todos_with(event, home, held, load),
         AgentEvent::SessionSnapshot { view, state, .. } => {
             for event in view.events.iter_mut().chain(state) {
-                scrub_event_todos(event, home, held);
+                scrub_event_todos_with(event, home, held, load);
             }
         }
         _ => {}
     }
 }
 
+fn with_scrubbed_event_with<G: std::ops::Deref<Target = Redactions>, R>(
+    mut event: AgentEvent,
+    home: Option<&Path>,
+    mut load: impl FnMut() -> G,
+    publish: impl FnOnce(AgentEvent) -> R,
+) -> R {
+    let mut guard = None;
+    scrub_event_todos_with(&mut event, home, &mut guard, &mut load);
+    let result = publish(event);
+    drop(guard);
+    result
+}
+
+fn with_scrubbed_link_frames_with<G: std::ops::Deref<Target = Redactions>, R>(
+    frames: &mut [wisp_protocol::link::ToClient],
+    home: Option<&Path>,
+    mut load: impl FnMut() -> G,
+    publish: impl FnOnce(&[wisp_protocol::link::ToClient]) -> R,
+) -> R {
+    use wisp_protocol::link::ToClient;
+
+    let mut guard = None;
+    for frame in frames.iter_mut() {
+        match frame {
+            ToClient::Opened { view, .. } => {
+                for event in &mut view.events {
+                    scrub_event_todos_with(event, home, &mut guard, &mut load);
+                }
+            }
+            ToClient::Event(event) => {
+                scrub_event_todos_with(event, home, &mut guard, &mut load);
+            }
+            ToClient::Welcome(_)
+            | ToClient::Refused { .. }
+            | ToClient::Taken
+            | ToClient::WindowOpen
+            | ToClient::Restarting
+            | ToClient::Ended { .. } => {}
+        }
+    }
+    let result = publish(frames);
+    drop(guard);
+    result
+}
+
+pub fn with_scrubbed_link_frames<R>(
+    frames: &mut [wisp_protocol::link::ToClient],
+    home: Option<&Path>,
+    publish: impl FnOnce(&[wisp_protocol::link::ToClient]) -> R,
+) -> R {
+    with_scrubbed_link_frames_with(frames, home, crate::session::read_held, publish)
+}
+
 pub(crate) async fn send_scrubbed(
     events: &mpsc::Sender<AgentEvent>,
-    mut event: AgentEvent,
+    event: AgentEvent,
     home: Option<&Path>,
 ) {
     let Ok(permit) = events.reserve().await else {
         return;
     };
-    scrub_event_todos(&mut event, home, &crate::session::held());
-    permit.send(event);
+    with_scrubbed_event_with(event, home, crate::session::read_held, |event| {
+        permit.send(event);
+    });
 }
 
 type Stagger = std::pin::Pin<Box<dyn std::future::Future<Output = crate::warmth::Ticket> + Send>>;

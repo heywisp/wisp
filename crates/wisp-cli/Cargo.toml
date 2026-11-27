@@ -53,6 +53,7 @@ wisp-render = { workspace = true, features = ["testing"] }
 wisp-start = { workspace = true, features = ["test-support"] }
 reqwest.workspace = true
 rustix = { workspace = true, features = ["pty", "net"] }
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true

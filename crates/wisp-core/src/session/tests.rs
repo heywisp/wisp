@@ -1766,7 +1766,7 @@ fn redactions_also_catch_a_secret_escaped_by_debug_output() {
     assert_eq!(redactions.scrub(&printed), r#""error: [redacted]""#);
     assert_eq!(redactions.scrub(secret), "[redacted]");
     assert_eq!(redactions.union([&redactions, &redactions]), redactions);
-    let registered = || format!("{:?}", *process_secrets().lock().unwrap());
+    let registered = || format!("{:?}", *process_secrets().read().unwrap());
     register_secrets([secret.to_owned()]);
     let once = registered();
     for _ in 0..3 {
