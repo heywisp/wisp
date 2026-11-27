@@ -26,6 +26,7 @@ mod keychain_first;
 mod live_ask;
 mod live_images;
 mod live_keep_running;
+mod live_memory;
 mod live_retry;
 mod live_show_diff;
 mod live_steering;

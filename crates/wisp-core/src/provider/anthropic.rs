@@ -420,6 +420,25 @@ impl AnthropicProvider {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub fn request_body(&self, request: &Request<'_>) -> Result<Vec<u8>, ProviderError> {
+        self.encode_request(request, &layout(request))
+    }
+
+    fn encode_request(
+        &self,
+        request: &Request<'_>,
+        layout: &Layout,
+    ) -> Result<Vec<u8>, ProviderError> {
+        encode(
+            request,
+            layout,
+            marks_for(request),
+            self.profile,
+            self.official(),
+        )
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn on_official_origin(mut self) -> Self {
         self.official = true;
@@ -880,13 +899,7 @@ impl Provider for AnthropicProvider {
     ) -> BoxStream<'static, Result<ProviderEvent, ProviderError>> {
         let layout = layout(request);
         let profile = self.profile;
-        let body = match encode(
-            request,
-            &layout,
-            marks_for(request),
-            profile,
-            self.official(),
-        ) {
+        let body = match self.encode_request(request, &layout) {
             Ok(body) => body,
             Err(e) => return stream::once(async move { Err(e) }).boxed(),
         };

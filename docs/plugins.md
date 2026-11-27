@@ -435,6 +435,33 @@ The bundled `workspace` plugin's `workspace/terminal` section (`lead`, after `wo
 
 `plugins/testkit` holds the kernel's test tools (`confirm`, `echo`, `fetch`, `instantly`, `limited`, `panic`, `sleep`, `snap`, `starter`, `stubborn`) as one plugin, on world 0.2.0 since `fetch` uses its `http` import. It is a dev-dependency only and never in `bundled()`.
 
+### Saved notes
+
+Ask Wisp to remember a durable fact **for you** (across your chats) or **for
+this project** (across the repository's worktrees). The bundled `memory`
+plugin's `remember` tool saves, replaces and forgets directly when asked,
+without a permission prompt. Unified permissions are deferred. Workers can
+read their project's notes but cannot see your personal notes or write notes.
+
+Use `/memory` to list saved notes, `/memory show <you|project> <name>` to
+inspect one, and `/memory delete <you|project> <name>` to forget it locally.
+You can also edit the Markdown files directly under Wisp's
+`plugin-data/memory/` directory. Keep the `name`, `description` and `saved`
+frontmatter; the name must match the file's slug. Reads and writes are
+subject to `secret-check` and schema, size and count bounds.
+
+**Note list limit** is an estimate, in tokens, for the note list restored in
+each context window: 256–2,000, default 2,000. Notes outside the list can
+still be found by name through search.
+
+```toml
+[plugins.memory]
+list_limit = 1000
+```
+
+Forgetting a note or turning the plugin off removes it from future injection.
+It does not erase text already present in immutable chat history or logs.
+
 ### Capabilities and the shell tool's name
 
 A tool's manifest `provides` travels on its `ToolEntry`, so a `Toolbox` built from any entries knows which tool provides each capability. `Toolbox::provider_of("shell")` names the tool that provides `shell` while it is on, and the kernel's file notes (`agent/attach.rs`, `withdraw.rs`, `repair.rs`) name that tool, or suggest no shell once it is off; likewise a rewind and a resume restore the checklist only while a tool provides `todos` (`write_todos`); the kernel names no bundled tool itself. `view_file`'s own sentences keep `bash` while its `capabilities` hold `shell`. The shell plugin names `ask_secret` in its descriptions and echo-off results only while `capabilities` holds `secret`; without it, the descriptions keep their original bytes.
@@ -500,6 +527,15 @@ An installed plugin cannot take a provider's reserved id.
 - **`chat`** (world 0.4.0) renames this saved chat from a main agent's tool call or command. `rename` cleans names with the automatic naming rule and queues them for the agent to append as name-only `session_named` records when the call or command ends, even if it was then cancelled. A name request already in flight keeps its usage and cost but lands without its name, with detail `renamed`.
 - **`questions`** (world 0.4.0) lets any running tool call post a question set without holding the turn (`post` → `open`, `busy` or `unavailable`) or withdraw the agent's open posted question (`withdraw` → `bool`). It needs a running call and (for `post`) a user channel; it is refused in slot and start renders and in older worlds. The kernel keeps the open question, logs `question_asked` / `question_closed`, and delivers the user's answer or stop note to the agent as a plain user-role letter on the mail lane; the plugin never sees the answer.
 - **`project`** (world 0.4.0) gives the Git repository at the agent's bound workspace root a location key of 32 lowercase hex characters. All worktrees share it; moving or renaming the common Git folder gives a new key, and a later repository at the same path gets the old key. The kernel hashes the canonical common Git folder path with HMAC-SHA-256 keyed by `plugin-data/core/project-secret`, which it creates on first use. `key` returns `none` in slot and start renders, in `describe` and `doctor`, for older worlds, with no data folder or bound workspace, outside a repository, for a broken Git pointer, or on platforms without safe private-file opens (currently supported on Linux and macOS only). It never returns a path or the secret; this is not a filesystem sandbox. Use the key only to name the plugin's own files, never in text that goes to a model.
+- **`private-files`** (world 0.4.0) is rooted in the plugin's own data
+  directory. It accepts relative path components only, opens without
+  following symlinks, and offers bounded `list` and `read` plus a conditional,
+  atomic `change`: expect absence or a matching hash, then write or delete.
+  An optional `create-cap` (`suffix`, `max-regular`) checks capacity for
+  matching regular files under the parent-directory writer lock. It works on
+  Linux and macOS and fails closed elsewhere. The `allows_private_write`
+  invocation guard permits changes only inside tool `run` and local commands;
+  renders, hooks, `prepare`, `describe` and `doctor` are read-only.
 - **`secrets`** (world 0.3.0) has the user enter a secret in a box the host owns and types it into a running process, answering only how it ended (`secret-end`, never text or a number from the value). Only a bundled plugin of world 0.3.0 may call it. An installed plugin is answered `unavailable`: it picks the process that receives the value, and the box does not name the plugin asking. Opening this to installed plugins belongs to task 514 (plugin-capabilities-enforced); requesting the `ask` capability alone does not enforce it. It needs a running call and a user channel (`unavailable` without one, in a render or on a platform with no jobs). Before asking, the kernel refuses a process that isn't running (`no-process` for a number it never had, `ended`), that the user has taken over (`attached`), a pipe with no open input (`no-input`) and a terminal that would show what is typed (`shows-input`): a terminal must be in line mode with echo off, the one predicate `hidden_input` uses. The value is written with `end-input` as the value and end of input with no line break on a pipe, or Enter then end-of-input on a terminal, otherwise the value and Enter; the write to a terminal is marked hidden, and its writer thread sends each chunk only while the terminal is still hidden, so a program that turns echo on or leaves line mode while the box is open gets nothing and the end is `shows-input`. A terminal line over its limit is `too-long`; any other write failure is `failed`. A stop while the box is open is `stopped`.
 - **`screen-report`** (world 0.3.0) waits up to `within-ms` for a screen's `screen_report` command on a running call the plugin owns, and answers `none` for any other call, in a render, or when the time runs out. Every root agent's calls can wait, whatever `user_input` is (questions and attach requests still need it); the agent keeps the open wait beside its question, takes the first report for that call and refuses any other as `unknown_id`; a child refuses the command as it does `answer`.
 - **World 0.2.0's `job-news`** answers only inside a turn's `before-turn`, and only to the plugin whose `job_news` hook is running: the core hands the turn's news (`wake` only on a turn a process end started) to each `job_news` hook in turn and takes it back when the hook returns. The news counts as offered only if such a hook read it and its append was accepted; otherwise it is unoffered at once and waits for the next opening, and process wakes stop until a new process ends, so an unworded notice can't loop paid wake turns. A `job_news` hook's append has no 10,000-character cap. Every other caller, a 0.1.0 plugin, a start render and a slot render get `none`. `workspace-facts.environment` answers from the published snapshot, as above, and `config-dir` with the Kit's config directory.
@@ -1019,7 +1055,15 @@ loaded, turned on or unknown, is dropped without a problem, from a world 0.3.0 s
 The plugin that owns a held tool may give its entry, which takes the place of the one the kernel
 builds from the definition; another source's entry for it is a discarded duplicate.
 `Host::index().entries()` returns the merged index to any plugin of world 0.3.0 or later: each entry's kind, name, summary and search text. Async `open(name)` returns a tool's parameter schema as JSON text, or the owning source's skill/document text, to a bundled plugin only. An installed plugin gets `an installed plugin can't open index entries`, before any owner or parameters are read. Opening this to installed plugins belongs to task 514 (plugin-capabilities-enforced). Entries, opening and changed notifications are unavailable in renders.
-Draft world 0.4.0 sources may set `live_documents = true` with `index = true`. The kernel retains only the weak source, not rows or owners for its documents. Listing and opening call the live source in a nonrecursive read-only scope with the current caller's identity when available. Only immediately ready reads participate; the operation discards its result if the held-credential generation or home changes. Cached non-tool entries with no live owner are omitted. Lookups check the target before resolving it and use a fixed message on refusal.
+Draft world 0.4.0 sources may set `live_documents = true` with `index = true`.
+The kernel retains only the weak source, not document rows or owners.
+`Caller::read_only_agent()` gives tool preparation root/worker visibility
+without `cancel` or private-write access; the nonrecursive scope for live
+listing and opening preserves that visibility without granting either.
+Reads never block waiting for the source: only `Ready` results participate,
+and a held-credential generation or home change discards the result. Cached
+non-tool entries with no live owner are omitted. Lookups check the target
+before resolving it and use a fixed message on refusal.
 
 The kernel gathers and routes; plugins rank with `wisp-index`.
 
