@@ -5,7 +5,7 @@ use wisp_core::agent::{BriefOwners, send_scrubbed_with_owners, with_scrubbed_lin
 use wisp_protocol::link::ToClient;
 use wisp_protocol::{AgentEvent, Opening, SessionView};
 
-pub(crate) struct Scrub {
+pub struct Scrub {
     home: Option<PathBuf>,
     owners: BriefOwners,
 }
@@ -15,43 +15,40 @@ impl Scrub {
         Self { home, owners }
     }
 
-    pub(crate) fn write(
+    pub fn write(
         &self,
         event: &AgentEvent,
         mut write: impl FnMut(&AgentEvent) -> Result<(), String>,
     ) -> Result<(), String> {
         let mut frames = [ToClient::event(event.clone())];
-        with_scrubbed_link_frames(
-            &mut frames,
-            self.home.as_deref(),
-            Some(&self.owners),
-            |out| {
-                out.iter().try_for_each(|frame| match frame {
-                    ToClient::Event(event) => write(event),
-                    _ => Ok(()),
-                })
-            },
-        )
+        self.frames(&mut frames, |out| {
+            out.iter().try_for_each(|frame| match frame {
+                ToClient::Event(event) => write(event),
+                _ => Ok(()),
+            })
+        })
         .unwrap_or(Ok(()))
     }
 
-    pub(crate) async fn send(&self, to: &mpsc::Sender<AgentEvent>, event: AgentEvent) {
+    pub fn frames<R>(
+        &self,
+        frames: &mut [ToClient],
+        publish: impl FnOnce(&[ToClient]) -> R,
+    ) -> Option<R> {
+        with_scrubbed_link_frames(frames, self.home.as_deref(), Some(&self.owners), publish)
+    }
+
+    pub async fn send(&self, to: &mpsc::Sender<AgentEvent>, event: AgentEvent) {
         send_scrubbed_with_owners(to, event, self.home.as_deref(), &self.owners).await;
     }
 
-    pub(crate) fn opened_view(&self, opening: &Opening, view: SessionView) -> SessionView {
+    pub fn opened_view(&self, opening: &Opening, view: SessionView) -> SessionView {
         let mut frames = [ToClient::Opened {
             opening: Box::new(opening.clone()),
             view,
             now: None,
         }];
-        let kept = with_scrubbed_link_frames(
-            &mut frames,
-            self.home.as_deref(),
-            Some(&self.owners),
-            |_| (),
-        )
-        .is_some();
+        let kept = self.frames(&mut frames, |_| ()).is_some();
         let [ToClient::Opened { mut view, .. }] = frames else {
             return SessionView::default();
         };
@@ -62,8 +59,8 @@ impl Scrub {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod testing {
+#[cfg(feature = "test-support")]
+pub mod testing {
     use wisp_protocol::{
         AgentPath, OutputKind, RejectKind, TodoItem, TodoStatus, ToolAction, ToolDisplay,
         ToolPurpose,
@@ -71,13 +68,17 @@ pub(crate) mod testing {
 
     use super::*;
 
-    pub(crate) const CANARY: &str = "CANARYOpaqueRegisteredAfterQueued";
+    pub const CANARY: &str = "CANARYOpaqueRegisteredAfterQueued";
 
-    pub(crate) fn scrub() -> Scrub {
-        Scrub::new(None, BriefOwners::default())
+    pub fn scrub() -> Scrub {
+        scrub_with(None, BriefOwners::default())
     }
 
-    pub(crate) fn queued() -> Vec<AgentEvent> {
+    pub fn scrub_with(home: Option<PathBuf>, owners: BriefOwners) -> Scrub {
+        Scrub::new(home, owners)
+    }
+
+    pub fn queued() -> Vec<AgentEvent> {
         let checklist = AgentEvent::TodosUpdated {
             call_id: Some("t1".into()),
             items: vec![TodoItem {

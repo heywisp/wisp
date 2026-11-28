@@ -1558,8 +1558,8 @@ crates/
   wispd/           daemon: transport, auth, pairing, lifecycle              (M7, M12)
   wisp-cli/        binary: starts through wisp-start; wires transport; TUI or JSON output; run --headless
   wisp-start/      the start step shared by Wisp's programs: config, flags, keys and credentials into the Kit's
-                   inputs, then the session opened or resumed and its root agent started; never depends on
-                   wisp-tui or wisp-cli
+                   inputs, then the session opened or resumed and its root agent started, with the scrub
+                   that masks late-registered secrets in its events; never depends on wisp-tui or wisp-cli
   wisp-render/     pure rendering: markdown, highlight, diff, width, sanitise, theme   (M3)
   wisp-tui/        terminal layer, presenters, widgets, app loop                        (M3)
   wisp-media/      pure image sniffing, sizing and normalisation                        (M3.1)

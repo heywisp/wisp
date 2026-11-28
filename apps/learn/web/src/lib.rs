@@ -200,6 +200,7 @@ struct Host {
     commands: mpsc::WeakSender<ClientCommand>,
     out: broadcast::WeakSender<Line>,
     sheet: Arc<Sheet>,
+    redact: Box<dyn Fn(&str) -> String + Send + Sync>,
     up: mpsc::Sender<AudioFrame>,
     calling: Mutex<Option<Calling>>,
     screens: AtomicU64,
@@ -279,7 +280,10 @@ pub fn failed_turn(event: &AgentEvent, model: &str) -> Option<String> {
 
 pub async fn serve(
     setup: WebSetup,
-    replayed: &[AgentEvent],
+    (replayed, redact): (
+        &[AgentEvent],
+        impl Fn(&str) -> String + Send + Sync + 'static,
+    ),
     commands: mpsc::Sender<ClientCommand>,
     events: &mut mpsc::Receiver<AgentEvent>,
     (up, mut down): (mpsc::Sender<AudioFrame>, mpsc::Receiver<AudioFrame>),
@@ -335,6 +339,7 @@ pub async fn serve(
         commands: commands.downgrade(),
         out: out.downgrade(),
         sheet: Arc::clone(&sheet),
+        redact: Box::new(redact),
         up,
         calling: Mutex::new(None),
         screens: AtomicU64::new(0),
@@ -1040,7 +1045,7 @@ async fn talk(
     }
     let live = host.live_call().map(|call| VoiceEvent::Started { call });
     for line in live.and_then(voice).into_iter().chain(kept) {
-        if !sent(&mut sink, Message::text(line.as_ref())).await {
+        if !sent(&mut sink, Message::text((host.redact)(&line))).await {
             return;
         }
     }
@@ -1051,7 +1056,7 @@ async fn talk(
     loop {
         let reply = tokio::select! {
             line = out.recv() => match line {
-                Ok(line) if line.to.reaches(me) => Some(Message::text(line.text.as_ref())),
+                Ok(line) if line.to.reaches(me) => Some(Message::text((host.redact)(&line.text))),
                 Ok(_) | Err(RecvError::Lagged(_)) => None,
                 Err(RecvError::Closed) => return,
             },

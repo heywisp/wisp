@@ -4,17 +4,20 @@ use std::sync::Arc;
 
 use clap::Parser;
 use learn_web::{Ended, FOLDER, KEY, Shown, WebSetup, failed_turn};
+use serde_json::Value;
+use tokio::sync::mpsc;
 use wisp_client::{AGENT_STOPPED, Channels, drain_within, interrupts};
 use wisp_core::endpoints::ConfigFile;
 use wisp_core::endpoints::PathShown;
 use wisp_core::session::JsonlStore;
 use wisp_core::settings::{Given, START_ORIGIN};
-use wisp_protocol::AgentEvent;
 use wisp_protocol::settings::{Kind, Place, SettingTarget, SettingValue, Target, names};
+use wisp_protocol::{AgentEvent, Opening, SessionView};
 use wisp_render::text::sanitize;
 use wisp_start::endpoints::{READABLE, short};
 use wisp_start::paths::{home_dir, xdg_config_home, xdg_data_home};
 use wisp_start::run::{Setup, load_keychain};
+use wisp_start::scrub::Scrub;
 use wisp_start::start::{self, FORCED_EXIT, Inputs, Picked, SHUTDOWN_WAIT, Stop};
 use wisp_start::tools::ToolRule;
 
@@ -156,14 +159,21 @@ async fn lesson(args: Args) -> Result<ExitCode, String> {
         folder,
         address: wisp_core::voice::default_ip().ok(),
     };
-    let replayed = started.view.map(|r| r.events).unwrap_or_default();
-    let served = serve(
-        setup,
-        &replayed,
-        started.channels,
-        (lane.up, lane.down),
-        (&started.opening.model, picks.as_deref()),
-    )
+    let served = async {
+        let mut interrupt = interrupts()?;
+        let stop = async move {
+            interrupt.recv().await;
+        };
+        serve(
+            setup,
+            (started.view, &started.opening, started.scrub),
+            started.channels,
+            (lane.up, lane.down),
+            stop,
+            reported(&started.opening.model, picks.as_deref()),
+        )
+        .await
+    }
     .await;
     let (code, forced) = match served {
         Ok(false) => (ExitCode::SUCCESS, false),
@@ -289,49 +299,77 @@ fn key_warning(folder: &Path) -> Option<String> {
         .then(|| format!("learn: {} {READABLE}", short(&key, home.as_deref())))
 }
 
+fn redacted(line: &str) -> String {
+    let Ok(mut event) = serde_json::from_str::<Value>(line) else {
+        return String::new();
+    };
+    let Some(input) = event.get_mut("input") else {
+        return line.to_owned();
+    };
+    wisp_core::tool::scrub_held_strings(input, &wisp_core::session::held());
+    wisp_protocol::jsonl::line(&event).unwrap_or_default()
+}
+
+fn replayed(view: Option<SessionView>, opening: &Opening, scrub: &Scrub) -> Vec<AgentEvent> {
+    view.map_or_else(Vec::new, |view| scrub.opened_view(opening, view).events)
+}
+
+fn scrubbed(mut events: mpsc::Receiver<AgentEvent>, scrub: Scrub) -> mpsc::Receiver<AgentEvent> {
+    let (send, receive) = mpsc::channel(1);
+    tokio::spawn(async move {
+        while let Some(event) = events.recv().await {
+            scrub.send(&send, event).await;
+        }
+    });
+    receive
+}
+
+fn reported<'a>(model: &'a str, picks: Option<&'a Path>) -> impl FnMut(Shown<'_>) + 'a {
+    move |shown| match shown {
+        Shown::Address(line) => println!("{line}"),
+        Shown::Event(event) => {
+            if let Some(line) = failed_turn(event, model) {
+                eprintln!("{line}");
+            }
+            if let Some(Err(e)) = picks.map(|file| remember(event, file)) {
+                let shown = picks
+                    .map(wisp_core::workspace::home_shown)
+                    .unwrap_or_default();
+                eprintln!(
+                    "{}",
+                    sanitize(&format!("learn: could not save the pick to {shown}: {e}"))
+                );
+            }
+        }
+    }
+}
+
 async fn serve(
     setup: WebSetup,
-    replayed: &[AgentEvent],
+    (view, opening, scrub): (Option<SessionView>, &Opening, Scrub),
     channels: Channels,
     lane: (
-        tokio::sync::mpsc::Sender<wisp_protocol::voice::AudioFrame>,
-        tokio::sync::mpsc::Receiver<wisp_protocol::voice::AudioFrame>,
+        mpsc::Sender<wisp_protocol::voice::AudioFrame>,
+        mpsc::Receiver<wisp_protocol::voice::AudioFrame>,
     ),
-    (model, picks): (&str, Option<&Path>),
+    stop: impl Future<Output = ()>,
+    show: impl FnMut(Shown<'_>),
 ) -> Result<bool, String> {
+    let replayed = replayed(view, opening, &scrub);
     let Channels {
         commands,
-        mut events,
+        events,
         quit,
     } = channels;
-    let mut interrupt = interrupts()?;
-    let stop = async move {
-        interrupt.recv().await;
-    };
+    let mut events = scrubbed(events, scrub);
     let ended = learn_web::serve(
         setup,
-        replayed,
+        (&replayed, redacted),
         commands,
         &mut events,
         lane,
         stop,
-        |shown| match shown {
-            Shown::Address(line) => println!("{line}"),
-            Shown::Event(event) => {
-                if let Some(line) = failed_turn(event, model) {
-                    eprintln!("{line}");
-                }
-                if let Some(Err(e)) = picks.map(|file| remember(event, file)) {
-                    let shown = picks
-                        .map(wisp_core::workspace::home_shown)
-                        .unwrap_or_default();
-                    eprintln!(
-                        "{}",
-                        sanitize(&format!("learn: could not save the pick to {shown}: {e}"))
-                    );
-                }
-            }
-        },
+        show,
     )
     .await?;
     if ended == Ended::AgentStopped {

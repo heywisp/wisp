@@ -15,10 +15,10 @@ use wisp_tui::term::Flags;
 use wisp_tui::term::prompt::CANCEL_EXIT;
 
 use crate::output::{RunEnd, SAVE_CUT};
-use crate::scrub::Scrub;
 pub(crate) use wisp_start::models::{Chosen, models};
 #[cfg(test)]
 pub(crate) use wisp_start::models::{caps_of, image_tier_of, rates_of, write_multipliers};
+use wisp_start::scrub::Scrub;
 
 pub(crate) fn notes(warnings: Vec<String>) -> Vec<String> {
     warnings
@@ -684,15 +684,15 @@ mod tests {
             opening,
             Some(view),
             channels,
-            Some(crate::scrub::testing::scrub()),
+            Some(wisp_start::scrub::testing::scrub()),
         );
         start.session.resumed.unwrap().view
     }
 
     #[tokio::test]
     async fn the_resumed_view_is_scrubbed_against_a_secret_registered_after_it_was_built() {
-        use crate::scrub::testing::{CANARY, queued};
         use wisp_core::session::{REDACTED, register_secrets};
+        use wisp_start::scrub::testing::{CANARY, queued};
 
         let view = SessionView {
             events: queued(),
@@ -709,9 +709,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_suppressed_resumed_view_loses_its_events_and_keeps_its_input_ids() {
-        use crate::scrub::testing::CANARY;
         use wisp_core::session::register_secrets;
         use wisp_protocol::{AgentEvent, AgentPath, DeliveryMode, InputId, TextSpan};
+        use wisp_start::scrub::testing::CANARY;
 
         let prose = "Keep prose\n- [ ] ";
         let text = format!("{prose}{CANARY}");

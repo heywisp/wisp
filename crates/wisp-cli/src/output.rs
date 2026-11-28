@@ -5,8 +5,8 @@ use std::process::ExitCode;
 use tokio::sync::mpsc;
 use wisp_protocol::{AgentEvent, ClientCommand, InputId, Opening, SessionView};
 
-use crate::scrub::Scrub;
 use wisp_client::{AGENT_STOPPED, Channels, QuitBound, drain_within, interrupts};
+use wisp_start::scrub::Scrub;
 pub(crate) use wisp_start::start::{FORCED_EXIT, SAVE_CUT};
 use wisp_tui::present::choose::{self, Chosen, Presenter, Requested};
 use wisp_tui::term::{Env, Streams, death};
