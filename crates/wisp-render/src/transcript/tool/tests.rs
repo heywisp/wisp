@@ -762,6 +762,440 @@ fn an_unknown_tool_shows_its_name_and_input() {
 }
 
 #[test]
+fn a_scrubbed_or_truncated_other_display_never_re_exposes_raw_input_keys() {
+    let mut t = transcript();
+    t.apply(&AgentEvent::turn_started(1), ms(0));
+    let raw_secret_input = json!({
+        "sk-ant-CANARY0123456789012345": "secret-val",
+        "user@example.invalid": 1
+    });
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s1".to_owned(),
+            tool: "tool".to_owned(),
+            input: raw_secret_input.clone(),
+            action: ToolAction::Other {
+                name: "tool".to_owned(),
+            },
+            target: "{}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(1),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s2".to_owned(),
+            tool: "gadget".to_owned(),
+            input: raw_secret_input,
+            action: ToolAction::Other {
+                name: "gadget".to_owned(),
+            },
+            target: "{}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(2),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s3".to_owned(),
+            tool: "gadget".to_owned(),
+            input: json!({
+                "k00": 1,
+                "k01": 2,
+                "z_CANARY_past_cutoff_key": "secret-val"
+            }),
+            action: ToolAction::Other {
+                name: "gadget".to_owned(),
+            },
+            target: "{k00, k01, \u{2026}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(3),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s4".to_owned(),
+            tool: "replay".to_owned(),
+            input: json!({"[redacted]": 1, "k00": 1, "k01": 2}),
+            action: ToolAction::Other {
+                name: "replay".to_owned(),
+            },
+            target: "{k00, k01, CANARY-held-prefix\u{2026}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(4),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s5".to_owned(),
+            tool: "malformed".to_owned(),
+            input: json!({"secret": "CANARY-raw-value"}),
+            action: ToolAction::Other {
+                name: "malformed".to_owned(),
+            },
+            target: "{secret: CANARY-raw-value}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(5),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s6".to_owned(),
+            tool: "escaped_absent".to_owned(),
+            input: json!({"[redacted]": 1}),
+            action: ToolAction::Other {
+                name: "escaped_absent".to_owned(),
+            },
+            target: "{\"a\\u0040example.invalid\":1}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(6),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s7".to_owned(),
+            tool: "escaped_literal".to_owned(),
+            input: json!({"\"a\\u0040example.invalid\":1": 1}),
+            action: ToolAction::Other {
+                name: "escaped_literal".to_owned(),
+            },
+            target: "{\"a\\u0040example.invalid\":1}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(7),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s8".to_owned(),
+            tool: "legacy".to_owned(),
+            input: json!({
+                "a": 1,
+                "b": "CANARY-secret-value-long",
+                "z_CANARY_past_cutoff_key": "secret-val"
+            }),
+            action: ToolAction::Other {
+                name: "legacy".to_owned(),
+            },
+            target: "{\"a\":1,\"b\":\"CANARY-secret-value\u{2026}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(8),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s9".to_owned(),
+            tool: "legacy_cut".to_owned(),
+            input: json!({"CANARY-secret-key-long": "secret-val"}),
+            action: ToolAction::Other {
+                name: "legacy_cut".to_owned(),
+            },
+            target: "{\"CANARY-secret-key\u{2026}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(9),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s10".to_owned(),
+            tool: "quoted_clip".to_owned(),
+            input: json!({
+                "\"a\"": 1,
+                "k01": 2,
+                "z_CANARY_past_cutoff_key": "secret-val"
+            }),
+            action: ToolAction::Other {
+                name: "quoted_clip".to_owned(),
+            },
+            target: "{\"a\", k01, \u{2026}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(10),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s11".to_owned(),
+            tool: "legacy_complete".to_owned(),
+            input: json!({
+                "a": 1,
+                "b": "CANARY-secret-value-long",
+                "z_CANARY_past_cutoff_key": "secret-val"
+            }),
+            action: ToolAction::Other {
+                name: "legacy_complete".to_owned(),
+            },
+            target: "{\"a\":1,\"b\":\"CANARY-secret-value\"}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(11),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s12".to_owned(),
+            tool: "old_clip_intact".to_owned(),
+            input: json!({
+                "k00": 1,
+                "k01": 2,
+                "z.sk-ant-CANARY0123456789012345": "secret-val"
+            }),
+            action: ToolAction::Other {
+                name: "old_clip_intact".to_owned(),
+            },
+            target: "{k00, k01, z.sk-ant\u{2026}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(12),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s13".to_owned(),
+            tool: "escaped_present".to_owned(),
+            input: json!({"a@example.invalid": 1}),
+            action: ToolAction::Other {
+                name: "escaped_present".to_owned(),
+            },
+            target: "{\"a\\u0040example.invalid\":1}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(13),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s14".to_owned(),
+            tool: "escaped_benign".to_owned(),
+            input: json!({"ab_safe": 1}),
+            action: ToolAction::Other {
+                name: "escaped_benign".to_owned(),
+            },
+            target: "{\"a\\u0062_safe\":1}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(14),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s15".to_owned(),
+            tool: "malformed_after_key".to_owned(),
+            input: json!({"a": 1, "b": "CANARY-val"}),
+            action: ToolAction::Other {
+                name: "malformed_after_key".to_owned(),
+            },
+            target: "{\"a\":1, bad\u{2026}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(15),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s16".to_owned(),
+            tool: "bom_brace_redacted".to_owned(),
+            input: json!({"[redacted]": 1}),
+            action: ToolAction::Other {
+                name: "bom_brace_redacted".to_owned(),
+            },
+            target: "\u{FEFF}{secret: CANARY-raw-value}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(16),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s17".to_owned(),
+            tool: "zwsp_brace_intact".to_owned(),
+            input: json!({"secret": "CANARY-raw-value"}),
+            action: ToolAction::Other {
+                name: "zwsp_brace_intact".to_owned(),
+            },
+            target: "\u{200B}{secret: CANARY-raw-value}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(17),
+    );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s18".to_owned(),
+            tool: "user\u{200B}@example.invalid".to_owned(),
+            input: serde_json::Value::Null,
+            action: ToolAction::Other {
+                name: "user\u{200B}@example.invalid".to_owned(),
+            },
+            target: "{}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(18),
+    );
+    for detail in [Detail::Scrollback, Detail::Full] {
+        let rows = text(&t.rows(&r(80), detail));
+        assert!(rows.contains("tool {}"), "{rows}");
+        assert!(rows.contains("gadget {}"), "{rows}");
+        assert!(rows.contains("replay {}"), "{rows}");
+        assert!(rows.contains("malformed {}"), "{rows}");
+        assert!(rows.contains("escaped_absent {}"), "{rows}");
+        assert!(
+            rows.contains("escaped_literal {\"a\\u0040example.invalid\":1}"),
+            "{rows}"
+        );
+        assert!(rows.contains("legacy {}"), "{rows}");
+        assert!(rows.contains("legacy_cut {}"), "{rows}");
+        assert!(rows.contains("quoted_clip {}"), "{rows}");
+        assert!(rows.contains("legacy_complete {a, b}"), "{rows}");
+        assert!(rows.contains("old_clip_intact {}"), "{rows}");
+        assert!(rows.contains("escaped_present {}"), "{rows}");
+        assert!(rows.contains("escaped_benign {}"), "{rows}");
+        assert!(rows.contains("malformed_after_key {}"), "{rows}");
+        assert!(rows.contains("bom_brace_redacted {}"), "{rows}");
+        assert!(rows.contains("zwsp_brace_intact {}"), "{rows}");
+        assert!(rows.contains("Using tool {}"), "{rows}");
+        for forbidden in [
+            "sk-ant-",
+            "CANARY",
+            "z_CANARY_past_cutoff_key",
+            "CANARY-held-prefix",
+            "CANARY-raw-value",
+            "a@example.invalid",
+            "@example.invalid",
+            "ab_safe",
+            "user@",
+            "secret-val",
+        ] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+}
+
+#[test]
+fn brace_target_corroboration_preserves_crlf_folding_and_fails_closed_on_transformed_keys() {
+    let mut t = transcript();
+    t.apply(&AgentEvent::turn_started(1), ms(0));
+    let mut seq = 1u64;
+    let mut push = |name: &str, input: serde_json::Value, target: String| {
+        t.apply(
+            &tool_requested(Requested {
+                call_id: format!("c{seq}"),
+                tool: name.to_owned(),
+                input,
+                action: ToolAction::Other {
+                    name: name.to_owned(),
+                },
+                target,
+                ..Requested::default()
+            }),
+            ms(seq),
+        );
+        seq += 1;
+    };
+    push("ordinary", json!({"b": 1, "a": 2}), "{a, b}".to_owned());
+    push(
+        "lf_case",
+        json!({"line1\nline2": 1}),
+        "{line1 line2}".to_owned(),
+    );
+    push(
+        "crlf_case",
+        json!({"line1\r\nline2": 1}),
+        "{line1 line2}".to_owned(),
+    );
+    push(
+        "tab_case",
+        json!({"hello\tworld": 1}),
+        "{hello\tworld}".to_owned(),
+    );
+    push(
+        "zw_case",
+        json!({"sk-ant-\u{200B}CANARY0123456789012345": 1}),
+        "{sk-ant-\u{200B}CANARY0123456789012345}".to_owned(),
+    );
+    push(
+        "bom_case",
+        json!({"user\u{FEFF}@example.invalid": 1}),
+        "{user\u{FEFF}@example.invalid}".to_owned(),
+    );
+    let mut clip_zw = serde_json::Map::new();
+    for n in 0..14 {
+        clip_zw.insert(format!("k{n:02}"), json!(1));
+    }
+    let mut clip_tab = clip_zw.clone();
+    clip_zw.insert(
+        "z_prefix_sk-ant-\u{200B}CANARY0123456789012345".to_owned(),
+        json!(1),
+    );
+    clip_tab.insert("z_tab_prefix_secret\ttail".to_owned(), json!(1));
+    push(
+        "clip_zw",
+        serde_json::Value::Object(clip_zw),
+        "{k00, k01, k02, k03, k04, k05, k06, k07, k08, k09, k10, k11, k12, k13, z_prefix\u{2026}"
+            .to_owned(),
+    );
+    push(
+        "clip_tab",
+        serde_json::Value::Object(clip_tab),
+        "{k00, k01, k02, k03, k04, k05, k06, k07, k08, k09, k10, k11, k12, k13, z_tab_pr\u{2026}"
+            .to_owned(),
+    );
+    push(
+        "leg_tab",
+        json!({"hello\tworld": 1}),
+        "{\"hello\\tworld\":1}".to_owned(),
+    );
+    push(
+        "leg_zw",
+        json!({"sk-ant-\u{200B}CANARY": 1}),
+        "{\"sk-ant-\\u200BCANARY\":1}".to_owned(),
+    );
+    push(
+        "leg_bom",
+        json!({"user\u{FEFF}@example.invalid": 1}),
+        "{\"user\\uFEFF@example.invalid\":1}".to_owned(),
+    );
+    push(
+        "leg_lf",
+        json!({"line1\nline2": 1}),
+        "{\"line1\\nline2\":1}".to_owned(),
+    );
+    push(
+        "leg_trunc_tab",
+        json!({"hello\tworld": "CANARY-val"}),
+        "{\"hello\\tworld\":\"CANARY\u{2026}".to_owned(),
+    );
+    push(
+        "leg_trunc_zw",
+        json!({"sk-ant-\u{200B}CANARY": "CANARY-val"}),
+        "{\"sk-ant-\\u200BCANARY\":\"CANARY\u{2026}".to_owned(),
+    );
+    for detail in [Detail::Scrollback, Detail::Full] {
+        let rows = text(&t.rows(&r(80), detail));
+        assert!(rows.contains("ordinary {a, b}"), "{rows}");
+        assert!(rows.contains("lf_case {line1 line2}"), "{rows}");
+        assert!(rows.contains("crlf_case {line1 line2}"), "{rows}");
+        for closed in [
+            "tab_case {}",
+            "zw_case {}",
+            "bom_case {}",
+            "clip_zw {}",
+            "clip_tab {}",
+            "leg_tab {}",
+            "leg_zw {}",
+            "leg_bom {}",
+            "leg_lf {}",
+            "leg_trunc_tab {}",
+            "leg_trunc_zw {}",
+        ] {
+            assert!(rows.contains(closed), "{closed}: {rows}");
+        }
+        for forbidden in [
+            "hello world",
+            "sk-ant-",
+            "CANARY",
+            "user@",
+            "example.invalid",
+            "z_prefix_",
+            "z_tab_prefix_secret",
+        ] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+}
+
+#[test]
 fn a_stray_string_start_never_hides_the_rest_of_the_output() {
     let mut text = "line1\n\u{1b}Pstray\n".to_owned();
     for i in 0..1000 {

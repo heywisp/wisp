@@ -1149,7 +1149,7 @@ fn a_secret_typed_into_a_program_never_reaches_a_row_a_page_a_picker_entry_or_th
     };
     check(&mut t, "running");
     let old = row_of(&mut t, "old");
-    assert!(old.contains("Used jobs {input}"), "{old}");
+    assert!(old.contains("Used jobs {}"), "{old}");
     let frame = t.frame(&r(80));
     let framed = format!("{}\n{}", text(&frame.commit), text(&frame.live));
     assert!(!framed.contains("MK"), "{framed}");

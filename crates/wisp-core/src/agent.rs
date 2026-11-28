@@ -4877,18 +4877,75 @@ impl Agent {
         Finished::synthetic(ToolOutcome::InvalidInput { message }, text)
     }
 
+    fn display_text_is_safe(&self, text: &str) -> bool {
+        crate::tool::display_text_is_safe_with_held(
+            text,
+            self.secret_check_home().as_deref(),
+            &crate::session::read_held(),
+        )
+    }
+
     fn rejection_display_is_safe(&self, display: &wisp_protocol::ToolDisplay) -> bool {
-        fn checked(agent: &Agent, value: &Value) -> bool {
-            match value {
-                Value::String(text) => agent.lookup_is_safe(text),
-                Value::Array(items) => items.iter().all(|item| checked(agent, item)),
-                Value::Object(fields) => fields
-                    .iter()
-                    .all(|(key, value)| agent.lookup_is_safe(key) && checked(agent, value)),
-                Value::Null | Value::Bool(_) | Value::Number(_) => true,
-            }
-        }
-        serde_json::to_value(display).is_ok_and(|value| checked(self, &value))
+        crate::tool::display_is_safe_with_held(
+            display,
+            self.secret_check_home().as_deref(),
+            &crate::session::read_held(),
+        )
+    }
+
+    pub(super) fn tool_lookup(&self, name: &str) -> Option<bool> {
+        self.hooks
+            .registry
+            .as_ref()
+            .and_then(|registry| registry.lookup_tool(name))
+            .or_else(|| self.toolbox.lookup_tool(name))
+    }
+
+    fn tool_forwards(&self, name: &str) -> bool {
+        self.hooks
+            .registry
+            .as_ref()
+            .is_some_and(|registry| registry.forwards(name))
+            || self.toolbox.forwards(name)
+    }
+
+    fn allows_rejection_input(&self, name: &str) -> bool {
+        self.tool_lookup(name) == Some(false) && !self.tool_forwards(name)
+    }
+
+    pub(super) fn safe_fallback_display(
+        &self,
+        name: &str,
+        input: &Value,
+    ) -> wisp_protocol::ToolDisplay {
+        crate::tool::fallback_display_with_held(
+            name,
+            input,
+            self.secret_check_home().as_deref(),
+            &crate::session::read_held(),
+        )
+    }
+
+    pub(super) fn rejected_display_for<'a>(
+        &'a self,
+        name: &'a str,
+        input: &'a Value,
+    ) -> wisp_plugin_api::BoxFuture<'a, wisp_protocol::ToolDisplay> {
+        let shown_input = if self.allows_rejection_input(name) {
+            input
+        } else {
+            &Value::Null
+        };
+        let toolbox = &self.toolbox;
+        let dynamic_owner = self.rejected_dynamic_owner(name);
+        let home = self.secret_check_home();
+        Box::pin(async move {
+            toolbox
+                .rejected_display_with(name, shown_input, home.as_deref(), |plugin_input| {
+                    Self::rejected_dynamic_with(dynamic_owner, name, plugin_input)
+                })
+                .await
+        })
     }
 
     async fn request_calls_unboxed(
@@ -4932,14 +4989,10 @@ impl Agent {
             {
                 self.search_not_run(model, events).await;
             }
+            let gen_checked = crate::session::held_generation();
             let hidden = self.hidden_mcp_name(&run_name);
-            let registry = self.hooks.registry.as_ref();
-            let lookup = registry
-                .and_then(|registry| registry.lookup_tool(&name))
-                .or_else(|| self.toolbox.lookup_tool(&name));
-            let forwards = is_forwarded
-                || registry.is_some_and(|registry| registry.forwards(&name))
-                || self.toolbox.forwards(&name);
+            let lookup = self.tool_lookup(&name);
+            let forwards = is_forwarded || self.tool_forwards(&name);
             let target = if forwards {
                 input.get("name")
             } else if lookup == Some(true) {
@@ -4963,33 +5016,23 @@ impl Agent {
                     crate::tool::fallback_display(crate::mcp::PLUGIN, &Value::Null)
                 }
                 Err(_) if is_forwarded => {
-                    let shown = if refused_target {
-                        None
-                    } else {
-                        match self.runnable_tool(&run_name).cloned() {
-                            Some(tool) => tool.rejected_display(&Value::Null).await,
-                            None => self.rejected_dynamic(&run_name, &Value::Null).await,
-                        }
-                    };
-                    if refused_target || !self.lookup_is_safe(&run_name) {
+                    if refused_target || !self.display_text_is_safe(&run_name) {
                         crate::tool::fallback_display("tool", &Value::Null)
                     } else {
-                        shown.unwrap_or_else(|| {
-                            crate::tool::fallback_display(&run_name, &Value::Null)
-                        })
+                        let shown = match self.runnable_tool(&run_name).cloned() {
+                            Some(tool) => tool.rejected_display(&Value::Null).await,
+                            None => self.rejected_dynamic(&run_name, &Value::Null).await,
+                        };
+                        if !self.display_text_is_safe(&run_name) {
+                            crate::tool::fallback_display("tool", &Value::Null)
+                        } else {
+                            shown.unwrap_or_else(|| {
+                                self.safe_fallback_display(&run_name, &Value::Null)
+                            })
+                        }
                     }
                 }
-                Err(_) => {
-                    let shown_input = if lookup == Some(false) && !forwards {
-                        &input
-                    } else {
-                        &Value::Null
-                    };
-                    match self.rejected_dynamic(&name, shown_input).await {
-                        Some(display) => display,
-                        None => self.toolbox.rejected_display(&name, shown_input).await,
-                    }
-                }
+                Err(_) => self.rejected_display_for(&name, &input).await,
             };
             if prepared.is_err() && !self.rejection_display_is_safe(&display) {
                 display = crate::tool::fallback_display("tool", &Value::Null);
@@ -5005,8 +5048,18 @@ impl Agent {
                 tool: name.clone(),
                 input: input.clone(),
                 display,
+                refused: prepared.is_err(),
             };
-            self.emit(events, event).await;
+            if prepared.is_err() {
+                let allows_input = !hidden
+                    && !refused_target
+                    && !is_forwarded
+                    && self.allows_rejection_input(&name);
+                self.emit_refused_tool_call(events, event, allows_input, gen_checked)
+                    .await;
+            } else {
+                self.emit(events, event).await;
+            }
             calls.push(Call {
                 forwarded_input: is_forwarded.then_some(run_input),
                 id,
@@ -5017,6 +5070,69 @@ impl Agent {
             });
         }
         calls
+    }
+
+    async fn emit_refused_tool_call(
+        &mut self,
+        events: &mpsc::Sender<AgentEvent>,
+        event: AgentEvent,
+        allows_input: bool,
+        gen_checked: u64,
+    ) {
+        self.publish_spend(events).await;
+        let home = self.secret_check_home();
+        let scrub = |event: &mut AgentEvent, held: &crate::session::Redactions, gen_now: u64| {
+            if let AgentEvent::ToolCallRequested {
+                tool,
+                input,
+                display,
+                ..
+            } = event
+            {
+                crate::tool::scrub_refused_tool_call_display(
+                    tool,
+                    input,
+                    display,
+                    home.as_deref(),
+                    held,
+                    allows_input,
+                    gen_checked,
+                    gen_now,
+                );
+            }
+        };
+        let turn = self.running_turn();
+        let (failure, mut event, seq) = self.with_log_writer(|agent, mut writer| {
+            loop {
+                let (held, generation) = crate::session::held_with_generation();
+                let mut candidate = event.clone();
+                scrub(&mut candidate, &held, generation);
+                let seq = writer.as_deref().map(SessionLog::next_seq);
+                let result = match log_record(&candidate, turn) {
+                    Some(record) => agent.record_logged_at(
+                        writer.as_deref_mut(),
+                        record,
+                        Durability::Flush,
+                        Some(generation),
+                    ),
+                    None => Ok((true, None)),
+                };
+                if let Ok((_, failure)) = result {
+                    break (failure, candidate, seq);
+                }
+            }
+        });
+        if let Some(reason) = failure {
+            emit(events, AgentEvent::LogDisabled { reason }).await;
+        }
+        let permit = events.reserve().await.ok();
+        let held = crate::session::read_held();
+        scrub(&mut event, &held, crate::session::held_generation());
+        self.note_event(&event, seq);
+        if let Some(permit) = permit {
+            permit.send(event);
+        }
+        drop(held);
     }
 
     async fn commit_pending_input(
@@ -6971,6 +7087,12 @@ enum SensitiveEvent<'a> {
         text: &'a mut String,
         spans: &'a mut Vec<TextSpan>,
     },
+    ToolCallDisplay {
+        tool: &'a str,
+        input: &'a Value,
+        display: &'a mut wisp_protocol::ToolDisplay,
+        refused: bool,
+    },
 }
 
 #[derive(Clone, Default)]
@@ -7052,6 +7174,24 @@ fn visit_sensitive_event<'a>(
                 })
             }
         }
+        AgentEvent::ToolCallRequested {
+            tool,
+            input,
+            display,
+            refused,
+            ..
+        } => {
+            if crate::tool::tool_call_display_may_need_scrub(display, *refused) {
+                visit(SensitiveEvent::ToolCallDisplay {
+                    tool,
+                    input,
+                    display,
+                    refused: *refused,
+                })
+            } else {
+                ControlFlow::Continue(())
+            }
+        }
         AgentEvent::Agent { agent, event } => visit_sensitive_event(event, Some(agent), visit),
         AgentEvent::SessionSnapshot { view, state, .. } => view
             .events
@@ -7126,6 +7266,12 @@ fn collect_sensitive_changes<'a>(
                     scrub_checklist_spans(text, spans, home, held);
                 }
             },
+            SensitiveEvent::ToolCallDisplay {
+                tool,
+                input,
+                display,
+                refused,
+            } => crate::tool::scrub_tool_call_display(tool, input, display, home, held, refused),
         }
         ControlFlow::Continue(())
     });

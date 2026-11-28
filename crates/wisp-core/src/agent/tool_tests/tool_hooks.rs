@@ -1474,3 +1474,2543 @@ async fn a_missing_tool_has_a_data_free_rejection_display() {
     assert_eq!(shown.target, "{}");
     assert!(!serde_json::to_string(shown).unwrap().contains(HELD));
 }
+
+#[tokio::test]
+async fn a_direct_default_rejected_display_call_checks_keys_before_truncation_and_preserves_safe_keys()
+ {
+    const HELD: &str = "CANARY-held-view-file-key";
+    const KEY_TOKEN: &str = "sk-ant-CANARY0123456789012345";
+    const EMAIL: &str = "user@example.invalid";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let env = Env::new("direct-view-file-key-cutoff");
+    let store = MemoryStore::default();
+    let held_key = format!("{}{HELD}", "k".repeat(70));
+    let token_key = format!("{}{KEY_TOKEN}", "k.".repeat(33));
+    let email_key = format!("{}{EMAIL}", "k".repeat(72));
+    let provider = scripted(vec![
+        uses(&[
+            call("benign", "view_file", json!({"line_limit": 0})),
+            call("safe_keys", "view_file", json!({"offset": 0, "path": HELD})),
+            call("held_cut", "view_file", json!({held_key: "v"})),
+            call("token_cut", "view_file", json!({token_key: "v"})),
+            call("email_cut", "view_file", json!({email_key: "v"})),
+        ]),
+        done("Done."),
+    ]);
+    let tools = crate::tool::testkit::bundled_exact(&["view_file"]);
+    let mut agent = agent_with(provider, &env, tools, GRACE).with_log(
+        SessionLog::new(Box::new(store.clone()), "s1"),
+        log_context(),
+    );
+    let (_, events) = turn(&mut agent, "Try view_file.").await;
+    let requested: Vec<(&str, &wisp_protocol::ToolDisplay)> = events
+        .iter()
+        .filter_map(|event| match event {
+            AgentEvent::ToolCallRequested {
+                call_id, display, ..
+            } => Some((call_id.as_str(), display)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(requested.len(), 5);
+    let target_for = |id: &str| {
+        requested
+            .iter()
+            .find(|(call_id, _)| *call_id == id)
+            .map(|(_, display)| display.target.as_str())
+            .unwrap()
+    };
+    assert_eq!(target_for("benign"), "{line_limit}");
+    assert_eq!(target_for("safe_keys"), "{offset, path}");
+    assert_eq!(target_for("held_cut"), "{}");
+    assert_eq!(target_for("token_cut"), "{}");
+    assert_eq!(target_for("email_cut"), "{}");
+    for (_, display) in requested {
+        let json = serde_json::to_string(display).unwrap();
+        for forbidden in [
+            HELD,
+            "sk-ant-",
+            "CANARY",
+            "example.invalid",
+            "user@",
+            "kkkk",
+        ] {
+            assert!(!json.contains(forbidden), "{json}");
+        }
+    }
+    let logged: Vec<(String, String)> = pick!(
+        log_events(&store),
+        LogEvent::ToolCallRequested { call_id, display, .. } => {
+            (call_id, serde_json::to_string(&display).unwrap())
+        }
+    );
+    assert_eq!(logged.len(), 5);
+    for (_, json) in &logged {
+        for forbidden in [
+            HELD,
+            "sk-ant-",
+            "CANARY",
+            "example.invalid",
+            "user@",
+            "kkkk",
+        ] {
+            assert!(!json.contains(forbidden), "{json}");
+        }
+    }
+    let view = agent.history_view();
+    assert_eq!(view.calls.len(), 5);
+    let ledger_target = |i: usize| view.calls[i].target.as_str();
+    assert_eq!(ledger_target(0), "{line_limit}");
+    assert_eq!(ledger_target(1), "{offset, path}");
+    assert_eq!(ledger_target(2), "{}");
+    assert_eq!(ledger_target(3), "{}");
+    assert_eq!(ledger_target(4), "{}");
+}
+
+struct TruncatingTool {
+    name: Option<String>,
+    seen: Arc<Mutex<Vec<(String, String)>>>,
+    register_after_yield: Option<String>,
+    return_none: bool,
+}
+
+impl wisp_plugin_api::Plugin for TruncatingTool {
+    fn describe<'a>(
+        &'a self,
+        _ctx: &'a wisp_plugin_api::tools::BuildContext,
+    ) -> wisp_plugin_api::BoxFuture<'a, Vec<wisp_plugin_api::tools::ToolDef>> {
+        let defs = self
+            .name
+            .iter()
+            .map(|name| wisp_plugin_api::tools::ToolDef {
+                name: name.clone(),
+                kind: wisp_plugin_api::tools::ToolKind::Client(
+                    wisp_plugin_api::tools::ClientTool {
+                        description: "Generic truncating fixture.".to_owned(),
+                        input_schema: json!({"type": "object"}).to_string(),
+                        meta: crate::plugin::testing::meta(1_000, Some(2_000)),
+                    },
+                ),
+                system_line: None,
+                context_line: None,
+            })
+            .collect();
+        Box::pin(std::future::ready(defs))
+    }
+
+    fn prepare<'a>(
+        &'a self,
+        _tool: &'a str,
+        _input: &'a str,
+    ) -> wisp_plugin_api::BoxFuture<'a, Result<Box<dyn wisp_plugin_api::tools::Prepared>, String>>
+    {
+        Box::pin(std::future::ready(Err("rejected in fixture".to_owned())))
+    }
+
+    fn rejected_display<'a>(
+        &'a self,
+        tool: &'a str,
+        input: &'a str,
+    ) -> wisp_plugin_api::BoxFuture<'a, Option<wisp_plugin_api::types::Display>> {
+        self.seen
+            .lock()
+            .unwrap()
+            .push((tool.to_owned(), input.to_owned()));
+        let register = self.register_after_yield.clone();
+        let return_none = self.return_none;
+        let item = serde_json::from_str::<Value>(input)
+            .ok()
+            .and_then(|v| v.get("item").and_then(Value::as_str).map(str::to_owned));
+        Box::pin(async move {
+            if let Some(secret) = register {
+                wisp_plugin_api::yield_now().await;
+                crate::session::register_secrets([secret]);
+            }
+            if return_none {
+                return None;
+            }
+            let target = item
+                .map(|s| cut_chars(&s, 40))
+                .unwrap_or_else(|| cut_chars(tool, 40));
+            Some(wisp_plugin_api::types::Display {
+                action: wisp_plugin_api::types::Action::Other(cut_chars(tool, 40)),
+                verbs: None,
+                target,
+                output: wisp_plugin_api::types::OutputKind::Text,
+                view: None,
+                title: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn sibling_truncating_rejected_display_plugins_and_call_display_never_see_unsafe_input() {
+    const HELD: &str = "CANARY-held-sibling-rejected";
+    const KEY_TOKEN: &str = "sk-ant-CANARY0123456789012345";
+    const EMAIL: &str = "user@example.invalid";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let diff_bundle = wisp_plugin_show_diff::bundled();
+    let diff_make: crate::plugin::Make = Arc::new(move |host| (diff_bundle.instantiate)(host));
+    let viewer = wisp_plugin_view_file::bundled();
+    let view_make: crate::plugin::Make = Arc::new(move |host| (viewer.instantiate)(host));
+    let seen_static = Arc::new(Mutex::new(Vec::new()));
+    let trunc_manifest = crate::plugin::testing::manifest("trunc", &["trunc".to_owned()], &[]);
+    let trunc_seen = seen_static.clone();
+    let trunc_make: crate::plugin::Make = Arc::new(move |_| {
+        Arc::new(TruncatingTool {
+            name: Some("trunc".to_owned()),
+            seen: trunc_seen.clone(),
+            register_after_yield: None,
+            return_none: false,
+        }) as Arc<dyn wisp_plugin_api::Plugin>
+    });
+    let seen_dyn = Arc::new(Mutex::new(Vec::new()));
+    let dyn_manifest = "id = \"dyn-trunc\"\nversion = \"0.1.0\"\nworld = \"0.4.0\"\nsummary = \"Dynamic\"\ndynamic_tools = \"dyn__\"\n".to_owned();
+    let dyn_seen = seen_dyn.clone();
+    let dyn_make: crate::plugin::Make = Arc::new(move |_| {
+        Arc::new(TruncatingTool {
+            name: None,
+            seen: dyn_seen.clone(),
+            register_after_yield: None,
+            return_none: false,
+        }) as Arc<dyn wisp_plugin_api::Plugin>
+    });
+    let search = wisp_plugin_search::bundled();
+    let search_make: crate::plugin::Make = Arc::new(move |host| (search.instantiate)(host));
+    let (registry, problems) = crate::plugin::Registry::from_sources(
+        vec![
+            (search.manifest.to_owned(), search_make),
+            (diff_bundle.manifest.to_owned(), diff_make),
+            (viewer.manifest.to_owned(), view_make),
+            (trunc_manifest, trunc_make),
+            (dyn_manifest, dyn_make),
+        ],
+        &crate::plugin::PluginConfig::default(),
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    let names = [
+        "search",
+        "use",
+        "show_diff",
+        "show_code",
+        "view_file",
+        "trunc",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<std::collections::BTreeSet<_>>();
+    let started = registry
+        .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+    let long_diff_title = format!("\n\n   {} {HELD}", "Heading text ".repeat(16));
+    let long_diff_path = format!("{}{KEY_TOKEN}", "dir/".repeat(18));
+    let long_code_title = format!("{}{EMAIL}", "Code block ".repeat(18));
+    let long_item = format!("{}{KEY_TOKEN}", "p.".repeat(18));
+    let unsafe_trunc_key = format!("{}{HELD}", "k".repeat(36));
+    let unsafe_view_key = format!("{}{KEY_TOKEN}", "v.".repeat(33));
+    let unsafe_dyn_name = format!("dyn__{}{KEY_TOKEN}", "x.".repeat(15));
+    let provider = scripted(vec![
+        uses(&[
+            call(
+                "d_title",
+                "show_diff",
+                json!({"files": [], "title": long_diff_title}),
+            ),
+            call(
+                "d_path",
+                "show_diff",
+                json!({"files": [{"path": long_diff_path}]}),
+            ),
+            call(
+                "c_title",
+                "show_code",
+                json!({"language": "rust", "code": 123, "title": long_code_title}),
+            ),
+            call("t_ok", "trunc", json!({"item": "safe-short"})),
+            call("t_item", "trunc", json!({"item": long_item})),
+            call("t_key", "trunc", json!({unsafe_trunc_key: 1})),
+            call("v_key", "view_file", json!({unsafe_view_key: 1})),
+            call("dyn_bad_name", &unsafe_dyn_name, json!({"a": 1})),
+        ]),
+        done("Done."),
+    ]);
+    let env = Env::new("sibling-pre-truncation-rejected-display");
+    let mut agent =
+        agent_with(provider, &env, started.toolbox, GRACE).with_hooks(started.hooks, started.host);
+    let (_, events) = turn(&mut agent, "Run calls.").await;
+    let by_id = |id: &str| {
+        events
+            .iter()
+            .find_map(|event| match event {
+                AgentEvent::ToolCallRequested {
+                    call_id, display, ..
+                } if call_id == id => Some(display.clone()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let d_title = by_id("d_title");
+    assert_eq!(d_title.action, ToolAction::Show);
+    assert_eq!(d_title.target, "diff");
+    assert!(d_title.title.is_none());
+    let d_path = by_id("d_path");
+    assert_eq!(d_path.action, ToolAction::Show);
+    assert_eq!(d_path.target, "diff");
+    let c_title = by_id("c_title");
+    assert_eq!(c_title.action, ToolAction::Show);
+    assert_eq!(c_title.target, "code");
+    assert!(c_title.title.is_none());
+    assert_eq!(by_id("t_ok").target, "safe-short");
+    assert_eq!(by_id("t_item").target, "trunc");
+    assert_eq!(by_id("t_key").target, "trunc");
+    assert_eq!(by_id("v_key").target, "{}");
+    let dyn_bad = by_id("dyn_bad_name");
+    assert_eq!(
+        dyn_bad.action,
+        ToolAction::Other {
+            name: "tool".to_owned()
+        }
+    );
+    assert_eq!(dyn_bad.target, "{}");
+    assert!(seen_dyn.lock().unwrap().is_empty());
+    assert_eq!(
+        seen_static.lock().unwrap().as_slice(),
+        [
+            ("trunc".to_owned(), "{\"item\":\"safe-short\"}".to_owned()),
+            ("trunc".to_owned(), "null".to_owned()),
+            ("trunc".to_owned(), "null".to_owned()),
+        ]
+    );
+    for id in [
+        "d_title",
+        "d_path",
+        "c_title",
+        "t_item",
+        "t_key",
+        "v_key",
+        "dyn_bad_name",
+    ] {
+        let from_event = serde_json::to_string(&by_id(id)).unwrap();
+        let from_attach = serde_json::to_string(&agent.call_display(id).await.unwrap()).unwrap();
+        for json in [from_event, from_attach] {
+            for forbidden in [
+                HELD,
+                "Heading text",
+                "dir/",
+                "Code block",
+                "p.p.",
+                "kkkk",
+                "v.v.",
+                "x.x.",
+                "dyn__",
+                "sk-ant-",
+                "CANARY",
+                "example.invalid",
+                "user@",
+            ] {
+                assert!(!json.contains(forbidden), "{id}: {json}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_secret_registered_while_rejected_display_awaits_never_leaks_prefix_or_truncated_display()
+{
+    const HELD_NONE: &str = "CANARY-toctou-none-secret";
+    const HELD_SOME_VAL: &str = "CANARY-toctou-some-val-secret";
+    const HELD_SOME_KEY: &str = "CANARY-toctou-some-key-secret";
+    let none_manifest =
+        crate::plugin::testing::manifest("toctou-none", &["toctou_none".to_owned()], &[]);
+    let none_make: crate::plugin::Make = Arc::new(|_| {
+        Arc::new(TruncatingTool {
+            name: Some("toctou_none".to_owned()),
+            seen: Arc::new(Mutex::new(Vec::new())),
+            register_after_yield: Some(HELD_NONE.to_owned()),
+            return_none: true,
+        }) as Arc<dyn wisp_plugin_api::Plugin>
+    });
+    let some_val_manifest =
+        crate::plugin::testing::manifest("toctou-some-val", &["toctou_some_val".to_owned()], &[]);
+    let some_val_make: crate::plugin::Make = Arc::new(|_| {
+        Arc::new(TruncatingTool {
+            name: Some("toctou_some_val".to_owned()),
+            seen: Arc::new(Mutex::new(Vec::new())),
+            register_after_yield: Some(HELD_SOME_VAL.to_owned()),
+            return_none: false,
+        }) as Arc<dyn wisp_plugin_api::Plugin>
+    });
+    let some_key_manifest =
+        crate::plugin::testing::manifest("toctou-some-key", &["toctou_some_key".to_owned()], &[]);
+    let some_key_make: crate::plugin::Make = Arc::new(|_| {
+        Arc::new(TruncatingTool {
+            name: Some("toctou_some_key".to_owned()),
+            seen: Arc::new(Mutex::new(Vec::new())),
+            register_after_yield: Some(HELD_SOME_KEY.to_owned()),
+            return_none: false,
+        }) as Arc<dyn wisp_plugin_api::Plugin>
+    });
+    let (registry, problems) = crate::plugin::Registry::from_sources(
+        vec![
+            (none_manifest, none_make),
+            (some_val_manifest, some_val_make),
+            (some_key_manifest, some_key_make),
+        ],
+        &crate::plugin::PluginConfig::default(),
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    let names = ["toctou_none", "toctou_some_val", "toctou_some_key"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    let started = registry
+        .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+    let none_key = format!("{}{HELD_NONE}", "n".repeat(70));
+    let some_item = format!("{} {HELD_SOME_VAL}", "PrefixText".repeat(5));
+    let some_key = format!("{}{HELD_SOME_KEY}", "s".repeat(70));
+    let provider = scripted(vec![
+        uses(&[
+            call("c_none", "toctou_none", json!({none_key: 1})),
+            call("c_some_val", "toctou_some_val", json!({"item": some_item})),
+            call("c_some_key", "toctou_some_key", json!({some_key: 1})),
+        ]),
+        done("Done."),
+    ]);
+    let env = Env::new("toctou-rejected-display");
+    let mut agent =
+        agent_with(provider, &env, started.toolbox, GRACE).with_hooks(started.hooks, started.host);
+    let (_, events) = turn(&mut agent, "Run toctou calls.").await;
+    let target_for = |id: &str| {
+        events
+            .iter()
+            .find_map(|event| match event {
+                AgentEvent::ToolCallRequested {
+                    call_id, display, ..
+                } if call_id == id => Some(display.target.clone()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    assert_eq!(target_for("c_none"), "{}");
+    assert_eq!(target_for("c_some_val"), "{item}");
+    assert_eq!(target_for("c_some_key"), "{}");
+    for event in &events {
+        if let AgentEvent::ToolCallRequested { display, .. } = event {
+            let json = serde_json::to_string(display).unwrap();
+            for forbidden in [
+                HELD_NONE,
+                HELD_SOME_VAL,
+                HELD_SOME_KEY,
+                "PrefixText",
+                "nnnn",
+                "ssss",
+            ] {
+                assert!(!json.contains(forbidden), "{json}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn refused_tool_call_publication_scrubs_secret_registered_after_rejected_display_at_backpressure()
+ {
+    const HELD_FALLBACK: &str = "CANARYBackpressureFallbackSecret";
+    const HELD_PLUGIN: &str = "CANARYBackpressurePluginSecret";
+
+    let seen_none = Arc::new(Mutex::new(Vec::new()));
+    let seen_none_ref = Arc::clone(&seen_none);
+    let none_manifest = crate::plugin::testing::manifest("bp-none", &["bp_none".to_owned()], &[]);
+    let none_make: crate::plugin::Make = Arc::new(move |_| {
+        Arc::new(TruncatingTool {
+            name: Some("bp_none".to_owned()),
+            seen: Arc::clone(&seen_none_ref),
+            register_after_yield: None,
+            return_none: true,
+        }) as Arc<dyn wisp_plugin_api::Plugin>
+    });
+
+    let seen_some = Arc::new(Mutex::new(Vec::new()));
+    let seen_some_ref = Arc::clone(&seen_some);
+    let some_manifest = crate::plugin::testing::manifest("bp-some", &["bp_some".to_owned()], &[]);
+    let some_make: crate::plugin::Make = Arc::new(move |_| {
+        Arc::new(TruncatingTool {
+            name: Some("bp_some".to_owned()),
+            seen: Arc::clone(&seen_some_ref),
+            register_after_yield: None,
+            return_none: false,
+        }) as Arc<dyn wisp_plugin_api::Plugin>
+    });
+
+    let (registry, problems) = crate::plugin::Registry::from_sources(
+        vec![(none_manifest, none_make), (some_manifest, some_make)],
+        &crate::plugin::PluginConfig::default(),
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    let names = ["bp_none", "bp_some"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    let started = registry
+        .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+
+    let env = Env::new("backpressure-rejected-display");
+    let mut agent = agent_with(
+        scripted(vec![done("Unused.")]),
+        &env,
+        started.toolbox,
+        GRACE,
+    )
+    .with_hooks(started.hooks, started.host);
+
+    let mut fallback_input = serde_json::Map::new();
+    for n in 0..14 {
+        fallback_input.insert(format!("k{n:02}"), json!(1));
+    }
+    fallback_input.insert(format!("z.{HELD_FALLBACK}"), json!(1));
+
+    let (tx, mut rx) = mpsc::channel(1);
+    tx.try_send(AgentEvent::LogDisabled {
+        reason: "test capacity".into(),
+    })
+    .unwrap();
+    let (calls, ev) = {
+        let mut req = std::pin::pin!(agent.request_calls(
+            1,
+            vec![crate::agent::FoundCall {
+                block: 0,
+                id: "c_bp_none".to_owned(),
+                name: "bp_none".to_owned(),
+                input: Value::Object(fallback_input),
+                model_visible: true,
+            }],
+            "claude-opus-5-5",
+            &tx,
+        ));
+        assert!(futures::poll!(req.as_mut()).is_pending());
+        assert_eq!(seen_none.lock().unwrap().len(), 1);
+        assert_eq!(tx.capacity(), 0);
+        crate::session::register_secrets([HELD_FALLBACK.to_owned()]);
+        assert!(matches!(rx.try_recv(), Ok(AgentEvent::LogDisabled { .. })));
+        tokio::join!(req, rx.recv())
+    };
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].prepared.is_err());
+    let Some(AgentEvent::ToolCallRequested { display, .. }) = ev else {
+        panic!("expected ToolCallRequested, got {ev:?}");
+    };
+    assert_eq!(display.target, "{}");
+    let encoded = serde_json::to_string(&display).unwrap();
+    for forbidden in ["k00", "CANARY", HELD_FALLBACK] {
+        assert!(!encoded.contains(forbidden), "{encoded}");
+    }
+
+    let plugin_item = format!("{} {HELD_PLUGIN}", "PrefixText".repeat(5));
+    tx.try_send(AgentEvent::LogDisabled {
+        reason: "test capacity".into(),
+    })
+    .unwrap();
+    let (calls, ev) = {
+        let mut req = std::pin::pin!(agent.request_calls(
+            2,
+            vec![crate::agent::FoundCall {
+                block: 0,
+                id: "c_bp_some".to_owned(),
+                name: "bp_some".to_owned(),
+                input: json!({"item": plugin_item}),
+                model_visible: true,
+            }],
+            "claude-opus-5-5",
+            &tx,
+        ));
+        assert!(futures::poll!(req.as_mut()).is_pending());
+        assert_eq!(seen_some.lock().unwrap().len(), 1);
+        assert_eq!(tx.capacity(), 0);
+        crate::session::register_secrets([HELD_PLUGIN.to_owned()]);
+        assert!(matches!(rx.try_recv(), Ok(AgentEvent::LogDisabled { .. })));
+        tokio::join!(req, rx.recv())
+    };
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].prepared.is_err());
+    let Some(AgentEvent::ToolCallRequested { display, .. }) = ev else {
+        panic!("expected ToolCallRequested, got {ev:?}");
+    };
+    assert_eq!(
+        display.action,
+        wisp_protocol::ToolAction::Other {
+            name: "tool".to_owned(),
+        }
+    );
+    assert_eq!(display.target, "{}");
+    let encoded = serde_json::to_string(&display).unwrap();
+    for forbidden in ["PrefixText", "CANARY", HELD_PLUGIN] {
+        assert!(!encoded.contains(forbidden), "{encoded}");
+    }
+    assert_eq!(agent.target_of("c_bp_none", "bp_none", &Value::Null), "{}");
+    assert_eq!(agent.target_of("c_bp_some", "bp_some", &Value::Null), "{}");
+    let view = agent.history_view();
+    assert_eq!(view.calls.len(), 2, "{:?}", view.calls);
+    for entry in &view.calls {
+        assert_eq!(entry.target, "{}", "{entry:?}");
+        for forbidden in ["k00", "PrefixText", "CANARY", HELD_FALLBACK, HELD_PLUGIN] {
+            assert!(!entry.target.contains(forbidden), "{entry:?}");
+        }
+    }
+}
+
+#[test]
+fn with_scrubbed_link_frames_scrubs_tool_call_displays_atomically_under_read_held() {
+    use std::sync::Barrier;
+    use std::sync::atomic::AtomicBool;
+    use wisp_protocol::link::ToClient;
+    use wisp_protocol::{AgentPath, OutputKind, SessionView, ToolAction, ToolDisplay, ToolPurpose};
+
+    use crate::agent::with_scrubbed_link_frames;
+    use crate::session::{read_held, register_secrets, secrets_write_blocked};
+
+    let canary = "CANARYOpaqueLinkFrameDisplaySecret";
+    let mut fallback_map = serde_json::Map::new();
+    for n in 0..14 {
+        fallback_map.insert(format!("k{n:02}"), json!(1));
+    }
+    fallback_map.insert(format!("z.{canary}"), json!(1));
+    let fallback_input = Value::Object(fallback_map);
+    let fallback_event = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 0,
+        call_id: "c_fallback".to_owned(),
+        tool: "unknown_tool".to_owned(),
+        input: fallback_input.clone(),
+        display: crate::tool::fallback_display("unknown_tool", &fallback_input),
+        refused: true,
+    };
+    let show_event = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 1,
+        call_id: "c_show".to_owned(),
+        tool: "view_file".to_owned(),
+        input: json!({"path": format!("/tmp/{canary}-long")}),
+        display: ToolDisplay {
+            action: ToolAction::Show,
+            verbs: None,
+            target: format!("{canary}-long\u{2026}"),
+            output: OutputKind::Text,
+            view: None,
+            title: Some(format!("{canary}-title\u{2026}")),
+            purpose: ToolPurpose::Show,
+        },
+        refused: true,
+    };
+    let opening: Box<wisp_protocol::Opening> = serde_json::from_str(include_str!(
+        "../../../../wisp-protocol/tests/fixtures/opening.json"
+    ))
+    .unwrap();
+    let cached = [
+        ToClient::event(fallback_event.clone()),
+        ToClient::Opened {
+            opening,
+            view: SessionView {
+                events: vec![fallback_event.clone()],
+                ..SessionView::default()
+            },
+            now: None,
+        },
+        ToClient::event(AgentEvent::SessionSnapshot {
+            answers: wisp_protocol::RequestId(1),
+            view: SessionView {
+                events: vec![fallback_event.clone()],
+                ..SessionView::default()
+            },
+            state: vec![show_event.clone()],
+            now: match serde_json::from_str::<AgentEvent>(include_str!(
+                "../../../../wisp-protocol/tests/fixtures/event_session_snapshot.json"
+            ))
+            .unwrap()
+            {
+                AgentEvent::SessionSnapshot { now, .. } => now,
+                other => panic!("{other:?}"),
+            },
+        }),
+        ToClient::event(AgentEvent::Agent {
+            agent: AgentPath::new("/worker"),
+            event: Box::new(fallback_event),
+        }),
+    ];
+    let in_publish = Barrier::new(2);
+    let probed = Barrier::new(2);
+    let enqueued = AtomicBool::new(false);
+    let mut outbound = cached.clone();
+    let line = std::thread::scope(|scope| {
+        let worker = scope.spawn(|| {
+            in_publish.wait();
+            let blocked = secrets_write_blocked();
+            probed.wait();
+            register_secrets([canary.to_owned()]);
+            let ordered = enqueued.load(Ordering::Acquire);
+            assert!(blocked, "link frame publish did not hold off a writer");
+            assert!(ordered, "registration finished before enqueue");
+        });
+        let line = with_scrubbed_link_frames(&mut outbound, None, None, |frames| {
+            in_publish.wait();
+            probed.wait();
+            let line = wisp_protocol::jsonl::line(&frames[0]).unwrap();
+            enqueued.store(true, Ordering::Release);
+            line
+        })
+        .unwrap();
+        worker.join().unwrap();
+        line
+    });
+    assert!(line.contains("CANARYOpaque"), "{line}");
+    let _guard = read_held();
+    drop(_guard);
+
+    let mut replay = cached;
+    with_scrubbed_link_frames(&mut replay, None, None, |frames| {
+        let json = serde_json::to_string(frames).unwrap();
+        let assert_scrubbed_fallback = |event: &AgentEvent| match event {
+            AgentEvent::ToolCallRequested { display, .. } => {
+                assert_eq!(display.target, "{}");
+            }
+            other => panic!("expected ToolCallRequested, got {other:?}"),
+        };
+        let ToClient::Event(ev0) = &frames[0] else {
+            panic!("{:?}", frames[0]);
+        };
+        assert_scrubbed_fallback(ev0.as_ref());
+        let ToClient::Opened { view, .. } = &frames[1] else {
+            panic!("{:?}", frames[1]);
+        };
+        assert_scrubbed_fallback(&view.events[0]);
+        let ToClient::Event(ev2) = &frames[2] else {
+            panic!("{:?}", frames[2]);
+        };
+        let AgentEvent::SessionSnapshot { view, state, .. } = ev2.as_ref() else {
+            panic!("{ev2:?}");
+        };
+        assert_scrubbed_fallback(&view.events[0]);
+        let Some(AgentEvent::ToolCallRequested { display, .. }) = state.first() else {
+            panic!("{state:?}");
+        };
+        assert_eq!(
+            display.action,
+            ToolAction::Other {
+                name: "tool".to_owned(),
+            }
+        );
+        assert_eq!(display.target, "{}");
+        assert_eq!(display.purpose, ToolPurpose::Show);
+        let ToClient::Event(ev3) = &frames[3] else {
+            panic!("{:?}", frames[3]);
+        };
+        let AgentEvent::Agent { event, .. } = ev3.as_ref() else {
+            panic!("{ev3:?}");
+        };
+        assert_scrubbed_fallback(event);
+        let serialized_displays: Vec<String> = frames
+            .iter()
+            .filter_map(|frame| serde_json::to_value(frame).ok())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|val| {
+                let mut displays = Vec::new();
+                fn collect_displays(v: &Value, out: &mut Vec<String>) {
+                    match v {
+                        Value::Object(map) => {
+                            if let Some(d) = map.get("display") {
+                                out.push(d.to_string());
+                            }
+                            for val in map.values() {
+                                collect_displays(val, out);
+                            }
+                        }
+                        Value::Array(items) => {
+                            for val in items {
+                                collect_displays(val, out);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                collect_displays(&val, &mut displays);
+                displays.join("\n")
+            })
+            .collect();
+        let joined = serialized_displays.join("\n");
+        for forbidden in ["CANARY", "k00", canary] {
+            assert!(
+                !joined.contains(forbidden),
+                "{forbidden}: {joined} ({json})"
+            );
+        }
+    })
+    .unwrap();
+}
+
+struct BracedEmptyTitlePlugin;
+
+impl wisp_plugin_api::Plugin for BracedEmptyTitlePlugin {
+    fn describe<'a>(
+        &'a self,
+        _ctx: &'a wisp_plugin_api::tools::BuildContext,
+    ) -> wisp_plugin_api::BoxFuture<'a, Vec<wisp_plugin_api::tools::ToolDef>> {
+        Box::pin(std::future::ready(vec![wisp_plugin_api::tools::ToolDef {
+            name: "plug_braced_title".to_owned(),
+            kind: wisp_plugin_api::tools::ToolKind::Client(wisp_plugin_api::tools::ClientTool {
+                description: "Fixture plugin with {} target and clipped title/verbs.".to_owned(),
+                input_schema: json!({"type": "object"}).to_string(),
+                meta: crate::plugin::testing::meta(1_000, Some(2_000)),
+            }),
+            system_line: None,
+            context_line: None,
+        }]))
+    }
+
+    fn prepare<'a>(
+        &'a self,
+        _tool: &'a str,
+        _input: &'a str,
+    ) -> wisp_plugin_api::BoxFuture<'a, Result<Box<dyn wisp_plugin_api::tools::Prepared>, String>>
+    {
+        Box::pin(std::future::ready(Err("rejected in fixture".to_owned())))
+    }
+
+    fn rejected_display<'a>(
+        &'a self,
+        _tool: &'a str,
+        input: &'a str,
+    ) -> wisp_plugin_api::BoxFuture<'a, Option<wisp_plugin_api::types::Display>> {
+        let item = serde_json::from_str::<Value>(input)
+            .ok()
+            .and_then(|v| v.get("item").and_then(Value::as_str).map(str::to_owned))
+            .unwrap_or_default();
+        let clipped = cut_chars(&item, 40);
+        Box::pin(std::future::ready(Some(wisp_plugin_api::types::Display {
+            action: wisp_plugin_api::types::Action::Other("plug".to_owned()),
+            verbs: Some(wisp_plugin_api::types::Verbs {
+                doing: clipped.clone(),
+                done: "Done".to_owned(),
+                failed: "Failed".to_owned(),
+            }),
+            target: "{}".to_owned(),
+            output: wisp_plugin_api::types::OutputKind::Text,
+            view: None,
+            title: Some(clipped),
+        })))
+    }
+}
+
+#[tokio::test]
+async fn refused_braced_empty_with_clipped_title_and_verbs_scrubs_on_backpressure_and_link_frames()
+{
+    use wisp_protocol::link::ToClient;
+    use wisp_protocol::{OutputKind, SessionView, ToolAction, ToolDisplay, ToolPurpose, Verbs};
+
+    const HELD_TITLE: &str = "CANARYBracedEmptyClippedTitleSecret";
+
+    let manifest = crate::plugin::testing::manifest(
+        "plug-braced-title",
+        &["plug_braced_title".to_owned()],
+        &[],
+    );
+    let make: crate::plugin::Make =
+        Arc::new(|_| Arc::new(BracedEmptyTitlePlugin) as Arc<dyn wisp_plugin_api::Plugin>);
+    let (registry, problems) = crate::plugin::Registry::from_sources(
+        vec![(manifest, make)],
+        &crate::plugin::PluginConfig::default(),
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    let names = ["plug_braced_title"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    let started = registry
+        .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+
+    let env = Env::new("braced-empty-title-backpressure");
+    let mut agent = agent_with(
+        scripted(vec![done("Unused.")]),
+        &env,
+        started.toolbox,
+        GRACE,
+    )
+    .with_hooks(started.hooks, started.host);
+
+    let item = format!("{} {HELD_TITLE}", "TitleClip".repeat(5));
+    let raw_input = json!({"item": item});
+    let (tx, mut rx) = mpsc::channel(1);
+    tx.try_send(AgentEvent::LogDisabled {
+        reason: "test capacity".into(),
+    })
+    .unwrap();
+    let (calls, ev) = {
+        let mut req = std::pin::pin!(agent.request_calls(
+            1,
+            vec![crate::agent::FoundCall {
+                block: 0,
+                id: "c_title_bp".to_owned(),
+                name: "plug_braced_title".to_owned(),
+                input: raw_input.clone(),
+                model_visible: true,
+            }],
+            "claude-opus-5-5",
+            &tx,
+        ));
+        assert!(futures::poll!(req.as_mut()).is_pending());
+        assert_eq!(tx.capacity(), 0);
+        crate::session::register_secrets([HELD_TITLE.to_owned()]);
+        assert!(matches!(rx.try_recv(), Ok(AgentEvent::LogDisabled { .. })));
+        tokio::join!(req, rx.recv())
+    };
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].prepared.is_err());
+    let Some(AgentEvent::ToolCallRequested { display, .. }) = ev else {
+        panic!("expected ToolCallRequested, got {ev:?}");
+    };
+    assert_eq!(
+        display.action,
+        ToolAction::Other {
+            name: "tool".to_owned()
+        }
+    );
+    assert_eq!(display.target, "{}");
+    assert_eq!(display.title, None);
+    assert_eq!(display.verbs, None);
+    assert_eq!(
+        agent.target_of("c_title_bp", "plug_braced_title", &Value::Null),
+        "{}"
+    );
+    let view = agent.history_view();
+    assert_eq!(view.calls.len(), 1);
+    assert_eq!(view.calls[0].target, "{}");
+
+    let clipped = cut_chars(&format!("{} {HELD_TITLE}", "TitleClip".repeat(5)), 40);
+    let cached_event = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 0,
+        call_id: "c_title_link".to_owned(),
+        tool: "plug_braced_title".to_owned(),
+        input: raw_input,
+        display: ToolDisplay {
+            action: ToolAction::Other {
+                name: "plug".to_owned(),
+            },
+            verbs: Some(Verbs {
+                doing: clipped.clone(),
+                done: "Done".to_owned(),
+                failed: "Failed".to_owned(),
+            }),
+            target: "{}".to_owned(),
+            output: OutputKind::Text,
+            view: None,
+            title: Some(clipped),
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    };
+    let mut frames = [
+        ToClient::event(cached_event.clone()),
+        ToClient::event(AgentEvent::SessionSnapshot {
+            answers: wisp_protocol::RequestId(1),
+            view: SessionView {
+                events: vec![cached_event],
+                ..SessionView::default()
+            },
+            state: Vec::new(),
+            now: match serde_json::from_str::<AgentEvent>(include_str!(
+                "../../../../wisp-protocol/tests/fixtures/event_session_snapshot.json"
+            ))
+            .unwrap()
+            {
+                AgentEvent::SessionSnapshot { now, .. } => now,
+                other => panic!("{other:?}"),
+            },
+        }),
+    ];
+    crate::agent::with_scrubbed_link_frames(&mut frames, None, None, |frames| {
+        let ToClient::Event(ev0) = &frames[0] else {
+            panic!("{:?}", frames[0]);
+        };
+        let AgentEvent::ToolCallRequested { display, .. } = ev0.as_ref() else {
+            panic!("{ev0:?}");
+        };
+        assert_eq!(
+            display.action,
+            ToolAction::Other {
+                name: "tool".to_owned()
+            }
+        );
+        assert_eq!(display.target, "{}");
+        assert_eq!(display.title, None);
+        assert_eq!(display.verbs, None);
+        let ToClient::Event(ev1) = &frames[1] else {
+            panic!("{:?}", frames[1]);
+        };
+        let AgentEvent::SessionSnapshot { view, .. } = ev1.as_ref() else {
+            panic!("{ev1:?}");
+        };
+        let AgentEvent::ToolCallRequested {
+            display: snap_display,
+            ..
+        } = &view.events[0]
+        else {
+            panic!("{:?}", view.events);
+        };
+        assert_eq!(snap_display, display);
+        let d_json = serde_json::to_string(display).unwrap();
+        for forbidden in ["TitleClip", "CANARY", HELD_TITLE] {
+            assert!(!d_json.contains(forbidden), "{forbidden}: {d_json}");
+        }
+    })
+    .unwrap();
+
+    #[derive(Clone, Copy)]
+    enum BracedClipMode {
+        ActionName,
+        CodeLang,
+    }
+    struct BracedClippedPlugin {
+        tool_name: &'static str,
+        mode: BracedClipMode,
+    }
+    impl wisp_plugin_api::Plugin for BracedClippedPlugin {
+        fn describe<'a>(
+            &'a self,
+            _ctx: &'a wisp_plugin_api::tools::BuildContext,
+        ) -> wisp_plugin_api::BoxFuture<'a, Vec<wisp_plugin_api::tools::ToolDef>> {
+            Box::pin(std::future::ready(vec![wisp_plugin_api::tools::ToolDef {
+                name: self.tool_name.to_owned(),
+                kind: wisp_plugin_api::tools::ToolKind::Client(
+                    wisp_plugin_api::tools::ClientTool {
+                        description: "Fixture plugin with {} target and clipped action/output."
+                            .to_owned(),
+                        input_schema: json!({"type": "object"}).to_string(),
+                        meta: crate::plugin::testing::meta(1_000, Some(2_000)),
+                    },
+                ),
+                system_line: None,
+                context_line: None,
+            }]))
+        }
+
+        fn prepare<'a>(
+            &'a self,
+            _tool: &'a str,
+            _input: &'a str,
+        ) -> wisp_plugin_api::BoxFuture<'a, Result<Box<dyn wisp_plugin_api::tools::Prepared>, String>>
+        {
+            Box::pin(std::future::ready(Err("rejected in fixture".to_owned())))
+        }
+
+        fn rejected_display<'a>(
+            &'a self,
+            _tool: &'a str,
+            input: &'a str,
+        ) -> wisp_plugin_api::BoxFuture<'a, Option<wisp_plugin_api::types::Display>> {
+            let item = serde_json::from_str::<Value>(input)
+                .ok()
+                .and_then(|v| v.get("item").and_then(Value::as_str).map(str::to_owned))
+                .unwrap_or_default();
+            let clipped = cut_chars(&item, 40);
+            let (action, output) = match self.mode {
+                BracedClipMode::ActionName => (
+                    wisp_plugin_api::types::Action::Other(clipped),
+                    wisp_plugin_api::types::OutputKind::Text,
+                ),
+                BracedClipMode::CodeLang => (
+                    wisp_plugin_api::types::Action::Other("plug".to_owned()),
+                    wisp_plugin_api::types::OutputKind::Code(clipped),
+                ),
+            };
+            Box::pin(std::future::ready(Some(wisp_plugin_api::types::Display {
+                action,
+                verbs: None,
+                target: "{}".to_owned(),
+                output,
+                view: None,
+                title: None,
+            })))
+        }
+    }
+
+    for (case_idx, (tool_name, mode, secret, prefix_word)) in [
+        (
+            "plug_braced_name",
+            BracedClipMode::ActionName,
+            "CANARYBracedEmptyClippedActionSecret",
+            "NameClip",
+        ),
+        (
+            "plug_braced_lang",
+            BracedClipMode::CodeLang,
+            "CANARYBracedEmptyClippedLangSecret",
+            "LangClip",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let manifest = crate::plugin::testing::manifest(
+            &format!("plug-braced-{case_idx}"),
+            &[tool_name.to_owned()],
+            &[],
+        );
+        let make: crate::plugin::Make = Arc::new(move |_| {
+            Arc::new(BracedClippedPlugin { tool_name, mode }) as Arc<dyn wisp_plugin_api::Plugin>
+        });
+        let (registry, problems) = crate::plugin::Registry::from_sources(
+            vec![(manifest, make)],
+            &crate::plugin::PluginConfig::default(),
+        );
+        assert!(problems.is_empty(), "{problems:?}");
+        let names = [tool_name]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<std::collections::BTreeSet<_>>();
+        let started = registry
+            .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+            .await;
+        assert!(started.problems.is_empty(), "{:?}", started.problems);
+
+        let env = Env::new(&format!("braced-empty-clip-{case_idx}"));
+        let mut agent = agent_with(
+            scripted(vec![done("Unused.")]),
+            &env,
+            started.toolbox,
+            GRACE,
+        )
+        .with_hooks(started.hooks, started.host);
+
+        let item = format!("{} {secret}", prefix_word.repeat(5));
+        let raw_input = json!({"item": item.clone()});
+        let (tx, mut rx) = mpsc::channel(1);
+        tx.try_send(AgentEvent::LogDisabled {
+            reason: "test capacity".into(),
+        })
+        .unwrap();
+        let (calls, ev) = {
+            let mut req = std::pin::pin!(agent.request_calls(
+                1,
+                vec![crate::agent::FoundCall {
+                    block: 0,
+                    id: format!("c_clip_bp_{case_idx}"),
+                    name: tool_name.to_owned(),
+                    input: raw_input.clone(),
+                    model_visible: true,
+                }],
+                "claude-opus-5-5",
+                &tx,
+            ));
+            assert!(futures::poll!(req.as_mut()).is_pending());
+            assert_eq!(tx.capacity(), 0);
+            crate::session::register_secrets([secret.to_owned()]);
+            assert!(matches!(rx.try_recv(), Ok(AgentEvent::LogDisabled { .. })));
+            tokio::join!(req, rx.recv())
+        };
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].prepared.is_err());
+        let Some(AgentEvent::ToolCallRequested { display, .. }) = ev else {
+            panic!("expected ToolCallRequested, got {ev:?}");
+        };
+        assert_eq!(
+            display.action,
+            ToolAction::Other {
+                name: "tool".to_owned()
+            }
+        );
+        assert_eq!(display.target, "{}");
+        assert_eq!(display.output, OutputKind::Text);
+        assert_eq!(
+            agent.target_of(&format!("c_clip_bp_{case_idx}"), tool_name, &Value::Null),
+            "{}"
+        );
+        assert_eq!(agent.history_view().calls[0].target, "{}");
+
+        let clipped = cut_chars(&item, 40);
+        let cached_clip_display = match mode {
+            BracedClipMode::ActionName => ToolDisplay {
+                action: ToolAction::Other { name: clipped },
+                verbs: None,
+                target: "{}".to_owned(),
+                output: OutputKind::Text,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+            BracedClipMode::CodeLang => ToolDisplay {
+                action: ToolAction::Other {
+                    name: "plug".to_owned(),
+                },
+                verbs: None,
+                target: "{}".to_owned(),
+                output: OutputKind::Code { lang: clipped },
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+        };
+        let cached_clip_event = AgentEvent::ToolCallRequested {
+            step: 1,
+            block: 0,
+            call_id: format!("c_clip_link_{case_idx}"),
+            tool: tool_name.to_owned(),
+            input: raw_input,
+            display: cached_clip_display,
+            refused: true,
+        };
+        let mut clip_frames = [
+            ToClient::event(cached_clip_event.clone()),
+            ToClient::event(AgentEvent::SessionSnapshot {
+                answers: wisp_protocol::RequestId(1),
+                view: SessionView {
+                    events: vec![cached_clip_event],
+                    ..SessionView::default()
+                },
+                state: Vec::new(),
+                now: match serde_json::from_str::<AgentEvent>(include_str!(
+                    "../../../../wisp-protocol/tests/fixtures/event_session_snapshot.json"
+                ))
+                .unwrap()
+                {
+                    AgentEvent::SessionSnapshot { now, .. } => now,
+                    other => panic!("{other:?}"),
+                },
+            }),
+        ];
+        crate::agent::with_scrubbed_link_frames(&mut clip_frames, None, None, |frames| {
+            let ToClient::Event(ev0) = &frames[0] else {
+                panic!("{:?}", frames[0]);
+            };
+            let AgentEvent::ToolCallRequested { display, .. } = ev0.as_ref() else {
+                panic!("{ev0:?}");
+            };
+            assert_eq!(
+                display.action,
+                ToolAction::Other {
+                    name: "tool".to_owned()
+                }
+            );
+            assert_eq!(display.target, "{}");
+            assert_eq!(display.output, OutputKind::Text);
+            let ToClient::Event(ev1) = &frames[1] else {
+                panic!("{:?}", frames[1]);
+            };
+            let AgentEvent::SessionSnapshot { view, .. } = ev1.as_ref() else {
+                panic!("{ev1:?}");
+            };
+            let AgentEvent::ToolCallRequested {
+                display: snap_display,
+                ..
+            } = &view.events[0]
+            else {
+                panic!("{:?}", view.events);
+            };
+            assert_eq!(snap_display, display);
+            let d_json = serde_json::to_string(display).unwrap();
+            for forbidden in [prefix_word, "CANARY", secret] {
+                assert!(!d_json.contains(forbidden), "{forbidden}: {d_json}");
+            }
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn with_scrubbed_link_frames_scrubs_refused_read_write_and_empty_held_identities_while_preserving_benign()
+ {
+    use wisp_protocol::link::ToClient;
+    use wisp_protocol::{
+        AgentPath, NotRunReason, OutputKind, SessionView, ToolAction, ToolDisplay, ToolOutcome,
+        ToolPurpose, Verbs,
+    };
+
+    const HELD_WRITE: &str = "CANARYBoardWriteTargetSecret";
+    crate::session::register_secrets([HELD_WRITE.to_owned()]);
+
+    let held_write_req = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 0,
+        call_id: "c_write_held".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("{}{HELD_WRITE}", "board-".repeat(7))}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: format!("board {}\u{2026}", "board-".repeat(5)),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    };
+    let held_write_fin = AgentEvent::call_finished(
+        "c_write_held",
+        ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+    );
+
+    let unheld_email = "alice@example.invalid";
+    let unheld_key = "sk-ant-CANARYUnheldRefusedWrite01234567";
+    let unheld_write_req = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 1,
+        call_id: "c_write_unheld".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("proj {unheld_email} {unheld_key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "proj-alice@exam\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    };
+    let unheld_write_fin = AgentEvent::call_finished(
+        "c_write_unheld",
+        ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+    );
+
+    let unheld_show_req = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 2,
+        call_id: "c_show_unheld".to_owned(),
+        tool: "show_diff".to_owned(),
+        input: json!({"files": [{"path": format!("{}{unheld_email}", "dir/".repeat(19))}]}),
+        display: ToolDisplay {
+            action: ToolAction::Show,
+            verbs: None,
+            target: format!("{}alice@\u{2026}", "dir/".repeat(18)),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Show,
+        },
+        refused: true,
+    };
+    let unheld_show_fin = AgentEvent::call_finished(
+        "c_show_unheld",
+        ToolOutcome::InvalidInput {
+            message: "bad diff".to_owned(),
+        },
+    );
+
+    let benign_write_req = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 3,
+        call_id: "c_write_benign".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": "roadmap-planning-board-with-very-long-benign-title"}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "roadmap-planning-board-with-very-lo\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    };
+    let benign_write_fin = AgentEvent::call_finished(
+        "c_write_benign",
+        ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+    );
+
+    let opening: Box<wisp_protocol::Opening> = serde_json::from_str(include_str!(
+        "../../../../wisp-protocol/tests/fixtures/opening.json"
+    ))
+    .unwrap();
+    let mut frames = [ToClient::Opened {
+        opening,
+        view: SessionView {
+            events: vec![
+                held_write_req,
+                held_write_fin,
+                unheld_write_req,
+                unheld_write_fin,
+                unheld_show_req,
+                unheld_show_fin,
+                benign_write_req,
+                benign_write_fin,
+            ],
+            ..SessionView::default()
+        },
+        now: None,
+    }];
+    crate::agent::with_scrubbed_link_frames(&mut frames, None, None, |frames| {
+        let ToClient::Opened { view, .. } = &frames[0] else {
+            panic!("{:?}", frames[0]);
+        };
+        let display_of = |idx: usize| match &view.events[idx] {
+            AgentEvent::ToolCallRequested { display, .. } => display.clone(),
+            other => panic!("{other:?}"),
+        };
+        for idx in [0usize, 2, 4] {
+            let d = display_of(idx);
+            assert_eq!(
+                d.action,
+                ToolAction::Other {
+                    name: "tool".to_owned()
+                },
+                "{idx}: {d:?}"
+            );
+            assert_eq!(d.target, "{}", "{idx}: {d:?}");
+        }
+        let benign = display_of(6);
+        assert_eq!(benign.action, ToolAction::Write);
+        assert_eq!(benign.target, "roadmap-planning-board-with-very-lo\u{2026}");
+    })
+    .unwrap();
+
+    let halted_write_req = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 4,
+        call_id: "c_write_not_run".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("proj {unheld_email} {unheld_key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "proj-alice@exam\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    };
+    let halted_write_fin = AgentEvent::call_finished(
+        "c_write_not_run",
+        ToolOutcome::NotRun {
+            reason: NotRunReason::AfterRefusal,
+        },
+    );
+    let interrupted_write_req = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 5,
+        call_id: "c_write_interrupted".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("proj {unheld_email} {unheld_key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "proj-alice@exam\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    };
+    let reused_root_req = AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 6,
+        call_id: "c_reused".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("proj {unheld_email} {unheld_key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "proj-alice@exam\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    };
+    let child_report_display = ToolDisplay {
+        action: ToolAction::Other {
+            name: "report".to_owned(),
+        },
+        verbs: Some(Verbs {
+            doing: "Reporting".to_owned(),
+            done: "Reported".to_owned(),
+            failed: "couldn't report".to_owned(),
+        }),
+        target: format!("/home/alice/src/lib.rs {unheld_email}"),
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    let reused_child_req = AgentEvent::Agent {
+        agent: AgentPath::new("/worker"),
+        event: Box::new(AgentEvent::ToolCallRequested {
+            step: 1,
+            block: 0,
+            call_id: "c_reused".to_owned(),
+            tool: "report".to_owned(),
+            input: json!({"text": format!("/home/alice/src/lib.rs {unheld_email}")}),
+            display: child_report_display.clone(),
+            refused: false,
+        }),
+    };
+    let mut mixed_frames = [
+        ToClient::event(halted_write_req),
+        ToClient::event(halted_write_fin),
+        ToClient::event(interrupted_write_req),
+        ToClient::event(reused_root_req),
+        ToClient::event(reused_child_req),
+    ];
+    let home = std::path::Path::new("/home/alice");
+    crate::agent::with_scrubbed_link_frames(&mut mixed_frames, Some(home), None, |frames| {
+        for idx in [0usize, 2, 3] {
+            let ToClient::Event(ev) = &frames[idx] else {
+                panic!("{:?}", frames[idx]);
+            };
+            let AgentEvent::ToolCallRequested { display, .. } = ev.as_ref() else {
+                panic!("{ev:?}");
+            };
+            assert_eq!(
+                display.action,
+                ToolAction::Other {
+                    name: "tool".to_owned()
+                },
+                "{idx}: {display:?}"
+            );
+            assert_eq!(display.target, "{}", "{idx}: {display:?}");
+        }
+        let ToClient::Event(child_ev) = &frames[4] else {
+            panic!("{:?}", frames[4]);
+        };
+        let AgentEvent::Agent { event, .. } = child_ev.as_ref() else {
+            panic!("{child_ev:?}");
+        };
+        let AgentEvent::ToolCallRequested { display, .. } = event.as_ref() else {
+            panic!("{event:?}");
+        };
+        assert_eq!(display, &child_report_display);
+    })
+    .unwrap();
+}
+
+#[tokio::test]
+async fn valid_ask_user_report_and_read_write_preserve_displays_with_home_paths_and_emails() {
+    use wisp_protocol::link::ToClient;
+    use wisp_protocol::{SessionView, ToolAction};
+
+    const HELD_API_KEY: &str = "sk-ant-CANARYValidToolsHeldSessionKey01";
+    crate::session::register_secrets([HELD_API_KEY.to_owned()]);
+
+    let env = Env::new("valid-other-read-write-preserved");
+    std::fs::write(
+        env.work.join("notes.txt"),
+        "hello
+",
+    )
+    .unwrap();
+    let mut workspace = env.workspace();
+    let home = std::path::PathBuf::from("/home/alice");
+    workspace.home = Some(home.clone());
+    let store = MemoryStore::default();
+    let toolbox =
+        crate::tool::testkit::bundled_exact(&["ask_user", "report", "list_settings", "view_file"]);
+    let mut agent = Agent::new(scripted(vec![done("Unused.")]), default_session())
+        .with_clock(TickingClock::new())
+        .with_tools(toolbox.clone(), workspace)
+        .with_platform("Linux")
+        .with_resources(None)
+        .with_cancel_grace(GRACE)
+        .with_log(
+            SessionLog::new(Box::new(store.clone()), "s1"),
+            log_context(),
+        );
+
+    let ask_input = json!({
+        "questions": [{
+            "header": "Config location",
+            "question": "Save settings to /home/alice/.config/app.toml for alice@example.invalid?",
+            "options": [
+                {"label": "Yes", "description": "Write /home/alice/.config/app.toml"},
+                {"label": "No", "description": "Keep /home/alice/.config/app.toml unchanged"}
+            ]
+        }]
+    });
+    let report_input = json!({
+        "text": "Updated /home/alice/proj/src/main.rs for alice@example.invalid\nAll tests pass."
+    });
+    let report_brace_input = json!({
+        "text": "{ok} report with /home/alice/proj/src/main.rs and \u{2026}\nDetails in /home/alice/out"
+    });
+    let settings_input = json!({"filter": "alice@example.invalid"});
+    let view_input = json!({"path": "notes.txt"});
+
+    let expected_displays = vec![
+        toolbox
+            .prepare("ask_user", &ask_input)
+            .await
+            .unwrap()
+            .display()
+            .clone(),
+        toolbox
+            .prepare("report", &report_input)
+            .await
+            .unwrap()
+            .display()
+            .clone(),
+        toolbox
+            .prepare("report", &report_brace_input)
+            .await
+            .unwrap()
+            .display()
+            .clone(),
+        toolbox
+            .prepare("list_settings", &settings_input)
+            .await
+            .unwrap()
+            .display()
+            .clone(),
+        toolbox
+            .prepare("view_file", &view_input)
+            .await
+            .unwrap()
+            .display()
+            .clone(),
+    ];
+
+    let (tx, mut rx) = mpsc::channel(64);
+    let calls = agent
+        .request_calls(
+            1,
+            vec![
+                crate::agent::FoundCall {
+                    block: 0,
+                    id: "c_ask".to_owned(),
+                    name: "ask_user".to_owned(),
+                    input: ask_input,
+                    model_visible: true,
+                },
+                crate::agent::FoundCall {
+                    block: 1,
+                    id: "c_report".to_owned(),
+                    name: "report".to_owned(),
+                    input: report_input,
+                    model_visible: true,
+                },
+                crate::agent::FoundCall {
+                    block: 2,
+                    id: "c_report_brace".to_owned(),
+                    name: "report".to_owned(),
+                    input: report_brace_input,
+                    model_visible: true,
+                },
+                crate::agent::FoundCall {
+                    block: 4,
+                    id: "c_settings".to_owned(),
+                    name: "list_settings".to_owned(),
+                    input: settings_input,
+                    model_visible: true,
+                },
+                crate::agent::FoundCall {
+                    block: 5,
+                    id: "c_view".to_owned(),
+                    name: "view_file".to_owned(),
+                    input: view_input,
+                    model_visible: true,
+                },
+            ],
+            "claude-opus-5-5",
+            &tx,
+        )
+        .await;
+    assert!(
+        calls.iter().all(|c| c.prepared.is_ok()),
+        "{:?}",
+        calls.len()
+    );
+    drop(tx);
+    let mut emitted = Vec::new();
+    while let Some(ev) = rx.recv().await {
+        if let AgentEvent::ToolCallRequested { display, .. } = &ev {
+            emitted.push(display.clone());
+        }
+    }
+    assert_eq!(emitted, expected_displays);
+    assert_eq!(
+        emitted[0].action,
+        ToolAction::Other {
+            name: "ask_user".to_owned()
+        }
+    );
+    assert!(emitted[0].target.contains('\u{2026}'), "{:?}", emitted[0]);
+    assert!(
+        emitted[1].verbs.is_some()
+            && emitted[1].target.contains("/home/alice/proj/src/main.rs")
+            && emitted[1].target.contains("alice@example.invalid"),
+        "{:?}",
+        emitted[1]
+    );
+    assert!(
+        emitted[2].verbs.is_some() && emitted[2].target.starts_with("{ok}"),
+        "{:?}",
+        emitted[2]
+    );
+    assert_eq!(emitted[4].action, ToolAction::Read);
+
+    let records = store.read("s1").unwrap();
+    let replayed: Vec<_> =
+        crate::resume::transcript_with_home(&records, &toolbox, None, Some(&home))
+            .into_iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallRequested { display, .. } => Some(display),
+                _ => None,
+            })
+            .collect();
+    assert_eq!(replayed, expected_displays);
+
+    let opening: Box<wisp_protocol::Opening> = serde_json::from_str(include_str!(
+        "../../../../wisp-protocol/tests/fixtures/opening.json"
+    ))
+    .unwrap();
+    let requested_events: Vec<AgentEvent> = records
+        .iter()
+        .filter_map(|r| match &r.event {
+            wisp_protocol::log::LogEvent::ToolCallRequested {
+                step,
+                block,
+                call_id,
+                tool,
+                input,
+                display,
+                refused,
+                ..
+            } => Some(AgentEvent::ToolCallRequested {
+                step: *step,
+                block: *block,
+                call_id: call_id.clone(),
+                tool: tool.clone(),
+                input: input.clone(),
+                display: display.clone(),
+                refused: *refused,
+            }),
+            _ => None,
+        })
+        .collect();
+    let mut frames = [ToClient::Opened {
+        opening,
+        view: SessionView {
+            events: requested_events,
+            ..SessionView::default()
+        },
+        now: None,
+    }];
+    crate::agent::with_scrubbed_link_frames(&mut frames, Some(&home), None, |frames| {
+        let ToClient::Opened { view, .. } = &frames[0] else {
+            panic!("{:?}", frames[0]);
+        };
+        let linked: Vec<_> = view
+            .events
+            .iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallRequested { display, .. } => Some(display.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(linked, expected_displays);
+    })
+    .unwrap();
+
+    let rename_display = wisp_protocol::ToolDisplay {
+        action: ToolAction::Other {
+            name: "rename_chat".to_owned(),
+        },
+        verbs: Some(wisp_protocol::Verbs {
+            doing: "Renaming this chat".to_owned(),
+            done: "Renamed this chat".to_owned(),
+            failed: "couldn't rename this chat".to_owned(),
+        }),
+        target: "to /home/alice/proj/alice@example.invalid".to_owned(),
+        output: wisp_protocol::OutputKind::None,
+        view: None,
+        title: None,
+        purpose: wisp_protocol::ToolPurpose::Run,
+    };
+    let rename_event = AgentEvent::ToolCallRequested {
+        step: 2,
+        block: 0,
+        call_id: "c_rename".to_owned(),
+        tool: "rename_chat".to_owned(),
+        input: json!({"name": "/home/alice/proj/alice@example.invalid"}),
+        display: rename_display.clone(),
+        refused: false,
+    };
+    let mut rename_frames = [ToClient::event(rename_event)];
+    crate::agent::with_scrubbed_link_frames(&mut rename_frames, Some(&home), None, |frames| {
+        let ToClient::Event(ev) = &frames[0] else {
+            panic!("{:?}", frames[0]);
+        };
+        let AgentEvent::ToolCallRequested { display, .. } = ev.as_ref() else {
+            panic!("{ev:?}");
+        };
+        assert_eq!(display, &rename_display);
+    })
+    .unwrap();
+}
+
+#[tokio::test]
+async fn halted_batch_refused_call_logs_refused_true_even_when_outcome_is_not_run_and_resumes_cleanly()
+ {
+    use wisp_protocol::log::{LOG_SCHEMA_VERSION, LogEvent, LogRecord, TOOL_REFUSAL_SINCE};
+    use wisp_protocol::{
+        NotRunReason, OutputKind, ToolAction, ToolDisplay, ToolOutcome, ToolPurpose,
+    };
+
+    assert!(crate::session::held().is_empty());
+    let env = Env::new("halted-batch-refused-not-run-resume");
+    let mut workspace = env.workspace();
+    let home = std::path::PathBuf::from("/home/alice");
+    workspace.home = Some(home.clone());
+    struct HaltedClippedPlugin;
+    impl wisp_plugin_api::Plugin for HaltedClippedPlugin {
+        fn describe<'a>(
+            &'a self,
+            _ctx: &'a wisp_plugin_api::tools::BuildContext,
+        ) -> wisp_plugin_api::BoxFuture<'a, Vec<wisp_plugin_api::tools::ToolDef>> {
+            Box::pin(std::future::ready(vec![wisp_plugin_api::tools::ToolDef {
+                name: "clip_show".to_owned(),
+                kind: wisp_plugin_api::tools::ToolKind::Client(
+                    wisp_plugin_api::tools::ClientTool {
+                        description: "Fixture plugin returning clipped Show prefix on refusal."
+                            .to_owned(),
+                        input_schema: json!({"type": "object"}).to_string(),
+                        meta: crate::plugin::testing::meta(1_000, Some(2_000)),
+                    },
+                ),
+                system_line: None,
+                context_line: None,
+            }]))
+        }
+
+        fn prepare<'a>(
+            &'a self,
+            _tool: &'a str,
+            _input: &'a str,
+        ) -> wisp_plugin_api::BoxFuture<'a, Result<Box<dyn wisp_plugin_api::tools::Prepared>, String>>
+        {
+            Box::pin(std::future::ready(Err("rejected in fixture".to_owned())))
+        }
+
+        fn rejected_display<'a>(
+            &'a self,
+            _tool: &'a str,
+            _input: &'a str,
+        ) -> wisp_plugin_api::BoxFuture<'a, Option<wisp_plugin_api::types::Display>> {
+            Box::pin(std::future::ready(Some(wisp_plugin_api::types::Display {
+                action: wisp_plugin_api::types::Action::Show,
+                verbs: None,
+                target: format!("{}alice@\u{2026}", "dir/".repeat(18)),
+                output: wisp_plugin_api::types::OutputKind::None,
+                view: None,
+                title: None,
+            })))
+        }
+    }
+
+    let diff_bundle = wisp_plugin_show_diff::bundled();
+    let diff_make: crate::plugin::Make = Arc::new(move |host| (diff_bundle.instantiate)(host));
+    let clip_manifest =
+        crate::plugin::testing::manifest("clip-show", &["clip_show".to_owned()], &[]);
+    let clip_make: crate::plugin::Make =
+        Arc::new(|_| Arc::new(HaltedClippedPlugin) as Arc<dyn wisp_plugin_api::Plugin>);
+    let calls = Calls::default();
+    let hook_started = Arc::new(Notify::new());
+    let mut sources = vec![
+        (diff_bundle.manifest.to_owned(), diff_make),
+        (clip_manifest, clip_make),
+    ];
+    sources.extend(one_named(
+        "aa",
+        "before-tool",
+        notifying(hook_started.clone()),
+        &calls,
+    ));
+    let (registry, problems) =
+        crate::plugin::Registry::from_sources(sources, &crate::plugin::PluginConfig::default());
+    assert!(problems.is_empty(), "{problems:?}");
+    let names = ["show_diff", "clip_show"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    let started = registry
+        .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+
+    let store = MemoryStore::default();
+    let toolbox = started.toolbox;
+
+    let email = "alice@example.invalid";
+    let unsafe_path = format!("{}{email}", "dir/".repeat(19));
+    let provider = scripted(vec![uses(&[
+        call(
+            "c1_halt",
+            "show_diff",
+            json!({"files": [{"path": "a.rs", "before": "a\n", "after": "b\n"}]}),
+        ),
+        call(
+            "c2_halted_refused",
+            "clip_show",
+            json!({"files": [{"path": unsafe_path}]}),
+        ),
+    ])]);
+    let mut agent = Agent::new(provider, default_session())
+        .with_clock(TickingClock::new())
+        .with_tools(toolbox.clone(), workspace.clone())
+        .with_platform("Linux")
+        .with_resources(None)
+        .with_cancel_grace(GRACE)
+        .with_hooks(started.hooks, started.host)
+        .with_log(
+            SessionLog::new(Box::new(store.clone()), "s1"),
+            log_context(),
+        );
+
+    let (outcome, events) = cancelled_turn(&mut agent, hook_started).await;
+    assert!(
+        matches!(outcome, TurnOutcome::Cancelled { .. }),
+        "{outcome:?}"
+    );
+    check_events(&events);
+
+    let live_req = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::ToolCallRequested {
+                call_id,
+                display,
+                refused,
+                ..
+            } if call_id == "c2_halted_refused" => Some((display.clone(), *refused)),
+            _ => None,
+        })
+        .unwrap();
+    assert!(live_req.1);
+    assert_eq!(
+        live_req.0.action,
+        ToolAction::Other {
+            name: "tool".to_owned()
+        }
+    );
+    assert_eq!(live_req.0.target, "{}");
+    assert!(events.iter().any(|e| matches!(
+        e,
+        AgentEvent::ToolCallFinished {
+            call_id,
+            outcome: ToolOutcome::NotRun {
+                reason: NotRunReason::TurnStopped
+            },
+            ..
+        } if call_id == "c2_halted_refused"
+    )));
+    assert_eq!(
+        agent.target_of("c2_halted_refused", "clip_show", &Value::Null),
+        "{}"
+    );
+    let live_calls = agent.history_view().calls;
+    assert_eq!(live_calls.len(), 2, "{live_calls:?}");
+    assert_eq!(live_calls[1].tool, "clip_show");
+    assert_eq!(live_calls[1].target, "{}");
+
+    let records = store.read("s1").unwrap();
+    let logged_req = records
+        .iter()
+        .find_map(|r| match &r.event {
+            LogEvent::ToolCallRequested {
+                call_id,
+                display,
+                refused,
+                ..
+            } if call_id == "c2_halted_refused" => Some((display.clone(), *refused)),
+            _ => None,
+        })
+        .unwrap();
+    assert!(logged_req.1);
+    assert_eq!(
+        logged_req.0.action,
+        ToolAction::Other {
+            name: "tool".to_owned()
+        }
+    );
+    assert_eq!(logged_req.0.target, "{}");
+    assert!(records.iter().any(|r| matches!(
+        &r.event,
+        LogEvent::ToolCallFinished {
+            call_id,
+            outcome: ToolOutcome::NotRun {
+                reason: NotRunReason::TurnStopped
+            },
+            ..
+        } if call_id == "c2_halted_refused"
+    )));
+
+    let resumed = Agent::new(scripted(vec![]), default_session())
+        .with_clock(TickingClock::new())
+        .with_tools(toolbox.clone(), workspace.clone())
+        .with_platform("Linux")
+        .with_resources(None)
+        .with_cancel_grace(GRACE)
+        .with_log(
+            SessionLog::continuing(
+                Box::new(MemoryStore::default()),
+                "s1",
+                u64::try_from(records.len()).unwrap(),
+            ),
+            log_context(),
+        )
+        .resume(&records, 0)
+        .unwrap();
+    assert_eq!(
+        resumed.target_of("c2_halted_refused", "clip_show", &Value::Null),
+        "{}"
+    );
+    let resumed_calls = resumed.history_view().calls;
+    assert_eq!(resumed_calls.len(), 2, "{resumed_calls:?}");
+    assert_eq!(resumed_calls[1].tool, "clip_show");
+    assert_eq!(resumed_calls[1].target, "{}");
+    let view = resumed.view(&records);
+    let viewed = view
+        .events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::ToolCallRequested {
+                call_id,
+                display,
+                refused,
+                ..
+            } if call_id == "c2_halted_refused" => Some((display.clone(), *refused)),
+            _ => None,
+        })
+        .unwrap();
+    assert!(viewed.1);
+    assert_eq!(
+        viewed.0.action,
+        ToolAction::Other {
+            name: "tool".to_owned()
+        }
+    );
+    assert_eq!(viewed.0.target, "{}");
+
+    let legacy_version = TOOL_REFUSAL_SINCE - 1;
+    let legacy_events = vec![
+        serde_json::from_value(json!({
+            "type": "session_started",
+            "session_id": "s-legacy",
+            "wisp_version": "0.1.0",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "cache_ttl": "one_hour",
+            "endpoint": "https://api.anthropic.com",
+            "credential_source": "environment"
+        }))
+        .unwrap(),
+        serde_json::from_value(json!({
+            "type": "turn_started",
+            "turn": 1,
+            "text": "go"
+        }))
+        .unwrap(),
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 0,
+            call_id: "leg_board".to_owned(),
+            tool: "board_write".to_owned(),
+            input: json!({"board": "[redacted]"}),
+            display: ToolDisplay {
+                action: ToolAction::Write,
+                verbs: None,
+                target: "proj-CANARYheldPr\u{2026}".to_owned(),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+            refused: false,
+        },
+        LogEvent::ToolCallFinished {
+            turn: 1,
+            call_id: "leg_board".to_owned(),
+            outcome: ToolOutcome::NotRun {
+                reason: NotRunReason::AfterRefusal,
+            },
+            output: Default::default(),
+            facts: Vec::new(),
+            state: None,
+            duration_ms: 0,
+            result: None,
+            process: None,
+            attachments: Vec::new(),
+            notes: None,
+            typed: None,
+        },
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 1,
+            call_id: "leg_diff".to_owned(),
+            tool: "show_diff".to_owned(),
+            input: json!({"files": [{"path": "[redacted]"}]}),
+            display: ToolDisplay {
+                action: ToolAction::Show,
+                verbs: None,
+                target: "dir/CANARYheldPr\u{2026}".to_owned(),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Show,
+            },
+            refused: false,
+        },
+        LogEvent::ToolCallFinished {
+            turn: 1,
+            call_id: "leg_diff".to_owned(),
+            outcome: ToolOutcome::NotRun {
+                reason: NotRunReason::AfterRefusal,
+            },
+            output: Default::default(),
+            facts: Vec::new(),
+            state: None,
+            duration_ms: 0,
+            result: None,
+            process: None,
+            attachments: Vec::new(),
+            notes: None,
+            typed: None,
+        },
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 2,
+            call_id: "leg_collapsed".to_owned(),
+            tool: "unknown_tool".to_owned(),
+            input: json!("[redacted]"),
+            display: ToolDisplay {
+                action: ToolAction::Other {
+                    name: "unknown_tool".to_owned(),
+                },
+                verbs: None,
+                target: "{k1, CANARYheldPr\u{2026}}".to_owned(),
+                output: OutputKind::Text,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+            refused: false,
+        },
+        LogEvent::ToolCallFinished {
+            turn: 1,
+            call_id: "leg_collapsed".to_owned(),
+            outcome: ToolOutcome::NotRun {
+                reason: NotRunReason::AfterRefusal,
+            },
+            output: Default::default(),
+            facts: Vec::new(),
+            state: None,
+            duration_ms: 0,
+            result: None,
+            process: None,
+            attachments: Vec::new(),
+            notes: None,
+            typed: None,
+        },
+    ];
+    let legacy_records: Vec<LogRecord> = legacy_events
+        .into_iter()
+        .enumerate()
+        .map(|(seq, event)| LogRecord {
+            schema_version: legacy_version,
+            seq: u64::try_from(seq).unwrap(),
+            at: "2026-10-26T09:00:00Z".to_owned(),
+            event,
+        })
+        .collect();
+    assert!(LOG_SCHEMA_VERSION > legacy_version);
+
+    let resumed_legacy = Agent::new(scripted(vec![]), default_session())
+        .with_clock(TickingClock::new())
+        .with_tools(toolbox, workspace)
+        .with_platform("Linux")
+        .with_resources(None)
+        .with_cancel_grace(GRACE)
+        .with_log(
+            SessionLog::continuing(
+                Box::new(MemoryStore::default()),
+                "s-legacy",
+                u64::try_from(legacy_records.len()).unwrap(),
+            ),
+            log_context(),
+        )
+        .resume(&legacy_records, 0)
+        .unwrap();
+
+    let legacy_ledger = resumed_legacy.history_view().calls;
+    let legacy_view = resumed_legacy.view(&legacy_records);
+    assert_eq!(legacy_ledger.len(), 3, "{legacy_ledger:?}");
+    for (idx, (id, tool)) in [
+        ("leg_board", "board_write"),
+        ("leg_diff", "show_diff"),
+        ("leg_collapsed", "unknown_tool"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(resumed_legacy.target_of(id, tool, &Value::Null), "{}");
+        assert_eq!(legacy_ledger[idx].tool, tool, "{id}: {legacy_ledger:?}");
+        assert_eq!(legacy_ledger[idx].target, "{}", "{id}: {legacy_ledger:?}");
+        let (display, refused) = legacy_view
+            .events
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::ToolCallRequested {
+                    call_id,
+                    display,
+                    refused,
+                    ..
+                } if call_id == id => Some((display, *refused)),
+                _ => None,
+            })
+            .unwrap();
+        assert!(refused, "{id}");
+        assert_eq!(display.target, "{}", "{id}: {display:?}");
+        assert!(!serde_json::to_string(display).unwrap().contains("CANARY"));
+    }
+}
+
+#[tokio::test]
+async fn emit_refused_tool_call_log_write_holds_read_held_across_store_append() {
+    use std::sync::atomic::AtomicBool;
+    use wisp_protocol::log::LogRecord;
+    use wisp_protocol::{OutputKind, ToolAction, ToolPurpose};
+
+    struct AppendProbeStore {
+        memory: MemoryStore,
+        target_call_id: &'static str,
+        at_append: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        probed: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+        append_blocked: Arc<AtomicBool>,
+    }
+
+    impl crate::session::SessionStore for AppendProbeStore {
+        fn append(&mut self, session: &str, row: &LogRecord) -> std::io::Result<()> {
+            if matches!(
+                &row.event,
+                wisp_protocol::log::LogEvent::ToolCallRequested { call_id, .. }
+                    if call_id == self.target_call_id
+            ) {
+                self.append_blocked
+                    .store(crate::session::secrets_write_blocked(), Ordering::Release);
+                if let Some(tx) = self.at_append.lock().unwrap().take() {
+                    tx.send(()).unwrap();
+                }
+                if let Some(rx) = self.probed.lock().unwrap().take() {
+                    rx.recv().unwrap();
+                }
+            }
+            self.memory.append(session, row)
+        }
+
+        fn sync(&mut self, session: &str) -> std::io::Result<()> {
+            self.memory.sync(session)
+        }
+
+        fn read(&self, session: &str) -> std::io::Result<Vec<LogRecord>> {
+            self.memory.read(session)
+        }
+
+        fn list(&self) -> std::io::Result<Vec<String>> {
+            self.memory.list()
+        }
+
+        fn put_blob(
+            &mut self,
+            sha256: &str,
+            media_type: &wisp_protocol::Mime,
+            bytes: &[u8],
+        ) -> std::io::Result<()> {
+            self.memory.put_blob(sha256, media_type, bytes)
+        }
+
+        fn get_blob(
+            &self,
+            sha256: &str,
+            media_type: &wisp_protocol::Mime,
+        ) -> std::io::Result<crate::session::Blob> {
+            self.memory.get_blob(sha256, media_type)
+        }
+    }
+
+    crate::session::reset_held_for_test();
+    assert!(crate::session::held().is_empty());
+    const SECRET: &str = "CANARYMode1SingleLineSecret991";
+
+    let bundle = wisp_plugin_show_diff::bundled();
+    let make: crate::plugin::Make = Arc::new(move |host| (bundle.instantiate)(host));
+    let (registry, problems) = crate::plugin::Registry::from_sources(
+        vec![(bundle.manifest.to_owned(), make)],
+        &crate::plugin::PluginConfig::default(),
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    let names = ["show_code"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    let started = registry
+        .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+
+    let memory = MemoryStore::default();
+    let append_blocked = Arc::new(AtomicBool::new(false));
+    let (at_append_tx, at_append_rx) = std::sync::mpsc::channel();
+    let (probed_tx, probed_rx) = std::sync::mpsc::channel();
+    let probe_store = AppendProbeStore {
+        memory: memory.clone(),
+        target_call_id: "c_mode1",
+        at_append: Mutex::new(Some(at_append_tx)),
+        probed: Mutex::new(Some(probed_rx)),
+        append_blocked: append_blocked.clone(),
+    };
+    let env = Env::new("refused-log-append-read-held");
+    let provider = scripted(vec![
+        uses(&[call(
+            "c_mode1",
+            "show_code",
+            json!({"code": "", "title": SECRET}),
+        )]),
+        done("Done."),
+    ]);
+    let mut agent = agent_with(provider, &env, started.toolbox, GRACE)
+        .with_hooks(started.hooks, started.host)
+        .with_log(
+            SessionLog::new(Box::new(probe_store), "s-m1"),
+            log_context(),
+        );
+
+    let worker = std::thread::spawn(move || {
+        at_append_rx.recv().unwrap();
+        let worker_blocked = crate::session::secrets_write_blocked();
+        probed_tx.send(()).unwrap();
+        crate::session::register_secrets([SECRET.to_owned()]);
+        worker_blocked
+    });
+    let (outcome, events) = turn(&mut agent, "go").await;
+    let worker_blocked = worker.join().unwrap();
+    assert!(
+        matches!(outcome, TurnOutcome::Completed { .. }),
+        "{outcome:?}"
+    );
+    assert!(
+        worker_blocked,
+        "register_secrets must block while append runs"
+    );
+    assert!(
+        append_blocked.load(Ordering::Acquire),
+        "read_held() must be held during SessionStore::append"
+    );
+
+    let records = memory.read("s-m1").unwrap();
+    assert!(records.iter().any(|r| matches!(
+        &r.event,
+        wisp_protocol::log::LogEvent::ToolCallRequested { call_id, refused: true, .. }
+            if call_id == "c_mode1"
+    )));
+
+    let live_req = events
+        .iter()
+        .find_map(|e| match e {
+            AgentEvent::ToolCallRequested {
+                call_id,
+                display,
+                refused,
+                ..
+            } if call_id == "c_mode1" => Some((display.clone(), *refused)),
+            _ => None,
+        })
+        .unwrap();
+    assert!(live_req.1);
+    assert_eq!(live_req.0.purpose, ToolPurpose::Show);
+    match &live_req.0.action {
+        ToolAction::Show => {
+            assert_eq!(live_req.0.target, SECRET);
+            assert_eq!(live_req.0.title.as_deref(), Some(SECRET));
+        }
+        ToolAction::Other { name } => {
+            assert_eq!(name, "tool");
+            assert_eq!(live_req.0.target, "{}");
+            assert_eq!(live_req.0.output, OutputKind::Text);
+            assert_eq!(live_req.0.title, None);
+            assert!(!serde_json::to_string(&live_req.0).unwrap().contains(SECRET));
+        }
+        other => panic!("unexpected live action after concurrent register_secrets: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn emit_refused_tool_call_retries_when_single_or_multiline_secret_registers_before_checked_log_write()
+ {
+    use wisp_protocol::log::LogEvent;
+    use wisp_protocol::{OutputKind, ToolAction, ToolPurpose};
+
+    const SINGLE: &str = "CANARYMode1RetrySingleSecret991";
+    const LINE1: &str = "CANARYMode2LineOne991";
+    const LINE2: &str = "CANARYMode2LineTwo991";
+
+    fn register_single() {
+        crate::session::register_secrets(["CANARYMode1RetrySingleSecret991".to_owned()]);
+    }
+    fn register_multiline() {
+        crate::session::register_secrets([
+            "CANARYMode2LineOne991\nCANARYMode2LineTwo991".to_owned()
+        ]);
+    }
+
+    let bundle = wisp_plugin_show_diff::bundled();
+    let make: crate::plugin::Make = Arc::new(move |host| (bundle.instantiate)(host));
+    let (registry, problems) = crate::plugin::Registry::from_sources(
+        vec![(bundle.manifest.to_owned(), make)],
+        &crate::plugin::PluginConfig::default(),
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+    let names = ["show_code"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    let started = registry
+        .start_exact(&names, Arc::new(crate::plugin::KernelHost::new()))
+        .await;
+    assert!(started.problems.is_empty(), "{:?}", started.problems);
+
+    let store = MemoryStore::default();
+    let env = Env::new("refused-log-retry-checked");
+    let provider = scripted(vec![
+        uses(&[call(
+            "c_single",
+            "show_code",
+            json!({"code": "", "title": SINGLE}),
+        )]),
+        done("Done 1."),
+        uses(&[call(
+            "c_multiline",
+            "show_code",
+            json!({"code": "", "title": format!("{LINE1}\n{LINE2}")}),
+        )]),
+        done("Done 2."),
+    ]);
+    let mut agent = agent_with(provider, &env, started.toolbox, GRACE)
+        .with_hooks(started.hooks, started.host)
+        .with_log(
+            SessionLog::new(Box::new(store.clone()), "s-m2"),
+            log_context(),
+        );
+
+    for (call_id, hook_fn, forbidden, expected_name, expected_target) in [
+        (
+            "c_single",
+            register_single as fn(),
+            vec![SINGLE],
+            "tool",
+            "{}",
+        ),
+        (
+            "c_multiline",
+            register_multiline as fn(),
+            vec![LINE1, LINE2],
+            "show_code",
+            "{code, title}",
+        ),
+    ] {
+        crate::session::reset_held_for_test();
+        assert!(crate::session::held().is_empty());
+        crate::session::BEFORE_CHECKED_RECORD.set(Some(hook_fn));
+        let (outcome, events) = turn(&mut agent, "go").await;
+        assert!(
+            matches!(outcome, TurnOutcome::Completed { .. }),
+            "{call_id}: {outcome:?}"
+        );
+        assert!(
+            crate::session::BEFORE_CHECKED_RECORD.take().is_none(),
+            "{call_id}: BEFORE_CHECKED_RECORD must fire during emit_refused_tool_call"
+        );
+
+        let live_req = events
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::ToolCallRequested {
+                    call_id: id,
+                    display,
+                    refused,
+                    ..
+                } if id == call_id => Some((display.clone(), *refused)),
+                _ => None,
+            })
+            .unwrap();
+        assert!(live_req.1, "{call_id}");
+        assert_eq!(
+            live_req.0.action,
+            ToolAction::Other {
+                name: expected_name.to_owned()
+            },
+            "{call_id}"
+        );
+        assert_eq!(live_req.0.target, expected_target, "{call_id}");
+        assert_eq!(live_req.0.output, OutputKind::Text, "{call_id}");
+        assert_eq!(live_req.0.title, None, "{call_id}");
+        assert_eq!(live_req.0.purpose, ToolPurpose::Show, "{call_id}");
+
+        let records = store.read("s-m2").unwrap();
+        let logged_req = records
+            .iter()
+            .find(|r| {
+                matches!(
+                    &r.event,
+                    LogEvent::ToolCallRequested { call_id: id, .. } if id == call_id
+                )
+            })
+            .unwrap();
+        let LogEvent::ToolCallRequested {
+            input,
+            display,
+            refused,
+            ..
+        } = &logged_req.event
+        else {
+            panic!("{logged_req:?}");
+        };
+        assert!(*refused, "{call_id}");
+        assert_eq!(
+            *input,
+            json!({"code": "", "title": "[redacted]"}),
+            "{call_id}"
+        );
+        assert_eq!(*display, live_req.0, "{call_id}");
+        let row_json = serde_json::to_string(logged_req).unwrap();
+        let live_json = serde_json::to_string(&live_req.0).unwrap();
+        for bad in forbidden {
+            assert!(
+                !row_json.contains(bad),
+                "{call_id} row leaked {bad}: {row_json}"
+            );
+            assert!(
+                !live_json.contains(bad),
+                "{call_id} live leaked {bad}: {live_json}"
+            );
+        }
+    }
+}

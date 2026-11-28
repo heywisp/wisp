@@ -896,6 +896,7 @@ fn asked_in(turn: u64, call_id: &str, questions: &[wisp_protocol::Question]) -> 
                     .collect::<Vec<_>>(),
             ))
             .unwrap(),
+            refused: false,
         },
         LogEvent::ToolCallStarted {
             turn,
@@ -1526,4 +1527,1145 @@ fn transcript_scrubs_starting_brief_checklist_spans_fails_closed_and_prefers_rev
     assert!(texts.contains(&("mail-corrupt", "[redacted]")));
     assert!(!serde_json::to_string(&events).unwrap().contains(canary));
     assert_eq!(serde_json::to_vec(&log).unwrap(), before);
+}
+
+#[test]
+fn replay_scrubs_clipped_tool_call_display_when_secret_is_held() {
+    use wisp_protocol::{OutputKind, ToolAction, ToolDisplay, ToolPurpose};
+
+    const HELD: &str = "CANARYReplayScrubSecret";
+    crate::session::register_secrets([HELD.to_owned()]);
+    let mut fallback_map = serde_json::Map::new();
+    for n in 0..14 {
+        fallback_map.insert(format!("k{n:02}"), json!(1));
+    }
+    fallback_map.insert(format!("z.{HELD}"), json!(1));
+    let mut log = opening(1, "tui-1", "hi");
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 0,
+        call_id: "c_fallback".to_owned(),
+        tool: "unknown_tool".to_owned(),
+        input: Value::Object(fallback_map),
+        display: ToolDisplay {
+            action: ToolAction::Other {
+                name: "unknown_tool".to_owned(),
+            },
+            verbs: None,
+            target: "{k00, k01, k02, k03, k04, k05, k06, k07, k08, k09, k10, k11, k12, k13, z.CANARY\u{2026}"
+                .to_owned(),
+            output: OutputKind::Text,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: false,
+    });
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 1,
+        call_id: "c_show".to_owned(),
+        tool: "view_file".to_owned(),
+        input: json!({"path": format!("/tmp/{HELD}-path")}),
+        display: ToolDisplay {
+            action: ToolAction::Show,
+            verbs: None,
+            target: format!("{HELD}-path\u{2026}"),
+            output: OutputKind::Text,
+            view: None,
+            title: Some(format!("{HELD}-title\u{2026}")),
+            purpose: ToolPurpose::Show,
+        },
+        refused: false,
+    });
+    let replayed: Vec<_> = transcript(&records(log), &Toolbox::default(), None)
+        .into_iter()
+        .filter_map(|e| match e {
+            AgentEvent::ToolCallRequested {
+                call_id, display, ..
+            } => Some((call_id, display)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(replayed.len(), 2, "{replayed:?}");
+    assert_eq!(replayed[0].0, "c_fallback");
+    assert_eq!(replayed[0].1.target, "{}");
+    assert_eq!(replayed[1].0, "c_show");
+    assert_eq!(
+        replayed[1].1.action,
+        ToolAction::Other {
+            name: "tool".to_owned()
+        }
+    );
+    assert_eq!(replayed[1].1.target, "{}");
+    let encoded = serde_json::to_string(&replayed).unwrap();
+    for forbidden in ["k00", "CANARY", HELD] {
+        assert!(!encoded.contains(forbidden), "{encoded}");
+    }
+}
+
+#[test]
+fn replay_scrubs_refused_show_and_write_with_empty_held_and_preserves_benign_controls() {
+    use std::path::Path;
+    use wisp_protocol::{OutputKind, ToolAction, ToolDisplay, ToolOutcome, ToolPurpose, Verbs};
+
+    assert!(crate::session::held().is_empty());
+    let home = Path::new("/home/alice");
+    let email = "alice@example.invalid";
+    let key = "sk-ant-CANARYEmptyHeldWrite0123456789";
+
+    let mut log = opening(1, "tui-1", "hi");
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 0,
+        call_id: "c_show_email".to_owned(),
+        tool: "show_diff".to_owned(),
+        input: json!({"files": [{"path": format!("{}{email}", "dir/".repeat(19))}]}),
+        display: ToolDisplay {
+            action: ToolAction::Show,
+            verbs: None,
+            target: format!("{}alice@\u{2026}", "dir/".repeat(18)),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Show,
+        },
+        refused: true,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 1,
+        call_id: "c_show_email".to_owned(),
+        outcome: ToolOutcome::InvalidInput {
+            message: "bad diff".to_owned(),
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 0,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 1,
+        call_id: "c_write_key".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "board-alice@example\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 1,
+        call_id: "c_write_key".to_owned(),
+        outcome: ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 0,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+    let benign_show = ToolDisplay {
+        action: ToolAction::Show,
+        verbs: None,
+        target: format!("{}file_name\u{2026}", "src/".repeat(18)),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Show,
+    };
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 2,
+        call_id: "c_show_benign".to_owned(),
+        tool: "show_diff".to_owned(),
+        input: json!({"files": [{"path": format!("{}file_name_tail", "src/".repeat(18))}]}),
+        display: benign_show.clone(),
+        refused: true,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 1,
+        call_id: "c_show_benign".to_owned(),
+        outcome: ToolOutcome::InvalidInput {
+            message: "bad diff".to_owned(),
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 0,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+    let benign_write = ToolDisplay {
+        action: ToolAction::Write,
+        verbs: None,
+        target: "roadmap-planning-board-with-very-lo\u{2026}".to_owned(),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 3,
+        call_id: "c_write_benign".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": "roadmap-planning-board-with-very-long-name"}),
+        display: benign_write.clone(),
+        refused: true,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 1,
+        call_id: "c_write_benign".to_owned(),
+        outcome: ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 0,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+    let valid_report = ToolDisplay {
+        action: ToolAction::Other {
+            name: "report".to_owned(),
+        },
+        verbs: Some(Verbs {
+            doing: "Reporting".to_owned(),
+            done: "Reported".to_owned(),
+            failed: "couldn't report".to_owned(),
+        }),
+        target: format!("/home/alice/src/lib.rs {email}"),
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 4,
+        call_id: "c_valid_report".to_owned(),
+        tool: "report".to_owned(),
+        input: json!({"text": format!("/home/alice/src/lib.rs {email}\nDone.")}),
+        display: valid_report.clone(),
+        refused: false,
+    });
+    let valid_ask = ToolDisplay {
+        action: ToolAction::Other {
+            name: "ask_user".to_owned(),
+        },
+        verbs: None,
+        target: "Config loca\u{2026}".to_owned(),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 5,
+        call_id: "c_valid_ask".to_owned(),
+        tool: "ask_user".to_owned(),
+        input: json!({
+            "questions": [{
+                "header": "Config location",
+                "question": format!("Write /home/alice/.config/wisp for {email}?"),
+                "options": [{"label": "Yes", "description": "Save"}]
+            }]
+        }),
+        display: valid_ask.clone(),
+        refused: false,
+    });
+
+    let replayed: Vec<_> =
+        crate::resume::transcript_with_home(&records(log), &Toolbox::default(), None, Some(home))
+            .into_iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallRequested {
+                    call_id, display, ..
+                } => Some((call_id, display)),
+                _ => None,
+            })
+            .collect();
+    assert_eq!(replayed.len(), 6);
+    for idx in [0usize, 1] {
+        assert_eq!(
+            replayed[idx].1.action,
+            ToolAction::Other {
+                name: "tool".to_owned()
+            },
+            "{:?}",
+            replayed[idx]
+        );
+        assert_eq!(replayed[idx].1.target, "{}", "{:?}", replayed[idx]);
+    }
+    assert_eq!(replayed[2].1, benign_show);
+    assert_eq!(replayed[3].1, benign_write);
+    assert_eq!(replayed[4].1, valid_report);
+    assert_eq!(replayed[5].1, valid_ask);
+}
+
+#[test]
+fn replay_uses_explicit_refused_provenance_across_not_run_interrupted_and_reused_call_ids() {
+    use std::path::Path;
+    use wisp_protocol::{
+        NotRunReason, OutputKind, ToolAction, ToolDisplay, ToolOutcome, ToolPurpose, Verbs,
+    };
+
+    assert!(crate::session::held().is_empty());
+    let home = Path::new("/home/alice");
+    let email = "alice@example.invalid";
+    let key = "sk-ant-CANARYExplicitReplay01234567890";
+
+    let mut log = opening(1, "tui-1", "hi");
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 0,
+        call_id: "c_not_run_refused".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "board-alice@exam\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 1,
+        call_id: "c_not_run_refused".to_owned(),
+        outcome: ToolOutcome::NotRun {
+            reason: NotRunReason::AfterRefusal,
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 0,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 1,
+        call_id: "c_interrupted_refused".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "board-alice@exam\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    });
+    let valid_report = ToolDisplay {
+        action: ToolAction::Other {
+            name: "report".to_owned(),
+        },
+        verbs: Some(Verbs {
+            doing: "Reporting".to_owned(),
+            done: "Reported".to_owned(),
+            failed: "couldn't report".to_owned(),
+        }),
+        target: format!("/home/alice/src/main.rs {email}"),
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 2,
+        call_id: "c_not_run_valid".to_owned(),
+        tool: "report".to_owned(),
+        input: json!({"text": format!("/home/alice/src/main.rs {email}")}),
+        display: valid_report.clone(),
+        refused: false,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 1,
+        call_id: "c_not_run_valid".to_owned(),
+        outcome: ToolOutcome::NotRun {
+            reason: NotRunReason::TurnStopped,
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 0,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 3,
+        call_id: "c_reused".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "board-alice@exam\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: true,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 1,
+        call_id: "c_reused".to_owned(),
+        outcome: ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 0,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+
+    log.extend(opening(2, "tui-2", "next"));
+    let reused_valid = ToolDisplay {
+        target: format!("/home/alice/src/lib.rs {email}"),
+        ..valid_report.clone()
+    };
+    log.push(LogEvent::ToolCallRequested {
+        turn: 2,
+        step: 1,
+        block: 0,
+        call_id: "c_reused".to_owned(),
+        tool: "report".to_owned(),
+        input: json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+        display: reused_valid.clone(),
+        refused: false,
+    });
+    log.push(LogEvent::ToolCallStarted {
+        turn: 2,
+        call_id: "c_reused".to_owned(),
+        cwd: "~/proj".to_owned(),
+        movable: false,
+        file: None,
+    });
+    log.push(LogEvent::ToolCallFinished {
+        turn: 2,
+        call_id: "c_reused".to_owned(),
+        outcome: ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 1,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    });
+
+    let replayed: Vec<_> =
+        crate::resume::transcript_with_home(&records(log), &Toolbox::default(), None, Some(home))
+            .into_iter()
+            .filter_map(|e| match e {
+                AgentEvent::ToolCallRequested {
+                    call_id,
+                    display,
+                    refused,
+                    ..
+                } => Some((call_id, display, refused)),
+                _ => None,
+            })
+            .collect();
+    assert_eq!(replayed.len(), 5, "{replayed:?}");
+    for idx in [0usize, 1, 3] {
+        assert!(replayed[idx].2, "{idx}: {:?}", replayed[idx]);
+        assert_eq!(
+            replayed[idx].1.action,
+            ToolAction::Other {
+                name: "tool".to_owned()
+            },
+            "{idx}: {:?}",
+            replayed[idx]
+        );
+        assert_eq!(replayed[idx].1.target, "{}", "{idx}: {:?}", replayed[idx]);
+    }
+    assert!(!replayed[2].2);
+    assert_eq!(replayed[2].1, valid_report);
+    assert_eq!(replayed[4].0, "c_reused");
+    assert!(!replayed[4].2);
+    assert_eq!(replayed[4].1, reused_valid);
+}
+
+#[test]
+fn legacy_pre_refusal_schema_replay_classifies_per_occurrence_and_preserves_confirmed_calls() {
+    use std::path::Path;
+    use wisp_protocol::log::TOOL_REFUSAL_SINCE;
+    use wisp_protocol::{
+        NotRunReason, OutputKind, ToolAction, ToolDisplay, ToolOutcome, ToolPurpose, Verbs,
+    };
+
+    assert!(crate::session::held().is_empty());
+    let home = Path::new("/home/alice");
+    let email = "alice@example.invalid";
+    let key = "sk-ant-CANARYLegacyUpcast01234567890";
+    let legacy_version = TOOL_REFUSAL_SINCE - 1;
+    let legacy_records = |events: Vec<LogEvent>| -> Vec<LogRecord> {
+        events
+            .into_iter()
+            .enumerate()
+            .map(|(seq, event)| LogRecord {
+                schema_version: legacy_version,
+                seq: u64::try_from(seq).unwrap(),
+                at: "2026-10-26T09:00:00Z".to_owned(),
+                event,
+            })
+            .collect()
+    };
+    let finished = |turn: u64, call_id: &str, outcome: ToolOutcome| LogEvent::ToolCallFinished {
+        turn,
+        call_id: call_id.to_owned(),
+        outcome,
+        output: Default::default(),
+        facts: Vec::new(),
+        state: None,
+        duration_ms: 1,
+        result: None,
+        process: None,
+        attachments: Vec::new(),
+        notes: None,
+        typed: None,
+    };
+    let started_ev = |turn: u64, call_id: &str| LogEvent::ToolCallStarted {
+        turn,
+        call_id: call_id.to_owned(),
+        cwd: "~/proj".to_owned(),
+        movable: false,
+        file: None,
+    };
+    let clipped_write = ToolDisplay {
+        action: ToolAction::Write,
+        verbs: None,
+        target: "board-alice@exam\u{2026}".to_owned(),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    let valid_report = ToolDisplay {
+        action: ToolAction::Other {
+            name: "report".to_owned(),
+        },
+        verbs: Some(Verbs {
+            doing: "Reporting".to_owned(),
+            done: "Reported".to_owned(),
+            failed: "couldn't report".to_owned(),
+        }),
+        target: format!("/home/alice/src/lib.rs {email}"),
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+
+    let mut log = opening(1, "tui-1", "turn 1");
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 0,
+        call_id: "a_not_run_write".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: clipped_write.clone(),
+        refused: false,
+    });
+    log.push(finished(
+        1,
+        "a_not_run_write",
+        ToolOutcome::NotRun {
+            reason: NotRunReason::AfterRefusal,
+        },
+    ));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 1,
+        call_id: "b_interrupted_no_start".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: clipped_write.clone(),
+        refused: false,
+    });
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 2,
+        call_id: "c_interrupted_started".to_owned(),
+        tool: "report".to_owned(),
+        input: json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+        display: valid_report.clone(),
+        refused: false,
+    });
+    log.push(started_ev(1, "c_interrupted_started"));
+
+    log.extend(opening(2, "tui-2", "turn 2"));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 2,
+        step: 1,
+        block: 0,
+        call_id: "d_reused_a".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: clipped_write.clone(),
+        refused: false,
+    });
+    log.push(finished(
+        2,
+        "d_reused_a",
+        ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+    ));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 2,
+        step: 2,
+        block: 0,
+        call_id: "d_reused_a".to_owned(),
+        tool: "report".to_owned(),
+        input: json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+        display: valid_report.clone(),
+        refused: false,
+    });
+    log.push(started_ev(2, "d_reused_a"));
+    log.push(finished(
+        2,
+        "d_reused_a",
+        ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+    ));
+
+    log.extend(opening(3, "tui-3", "turn 3"));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 3,
+        step: 1,
+        block: 0,
+        call_id: "d_reused_b".to_owned(),
+        tool: "report".to_owned(),
+        input: json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+        display: valid_report.clone(),
+        refused: false,
+    });
+    log.push(started_ev(3, "d_reused_b"));
+    log.push(finished(
+        3,
+        "d_reused_b",
+        ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+    ));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 3,
+        step: 2,
+        block: 0,
+        call_id: "d_reused_b".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: clipped_write.clone(),
+        refused: false,
+    });
+    log.push(finished(
+        3,
+        "d_reused_b",
+        ToolOutcome::InvalidInput {
+            message: "bad board".to_owned(),
+        },
+    ));
+
+    log.extend(opening(4, "tui-4", "turn 4"));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 4,
+        step: 1,
+        block: 0,
+        call_id: "e_dup".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: clipped_write.clone(),
+        refused: false,
+    });
+    log.push(started_ev(4, "e_dup"));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 4,
+        step: 1,
+        block: 1,
+        call_id: "e_dup".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: clipped_write.clone(),
+        refused: false,
+    });
+    log.push(finished(
+        4,
+        "e_dup",
+        ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+    ));
+    log.push(finished(
+        4,
+        "e_dup",
+        ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+    ));
+
+    log.extend(opening(5, "tui-5", "turn 5"));
+    let f_ask = ToolDisplay {
+        action: ToolAction::Other {
+            name: "ask_user".to_owned(),
+        },
+        verbs: None,
+        target: "Config loca\u{2026}".to_owned(),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    let f_rename = ToolDisplay {
+        action: ToolAction::Other {
+            name: "rename_chat".to_owned(),
+        },
+        verbs: Some(Verbs {
+            doing: "Renaming".to_owned(),
+            done: "Renamed".to_owned(),
+            failed: "couldn't rename".to_owned(),
+        }),
+        target: format!("to /home/alice/proj/{email}"),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    let f_read = ToolDisplay {
+        action: ToolAction::Read,
+        verbs: None,
+        target: "/home/alice/notes\u{2026}".to_owned(),
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    let f_write = ToolDisplay {
+        action: ToolAction::Write,
+        verbs: None,
+        target: format!("board {email}"),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    let f_bash = ToolDisplay {
+        action: ToolAction::Run,
+        verbs: None,
+        target: "echo long\u{2026}".to_owned(),
+        output: OutputKind::Text,
+        view: None,
+        title: Some(format!("/home/alice {email}")),
+        purpose: ToolPurpose::Run,
+    };
+    let f_calls = [
+        (
+            "f_ask",
+            "ask_user",
+            json!({"questions": [{"header": "H", "question": "Q", "options": []}]}),
+            f_ask.clone(),
+        ),
+        (
+            "f_report",
+            "report",
+            json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+            valid_report.clone(),
+        ),
+        (
+            "f_rename",
+            "rename_chat",
+            json!({"name": format!("/home/alice/proj/{email}")}),
+            f_rename.clone(),
+        ),
+        (
+            "f_read",
+            "view_file",
+            json!({"path": "/home/alice/notes.txt"}),
+            f_read.clone(),
+        ),
+        (
+            "f_write",
+            "board_write",
+            json!({"board": format!("board {email}")}),
+            f_write.clone(),
+        ),
+        (
+            "f_bash",
+            "bash",
+            json!({"command": "[redacted]"}),
+            f_bash.clone(),
+        ),
+    ];
+    for (idx, (id, tool, input, display)) in f_calls.iter().enumerate() {
+        log.push(LogEvent::ToolCallRequested {
+            turn: 5,
+            step: 1,
+            block: idx,
+            call_id: (*id).to_owned(),
+            tool: (*tool).to_owned(),
+            input: input.clone(),
+            display: display.clone(),
+            refused: false,
+        });
+        log.push(started_ev(5, id));
+        log.push(finished(
+            5,
+            id,
+            ToolOutcome::Completed {
+                is_error: false,
+                exit: None,
+            },
+        ));
+    }
+
+    log.extend(opening(6, "tui-6", "turn 6"));
+    let g_calls = [
+        (
+            "g_redacted_key",
+            "unknown_tool",
+            json!({"[redacted]": "v"}),
+            ToolDisplay {
+                action: ToolAction::Other {
+                    name: "unknown_tool".to_owned(),
+                },
+                verbs: None,
+                target: "{[redacted]}".to_owned(),
+                output: OutputKind::Text,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+        ),
+        (
+            "g_collapsed_redacted",
+            "unknown_tool",
+            json!("[redacted]"),
+            ToolDisplay {
+                action: ToolAction::Other {
+                    name: "unknown_tool".to_owned(),
+                },
+                verbs: None,
+                target: "{k1, secret_pre\u{2026}}".to_owned(),
+                output: OutputKind::Text,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+        ),
+        (
+            "g_board_redacted",
+            "board_write",
+            json!({"board": "[redacted]"}),
+            ToolDisplay {
+                action: ToolAction::Write,
+                verbs: None,
+                target: "proj-CANARYheldPr\u{2026}".to_owned(),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+        ),
+        (
+            "g_diff_redacted",
+            "show_diff",
+            json!({"files": [{"path": "[redacted]"}]}),
+            ToolDisplay {
+                action: ToolAction::Show,
+                verbs: None,
+                target: "dir/CANARYheldPr\u{2026}".to_owned(),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Show,
+            },
+        ),
+        (
+            "g_ascii_dots_redacted",
+            "show_diff",
+            json!("[redacted]"),
+            ToolDisplay {
+                action: ToolAction::Show,
+                verbs: None,
+                target: "dir/alice@exam...".to_owned(),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Show,
+            },
+        ),
+        (
+            "g_first_line_redacted",
+            "show_diff",
+            json!({"files": [{"path": "[redacted]"}], "title": "[redacted]"}),
+            ToolDisplay {
+                action: ToolAction::Show,
+                verbs: None,
+                target: "first_line_secret".to_owned(),
+                output: OutputKind::None,
+                view: None,
+                title: Some("first_line_secret".to_owned()),
+                purpose: ToolPurpose::Show,
+            },
+        ),
+        (
+            "g_braced_ascii_dots",
+            "unknown_tool",
+            json!({"a": "[redacted]"}),
+            ToolDisplay {
+                action: ToolAction::Other {
+                    name: "unknown_tool".to_owned(),
+                },
+                verbs: None,
+                target: "{a: dir/alice@exam...}".to_owned(),
+                output: OutputKind::Text,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+        ),
+    ];
+    for (idx, (id, tool, input, display)) in g_calls.into_iter().enumerate() {
+        log.push(LogEvent::ToolCallRequested {
+            turn: 6,
+            step: 1,
+            block: idx,
+            call_id: id.to_owned(),
+            tool: tool.to_owned(),
+            input,
+            display,
+            refused: false,
+        });
+        log.push(finished(
+            6,
+            id,
+            ToolOutcome::NotRun {
+                reason: NotRunReason::AfterRefusal,
+            },
+        ));
+    }
+
+    log.extend(opening(7, "tui-7", "turn 7"));
+    log.push(LogEvent::ToolCallRequested {
+        turn: 7,
+        step: 1,
+        block: 0,
+        call_id: "h_resumed_same_id".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": format!("board {email} {key}")}),
+        display: clipped_write,
+        refused: false,
+    });
+    log.push(
+        serde_json::from_value(json!({
+            "type": "session_resumed",
+            "wisp_version": "test",
+            "endpoint": "test",
+            "endpoint_name": "test",
+            "gap_ms": null
+        }))
+        .unwrap(),
+    );
+    log.push(LogEvent::ToolCallRequested {
+        turn: 7,
+        step: 1,
+        block: 0,
+        call_id: "h_resumed_same_id".to_owned(),
+        tool: "report".to_owned(),
+        input: json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+        display: valid_report.clone(),
+        refused: false,
+    });
+    log.push(started_ev(7, "h_resumed_same_id"));
+    log.push(finished(
+        7,
+        "h_resumed_same_id",
+        ToolOutcome::Completed {
+            is_error: false,
+            exit: None,
+        },
+    ));
+
+    log.extend(opening(8, "tui-8", "turn 8"));
+    for (idx, (id, outcome)) in [
+        ("i_timed_out", ToolOutcome::TimedOut { after_ms: 100 }),
+        ("i_cancelled", ToolOutcome::Cancelled),
+        (
+            "i_failed",
+            ToolOutcome::Failed {
+                message: "blocked".to_owned(),
+                before_start: true,
+            },
+        ),
+        (
+            "i_backgrounded",
+            ToolOutcome::Backgrounded {
+                reason: wisp_protocol::BackgroundReason::Started,
+            },
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        log.push(LogEvent::ToolCallRequested {
+            turn: 8,
+            step: 1,
+            block: idx,
+            call_id: id.to_owned(),
+            tool: "report".to_owned(),
+            input: json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+            display: valid_report.clone(),
+            refused: false,
+        });
+        log.push(finished(8, id, outcome));
+    }
+
+    let replayed: Vec<_> = crate::resume::transcript_with_home(
+        &legacy_records(log),
+        &Toolbox::default(),
+        None,
+        Some(home),
+    )
+    .into_iter()
+    .filter_map(|e| match e {
+        AgentEvent::ToolCallRequested {
+            call_id,
+            display,
+            refused,
+            ..
+        } => Some((call_id, display, refused)),
+        _ => None,
+    })
+    .collect();
+    assert_eq!(replayed.len(), 28, "{replayed:?}");
+
+    for idx in [0usize, 1, 3, 6, 7, 8, 22] {
+        assert!(replayed[idx].2, "{idx}: {:?}", replayed[idx]);
+        assert_eq!(
+            replayed[idx].1.action,
+            ToolAction::Other {
+                name: "tool".to_owned()
+            },
+            "{idx}: {:?}",
+            replayed[idx]
+        );
+        assert_eq!(replayed[idx].1.target, "{}", "{idx}: {:?}", replayed[idx]);
+    }
+    for (idx, expected) in [
+        (2usize, &valid_report),
+        (4, &valid_report),
+        (5, &valid_report),
+        (9, &f_ask),
+        (10, &valid_report),
+        (11, &f_rename),
+        (12, &f_read),
+        (13, &f_write),
+        (14, &f_bash),
+        (23, &valid_report),
+        (24, &valid_report),
+        (25, &valid_report),
+        (26, &valid_report),
+        (27, &valid_report),
+    ] {
+        assert!(!replayed[idx].2, "{idx}: {:?}", replayed[idx]);
+        assert_eq!(&replayed[idx].1, expected, "{idx}: {:?}", replayed[idx]);
+    }
+    for idx in [15usize, 16, 21] {
+        assert!(replayed[idx].2, "{idx}: {:?}", replayed[idx]);
+        assert_eq!(
+            replayed[idx].1.action,
+            ToolAction::Other {
+                name: "unknown_tool".to_owned()
+            },
+            "{idx}: {:?}",
+            replayed[idx]
+        );
+        assert_eq!(replayed[idx].1.target, "{}", "{idx}: {:?}", replayed[idx]);
+    }
+    for idx in [17usize, 18, 19, 20] {
+        assert!(replayed[idx].2, "{idx}: {:?}", replayed[idx]);
+        assert_eq!(
+            replayed[idx].1.action,
+            ToolAction::Other {
+                name: "tool".to_owned()
+            },
+            "{idx}: {:?}",
+            replayed[idx]
+        );
+        assert_eq!(replayed[idx].1.target, "{}", "{idx}: {:?}", replayed[idx]);
+        assert_eq!(replayed[idx].1.title, None, "{idx}: {:?}", replayed[idx]);
+        assert!(!replayed[idx].1.target.contains("CANARY"));
+    }
 }

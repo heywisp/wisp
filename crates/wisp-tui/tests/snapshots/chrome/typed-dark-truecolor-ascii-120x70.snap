@@ -49,8 +49,8 @@ expression: body
   ~ 1..2 fg Rgb(166, 166, 166); 3..9 fg Rgb(212, 212, 212) bold; 9..25 fg Rgb(212, 212, 212); 113..119 fg Rgb(166, 166, 166)
 | . Typing into process 31                                                                                        queued
   ~ 1..2 fg Rgb(166, 166, 166); 3..9 fg Rgb(212, 212, 212) bold; 9..25 fg Rgb(212, 212, 212); 113..119 fg Rgb(166, 166, 166)
-| . Using terminal {action, input}                                                                                queued
-  ~ 1..2 fg Rgb(166, 166, 166); 3..8 fg Rgb(212, 212, 212) bold; 8..33 fg Rgb(212, 212, 212); 113..119 fg Rgb(166, 166, 166)
+| . Using terminal {}                                                                                             queued
+  ~ 1..2 fg Rgb(166, 166, 166); 3..8 fg Rgb(212, 212, 212) bold; 8..20 fg Rgb(212, 212, 212); 113..119 fg Rgb(166, 166, 166)
 | . Searching process 27's output for "ERROR"  Start the dev server                                               queued
   ~ 1..2 fg Rgb(166, 166, 166); 3..12 fg Rgb(212, 212, 212) bold; 12..44 fg Rgb(212, 212, 212); 46..66 fg Rgb(166, 166, 166); 113..119 fg Rgb(166, 166, 166)
 | . Reading process 31's screen                                                                                   queued
@@ -127,8 +127,8 @@ expression: body
   ~ 1..2 fg Rgb(137, 209, 133); 3..8 fg Rgb(212, 212, 212) bold; 8..24 fg Rgb(212, 212, 212); 117..119 fg Rgb(166, 166, 166)
 | x Used terminal 31                                                                                      couldn't start
   ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 105..119 fg Rgb(244, 135, 113)
-| x Used terminal {action, input}                                                                         couldn't start
-  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..32 fg Rgb(212, 212, 212); 105..119 fg Rgb(244, 135, 113)
+| x Used terminal {}                                                                                      couldn't start
+  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 105..119 fg Rgb(244, 135, 113)
 | + Searched process 27's output for "ERROR"  Start the dev server                                                    1s
   ~ 1..2 fg Rgb(137, 209, 133); 3..11 fg Rgb(212, 212, 212) bold; 11..43 fg Rgb(212, 212, 212); 45..65 fg Rgb(166, 166, 166); 117..119 fg Rgb(166, 166, 166)
 | + Read process 31's screen                                                                                          1s

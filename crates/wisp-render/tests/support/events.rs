@@ -248,6 +248,7 @@ pub(crate) fn tool_requested(requested: Requested) -> AgentEvent {
             title: requested.title,
             purpose: requested.purpose,
         },
+        refused: false,
     }
 }
 

@@ -15,8 +15,8 @@ use support::{committed, fixture, fixture_text, fixtures, golden, record_at};
 use wisp_protocol::context::{FillPart, PartTokens};
 use wisp_protocol::log::{
     BlockPosition, Closed, CredentialSource, Cut, FeatureState, ImageRef, LEAD_SENT,
-    LOG_SCHEMA_VERSION, LeadEntry, LogEvent, LogRecord, LoggedInput, TurnLead, no_images,
-    rebuild_history,
+    LOG_SCHEMA_VERSION, LeadEntry, LogEvent, LogRecord, LoggedInput, TOOL_REFUSAL_SINCE, TurnLead,
+    no_images, rebuild_history,
 };
 use wisp_protocol::settings::{
     AppliedChange, FileState, Layer, ModelEntry, ResolvedSetting, Saved, SavedValue, SettingChange,
@@ -408,6 +408,7 @@ fn every_new_event_matches_its_fixture() {
                 tool: "bash".into(),
                 input: input(),
                 display: display(),
+                refused: false,
             },
         ),
         (
@@ -742,6 +743,7 @@ fn every_new_log_record_matches_its_fixture() {
                     tool: "bash".into(),
                     input: input(),
                     display: display(),
+                    refused: false,
                 },
             ),
         ),
@@ -5039,6 +5041,7 @@ fn the_show_diff_display_and_its_record_match_their_fixtures() {
                 tool: "show_diff".into(),
                 input: json!({"files": [{"path": "src/x.rs", "before": "a\n", "after": "b\n"}]}),
                 display: show_diff_display(),
+                refused: false,
             },
         ),
     );
@@ -5996,6 +5999,11 @@ fn the_session_log_doc_names_the_current_schema_version() {
     let doc = fs::read_to_string(path).unwrap();
     let row = format!("| `schema_version` | Format version, currently `{LOG_SCHEMA_VERSION}` |");
     assert!(doc.contains(&row), "docs/session-log.md should say {row}");
+    let refusal_bullet = format!("- `{TOOL_REFUSAL_SINCE}` adds optional `refused`");
+    assert!(
+        doc.contains(&refusal_bullet),
+        "docs/session-log.md should say {refusal_bullet}"
+    );
 }
 
 #[test]

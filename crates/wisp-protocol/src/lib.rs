@@ -1374,6 +1374,8 @@ pub enum AgentEvent {
         tool: String,
         input: Value,
         display: ToolDisplay,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        refused: bool,
     },
     ToolCallStarted {
         call_id: String,

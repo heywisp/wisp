@@ -267,19 +267,34 @@ fn has_checklist_spans(event: &LogEvent) -> bool {
     matches!(event, LogEvent::InputAccepted { checklist_spans, .. } if !checklist_spans.is_empty())
 }
 
+fn has_tool_call_display(event: &LogEvent) -> bool {
+    matches!(
+        event,
+        LogEvent::ToolCallRequested {
+            display,
+            refused,
+            ..
+        } if crate::tool::tool_call_display_may_need_scrub_without_held(display, *refused)
+    )
+}
+
 pub(crate) fn log_needs_home(event: &mut LogEvent) -> bool {
-    has_checklist_todos(event) || has_checklist_spans(event) || log_hook_audit(event).is_some()
+    has_checklist_todos(event)
+        || has_checklist_spans(event)
+        || has_tool_call_display(event)
+        || log_hook_audit(event).is_some()
 }
 
 pub(super) fn scrub(redactions: &Redactions, mut event: LogEvent, home: Option<&Path>) -> LogEvent {
     let has_checklist = has_checklist_todos(&event) || has_checklist_spans(&event);
+    let has_tool_display = has_tool_call_display(&event);
     let audit = log_hook_audit(&mut event);
-    let fallback = (home.is_none() && (has_checklist || audit.is_some()))
+    let fallback = (home.is_none() && (has_checklist || has_tool_display || audit.is_some()))
         .then(os_detection_home)
         .flatten();
     let home = home.or(fallback.as_deref());
     let hook_audited = audit.is_some_and(|audit| audit.scrub(home, redactions));
-    if !redactions.is_empty() || has_checklist {
+    if !redactions.is_empty() || has_checklist || has_tool_display {
         event.redact(&Scrub {
             held: redactions,
             home,
@@ -302,15 +317,24 @@ fn call(
     tool: &str,
     input: &mut Value,
     display: &mut wisp_protocol::ToolDisplay,
+    refused: bool,
     redactions: &Scrub<'_>,
 ) {
+    crate::tool::scrub_tool_call_display(
+        tool,
+        input,
+        display,
+        redactions.home,
+        redactions.held,
+        refused,
+    );
     if redactions.held.is_empty() {
         return;
     }
     let send = tool == wisp_protocol::agents::SEND_MESSAGE;
     let to = send.then(|| input.get_mut("to").map(Value::take)).flatten();
     let code = match &mut display.view {
-        Some(ToolView::Code { language: _, code }) if holds(input, code) && !send => {
+        Some(ToolView::Code { language: _, code }) if !refused && !send && holds(input, code) => {
             Some(std::mem::take(code))
         }
         _ => None,
@@ -403,7 +427,7 @@ content!(LogEvent, redactions, {
     Self::AgentReported { turn: _, agent: _, outcome: _, report, duration_ms: _ } => [report],
     Self::MessageCommitted { turn: _, message: _, model: _, stop_reason: _ } => [],
     Self::TurnEnded { turn: _, outcome, stats, partial_output } => [outcome, partial_output, stats],
-    Self::ToolCallRequested { turn: _, step: _, block: _, call_id: _, tool, input, display } => [] { call(tool, input, display, redactions); },
+    Self::ToolCallRequested { turn: _, step: _, block: _, call_id: _, tool, input, display, refused } => [] { call(tool, input, display, *refused, redactions); },
     Self::ToolCallStarted { turn: _, call_id: _, cwd, movable: _, file: _ } => [cwd],
     Self::ToolCallFinished {
         turn: _, call_id: _, outcome, output, facts: _, state: _, duration_ms: _, result: _, process: _,

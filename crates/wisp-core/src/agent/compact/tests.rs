@@ -1164,6 +1164,7 @@ fn a_refused_calls_ledger_line_names_its_keys_and_never_a_value() {
             tool: "nope".into(),
             input: input.clone(),
             display: futures::executor::block_on(agent.toolbox.rejected_display("nope", &input)),
+            refused: true,
         },
         None,
     );
@@ -1182,6 +1183,25 @@ fn a_refused_calls_ledger_line_names_its_keys_and_never_a_value() {
         "{text}"
     );
     assert!(!text.contains(marker), "{text}");
+    let span_key = format!("{}sk-ant-CANARY0123456789012345", "k.".repeat(33));
+    let scrubbed = agent.target_of("c2", "nope", &json!({span_key: "val"}));
+    assert_eq!(scrubbed, "{}");
+    assert!(!scrubbed.contains("sk-ant-") && !scrubbed.contains("CANARY"));
+    assert_eq!(
+        agent.target_of("c3", "sk-ant-CANARY0123456789012345", &json!({"id": 1})),
+        "{}"
+    );
+    crate::session::register_secrets(["CANARY-held-mcp-secret-token".to_owned()]);
+    agent.hooks.host = Some(Arc::new(crate::plugin::KernelHost::new()));
+    assert!(agent.hidden_mcp_name("mcp__local__CANARY-held-mcp-secret-token"));
+    assert_eq!(
+        agent.target_of(
+            "c4",
+            "mcp__local__CANARY-held-mcp-secret-token",
+            &json!({"id": 1})
+        ),
+        "{}"
+    );
 }
 
 #[test]
@@ -1200,6 +1220,7 @@ fn a_calls_target_is_the_one_its_request_showed() {
             tool: "echo".into(),
             input: input.clone(),
             display,
+            refused: false,
         },
         None,
     );
@@ -1240,6 +1261,7 @@ fn the_head_keeps_recent_words_and_the_ledger() {
                     title: None,
                     purpose: ToolPurpose::Run,
                 },
+                refused: false,
             },
             None,
         );
@@ -1623,6 +1645,7 @@ async fn a_fresh_compaction_head_rechecks_manifest_lookup_targets_after_switch_o
             tool: tool.into(),
             input,
             display,
+            refused: false,
         },
     );
     let record = |agent: &mut Agent, records: &[LogEvent]| {

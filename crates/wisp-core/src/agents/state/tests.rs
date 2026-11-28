@@ -194,6 +194,7 @@ fn requested(id: &str, title: Option<&str>, target: &str) -> AgentEvent {
             title: title.map(str::to_owned),
             purpose: wisp_protocol::ToolPurpose::Run,
         },
+        refused: false,
     }
 }
 

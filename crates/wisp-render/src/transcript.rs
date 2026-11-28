@@ -3129,6 +3129,7 @@ impl Transcript {
                 tool,
                 input,
                 display,
+                refused: _,
             } => {
                 let claimed = self.tool_blocks.remove(&(*step, *block)).filter(|&cell| {
                     self.cells
