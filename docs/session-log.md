@@ -569,9 +569,10 @@ it. A server's card remains exempt too, so resume can redraw it, but its questio
 An older build ignores `source` and treats a server's card as the user's on resume.
 For other cards and tool results, the same text is already in `message_committed`. A code view's code,
 `tool_call_requested.display.view.code`, is exempt on an accepted
-(non-refused) call when the call's input holds it. That text is already in `message_committed`, so a resumed code
-block shows and copies the exact code; otherwise it is scrubbed like the
-rest of that record, `input` included. What a
+(non-refused) call when the call's input holds it. That text is already in `message_committed`, so the record keeps
+the exact code; otherwise it is scrubbed like the rest of that record, `input` included. The record keeps a
+registered secret in that code where the event and a resume show `[redacted]`, or `{}` with no view when the
+secret is spelled apart in it. What a
 resumed session reads back is exempt too, since a project whose path looks
 like the endpoint's path must not have it rewritten: `session_started.cwd`,
 `instructions`, `instructions_extra`, `instructions_sha256`,
@@ -607,7 +608,12 @@ accepted call's input in the event stays byte for byte, except for its
 checklist fields ("Checklist privacy") and a string holding a registered
 secret, which is masked in place, and one that still matches becomes
 `[redacted]`; the record is scrubbed as the rest of this section says. Replay
-applies the same rule to every record, of any version.
+applies the same rule to every record, of any version. A registered secret in any
+string of an accepted call's `display` is handled the same way in the event, the
+record and a replay, except a code view's exempt code, which the record keeps: a
+call with a view has each match masked in place, a call without one shows `{}`, and a
+viewed display that still holds a match afterwards (spelled apart by a zero-width
+character, say) shows `{}` with no view, in the event and in the record.
 `message_committed` keeps the `tool_use` as the model sent it, and the tool
 runs with that input, so neither changes.
 
@@ -703,10 +709,10 @@ matches are masked in place. Step order, status, and progress do not change.
 The same check applies to every string under a field named `todos`, at any
 depth, in a call's `input` in the event and in the `tool_call_requested`
 record: `write_todos`, `spawn_agent` and a call forwarded to either. A `todos`
-string hidden for an identity does not wipe an accepted display, so a plugin
-that builds a clipped display from such a string keeps showing it on a later
-pass after a secret in it is registered, unless the cut runs through that
-secret.
+string the check hides also wipes the call's accepted display, in the same pass,
+when that display has no view and carries a `…`: it shows `{}`, so a plugin that
+builds a clipped display from such a string never shows its start, even after a
+secret in it is registered later. A display with a view, or one not clipped, is kept.
 
 This applies before a successful checklist update or a child's starting list is
 published.

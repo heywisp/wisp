@@ -2162,6 +2162,128 @@ fn with_scrubbed_link_frames_masks_held_secrets_in_restart_rows_and_process_targ
 }
 
 #[test]
+fn with_scrubbed_link_frames_masks_registered_secrets_in_accepted_viewed_displays() {
+    use wisp_protocol::link::ToClient;
+    use wisp_protocol::{DiffView, OutputKind, ToolDisplay, ToolPurpose, ToolView};
+
+    use crate::agent::with_scrubbed_link_frames;
+    use crate::session::{REDACTED, SessionLog, register_secrets};
+
+    let secret = "CANARYLateViewedDisplaySecret";
+    let with = |text: &str| format!("{text} {secret}");
+    let requested =
+        |tool: &str, input: Value, title: String, view: ToolView| AgentEvent::ToolCallRequested {
+            step: 1,
+            block: 0,
+            call_id: format!("c_{tool}"),
+            tool: tool.to_owned(),
+            input,
+            display: ToolDisplay {
+                action: ToolAction::Show,
+                verbs: None,
+                target: title.clone(),
+                output: OutputKind::None,
+                view: Some(view),
+                title: Some(title),
+                purpose: ToolPurpose::Show,
+            },
+            refused: false,
+        };
+    let diff = |text: &str| ToolView::Diff {
+        title: Some(text.to_owned()),
+        files: vec![DiffView {
+            path: Some(text.to_owned()),
+            old_path: None,
+            language: None,
+            hunks: text.to_owned(),
+            added: 1,
+            removed: 0,
+        }],
+    };
+    let code = with("echo");
+    let events = [
+        requested(
+            "diff",
+            json!({"title": with("t")}),
+            with("t"),
+            diff(&with("d")),
+        ),
+        requested(
+            "code",
+            json!({"title": with("t"), "code": code}),
+            with("t"),
+            ToolView::Code {
+                language: Some(with("sh")),
+                code: code.clone(),
+            },
+        ),
+        requested(
+            "process",
+            json!({"id": 1, "text": with("go")}),
+            with("t"),
+            ToolView::Process {
+                id: Some(1),
+                text: Some(with("go")),
+                keys: vec![with("k")],
+                signal: None,
+                read: Some(with("r")),
+                pattern: Some(with("p")),
+            },
+        ),
+        requested("benign", json!({"title": "t"}), "t".to_owned(), diff("d")),
+        requested(
+            "apart",
+            json!({"title": "t"}),
+            "t".to_owned(),
+            diff("CANARYLate\u{200B}ViewedDisplaySecret"),
+        ),
+    ];
+    register_secrets([secret.to_owned()]);
+    let store = MemoryStore::default();
+    let mut log = SessionLog::new(Box::new(store.clone()), "s");
+    for event in &events {
+        log.record(crate::session::mirror::log_record(event, Some(1)).unwrap());
+    }
+    let logged: Vec<(Value, ToolDisplay)> = store
+        .read("s")
+        .unwrap()
+        .into_iter()
+        .filter_map(|record| match record.event {
+            LogEvent::ToolCallRequested { input, display, .. } => Some((input, display)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(logged.len(), events.len());
+    let mut frames = events.map(ToClient::event);
+    with_scrubbed_link_frames(&mut frames, None, None, |out| {
+        let sent = serde_json::to_string(out).unwrap();
+        assert!(!sent.contains(secret), "{sent}");
+        for (frame, (logged_input, mut expected)) in out.iter().zip(logged) {
+            let ToClient::Event(event) = frame else {
+                panic!("{frame:?}");
+            };
+            let AgentEvent::ToolCallRequested {
+                call_id,
+                input,
+                display,
+                ..
+            } = event.as_ref()
+            else {
+                panic!("{event:?}");
+            };
+            assert_eq!(*input, logged_input);
+            if let Some(ToolView::Code { code: logged, .. }) = &mut expected.view {
+                assert_eq!(*logged, code);
+                *logged = format!("echo {REDACTED}");
+            }
+            assert_eq!(display.view.is_none(), call_id == "c_apart", "{display:?}");
+            assert_eq!(*display, expected);
+        }
+    })
+    .unwrap();
+}
+
+#[test]
 fn with_scrubbed_link_frames_scrubs_tool_call_displays_atomically_under_read_held() {
     use std::sync::Barrier;
     use std::sync::atomic::AtomicBool;

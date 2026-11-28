@@ -898,21 +898,18 @@ impl Agent {
             return (raw.clone(), raw);
         }
         let held = crate::session::read_held();
-        if held.is_empty() {
-            return (raw.clone(), raw);
-        }
         let mut shown = display.clone();
         let home = self.secret_check_home();
-        crate::tool::scrub_tool_call_display(
+        crate::tool::scrub_tool_call(
             tool,
-            input,
+            &mut input.clone(),
             &mut shown,
             home.as_deref(),
             &held,
             false,
         );
         let ledger = held.scrub(&shown.target);
-        let used = if crate::tool::text_has_held_match(&raw, &held)
+        let used = if held.has_secret_check_match(&raw)
             && !crate::tool::text_is_cut_through_held(&raw, &held)
         {
             raw

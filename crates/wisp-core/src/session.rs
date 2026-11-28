@@ -20,7 +20,8 @@ mod redaction;
 
 pub(crate) use redaction::{
     HookAudit, agent_hook_audit, compaction_terminal_message, hook_blocked_tool_fields,
-    hook_compaction_error_kind, log_needs_home, scrub_hook_failure, turn_hook_audit,
+    hook_compaction_error_kind, log_needs_home, redact_display, scrub_hook_failure,
+    turn_hook_audit,
 };
 
 use crate::runtime::in_parallel;

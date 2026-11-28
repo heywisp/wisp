@@ -196,13 +196,19 @@ async fn a_show_call_titled_through_a_held_secret_keeps_no_prefix_and_keeps_its_
             );
             let live = pick!(
                 &events,
-                AgentEvent::ToolCallRequested { input, display, .. } => (input.clone(), display.target.clone())
+                AgentEvent::ToolCallRequested { input, display, .. } => (input.clone(), display.clone())
             );
             assert_eq!(live.len(), 1, "{tool}");
             assert!(!live[0].0.to_string().contains("CANARY"), "{tool}");
-            if target == redacted {
-                assert_eq!(live[0].1, redacted, "{tool}");
-            }
+            assert_eq!(live[0].1.target, target, "{tool}");
+            assert_eq!(
+                live[0].1.title.as_deref(),
+                Some(shown_title.as_str()),
+                "{tool}"
+            );
+            assert!(live[0].1.view.is_some(), "{tool}");
+            let live_shown = serde_json::to_string(&live[0].1).unwrap();
+            assert!(!live_shown.contains("CANARY"), "{tool}: {live_shown}");
             let logged: Vec<(Value, wisp_protocol::ToolDisplay)> = pick!(
                 log_events(&store),
                 LogEvent::ToolCallRequested { input, display, refused: false, .. } => (input, display)

@@ -495,6 +495,36 @@ or cut it with bash into something you can read, then view or read that.]";
 }
 
 #[tokio::test]
+async fn a_refused_files_label_and_note_hide_a_held_secret_in_its_target() {
+    let secret = "CANARYheldWithdrawnTargetSecret";
+    crate::session::register_secrets([secret.to_owned()]);
+    let env = Env::new("attach-withdraw-held");
+    let store = MemoryStore::default();
+    let scripted = scripted(vec![
+        uses(&[snap("a", json!({"name": format!("shots/{secret}.png")}))]),
+        attachment_refused(),
+        done("ok"),
+    ]);
+    let mut agent = snap_agent(scripted.clone(), &env, Some(Box::new(store.clone())));
+    let (outcome, events) = turn(&mut agent, "snap").await;
+    assert!(
+        matches!(outcome, TurnOutcome::Completed { .. }),
+        "{events:#?}"
+    );
+    let note = "[shots/[redacted].png (image/png) couldn't be processed: Could not process file. Convert \
+or cut it with bash into something you can read, then view or read that.]";
+    let items = withdrawn(&events);
+    assert_eq!(items.len(), 1, "{items:?}");
+    assert_eq!(items[0].label, "shots/[redacted].png");
+    assert_eq!(items[0].note, note);
+    let requests = scripted.sent();
+    let resent = requests[2].messages.last().unwrap();
+    assert_eq!(result_blocks(resent)[0].1[1], text(note));
+    let rebuilt = rebuild(&store, log_events(&store).iter()).unwrap();
+    assert_eq!(rebuilt.messages, &*agent.history());
+}
+
+#[tokio::test]
 async fn two_refused_files_are_withdrawn_together_and_say_so() {
     let env = Env::new("attach-withdraw-two");
     let store = MemoryStore::default();
@@ -536,9 +566,14 @@ it with bash only if that is refused too.]"
 
 #[tokio::test]
 async fn the_context_report_names_a_file_by_its_target_and_leaves_it_unestimated() {
+    let secret = "CANARYheldContextRowSecret";
+    crate::session::register_secrets([secret.to_owned()]);
     let env = Env::new("attach-context");
     let scripted = scripted(vec![
-        uses(&[snap("a", json!({"name": "docs/spec.png"}))]),
+        uses(&[
+            snap("a", json!({"name": "docs/spec.png"})),
+            snap("b", json!({"name": format!("shots/{secret}.png")})),
+        ]),
         done("ok"),
     ]);
     let mut agent = snap_agent(scripted, &env, None);
@@ -548,14 +583,15 @@ async fn the_context_report_names_a_file_by_its_target_and_leaves_it_unestimated
         .iter()
         .find(|r| r.category == Category::Attachments)
         .unwrap();
+    let item = |name: &str| ItemEstimate {
+        name: name.into(),
+        tokens: 0,
+        turn: Some(1),
+        unestimated: true,
+    };
     assert_eq!(
         row.items,
-        [ItemEstimate {
-            name: "docs/spec.png".into(),
-            tokens: 0,
-            turn: Some(1),
-            unestimated: true,
-        }]
+        [item("docs/spec.png"), item("shots/[redacted].png")]
     );
     assert_eq!(row.tokens, 0);
 }

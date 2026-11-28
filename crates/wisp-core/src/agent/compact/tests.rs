@@ -1232,6 +1232,59 @@ fn a_calls_target_is_the_one_its_request_showed() {
         agent.target_of("c2", "echo", &input),
         crate::tool::fallback_display("echo", &input).target
     );
+
+    let email = ["alice", "example.invalid"].join("@");
+    let hidden = json!({"todos": [{"text": format!("mail {email}"), "status": "pending"}]});
+    let mut clipped = crate::tool::fallback_display("echo", &hidden);
+    clipped.target = "mail al\u{2026}".into();
+    agent.note_event(
+        &AgentEvent::ToolCallRequested {
+            step: 1,
+            block: 0,
+            call_id: "c3".into(),
+            tool: "echo".into(),
+            input: hidden.clone(),
+            display: clipped,
+            refused: false,
+        },
+        None,
+    );
+    assert_eq!(agent.target_of("c3", "echo", &hidden), "{}");
+    assert_eq!(agent.history_view().calls.last().unwrap().target, "{}");
+}
+
+#[test]
+fn a_target_spelling_a_held_secret_apart_is_not_kept_raw_while_a_plain_one_is() {
+    let secret = "CANARYheldTargetCopySecret0123";
+    crate::session::register_secrets([secret.to_owned()]);
+    let mut agent = Agent::new(scripted(vec![]), default_session());
+    agent.set_toolbox(crate::tool::test_toolbox());
+    let input = json!({"text": "hello"});
+    let apart = format!("{}\u{200B}{}", &secret[..8], &secret[8..]);
+    for (id, target) in [
+        ("plain", format!("shown {secret}")),
+        ("apart", format!("shown {apart}")),
+    ] {
+        let mut display = crate::tool::fallback_display("echo", &input);
+        display.target = target;
+        agent.note_event(
+            &AgentEvent::ToolCallRequested {
+                step: 1,
+                block: 0,
+                call_id: id.into(),
+                tool: "echo".into(),
+                input: input.clone(),
+                display,
+                refused: false,
+            },
+            None,
+        );
+    }
+    assert_eq!(
+        agent.target_of("plain", "echo", &input),
+        format!("shown {secret}")
+    );
+    assert_eq!(agent.target_of("apart", "echo", &input), "{}");
 }
 
 #[test]

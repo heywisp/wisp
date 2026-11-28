@@ -320,6 +320,14 @@ pub(super) fn holds(value: &Value, code: &str) -> bool {
     }
 }
 
+pub(crate) fn redact_display(display: &mut wisp_protocol::ToolDisplay, held: &Redactions) {
+    display.redact(&Scrub {
+        held,
+        home: None,
+        hook_audited: false,
+    });
+}
+
 fn call(
     tool: &str,
     input: &mut Value,
@@ -330,8 +338,13 @@ fn call(
     let send = tool == wisp_protocol::agents::SEND_MESSAGE;
     let to = send.then(|| input.get("to").cloned()).flatten();
     let keep_code = !refused
+        && !redactions.held.is_empty()
         && !send
         && matches!(&display.view, Some(ToolView::Code { language: _, code }) if holds(input, code));
+    let code = match &mut display.view {
+        Some(ToolView::Code { language: _, code }) if keep_code => Some(std::mem::take(code)),
+        _ => None,
+    };
     crate::tool::scrub_tool_call(
         tool,
         input,
@@ -343,10 +356,6 @@ fn call(
     if redactions.held.is_empty() {
         return;
     }
-    let code = match &mut display.view {
-        Some(ToolView::Code { language: _, code }) if keep_code => Some(std::mem::take(code)),
-        _ => None,
-    };
     input.redact(redactions);
     display.redact(redactions);
     if let (Some(to), Some(slot)) = (to, input.get_mut("to"))
