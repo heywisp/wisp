@@ -7,6 +7,7 @@ pub(crate) mod testkit;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::io::{self, Write};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,8 +19,8 @@ use wisp_contain::{Contained, contain};
 use wisp_plugin_api::Plugin;
 use wisp_plugin_api::tools::Prepared as PluginPrepared;
 use wisp_protocol::{
-    ContentBlock, Fact, FileSlice, Mime, OutputKind, PluginRecord, ToolAction, ToolDisplay,
-    ToolOutcome, Typed, WorkspaceChange,
+    ContentBlock, DiffView, Fact, FileSlice, Mime, OutputKind, PluginRecord, ToolAction,
+    ToolDisplay, ToolOutcome, ToolView, Typed, Verbs, WorkspaceChange,
 };
 
 pub use wisp_protocol::ToolPurpose;
@@ -836,12 +837,68 @@ impl Toolbox {
         Box::pin(self.rejected_display_unboxed(name, input))
     }
 
-    async fn rejected_display_unboxed(&self, name: &str, input: &Value) -> ToolDisplay {
-        let shown = match self.get(name).or_else(|| self.held_tool(name)) {
+    async fn plugin_rejected_display(&self, name: &str, input: &Value) -> Option<ToolDisplay> {
+        match self.get(name).or_else(|| self.held_tool(name)) {
             Some(tool) => tool.rejected_display(input).await,
             None => None,
+        }
+    }
+
+    pub(crate) async fn rejected_display_with<'a, F>(
+        &'a self,
+        name: &'a str,
+        shown_input: &'a Value,
+        home: Option<&'a Path>,
+        dynamic: impl FnOnce(&'a Value) -> F + Send,
+    ) -> ToolDisplay
+    where
+        F: std::future::Future<Output = Option<ToolDisplay>> + Send + 'a,
+    {
+        let (gen_before, supplied_input) = {
+            let held = crate::session::read_held();
+            let gen_before = crate::session::held_generation();
+            if !display_text_is_safe_with_held(name, home, &held) {
+                return raw_fallback_display("tool", &Value::Null);
+            }
+            (
+                gen_before,
+                value_is_safe_with_held(shown_input, home, &held),
+            )
         };
-        shown.unwrap_or_else(|| fallback_display(name, input))
+        let plugin_input = if supplied_input {
+            shown_input
+        } else {
+            &Value::Null
+        };
+        let shown = match dynamic(plugin_input).await {
+            Some(display) => Some(display),
+            None => self.plugin_rejected_display(name, plugin_input).await,
+        };
+        let held = crate::session::read_held();
+        let gen_after = crate::session::held_generation();
+        let name_still_safe = display_text_is_safe_with_held(name, home, &held);
+        let display = match shown {
+            Some(display)
+                if name_still_safe
+                    && (gen_after == gen_before
+                        || !supplied_input
+                        || value_is_safe_with_held(shown_input, home, &held)) =>
+            {
+                display
+            }
+            _ => fallback_display_with_held(name, shown_input, home, &held),
+        };
+        if display_is_safe_with_held(&display, home, &held) {
+            display
+        } else {
+            raw_fallback_display("tool", &Value::Null)
+        }
+    }
+
+    async fn rejected_display_unboxed(&self, name: &str, input: &Value) -> ToolDisplay {
+        let home = crate::secrets::scan::os_detection_home();
+        self.rejected_display_with(name, input, home.as_deref(), |_| std::future::ready(None))
+            .await
     }
 
     pub fn prepare<'a>(
@@ -1028,8 +1085,183 @@ fn input_keys(input: &Value) -> String {
     format!("{{{}}}", keys.join(", "))
 }
 
-pub fn fallback_display(name: &str, input: &Value) -> ToolDisplay {
-    let line: String = input_keys(input).lines().collect::<Vec<_>>().join(" ");
+fn fold_lines(text: &str) -> String {
+    text.lines().collect::<Vec<_>>().join(" ")
+}
+
+fn fallback_display_line(input: &Value) -> String {
+    fold_lines(&input_keys(input))
+}
+
+pub(crate) fn fallback_keys_safe(input: &Value, mut is_safe: impl FnMut(&str) -> bool) -> bool {
+    let Some(map) = input.as_object() else {
+        return true;
+    };
+    if map.is_empty() {
+        return true;
+    }
+    for key in map.keys() {
+        if !is_safe(key) {
+            return false;
+        }
+        let flat = fold_lines(key);
+        if flat != *key && !is_safe(&flat) {
+            return false;
+        }
+    }
+    is_safe(&fallback_display_line(input))
+}
+
+fn strip_display_separators(text: &str) -> String {
+    text.chars()
+        .filter(|c| !matches!(c, '\u{200B}' | '\u{FEFF}'))
+        .map(|c| match c {
+            '\n' | '\t' | '\r' => ' ',
+            other => other,
+        })
+        .collect()
+}
+
+fn any_display_spelling(text: &str, mut matches: impl FnMut(&str) -> bool) -> bool {
+    if matches(text) {
+        return true;
+    }
+    let folded = fold_lines(text);
+    if folded != text && matches(&folded) {
+        return true;
+    }
+    let stripped = strip_display_separators(&folded);
+    stripped != folded && stripped != text && matches(&stripped)
+}
+
+fn any_value_text(value: &Value, matches: &mut impl FnMut(&str) -> bool) -> bool {
+    match value {
+        Value::String(text) => matches(text),
+        Value::Array(items) => items.iter().any(|item| any_value_text(item, matches)),
+        Value::Object(fields) => fields
+            .iter()
+            .any(|(key, value)| matches(key) || any_value_text(value, matches)),
+        Value::Null | Value::Bool(_) | Value::Number(_) => false,
+    }
+}
+
+fn value_has_redacted(value: &Value) -> bool {
+    any_value_text(value, &mut |s| s.contains(crate::session::REDACTED))
+}
+
+fn all_display_strings(display: &ToolDisplay, check: &mut impl FnMut(&str) -> bool) -> bool {
+    let ToolDisplay {
+        action,
+        verbs,
+        target,
+        output,
+        view,
+        title,
+        purpose: _,
+    } = display;
+    let action_ok = match action {
+        ToolAction::Other { name } => check(name),
+        ToolAction::Run
+        | ToolAction::Read
+        | ToolAction::Write
+        | ToolAction::Edit
+        | ToolAction::Search
+        | ToolAction::Fetch
+        | ToolAction::Input
+        | ToolAction::Wait
+        | ToolAction::Signal { kind: _ }
+        | ToolAction::Attach
+        | ToolAction::Show
+        | ToolAction::Unknown => true,
+    };
+    let verbs_ok = verbs.as_ref().is_none_or(
+        |Verbs {
+             doing,
+             done,
+             failed,
+         }| { check(doing) && check(done) && check(failed) },
+    );
+    let output_ok = match output {
+        OutputKind::Code { lang } => check(lang),
+        OutputKind::Text | OutputKind::Diff | OutputKind::None | OutputKind::Unknown => true,
+    };
+    let view_ok = match view.as_ref() {
+        None | Some(ToolView::Unknown) => true,
+        Some(ToolView::Diff { title, files }) => {
+            title.as_deref().is_none_or(&mut *check)
+                && files.iter().all(
+                    |DiffView {
+                         path,
+                         old_path,
+                         language,
+                         hunks,
+                         added: _,
+                         removed: _,
+                     }| {
+                        path.as_deref().is_none_or(&mut *check)
+                            && old_path.as_deref().is_none_or(&mut *check)
+                            && language.as_deref().is_none_or(&mut *check)
+                            && check(hunks)
+                    },
+                )
+        }
+        Some(ToolView::Process {
+            id: _,
+            text,
+            keys,
+            signal: _,
+            read,
+            pattern,
+        }) => {
+            text.as_deref().is_none_or(&mut *check)
+                && keys.iter().all(|key| check(key))
+                && read.as_deref().is_none_or(&mut *check)
+                && pattern.as_deref().is_none_or(&mut *check)
+        }
+        Some(ToolView::Code { language, code }) => {
+            language.as_deref().is_none_or(&mut *check) && check(code)
+        }
+    };
+    action_ok
+        && check(target)
+        && verbs_ok
+        && output_ok
+        && title.as_deref().is_none_or(&mut *check)
+        && view_ok
+}
+
+pub(crate) fn display_text_is_safe_with_held(
+    text: &str,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+) -> bool {
+    !any_display_spelling(text, |s| {
+        crate::secrets::scan::contains_secret_or_identity_with(s, home, held)
+    })
+}
+
+pub(crate) fn value_is_safe_with_held(
+    value: &Value,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+) -> bool {
+    !any_value_text(value, &mut |s| {
+        !display_text_is_safe_with_held(s, home, held)
+    })
+}
+
+pub(crate) fn display_is_safe_with_held(
+    display: &ToolDisplay,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+) -> bool {
+    all_display_strings(display, &mut |s| {
+        display_text_is_safe_with_held(s, home, held)
+    })
+}
+
+fn raw_fallback_display(name: &str, input: &Value) -> ToolDisplay {
+    let line = fallback_display_line(input);
     let target = cut_chars(&line, FALLBACK_TARGET_CHARS);
     ToolDisplay {
         action: ToolAction::Other {
@@ -1042,6 +1274,211 @@ pub fn fallback_display(name: &str, input: &Value) -> ToolDisplay {
         title: None,
         purpose: ToolPurpose::Run,
     }
+}
+
+pub(crate) fn fallback_display_with_held(
+    name: &str,
+    input: &Value,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+) -> ToolDisplay {
+    let is_safe = |text: &str| display_text_is_safe_with_held(text, home, held);
+    if !is_safe(name) {
+        return raw_fallback_display("tool", &Value::Null);
+    }
+    if fallback_keys_safe(input, is_safe) {
+        let display = raw_fallback_display(name, input);
+        if is_safe(&display.target) {
+            return display;
+        }
+    }
+    raw_fallback_display(name, &Value::Null)
+}
+
+fn text_has_held_match(text: &str, held: &crate::session::Redactions) -> bool {
+    !held.is_empty() && any_display_spelling(text, |s| held.has_secret_check_match(s))
+}
+
+fn value_has_held_match(value: &Value, held: &crate::session::Redactions) -> bool {
+    !held.is_empty() && any_value_text(value, &mut |s| text_has_held_match(s, held))
+}
+
+fn display_has_held_match(display: &ToolDisplay, held: &crate::session::Redactions) -> bool {
+    !held.is_empty() && !all_display_strings(display, &mut |s| !text_has_held_match(s, held))
+}
+
+fn display_is_clipped(display: &ToolDisplay) -> bool {
+    !all_display_strings(display, &mut |s| !s.contains('\u{2026}'))
+}
+
+fn source_is_unsafe(
+    tool: &str,
+    input: &Value,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+    refused: bool,
+) -> bool {
+    if refused {
+        !display_text_is_safe_with_held(tool, home, held)
+            || !value_is_safe_with_held(input, home, held)
+            || tool.contains(crate::session::REDACTED)
+            || value_has_redacted(input)
+    } else {
+        text_has_held_match(tool, held) || value_has_held_match(input, held)
+    }
+}
+
+fn is_canonical_data_free_fallback(tool: &str, display: &ToolDisplay) -> bool {
+    matches!(
+        &display.action,
+        ToolAction::Other { name }
+            if name == "tool" || name == crate::mcp::PLUGIN || name == tool
+    ) && display.output == OutputKind::Text
+        && display.target == "{}"
+        && display.title.is_none()
+        && display.verbs.is_none()
+        && display.view.is_none()
+}
+
+fn is_bare_brace_fallback(display: &ToolDisplay) -> bool {
+    matches!(&display.action, ToolAction::Other { .. })
+        && display.output == OutputKind::Text
+        && display.verbs.is_none()
+        && display.title.is_none()
+        && display.view.is_none()
+        && (display.target.trim_start().starts_with('{')
+            || strip_display_separators(&display.target)
+                .trim_start()
+                .starts_with('{'))
+}
+
+pub(crate) fn tool_call_display_may_need_scrub(display: &ToolDisplay, refused: bool) -> bool {
+    refused || display.view.is_none()
+}
+
+pub(crate) fn tool_call_display_may_need_scrub_without_held(
+    display: &ToolDisplay,
+    refused: bool,
+) -> bool {
+    refused || is_bare_brace_fallback(display)
+}
+
+pub(crate) fn scrub_tool_call_display(
+    tool: &str,
+    input: &Value,
+    display: &mut ToolDisplay,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+    refused: bool,
+) {
+    let purpose = display.purpose;
+    if is_bare_brace_fallback(display) {
+        let ToolAction::Other { name } = &display.action else {
+            return;
+        };
+        let source_unsafe = source_is_unsafe(tool, input, home, held, refused);
+        let non_canonical_refused_name = refused
+            && name != "tool"
+            && name != crate::mcp::PLUGIN
+            && (name != tool || tool.contains(crate::session::REDACTED));
+        if !display_text_is_safe_with_held(name, home, held)
+            || ((name.contains('\u{2026}') || non_canonical_refused_name) && source_unsafe)
+        {
+            *display = raw_fallback_display("tool", &Value::Null);
+            display.purpose = purpose;
+            return;
+        }
+        if display.target != "{}" {
+            let expected_target = cut_chars(&fallback_display_line(input), FALLBACK_TARGET_CHARS);
+            let refused_input_redacted = refused && value_has_redacted(input);
+            let collapsed_redacted = refused_input_redacted && !input.is_object();
+            let value_prefix_risk = source_unsafe
+                && (display.target != expected_target
+                    || (refused_input_redacted && display.target.contains('\u{2026}')));
+            let key_safe = |s: &str| {
+                display_text_is_safe_with_held(s, home, held)
+                    && (!refused || !s.contains(crate::session::REDACTED))
+            };
+            if collapsed_redacted
+                || value_prefix_risk
+                || !fallback_keys_safe(input, key_safe)
+                || !display_text_is_safe_with_held(&display.target, home, held)
+            {
+                display.target = "{}".to_owned();
+            }
+        }
+        if !display_is_safe_with_held(display, home, held) {
+            *display = raw_fallback_display("tool", &Value::Null);
+            display.purpose = purpose;
+        }
+        return;
+    }
+    if refused {
+        let lossy_risk = (display_is_clipped(display)
+            || tool.contains(crate::session::REDACTED)
+            || value_has_redacted(input))
+            && source_is_unsafe(tool, input, home, held, true);
+        if !display_is_safe_with_held(display, home, held) || lossy_risk {
+            *display = raw_fallback_display("tool", &Value::Null);
+            display.purpose = purpose;
+        }
+        return;
+    }
+    if display.view.is_none() && !held.is_empty() {
+        let lossy_held =
+            display_is_clipped(display) && source_is_unsafe(tool, input, home, held, false);
+        if display_has_held_match(display, held) || lossy_held {
+            *display = raw_fallback_display("tool", &Value::Null);
+            display.purpose = purpose;
+        }
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "tool refusal display fields, redaction snapshot, and checked/current generation"
+)]
+pub(crate) fn scrub_refused_tool_call_display(
+    tool: &str,
+    input: &Value,
+    display: &mut ToolDisplay,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+    allows_input: bool,
+    gen_checked: u64,
+    gen_now: u64,
+) {
+    scrub_tool_call_display(tool, input, display, home, held, true);
+    if gen_now == gen_checked {
+        return;
+    }
+    let purpose = display.purpose;
+    if is_canonical_data_free_fallback(tool, display)
+        && matches!(
+            &display.action,
+            ToolAction::Other { name }
+                if name == "tool" || display_text_is_safe_with_held(name, home, held)
+        )
+    {
+        return;
+    }
+    if !display_text_is_safe_with_held(tool, home, held)
+        || !value_is_safe_with_held(input, home, held)
+        || !display_is_safe_with_held(display, home, held)
+    {
+        *display = if allows_input {
+            fallback_display_with_held(tool, input, home, held)
+        } else {
+            raw_fallback_display("tool", &Value::Null)
+        };
+        display.purpose = purpose;
+    }
+}
+
+pub fn fallback_display(name: &str, input: &Value) -> ToolDisplay {
+    let home = crate::secrets::scan::os_detection_home();
+    let held = crate::session::read_held();
+    fallback_display_with_held(name, input, home.as_deref(), &held)
 }
 
 #[cfg(test)]

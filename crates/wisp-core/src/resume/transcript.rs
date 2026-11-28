@@ -182,6 +182,7 @@ struct Replay<'a> {
     todos: Vec<TodoItem>,
     home: Option<&'a Path>,
     redactions: Redactions,
+    confirmed_prepared: BTreeSet<usize>,
     compaction_failures: BTreeMap<u64, Vec<(ErrorKind, &'a str)>>,
 }
 
@@ -383,7 +384,7 @@ impl<'a> Replay<'a> {
         }
     }
 
-    fn event(&mut self, record_index: usize, event: &'a LogEvent) {
+    fn event(&mut self, record_index: usize, schema_version: u16, event: &'a LogEvent) {
         match event {
             LogEvent::SessionStarted { model, .. } | LogEvent::SettingsChanged { model, .. } => {
                 self.model.clone_from(model);
@@ -735,6 +736,14 @@ impl<'a> Replay<'a> {
                     {
                         display.purpose = declared.meta().purpose;
                     }
+                    scrub_replayed_tool_call(
+                        &mut replayed,
+                        record_index,
+                        schema_version,
+                        &self.confirmed_prepared,
+                        self.home,
+                        &self.redactions,
+                    );
                     self.flush_end();
                     self.out.push(replayed);
                 }
@@ -819,7 +828,7 @@ impl<'a> Replay<'a> {
                     stay: Vec::new(),
                 });
             }
-            self.event(index, &record.event);
+            self.event(index, record.schema_version, &record.event);
         }
         self.flush_end();
         if !self.todos.is_empty() && self.toolbox.provider_of(crate::tool::TODOS).is_none() {
@@ -874,6 +883,118 @@ fn run_of(records: &[LogRecord], start: usize) -> &[LogRecord] {
     rest.get(..end).unwrap_or_default()
 }
 
+struct OpenCall {
+    pending: usize,
+    unique: Option<usize>,
+}
+
+fn outcome_confirms_prepared(outcome: &wisp_protocol::ToolOutcome) -> bool {
+    matches!(
+        outcome,
+        wisp_protocol::ToolOutcome::Completed { .. }
+            | wisp_protocol::ToolOutcome::TimedOut { .. }
+            | wisp_protocol::ToolOutcome::Cancelled
+            | wisp_protocol::ToolOutcome::Failed { .. }
+            | wisp_protocol::ToolOutcome::Backgrounded { .. }
+    )
+}
+
+pub(crate) fn confirmed_prepared_calls(records: &[LogRecord]) -> BTreeSet<usize> {
+    let mut open: BTreeMap<(u64, String), OpenCall> = BTreeMap::new();
+    let mut confirmed = BTreeSet::new();
+    for (index, record) in records.iter().enumerate() {
+        match &record.event {
+            LogEvent::SessionResumed { .. }
+            | LogEvent::SessionEnded { .. }
+            | LogEvent::TurnStarted { .. }
+            | LogEvent::TurnEnded { .. }
+            | LogEvent::Rewound { .. } => {
+                open.clear();
+            }
+            LogEvent::ToolCallRequested {
+                turn,
+                call_id,
+                refused,
+                ..
+            } => {
+                let key = (*turn, call_id.clone());
+                match open.get_mut(&key) {
+                    None => {
+                        open.insert(
+                            key,
+                            OpenCall {
+                                pending: 1,
+                                unique: (!*refused).then_some(index),
+                            },
+                        );
+                    }
+                    Some(entry) => {
+                        entry.pending += 1;
+                        if let Some(prev) = entry.unique.take() {
+                            confirmed.remove(&prev);
+                        }
+                    }
+                }
+            }
+            LogEvent::ToolCallStarted { turn, call_id, .. } => {
+                if let Some(entry) = open.get(&(*turn, call_id.clone()))
+                    && entry.pending == 1
+                    && let Some(idx) = entry.unique
+                {
+                    confirmed.insert(idx);
+                }
+            }
+            LogEvent::ToolCallFinished {
+                turn,
+                call_id,
+                outcome,
+                ..
+            } => {
+                let key = (*turn, call_id.clone());
+                if let Some(entry) = open.get_mut(&key) {
+                    if entry.pending == 1
+                        && outcome_confirms_prepared(outcome)
+                        && let Some(idx) = entry.unique
+                    {
+                        confirmed.insert(idx);
+                    }
+                    entry.pending -= 1;
+                    if entry.pending == 0 {
+                        open.remove(&key);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    confirmed
+}
+
+pub(crate) fn scrub_replayed_tool_call(
+    event: &mut AgentEvent,
+    record_index: usize,
+    schema_version: u16,
+    confirmed_prepared: &BTreeSet<usize>,
+    home: Option<&Path>,
+    held: &Redactions,
+) {
+    if let AgentEvent::ToolCallRequested {
+        tool,
+        input,
+        display,
+        refused,
+        ..
+    } = event
+    {
+        if schema_version < wisp_protocol::log::TOOL_REFUSAL_SINCE
+            && !confirmed_prepared.contains(&record_index)
+        {
+            *refused = true;
+        }
+        crate::tool::scrub_tool_call_display(tool, input, display, home, held, *refused);
+    }
+}
+
 pub fn transcript(
     records: &[LogRecord],
     toolbox: &Toolbox,
@@ -918,6 +1039,7 @@ pub(crate) fn transcript_with_latest(
         todos: Vec::new(),
         home,
         redactions: held(),
+        confirmed_prepared: confirmed_prepared_calls(records),
         compaction_failures: BTreeMap::new(),
     }
     .run()

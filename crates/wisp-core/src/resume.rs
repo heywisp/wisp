@@ -48,9 +48,9 @@ pub use repair::{
     Context as RepairContext, NOT_RUN, RepairedCall, UNKNOWN, recovered_text, repair_calls,
 };
 pub use transcript::transcript;
-pub(crate) use transcript::transcript_with_home;
 pub(crate) use transcript::{
-    LatestBriefs, apply_latest_spanned_mail, latest_spanned_mail, replayed, transcript_with_latest,
+    LatestBriefs, apply_latest_spanned_mail, confirmed_prepared_calls, latest_spanned_mail,
+    replayed, scrub_replayed_tool_call, transcript_with_home, transcript_with_latest,
 };
 
 pub const STILL_OPEN_MINUTES: i64 = 10;

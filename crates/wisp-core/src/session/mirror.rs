@@ -71,7 +71,7 @@ mirror! {
     fn log_record(event, turn);
     in_turn {
         Fallback { from, to }
-        ToolCallRequested { step, block, call_id, tool, input, display }
+        ToolCallRequested { step, block, call_id, tool, input, display, refused }
         ToolCallStarted { call_id, cwd, movable, file }
         QuestionAsked { call_id, questions }
         QuestionClosed { call_id, how }

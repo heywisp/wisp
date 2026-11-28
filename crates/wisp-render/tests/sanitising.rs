@@ -67,6 +67,7 @@ fn tool_call(call_id: &str, display: ToolDisplay) -> Vec<AgentEvent> {
             tool: "tool".to_owned(),
             input: serde_json::json!({}),
             display,
+            refused: false,
         },
         AgentEvent::BlockStopped { index: 0 },
         AgentEvent::call_started(call_id, "/w"),

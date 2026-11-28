@@ -2968,6 +2968,7 @@ fn one_of_every_event() -> Vec<LogEvent> {
             tool: "bash".into(),
             input: json!({"command": "ls"}),
             display,
+            refused: false,
         },
         LogEvent::ToolCallStarted {
             turn: 1,
@@ -3703,6 +3704,7 @@ fn question_text_answers_tool_results_and_a_code_views_code_are_exempt_from_reda
             title: Some(format!("List {at}")),
             purpose: ToolPurpose::Show,
         },
+        refused: false,
     };
     log.record(shown("/v1", "bash /v1", &format!("{code}\r\n"), &code));
     log.record(shown("/v1", "bash /v1", "echo ready", &code));
@@ -4727,5 +4729,215 @@ async fn send_scrubbed_handles_hook_audit_and_spanned_brief_together_without_dea
             .unwrap()
             .iter()
             .any(|row| matches!(&row.event, LogEvent::InputRevised { turn: None, inputs } if inputs[0].text == *text))
+    );
+}
+
+#[test]
+fn session_log_scrubs_viewless_show_cutoff_identity_with_empty_held_while_preserving_valid_report()
+{
+    use wisp_protocol::{OutputKind, ToolAction, ToolDisplay, ToolPurpose, ToolView, Verbs};
+
+    assert!(held().is_empty());
+    let store = MemoryStore::default();
+    let mut log = SessionLog::new(Box::new(store.clone()), "s");
+    let home = std::path::Path::new("/home/alice");
+    let email = "alice@example.invalid";
+
+    log.record_with_home(
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 0,
+            call_id: "c_show_cut".into(),
+            tool: "show_diff".into(),
+            input: json!({"files": [{"path": format!("{}{email}", "dir/".repeat(19))}]}),
+            display: ToolDisplay {
+                action: ToolAction::Show,
+                verbs: None,
+                target: format!("{}alice@\u{2026}", "dir/".repeat(18)),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Show,
+            },
+            refused: true,
+        },
+        Some(home),
+    );
+    let report_display = ToolDisplay {
+        action: ToolAction::Other {
+            name: "report".into(),
+        },
+        verbs: Some(Verbs {
+            doing: "Reporting".into(),
+            done: "Reported".into(),
+            failed: "couldn't report".into(),
+        }),
+        target: format!("/home/alice/src/main.rs {email}"),
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    log.record_with_home(
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 1,
+            call_id: "c_valid_report".into(),
+            tool: "report".into(),
+            input: json!({"text": format!("/home/alice/src/main.rs {email}")}),
+            display: report_display.clone(),
+            refused: false,
+        },
+        Some(home),
+    );
+    log.record_with_home(
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 2,
+            call_id: "c_write_cut".into(),
+            tool: "board_write".into(),
+            input: json!({"board": format!("board {email} sk-ant-CANARYLogWrite01234567890123")}),
+            display: ToolDisplay {
+                action: ToolAction::Write,
+                verbs: None,
+                target: "board-alice@exam\u{2026}".into(),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+            refused: true,
+        },
+        Some(home),
+    );
+    log.record_with_home(
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 3,
+            call_id: "c_process_cut".into(),
+            tool: "process".into(),
+            input: json!({"pattern": format!("{}{email}", "pat-".repeat(20))}),
+            display: ToolDisplay {
+                action: ToolAction::Search,
+                verbs: None,
+                target: "proc 1".into(),
+                output: OutputKind::Text,
+                view: Some(ToolView::Process {
+                    id: Some(1),
+                    text: None,
+                    keys: Vec::new(),
+                    signal: None,
+                    read: None,
+                    pattern: Some(format!("{}alice@\u{2026}", "pat-".repeat(15))),
+                }),
+                title: Some(format!("{}alice@\u{2026}", "pat-".repeat(15))),
+                purpose: ToolPurpose::Run,
+            },
+            refused: true,
+        },
+        Some(home),
+    );
+    let show_page_display = ToolDisplay {
+        action: ToolAction::Show,
+        verbs: None,
+        target: "proj_01234567890123456789".into(),
+        output: OutputKind::None,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Show,
+    };
+    log.record_with_home(
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 4,
+            call_id: "c_show_page".into(),
+            tool: "show_page".into(),
+            input: json!({"id": "proj_01234567890123456789"}),
+            display: show_page_display.clone(),
+            refused: false,
+        },
+        Some(home),
+    );
+
+    let events: Vec<LogEvent> = store
+        .read("s")
+        .unwrap()
+        .into_iter()
+        .map(|r| r.event)
+        .collect();
+    assert_eq!(events.len(), 5);
+    for idx in [0usize, 2, 3] {
+        let LogEvent::ToolCallRequested { display, .. } = &events[idx] else {
+            panic!("{:?}", events[idx]);
+        };
+        assert_eq!(
+            display.action,
+            ToolAction::Other {
+                name: "tool".into()
+            },
+            "{idx}: {display:?}"
+        );
+        assert_eq!(display.target, "{}", "{idx}: {display:?}");
+        assert_eq!(display.view, None, "{idx}: {display:?}");
+        assert_eq!(display.title, None, "{idx}: {display:?}");
+    }
+    let LogEvent::ToolCallRequested {
+        display: kept_report,
+        ..
+    } = &events[1]
+    else {
+        panic!("{:?}", events[1]);
+    };
+    assert_eq!(kept_report, &report_display);
+    let LogEvent::ToolCallRequested {
+        display: kept_show_page,
+        ..
+    } = &events[4]
+    else {
+        panic!("{:?}", events[4]);
+    };
+    assert_eq!(kept_show_page, &show_page_display);
+
+    let log_only = Redactions::log_only(["CANARYlogonly-secret".to_owned()]);
+    let code = "echo CANARYlogonly-secret".to_owned();
+    let refused_code = redaction::scrub(
+        &log_only,
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 5,
+            call_id: "c_refused_code".into(),
+            tool: "show_code".into(),
+            input: json!({"code": code}),
+            display: ToolDisplay {
+                action: ToolAction::Show,
+                verbs: None,
+                target: "Code".into(),
+                output: OutputKind::None,
+                view: Some(ToolView::Code {
+                    language: Some("bash".into()),
+                    code: code.clone(),
+                }),
+                title: None,
+                purpose: ToolPurpose::Show,
+            },
+            refused: true,
+        },
+        Some(home),
+    );
+    let LogEvent::ToolCallRequested { display, .. } = refused_code else {
+        panic!("{refused_code:?}");
+    };
+    assert_eq!(
+        display.view,
+        Some(ToolView::Code {
+            language: Some("bash".into()),
+            code: "echo [redacted]".into(),
+        })
     );
 }

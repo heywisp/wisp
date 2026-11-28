@@ -221,10 +221,86 @@ fn the_requested_record_carries_the_purpose_inside_its_display() {
         tool: "show_diff".into(),
         input: json!({}),
         display: display(purpose),
+        refused: false,
     };
     let shown = round_trip(&record(ToolPurpose::Show));
     assert_eq!(shown["display"]["purpose"], "show");
     let run = round_trip(&record(ToolPurpose::Run));
     assert!(run["display"].get("purpose").is_none());
     assert!(!run.to_string().contains("purpose"));
+}
+
+#[test]
+fn tool_call_requested_carries_refused_and_defaults_to_false_when_omitted() {
+    use wisp_protocol::log::{LOG_SCHEMA_VERSION, TOOL_REFUSAL_SINCE};
+
+    const {
+        assert!(LOG_SCHEMA_VERSION >= TOOL_REFUSAL_SINCE);
+    }
+
+    let display = ToolDisplay {
+        action: ToolAction::Other {
+            name: "tool".into(),
+        },
+        verbs: None,
+        target: "{}".into(),
+        output: OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: ToolPurpose::Run,
+    };
+    let agent_event = |refused| AgentEvent::ToolCallRequested {
+        step: 1,
+        block: 0,
+        call_id: "toolu_1".into(),
+        tool: "board_write".into(),
+        input: json!({"board": "a"}),
+        display: display.clone(),
+        refused,
+    };
+    let log_event = |refused| LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 0,
+        call_id: "toolu_1".into(),
+        tool: "board_write".into(),
+        input: json!({"board": "a"}),
+        display: display.clone(),
+        refused,
+    };
+
+    let valid_agent = round_trip(&agent_event(false));
+    assert!(valid_agent.get("refused").is_none(), "{valid_agent}");
+    let refused_agent = round_trip(&agent_event(true));
+    assert_eq!(refused_agent["refused"], json!(true));
+
+    let valid_log = round_trip(&log_event(false));
+    assert!(valid_log.get("refused").is_none(), "{valid_log}");
+    let refused_log = round_trip(&log_event(true));
+    assert_eq!(refused_log["refused"], json!(true));
+
+    let legacy_agent: AgentEvent = serde_json::from_value(json!({
+        "type": "tool_call_requested",
+        "step": 1,
+        "block": 0,
+        "call_id": "toolu_1",
+        "tool": "board_write",
+        "input": {"board": "a"},
+        "display": display,
+    }))
+    .unwrap();
+    assert_eq!(legacy_agent, agent_event(false));
+
+    let legacy_log: LogEvent = serde_json::from_value(json!({
+        "type": "tool_call_requested",
+        "turn": 1,
+        "step": 1,
+        "block": 0,
+        "call_id": "toolu_1",
+        "tool": "board_write",
+        "input": {"board": "a"},
+        "display": display,
+    }))
+    .unwrap();
+    assert_eq!(legacy_log, log_event(false));
 }

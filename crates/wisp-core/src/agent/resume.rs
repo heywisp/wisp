@@ -1399,11 +1399,14 @@ impl Agent {
     }
 
     fn replay_notes(&mut self, records: &[LogRecord]) -> BTreeMap<u64, Ledger> {
+        let held = crate::session::held();
+        let home = self.secret_check_home();
+        let confirmed_prepared = crate::resume::confirmed_prepared_calls(records);
         let mut ledgers = BTreeMap::new();
         let mut opening = false;
         let mut mail = BTreeSet::new();
         let mut attached: Vec<(&str, &str)> = Vec::new();
-        for record in records {
+        for (index, record) in records.iter().enumerate() {
             let seq = Some(record.seq);
             match &record.event {
                 LogEvent::InputAccepted {
@@ -1460,7 +1463,15 @@ impl Agent {
                                 .map(|a| (a.sha256.as_str(), call_id.as_str())),
                         );
                     }
-                    if let Some((turn, event)) = replayed(event) {
+                    if let Some((turn, mut event)) = replayed(event) {
+                        crate::resume::scrub_replayed_tool_call(
+                            &mut event,
+                            index,
+                            record.schema_version,
+                            &confirmed_prepared,
+                            home.as_deref(),
+                            &held,
+                        );
                         self.turns = turn;
                         self.note_event(&event, seq);
                     }

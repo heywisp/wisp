@@ -1388,3 +1388,291 @@ async fn gemini_call_signatures_replay_without_transcript_rows() {
         assert!(shown.contains("missing_tool"), "{shown}");
     }
 }
+
+#[test]
+fn fallback_display_and_renderer_brace_corroboration_stay_in_agreement() {
+    use wisp_protocol::ToolOutcome;
+    use wisp_render::markdown::{Layout, Renderer};
+    use wisp_render::transcript::{Config, Detail, Transcript};
+
+    let render_fallback = |name: &str, input: serde_json::Value| {
+        let display = wisp_core::tool::fallback_display(name, &input);
+        let mut transcript = Transcript::new(Config {
+            provider: "Anthropic".into(),
+            cache_ttl: CacheTtl::OneHour,
+            logging: false,
+        });
+        transcript.apply(&AgentEvent::turn_started(1), Duration::ZERO);
+        transcript.apply(
+            &AgentEvent::ToolCallRequested {
+                step: 1,
+                block: 0,
+                call_id: "call_1".to_owned(),
+                tool: name.to_owned(),
+                input,
+                display: display.clone(),
+                refused: true,
+            },
+            Duration::from_millis(1),
+        );
+        transcript.apply(
+            &AgentEvent::call_finished(
+                "call_1",
+                ToolOutcome::InvalidInput {
+                    message: "bad input".to_owned(),
+                },
+            ),
+            Duration::from_millis(2),
+        );
+        let renderer = Renderer::new(Layout::new(120, UNI));
+        let rendered: Vec<String> = [Detail::Scrollback, Detail::Full]
+            .into_iter()
+            .map(|detail| {
+                transcript
+                    .rows(&renderer, detail)
+                    .into_iter()
+                    .map(|row| {
+                        row.spans
+                            .into_iter()
+                            .map(|span| span.text)
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .collect();
+        (display, rendered)
+    };
+
+    let (display, rendered) = render_fallback("ordinary", json!({"b": 1, "a": 2}));
+    assert_eq!(display.target, "{a, b}");
+    for rows in &rendered {
+        assert!(rows.contains("Used ordinary {a, b}"), "{rows}");
+    }
+
+    let (display, rendered) = render_fallback("lf_case", json!({"line1\nline2": 1}));
+    assert_eq!(display.target, "{line1 line2}");
+    for rows in &rendered {
+        assert!(rows.contains("Used lf_case {line1 line2}"), "{rows}");
+    }
+
+    let (display, rendered) = render_fallback("crlf_case", json!({"line1\r\nline2": 1}));
+    assert_eq!(display.target, "{line1 line2}");
+    for rows in &rendered {
+        assert!(rows.contains("Used crlf_case {line1 line2}"), "{rows}");
+    }
+
+    let long_input =
+        serde_json::Value::Object((0..40).map(|n| (format!("k{n:02}"), json!(1))).collect());
+    let (display, rendered) = render_fallback("long_clip", long_input);
+    assert!(display.target.ends_with('\u{2026}'), "{display:?}");
+    for rows in &rendered {
+        assert!(rows.contains("Used long_clip {}"), "{rows}");
+        assert!(!rows.contains("k39"), "{rows}");
+    }
+
+    let mut span_unsafe = serde_json::Map::new();
+    for n in 0..14 {
+        span_unsafe.insert(format!("k{n:02}"), json!(1));
+    }
+    span_unsafe.insert("z.sk-ant-CANARY0123456789012345".to_owned(), json!(1));
+    let (display, rendered) =
+        render_fallback("span_unsafe", serde_json::Value::Object(span_unsafe));
+    assert_eq!(display.target, "{}");
+    for rows in &rendered {
+        assert!(rows.contains("Used span_unsafe {}"), "{rows}");
+        for forbidden in ["k00", "sk-ant-", "CANARY"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
+    let (_, rendered) = render_fallback("tab_case", json!({"hello\tworld": 1}));
+    for rows in &rendered {
+        assert!(rows.contains("Used tab_case {}"), "{rows}");
+        assert!(!rows.contains("hello world"), "{rows}");
+    }
+
+    let (_, rendered) = render_fallback(
+        "zw_case",
+        json!({"sk-ant-\u{200B}CANARY0123456789012345": 1}),
+    );
+    for rows in &rendered {
+        assert!(rows.contains("Used zw_case {}"), "{rows}");
+        for forbidden in ["sk-ant-", "CANARY"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
+    let (_, rendered) = render_fallback("bom_case", json!({"user\u{FEFF}@example.invalid": 1}));
+    for rows in &rendered {
+        assert!(rows.contains("Used bom_case {}"), "{rows}");
+        for forbidden in ["user@", "example.invalid"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
+    let mut clip_zw = serde_json::Map::new();
+    for n in 0..14 {
+        clip_zw.insert(format!("k{n:02}"), json!(1));
+    }
+    let mut clip_tab = clip_zw.clone();
+    clip_zw.insert(
+        "z_prefix.sk-ant-\u{200B}CANARY0123456789012345".to_owned(),
+        json!(1),
+    );
+    clip_tab.insert("z_tab_prefix_secret\ttail".to_owned(), json!(1));
+
+    let (display, rendered) = render_fallback("clip_zw", serde_json::Value::Object(clip_zw));
+    assert_eq!(display.target, "{}", "{display:?}");
+    for rows in &rendered {
+        assert!(rows.contains("Used clip_zw {}"), "{rows}");
+        for forbidden in ["k00", "z_prefix", "sk-ant-", "CANARY"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
+    let (display, rendered) = render_fallback("clip_tab", serde_json::Value::Object(clip_tab));
+    assert!(display.target.ends_with('\u{2026}'), "{display:?}");
+    for rows in &rendered {
+        assert!(rows.contains("Used clip_tab {}"), "{rows}");
+        for forbidden in ["k00", "z_tab_pr", "secret"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
+    let (display, rendered) =
+        render_fallback("user\u{200B}@example.invalid", serde_json::Value::Null);
+    assert_eq!(
+        display.action,
+        wisp_protocol::ToolAction::Other {
+            name: "tool".to_owned(),
+        }
+    );
+    assert_eq!(display.target, "{}");
+    for rows in &rendered {
+        assert!(rows.contains("Used tool {}"), "{rows}");
+        for forbidden in ["user@", "example.invalid"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
+    let render_raw = |name: &str, input: serde_json::Value, display: wisp_protocol::ToolDisplay| {
+        let mut transcript = Transcript::new(Config {
+            provider: "Anthropic".into(),
+            cache_ttl: CacheTtl::OneHour,
+            logging: false,
+        });
+        transcript.apply(&AgentEvent::turn_started(1), Duration::ZERO);
+        transcript.apply(
+            &AgentEvent::ToolCallRequested {
+                step: 1,
+                block: 0,
+                call_id: "call_raw".to_owned(),
+                tool: name.to_owned(),
+                input,
+                display,
+                refused: true,
+            },
+            Duration::from_millis(1),
+        );
+        transcript.apply(
+            &AgentEvent::call_finished(
+                "call_raw",
+                ToolOutcome::InvalidInput {
+                    message: "bad input".to_owned(),
+                },
+            ),
+            Duration::from_millis(2),
+        );
+        let renderer = Renderer::new(Layout::new(120, UNI));
+        [Detail::Scrollback, Detail::Full]
+            .into_iter()
+            .map(|detail| {
+                transcript
+                    .rows(&renderer, detail)
+                    .into_iter()
+                    .map(|row| {
+                        row.spans
+                            .into_iter()
+                            .map(|span| span.text)
+                            .collect::<String>()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let raw_display = |name: &str, target: &str| wisp_protocol::ToolDisplay {
+        action: wisp_protocol::ToolAction::Other {
+            name: name.to_owned(),
+        },
+        verbs: None,
+        target: target.to_owned(),
+        output: wisp_protocol::OutputKind::Text,
+        view: None,
+        title: None,
+        purpose: wisp_protocol::ToolPurpose::Run,
+    };
+
+    let mut old_intact = serde_json::Map::new();
+    for n in 0..14 {
+        old_intact.insert(format!("k{n:02}"), json!(1));
+    }
+    old_intact.insert("z.sk-ant-CANARY0123456789012345".to_owned(), json!(1));
+    let old_prefix =
+        "{k00, k01, k02, k03, k04, k05, k06, k07, k08, k09, k10, k11, k12, k13, z.sk-ant\u{2026}";
+    for rows in render_raw(
+        "old_clip_intact",
+        serde_json::Value::Object(old_intact),
+        raw_display("old_clip_intact", old_prefix),
+    ) {
+        assert!(rows.contains("Used old_clip_intact {}"), "{rows}");
+        for forbidden in ["k00", "sk-ant-", "CANARY"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
+    for rows in render_raw(
+        "escaped_legacy",
+        json!({"ab_safe": 1}),
+        raw_display("escaped_legacy", "{\"a\\u0062_safe\":1}"),
+    ) {
+        assert!(rows.contains("Used escaped_legacy {}"), "{rows}");
+        assert!(!rows.contains("ab_safe"), "{rows}");
+    }
+
+    for rows in render_raw(
+        "malformed_legacy",
+        json!({"a": 1, "b": "CANARY-val"}),
+        raw_display("malformed_legacy", "{\"a\":1, bad\u{2026}"),
+    ) {
+        assert!(rows.contains("Used malformed_legacy {}"), "{rows}");
+        assert!(!rows.contains("CANARY"), "{rows}");
+    }
+
+    for (name, prefix) in [
+        ("bom_brace", "\u{FEFF}{secret: CANARY-val}"),
+        ("zwsp_brace", "\u{200B}{secret: CANARY-val}"),
+    ] {
+        for rows in render_raw(
+            name,
+            json!({"secret": "CANARY-val"}),
+            raw_display(name, prefix),
+        ) {
+            assert!(rows.contains(&format!("Used {name} {{}}")), "{rows}");
+            assert!(!rows.contains("CANARY"), "{rows}");
+        }
+    }
+
+    for rows in render_raw(
+        "user\u{200B}@example.invalid",
+        serde_json::Value::Null,
+        raw_display("user\u{200B}@example.invalid", "{}"),
+    ) {
+        assert!(rows.contains("Used tool {}"), "{rows}");
+        for forbidden in ["user@", "example.invalid"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+}

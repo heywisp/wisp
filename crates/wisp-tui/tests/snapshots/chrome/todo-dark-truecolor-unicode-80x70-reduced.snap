@@ -44,8 +44,8 @@ expression: body
   ~ 1..2 fg Rgb(166, 166, 166); 3..9 fg Rgb(212, 212, 212) bold; 9..44 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
 | ◦ Typing into process 31                                                queued
   ~ 1..2 fg Rgb(166, 166, 166); 3..9 fg Rgb(212, 212, 212) bold; 9..25 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
-| ◦ Using terminal {action, input}                                        queued
-  ~ 1..2 fg Rgb(166, 166, 166); 3..8 fg Rgb(212, 212, 212) bold; 8..33 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
+| ◦ Using terminal {}                                                     queued
+  ~ 1..2 fg Rgb(166, 166, 166); 3..8 fg Rgb(212, 212, 212) bold; 8..20 fg Rgb(212, 212, 212); 73..79 fg Rgb(166, 166, 166)
 | ◦ Build the docs  cargo doc --no-deps                                   queued
   ~ 1..2 fg Rgb(166, 166, 166); 3..17 fg Rgb(212, 212, 212); 19..38 fg Rgb(166, 166, 166); 73..79 fg Rgb(166, 166, 166)
 |
@@ -107,8 +107,8 @@ expression: body
   ~ 1..2 fg Rgb(137, 209, 133); 3..8 fg Rgb(212, 212, 212) bold; 8..42 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
 | ⨯ Used terminal 31                                              couldn't start
   ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
-| ⨯ Used terminal {action, input}                                 couldn't start
-  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..32 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
+| ⨯ Used terminal {}                                              couldn't start
+  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
 | ◦ Build the docs  cargo doc --no-deps           not run · the turn was stopped
   ~ 1..2 fg Rgb(166, 166, 166); 3..17 fg Rgb(166, 166, 166); 19..38 fg Rgb(166, 166, 166); 49..79 fg Rgb(166, 166, 166)
 |
@@ -173,8 +173,8 @@ expression: body
   ~ 1..2 fg Rgb(137, 209, 133); 3..8 fg Rgb(212, 212, 212) bold; 8..42 fg Rgb(212, 212, 212); 77..79 fg Rgb(166, 166, 166)
 | ⨯ Used terminal 31                                              couldn't start
   ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
-| ⨯ Used terminal {action, input}                                 couldn't start
-  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..32 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
+| ⨯ Used terminal {}                                              couldn't start
+  ~ 1..2 fg Rgb(244, 135, 113); 3..7 fg Rgb(212, 212, 212) bold; 7..19 fg Rgb(212, 212, 212); 65..79 fg Rgb(244, 135, 113)
 | ◦ Build the docs  cargo doc --no-deps           not run · the turn was stopped
   ~ 1..2 fg Rgb(166, 166, 166); 3..17 fg Rgb(166, 166, 166); 19..38 fg Rgb(166, 166, 166); 49..79 fg Rgb(166, 166, 166)
 |

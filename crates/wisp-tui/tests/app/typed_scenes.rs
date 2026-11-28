@@ -237,6 +237,7 @@ async fn request(s: &Stage, step: u32, block: usize, call: &Call) {
         tool: tool(),
         input: call.input.clone(),
         display: call.display.clone(),
+        refused: false,
     })
     .await;
 }

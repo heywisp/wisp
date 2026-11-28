@@ -17,9 +17,11 @@ use crate::{
 };
 use crate::{Dropped, MissCause, RewindPoint, RewindReason, SourceChange};
 
-pub const LOG_SCHEMA_VERSION: u16 = 44;
+pub const LOG_SCHEMA_VERSION: u16 = 45;
 
 pub const PROVISIONAL_SINCE: u16 = 15;
+
+pub const TOOL_REFUSAL_SINCE: u16 = 45;
 
 const UNVERSIONED: u16 = 0;
 
@@ -1019,6 +1021,8 @@ pub enum LogEvent {
         tool: String,
         input: Value,
         display: ToolDisplay,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        refused: bool,
     },
     ToolCallStarted {
         turn: u64,

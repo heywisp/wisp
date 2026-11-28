@@ -312,6 +312,7 @@ fn requested(call_id: &str) -> AgentEvent {
             title: None,
             purpose: ToolPurpose::Run,
         },
+        refused: false,
     }
 }
 

@@ -113,10 +113,13 @@ fn refusal(
 
 impl Agent {
     pub(super) fn target_of(&self, call_id: &str, name: &str, input: &Value) -> String {
-        self.targets
-            .get(call_id)
-            .cloned()
-            .unwrap_or_else(|| fallback_display(name, input).target)
+        self.targets.get(call_id).cloned().unwrap_or_else(|| {
+            if self.hidden_mcp_name(name) {
+                fallback_display(crate::mcp::PLUGIN, &Value::Null).target
+            } else {
+                self.safe_fallback_display(name, input).target
+            }
+        })
     }
 
     pub(super) fn calls(&self) -> impl Iterator<Item = (&str, &str, Cow<'_, Value>)> {
@@ -138,7 +141,7 @@ impl Agent {
         };
         Some(match prepared {
             Some(prepared) => prepared.display().clone(),
-            None => self.toolbox.rejected_display(name, &input).await,
+            None => self.rejected_display_for(name, &input).await,
         })
     }
 

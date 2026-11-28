@@ -888,6 +888,10 @@ impl Agent {
 
     pub(super) fn note_event(&mut self, event: &AgentEvent, seq: Option<u64>) {
         let turn = self.running_turn().unwrap_or(self.turns);
+        let lookup = match event {
+            AgentEvent::ToolCallRequested { tool, .. } => self.tool_lookup(tool).unwrap_or(true),
+            _ => false,
+        };
         let state = &mut self.compaction;
         match event {
             AgentEvent::ToolCallRequested {
@@ -901,13 +905,7 @@ impl Agent {
                     call_id: call_id.clone(),
                     turn,
                     tool: tool.clone(),
-                    lookup: self
-                        .hooks
-                        .registry
-                        .as_ref()
-                        .and_then(|registry| registry.lookup_tool(tool))
-                        .or_else(|| self.toolbox.lookup_tool(tool))
-                        .unwrap_or(true),
+                    lookup,
                     target: display.target.clone(),
                     cwd: None,
                     status: None,

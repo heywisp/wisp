@@ -233,22 +233,36 @@ impl Agent {
         })
     }
 
-    pub(super) fn rejected_dynamic<'a>(
+    pub(super) fn rejected_dynamic_owner(
         &self,
+        name: &str,
+    ) -> Option<std::sync::Arc<dyn wisp_plugin_api::Plugin>> {
+        if self.hidden_mcp_name(name) {
+            return None;
+        }
+        self.dynamic_plugin(name).map(|(_, plugin)| plugin)
+    }
+
+    pub(super) fn rejected_dynamic_with<'a>(
+        owner: Option<std::sync::Arc<dyn wisp_plugin_api::Plugin>>,
         name: &'a str,
         input: &'a Value,
     ) -> wisp_plugin_api::BoxFuture<'a, Option<wisp_protocol::ToolDisplay>> {
-        if self.hidden_mcp_name(name) {
-            return Box::pin(std::future::ready(None));
-        }
-        let owner = self.dynamic_plugin(name);
         Box::pin(async move {
-            let (_, plugin) = owner?;
+            let plugin = owner?;
             let text = input.to_string();
             let future = wisp_contain::contain(|| plugin.rejected_display(name, &text)).ok()?;
             let shown = wisp_contain::Contained::new(future).await.ok()??;
             crate::plugin::convert::display(shown).ok()
         })
+    }
+
+    pub(super) fn rejected_dynamic<'a>(
+        &self,
+        name: &'a str,
+        input: &'a Value,
+    ) -> wisp_plugin_api::BoxFuture<'a, Option<wisp_protocol::ToolDisplay>> {
+        Self::rejected_dynamic_with(self.rejected_dynamic_owner(name), name, input)
     }
 
     pub(super) fn prepare_runnable<'a>(

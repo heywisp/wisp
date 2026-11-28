@@ -127,6 +127,7 @@ fn the_ledger_names_attached_and_withdrawn_files() {
             title: None,
             purpose: ToolPurpose::Run,
         },
+        refused: false,
     };
     let finished = |id: &str, files: &[(&str, Option<wisp_protocol::FileSlice>)]| {
         let mut event = AgentEvent::call_finished(

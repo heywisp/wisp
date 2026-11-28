@@ -347,12 +347,15 @@ fn full_text(input: &Value, target: &str) -> Option<String> {
         })
 }
 
-fn input_keys(input: &Value) -> String {
+fn folded_keys(input: &Value) -> String {
     let keys = input
         .as_object()
-        .map(|map| map.keys().map(|k| one_line(k)).collect::<Vec<_>>())
+        .map(|map| map.keys().map(String::as_str).collect::<Vec<_>>())
         .unwrap_or_default();
     format!("{{{}}}", keys.join(", "))
+        .lines()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 struct CleanDisplay {
@@ -361,18 +364,84 @@ struct CleanDisplay {
     target: String,
 }
 
-fn clean_display(display: &ToolDisplay, input: &Value) -> CleanDisplay {
-    let target = match &display.action {
-        ToolAction::Other { .. } if display.target.trim_start().starts_with('{') => {
-            input_keys(input)
+fn literal_json_object_keys(trimmed: &str) -> Option<Vec<String>> {
+    let Ok(Value::Object(_)) = serde_json::from_str::<Value>(trimmed) else {
+        return None;
+    };
+    let mut rest = trimmed.strip_prefix('{')?.trim_start();
+    let mut keys = Vec::new();
+    while !rest.starts_with('}') {
+        let mut key_stream = serde_json::Deserializer::from_str(rest).into_iter::<String>();
+        let Some(Ok(key)) = key_stream.next() else {
+            return None;
+        };
+        let key_raw = rest.get(..key_stream.byte_offset())?;
+        if key_raw.contains('\\') || key_raw != format!("\"{key}\"") {
+            return None;
         }
-        _ => one_line(display.target.trim_end()),
+        let after_key = rest.get(key_stream.byte_offset()..)?.trim_start();
+        let val_str = after_key.strip_prefix(':')?.trim_start();
+        let mut val_stream = serde_json::Deserializer::from_str(val_str).into_iter::<Value>();
+        let Some(Ok(_)) = val_stream.next() else {
+            return None;
+        };
+        let after_val = val_str.get(val_stream.byte_offset()..)?.trim_start();
+        keys.push(key);
+        if let Some(next) = after_val.strip_prefix(',') {
+            rest = next.trim_start();
+        } else {
+            rest = after_val;
+            break;
+        }
+    }
+    (rest.trim() == "}" && !keys.is_empty()).then_some(keys)
+}
+
+fn clean_other_brace_target(target: &str, input: &Value) -> String {
+    let trimmed = target.trim();
+    if trimmed == "{}" {
+        return "{}".to_owned();
+    }
+    let expected = folded_keys(input);
+    if trimmed == expected && one_line(&expected) == expected {
+        return expected;
+    }
+    let Some(input_map) = input.as_object() else {
+        return "{}".to_owned();
+    };
+    if let Some(keys) = literal_json_object_keys(trimmed)
+        && keys
+            .iter()
+            .all(|key| input_map.contains_key(key) && one_line(key) == *key)
+    {
+        return format!("{{{}}}", keys.join(", "));
+    }
+    "{}".to_owned()
+}
+
+fn clean_display(display: &ToolDisplay, input: &Value) -> CleanDisplay {
+    let target_sanitized = one_line(display.target.trim_end());
+    let target = match &display.action {
+        ToolAction::Other { .. }
+            if display.target.trim_start().starts_with('{')
+                || target_sanitized.trim_start().starts_with('{') =>
+        {
+            clean_other_brace_target(&display.target, input)
+        }
+        _ => target_sanitized,
     };
     CleanDisplay {
         action: match &display.action {
-            ToolAction::Other { name } => ToolAction::Other {
-                name: one_line(name),
-            },
+            ToolAction::Other { name } => {
+                let sanitized = one_line(name);
+                ToolAction::Other {
+                    name: if sanitized == *name {
+                        sanitized
+                    } else {
+                        "tool".to_owned()
+                    },
+                }
+            }
             known => known.clone(),
         },
         verbs: display.verbs.as_ref().map(|v| {
