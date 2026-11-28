@@ -521,3 +521,46 @@ fn jsonl_hides_server_sign_in_links_but_keeps_its_notes() {
         assert!(super::jsonl_line(&event).unwrap().is_empty());
     }
 }
+
+#[tokio::test]
+async fn jsonl_scrubs_queued_events_against_a_secret_registered_after_they_were_queued() {
+    use crate::scrub::testing::{CANARY, queued, scrub};
+    use wisp_core::session::{REDACTED, register_secrets};
+
+    let scrub = scrub();
+    let (commands, _sent) = mpsc::channel(1);
+    let (_stdin, lines) = mpsc::channel(1);
+    let (emit, events) = mpsc::channel(8);
+    let (drain_emit, mut drain_events) = mpsc::channel(8);
+    for event in queued() {
+        emit.send(event.clone()).await.unwrap();
+        drain_emit.send(event).await.unwrap();
+    }
+    drop((emit, drain_emit));
+    register_secrets([CANARY.to_owned()]);
+    let channels = Channels {
+        commands,
+        events,
+        quit: None,
+    };
+    let mut looped = Vec::new();
+    let result = jsonl_loop(channels, lines, interrupts().unwrap(), 0, |event| {
+        write_event(&scrub, event, &mut looped)
+    })
+    .await;
+    assert_eq!(result, Err(AGENT_STOPPED.to_owned()));
+    let mut drain = Vec::new();
+    let ended = drained(&mut drain_events, None, |event| {
+        write_event(&scrub, event, &mut drain)
+    })
+    .await;
+    assert_eq!(ended, Ok(Drained::Closed));
+    for (path, out) in [("loop", looped), ("drain", drain)] {
+        let text = String::from_utf8(out).unwrap();
+        assert!(!text.contains(CANARY), "{path}: {text}");
+        assert_eq!(text.lines().count(), 3, "{path}: {text}");
+        for line in text.lines() {
+            assert_eq!(line.matches(REDACTED).count(), 1, "{path}: {line}");
+        }
+    }
+}

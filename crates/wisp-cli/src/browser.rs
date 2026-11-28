@@ -4,6 +4,8 @@ use tokio::sync::mpsc;
 use wisp_protocol::AgentEvent;
 use wisp_tui::term::caps::Env;
 
+use crate::scrub::Scrub;
+
 fn from_browser(browser: &str, url: &str) -> Option<Vec<String>> {
     let first = browser.split(':').next()?.trim();
     let mut words: Vec<String> = first.split_whitespace().map(str::to_owned).collect();
@@ -136,6 +138,7 @@ pub(crate) fn open(url: &str, allowed: fn(&str) -> bool) -> bool {
 pub(crate) fn opening(
     mut events: mpsc::Receiver<AgentEvent>,
     open: crate::auth::Opener,
+    scrub: Option<Scrub>,
 ) -> mpsc::Receiver<AgentEvent> {
     let (send, receive) = mpsc::channel(1);
     tokio::spawn(async move {
@@ -151,8 +154,13 @@ pub(crate) fn opening(
             for note in event.links_mut() {
                 note.opened = Some(open(note.link.expose()));
             }
-            if send.send(event).await.is_err() {
-                break;
+            match &scrub {
+                Some(scrub) => scrub.send(&send, event).await,
+                None => {
+                    if send.send(event).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     });

@@ -293,6 +293,7 @@ async fn the_relay_opens_each_live_link_and_passes_other_events_unchanged() {
             seen.push(link.to_owned());
             seen.len() == 1
         }),
+        None,
     );
     for (index, mut event) in events.into_iter().enumerate() {
         send.send(event.clone()).await.unwrap();
@@ -312,6 +313,26 @@ async fn the_relay_opens_each_live_link_and_passes_other_events_unchanged() {
     drop(send);
     assert!(opened.recv().await.is_none());
     let (send, receive) = mpsc::channel(1);
-    drop(opening(receive, Arc::new(|_| false)));
+    drop(opening(receive, Arc::new(|_| false), None));
     send.closed().await;
+}
+
+#[tokio::test]
+async fn the_relay_scrubs_events_queued_before_a_secret_registered() {
+    use crate::scrub::testing::{CANARY, queued, scrub};
+    use std::sync::Arc;
+    use wisp_core::session::{REDACTED, register_secrets};
+
+    let events = queued();
+    let (send, receive) = mpsc::channel(4);
+    let mut opened = opening(receive, Arc::new(|_| false), Some(scrub()));
+    for event in &events {
+        send.send(event.clone()).await.unwrap();
+    }
+    register_secrets([CANARY.to_owned()]);
+    for _ in &events {
+        let shown = serde_json::to_string(&opened.recv().await.unwrap()).unwrap();
+        assert!(!shown.contains(CANARY), "{shown}");
+        assert_eq!(shown.matches(REDACTED).count(), 1, "{shown}");
+    }
 }
