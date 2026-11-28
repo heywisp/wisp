@@ -3,6 +3,7 @@ use std::fmt::Write as _;
 use wisp_plugin_api::host::{Todo, TodoStatus};
 
 pub const NAME: &str = "write_todos";
+pub const FIELD: &str = "todos";
 pub const MIN_ITEMS: usize = 1;
 pub const MAX_ITEMS: usize = 50;
 pub const MAX_TEXT_CHARS: usize = 500;
@@ -43,7 +44,7 @@ pub fn check_count(count: usize, least: usize) -> Result<(), String> {
         } else {
             format!("{least} to {MAX_ITEMS}")
         };
-        return Err(format!("`todos` has {count} items; give {range}"));
+        return Err(format!("`{FIELD}` has {count} items; give {range}"));
     }
     Ok(())
 }

@@ -904,9 +904,9 @@ fn canonical_fallback_and_clipping_cover_other_name_code_lang_and_view_fields() 
     let gen_now = crate::session::held_generation();
     let held_now = crate::session::read_held();
     let mut canonical_other = canonical("plug");
-    scrub_refused_tool_call_display(
+    scrub_refused_tool_call(
         "plug",
-        &json!({"k": held_late}),
+        &mut json!({"k": held_late}),
         &mut canonical_other,
         None,
         &held_now,
@@ -917,9 +917,9 @@ fn canonical_fallback_and_clipping_cover_other_name_code_lang_and_view_fields() 
     assert_eq!(canonical_other, canonical("plug"));
 
     let mut invented_other = canonical("other_plug");
-    scrub_refused_tool_call_display(
+    scrub_refused_tool_call(
         "plug",
-        &json!({"k": held_late}),
+        &mut json!({"k": held_late}),
         &mut invented_other,
         None,
         &held_now,
@@ -964,6 +964,127 @@ fn an_unregistered_tools_refused_call_shows_only_its_keys() {
     );
     assert_eq!(shown.target, "diff");
     assert!(shown.title.is_none());
+}
+
+fn scrubbed_call(
+    tool: &str,
+    mut input: Value,
+    held: &crate::session::Redactions,
+    refused: bool,
+) -> Value {
+    let home = Some(std::path::Path::new("/home/alice"));
+    let mut display = fallback_display_with_held(tool, &input, home, held);
+    scrub_tool_call(tool, &mut input, &mut display, home, held, refused);
+    let once = (input.clone(), display.clone());
+    scrub_tool_call(tool, &mut input, &mut display, home, held, refused);
+    assert_eq!((input.clone(), display), once);
+    input
+}
+
+#[test]
+fn a_refused_calls_unsafe_input_keeps_its_keys_and_never_a_value() {
+    let canary = "CANARYRefusedInputValue";
+    let held = crate::session::Redactions::new([canary.to_owned()]);
+    let none = crate::session::Redactions::default();
+    let email = ["alice", "example.invalid"].join("@");
+    let refuse =
+        |input: Value, held: &crate::session::Redactions| scrubbed_call("plug", input, held, true);
+    assert_eq!(
+        refuse(json!({"path": email, "n": 3}), &none),
+        json!({"path": null, "n": null})
+    );
+    assert_eq!(
+        refuse(json!({"outer": {"inner": [email]}, "n": 3}), &none),
+        json!({"outer": null, "n": null})
+    );
+    assert_eq!(
+        refuse(json!({"home": "/home/alice/notes"}), &none),
+        json!({"home": null})
+    );
+    let registered = refuse(json!({"a": format!("x {canary}")}), &held);
+    assert_eq!(registered, json!({"a": null}));
+    assert!(!registered.to_string().contains(canary));
+    assert_eq!(refuse(json!({email.clone(): 1}), &none), Value::Null);
+    assert_eq!(refuse(json!(email), &none), Value::Null);
+    assert_eq!(refuse(json!([email]), &none), Value::Null);
+    let safe = json!({"path": "src/lib.rs", "n": [1, {"k": "v"}]});
+    assert_eq!(refuse(safe.clone(), &none), safe);
+    assert_eq!(refuse(safe.clone(), &held), safe);
+}
+
+#[test]
+fn an_accepted_calls_input_hides_checklist_fields_and_registered_secrets_only() {
+    let canary = "CANARYAcceptedInputValue";
+    let held = crate::session::Redactions::new([canary.to_owned()]);
+    let none = crate::session::Redactions::default();
+    let email = ["alice", "example.invalid"].join("@");
+    let accept = |tool: &str, input: Value, held: &crate::session::Redactions| {
+        scrubbed_call(tool, input, held, false)
+    };
+    let step = |text: &str| json!({"text": text, "status": "pending"});
+    assert_eq!(
+        accept(
+            "write_todos",
+            json!({"todos": [step(&format!("mail {email}")), step("Read the file")]}),
+            &none
+        ),
+        json!({"todos": [step("[redacted]"), step("Read the file")]})
+    );
+    assert_eq!(
+        accept(
+            "spawn_agent",
+            json!({"name": "w", "task": format!("mail {email}"), "todos": ["see /home/alice/x", "Read the file"]}),
+            &none
+        ),
+        json!({"name": "w", "task": format!("mail {email}"), "todos": ["[redacted]", "Read the file"]})
+    );
+    assert_eq!(
+        accept(
+            "plug",
+            json!({"name": "write_todos", "input": {"todos": [step(&format!("mail {email}"))]}}),
+            &none
+        ),
+        json!({"name": "write_todos", "input": {"todos": [step("[redacted]")]}})
+    );
+    assert_eq!(
+        accept("plug", json!({"todos": format!("mail {email}")}), &none),
+        json!({"todos": "[redacted]"})
+    );
+    assert_eq!(
+        accept(
+            "plug",
+            json!({"todos": [step(&format!("key {canary}"))]}),
+            &held
+        ),
+        json!({"todos": [step("[redacted]")]})
+    );
+    let command = json!({
+        "command": format!("echo {email} /home/alice/x sk-ant-CANARY0123456789012345"),
+        "description": "Print"
+    });
+    assert_eq!(accept("bash", command.clone(), &none), command);
+    assert_eq!(accept("bash", command.clone(), &held), command);
+    assert_eq!(
+        accept(
+            "bash",
+            json!({"command": format!("echo hi\n{canary}"), "description": "Print"}),
+            &held
+        ),
+        json!({"command": "echo hi\n[redacted]", "description": "Print"})
+    );
+    let split = format!("echo {}\u{200B}{}", &canary[..6], &canary[6..]);
+    assert_eq!(
+        accept(
+            "bash",
+            json!({"command": split, "description": "Print"}),
+            &held
+        ),
+        json!({"command": "[redacted]", "description": "Print"})
+    );
+    assert_eq!(
+        accept("bash", json!({"b": 2, format!("key {canary}"): 1}), &held),
+        json!({"b": 2, "key [redacted]": 1})
+    );
 }
 
 #[test]

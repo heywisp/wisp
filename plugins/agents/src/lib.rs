@@ -16,6 +16,7 @@ use wisp_tool_text::agents::{
     REPORT_SENTENCE, REPORTED, SEND_MESSAGE, SPAWN_AGENT, SPAWN_LINE, STOP_AGENT, WAKE,
     kept_warm_line, listed, live_children_line, renamed, report_line, sent, started, stopped,
 };
+use wisp_tool_text::todos::FIELD;
 
 pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
 
@@ -83,7 +84,7 @@ pub fn spawn_schema() -> Value {
                 "type": "string",
                 "description": "The brief: everything the child needs to do the task without your conversation, and what it should hand back."
             },
-            "todos": strings("Optional steps of the task, in order; they become the child's starting checklist."),
+            FIELD: strings("Optional steps of the task, in order; they become the child's starting checklist."),
             "cwd": {
                 "type": "string",
                 "description": "The child's working directory: absolute, under ~/ or relative to yours. Yours when left out."
@@ -370,7 +371,7 @@ const SPAWN_FIELDS: [&str; 11] = [
     "preset",
     "spawn",
     "task",
-    "todos",
+    FIELD,
     "tools_off",
 ];
 
@@ -380,7 +381,7 @@ pub fn parse_spawn(input: &str) -> Result<SpawnInput, String> {
     Ok(SpawnInput {
         name: required(&map, "name")?,
         task: required(&map, "task")?,
-        todos: list(&map, "todos")?,
+        todos: list(&map, FIELD)?,
         cwd: text(&map, "cwd")?,
         preset: text(&map, "preset")?,
         endpoint: text(&map, "endpoint")?,

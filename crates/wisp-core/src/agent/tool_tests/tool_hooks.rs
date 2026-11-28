@@ -2210,8 +2210,9 @@ fn with_scrubbed_link_frames_scrubs_tool_call_displays_atomically_under_read_hel
     with_scrubbed_link_frames(&mut replay, None, None, |frames| {
         let json = serde_json::to_string(frames).unwrap();
         let assert_scrubbed_fallback = |event: &AgentEvent| match event {
-            AgentEvent::ToolCallRequested { display, .. } => {
+            AgentEvent::ToolCallRequested { display, input, .. } => {
                 assert_eq!(display.target, "{}");
+                assert_eq!(*input, Value::Null);
             }
             other => panic!("expected ToolCallRequested, got {other:?}"),
         };
@@ -2230,7 +2231,7 @@ fn with_scrubbed_link_frames_scrubs_tool_call_displays_atomically_under_read_hel
             panic!("{ev2:?}");
         };
         assert_scrubbed_fallback(&view.events[0]);
-        let Some(AgentEvent::ToolCallRequested { display, .. }) = state.first() else {
+        let Some(AgentEvent::ToolCallRequested { display, input, .. }) = state.first() else {
             panic!("{state:?}");
         };
         assert_eq!(
@@ -2241,6 +2242,8 @@ fn with_scrubbed_link_frames_scrubs_tool_call_displays_atomically_under_read_hel
         );
         assert_eq!(display.target, "{}");
         assert_eq!(display.purpose, ToolPurpose::Show);
+        assert_eq!(*input, json!({"path": null}));
+        assert!(!json.contains(canary), "{json}");
         let ToClient::Event(ev3) = &frames[3] else {
             panic!("{:?}", frames[3]);
         };
@@ -2897,6 +2900,17 @@ fn with_scrubbed_link_frames_scrubs_refused_read_write_and_empty_held_identities
             AgentEvent::ToolCallRequested { display, .. } => display.clone(),
             other => panic!("{other:?}"),
         };
+        let input_of = |idx: usize| match &view.events[idx] {
+            AgentEvent::ToolCallRequested { input, .. } => input.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(input_of(0), json!({"board": null}));
+        assert_eq!(input_of(2), json!({"board": null}));
+        assert_eq!(input_of(4), json!({"files": null}));
+        assert_eq!(
+            input_of(6),
+            json!({"board": "roadmap-planning-board-with-very-long-benign-title"})
+        );
         for idx in [0usize, 2, 4] {
             let d = display_of(idx);
             assert_eq!(
@@ -3011,7 +3025,7 @@ fn with_scrubbed_link_frames_scrubs_refused_read_write_and_empty_held_identities
             let ToClient::Event(ev) = &frames[idx] else {
                 panic!("{:?}", frames[idx]);
             };
-            let AgentEvent::ToolCallRequested { display, .. } = ev.as_ref() else {
+            let AgentEvent::ToolCallRequested { display, input, .. } = ev.as_ref() else {
                 panic!("{ev:?}");
             };
             assert_eq!(
@@ -3022,6 +3036,7 @@ fn with_scrubbed_link_frames_scrubs_refused_read_write_and_empty_held_identities
                 "{idx}: {display:?}"
             );
             assert_eq!(display.target, "{}", "{idx}: {display:?}");
+            assert_eq!(*input, json!({"board": null}), "{idx}");
         }
         let ToClient::Event(child_ev) = &frames[4] else {
             panic!("{:?}", frames[4]);
@@ -3029,10 +3044,14 @@ fn with_scrubbed_link_frames_scrubs_refused_read_write_and_empty_held_identities
         let AgentEvent::Agent { event, .. } = child_ev.as_ref() else {
             panic!("{child_ev:?}");
         };
-        let AgentEvent::ToolCallRequested { display, .. } = event.as_ref() else {
+        let AgentEvent::ToolCallRequested { display, input, .. } = event.as_ref() else {
             panic!("{event:?}");
         };
         assert_eq!(display, &child_report_display);
+        assert_eq!(
+            *input,
+            json!({"text": format!("/home/alice/src/lib.rs {unheld_email}")})
+        );
     })
     .unwrap();
 }
@@ -3056,8 +3075,13 @@ async fn valid_ask_user_report_and_read_write_preserve_displays_with_home_paths_
     let home = std::path::PathBuf::from("/home/alice");
     workspace.home = Some(home.clone());
     let store = MemoryStore::default();
-    let toolbox =
-        crate::tool::testkit::bundled_exact(&["ask_user", "report", "list_settings", "view_file"]);
+    let toolbox = crate::tool::testkit::bundled_exact(&[
+        "ask_user",
+        "report",
+        "list_settings",
+        "show_code",
+        "view_file",
+    ]);
     let mut agent = Agent::new(scripted(vec![done("Unused.")]), default_session())
         .with_clock(TickingClock::new())
         .with_tools(toolbox.clone(), workspace)
@@ -3087,6 +3111,13 @@ async fn valid_ask_user_report_and_read_write_preserve_displays_with_home_paths_
     });
     let settings_input = json!({"filter": "alice@example.invalid"});
     let view_input = json!({"path": "notes.txt"});
+    let inputs = [
+        ask_input.clone(),
+        report_input.clone(),
+        report_brace_input.clone(),
+        settings_input.clone(),
+        view_input.clone(),
+    ];
 
     let expected_displays = vec![
         toolbox
@@ -3173,12 +3204,15 @@ async fn valid_ask_user_report_and_read_write_preserve_displays_with_home_paths_
     );
     drop(tx);
     let mut emitted = Vec::new();
+    let mut emitted_inputs = Vec::new();
     while let Some(ev) = rx.recv().await {
-        if let AgentEvent::ToolCallRequested { display, .. } = &ev {
+        if let AgentEvent::ToolCallRequested { display, input, .. } = &ev {
             emitted.push(display.clone());
+            emitted_inputs.push(input.clone());
         }
     }
     assert_eq!(emitted, expected_displays);
+    assert_eq!(emitted_inputs, inputs);
     assert_eq!(
         emitted[0].action,
         ToolAction::Other {
@@ -3201,15 +3235,24 @@ async fn valid_ask_user_report_and_read_write_preserve_displays_with_home_paths_
     assert_eq!(emitted[4].action, ToolAction::Read);
 
     let records = store.read("s1").unwrap();
-    let replayed: Vec<_> =
+    let recorded_inputs: Vec<_> = records
+        .iter()
+        .filter_map(|r| match &r.event {
+            wisp_protocol::log::LogEvent::ToolCallRequested { input, .. } => Some(input.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(recorded_inputs, inputs);
+    let (replayed, replayed_inputs): (Vec<_>, Vec<_>) =
         crate::resume::transcript_with_home(&records, &toolbox, None, Some(&home))
             .into_iter()
             .filter_map(|e| match e {
-                AgentEvent::ToolCallRequested { display, .. } => Some(display),
+                AgentEvent::ToolCallRequested { display, input, .. } => Some((display, input)),
                 _ => None,
             })
-            .collect();
+            .unzip();
     assert_eq!(replayed, expected_displays);
+    assert_eq!(replayed_inputs, inputs);
 
     let opening: Box<wisp_protocol::Opening> = serde_json::from_str(include_str!(
         "../../../../wisp-protocol/tests/fixtures/opening.json"
@@ -3251,15 +3294,18 @@ async fn valid_ask_user_report_and_read_write_preserve_displays_with_home_paths_
         let ToClient::Opened { view, .. } = &frames[0] else {
             panic!("{:?}", frames[0]);
         };
-        let linked: Vec<_> = view
+        let (linked, linked_inputs): (Vec<_>, Vec<_>) = view
             .events
             .iter()
             .filter_map(|e| match e {
-                AgentEvent::ToolCallRequested { display, .. } => Some(display.clone()),
+                AgentEvent::ToolCallRequested { display, input, .. } => {
+                    Some((display.clone(), input.clone()))
+                }
                 _ => None,
             })
-            .collect();
+            .unzip();
         assert_eq!(linked, expected_displays);
+        assert_eq!(linked_inputs, inputs);
     })
     .unwrap();
 
@@ -3298,6 +3344,63 @@ async fn valid_ask_user_report_and_read_write_preserve_displays_with_home_paths_
         assert_eq!(display, &rename_display);
     })
     .unwrap();
+
+    let keyed_input = json!({"questions": [{
+        "header": "Pick",
+        "question": "Which one?",
+        "options": [
+            {"label": "Yes", "description": format!("Use {HELD_API_KEY}")},
+            {"label": "No", "description": "Keep it"}
+        ]
+    }]});
+    let viewed_input = json!({"code": "echo ready", "title": format!("List {HELD_API_KEY}")});
+    let (tx, mut rx) = mpsc::channel(64);
+    let keyed = agent
+        .request_calls(
+            2,
+            vec![
+                crate::agent::FoundCall {
+                    block: 0,
+                    id: "c_keyed".to_owned(),
+                    name: "ask_user".to_owned(),
+                    input: keyed_input.clone(),
+                    model_visible: true,
+                },
+                crate::agent::FoundCall {
+                    block: 1,
+                    id: "c_viewed".to_owned(),
+                    name: "show_code".to_owned(),
+                    input: viewed_input.clone(),
+                    model_visible: true,
+                },
+            ],
+            "claude-opus-5-5",
+            &tx,
+        )
+        .await;
+    drop(tx);
+    assert_eq!(keyed[0].input, keyed_input);
+    assert_eq!(keyed[1].input, viewed_input);
+    let mut masked = Vec::new();
+    while let Some(ev) = rx.recv().await {
+        if let AgentEvent::ToolCallRequested { input, .. } = ev {
+            masked.push(input);
+        }
+    }
+    assert_eq!(
+        masked,
+        [
+            json!({"questions": [{
+                "header": "Pick",
+                "question": "Which one?",
+                "options": [
+                    {"label": "Yes", "description": "Use [redacted]"},
+                    {"label": "No", "description": "Keep it"}
+                ]
+            }]}),
+            json!({"code": "echo ready", "title": "List [redacted]"}),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -3992,12 +4095,18 @@ async fn emit_refused_tool_call_retries_when_single_or_multiline_secret_register
                     call_id: id,
                     display,
                     refused,
+                    input,
                     ..
-                } if id == call_id => Some((display.clone(), *refused)),
+                } if id == call_id => Some((display.clone(), *refused, input.clone())),
                 _ => None,
             })
             .unwrap();
         assert!(live_req.1, "{call_id}");
+        assert_eq!(
+            live_req.2,
+            json!({"code": null, "title": null}),
+            "{call_id}"
+        );
         assert_eq!(
             live_req.0.action,
             ToolAction::Other {
@@ -4030,11 +4139,7 @@ async fn emit_refused_tool_call_retries_when_single_or_multiline_secret_register
             panic!("{logged_req:?}");
         };
         assert!(*refused, "{call_id}");
-        assert_eq!(
-            *input,
-            json!({"code": "", "title": "[redacted]"}),
-            "{call_id}"
-        );
+        assert_eq!(*input, json!({"code": null, "title": null}), "{call_id}");
         assert_eq!(*display, live_req.0, "{call_id}");
         let row_json = serde_json::to_string(logged_req).unwrap();
         let live_json = serde_json::to_string(&live_req.0).unwrap();

@@ -5089,7 +5089,7 @@ impl Agent {
                 ..
             } = event
             {
-                crate::tool::scrub_refused_tool_call_display(
+                crate::tool::scrub_refused_tool_call(
                     tool,
                     input,
                     display,
@@ -7087,9 +7087,9 @@ enum SensitiveEvent<'a> {
         text: &'a mut String,
         spans: &'a mut Vec<TextSpan>,
     },
-    ToolCallDisplay {
+    ToolCall {
         tool: &'a str,
-        input: &'a Value,
+        input: &'a mut Value,
         display: &'a mut wisp_protocol::ToolDisplay,
         refused: bool,
     },
@@ -7180,18 +7180,12 @@ fn visit_sensitive_event<'a>(
             display,
             refused,
             ..
-        } => {
-            if crate::tool::tool_call_display_may_need_scrub(display, *refused) {
-                visit(SensitiveEvent::ToolCallDisplay {
-                    tool,
-                    input,
-                    display,
-                    refused: *refused,
-                })
-            } else {
-                ControlFlow::Continue(())
-            }
-        }
+        } => visit(SensitiveEvent::ToolCall {
+            tool,
+            input,
+            display,
+            refused: *refused,
+        }),
         AgentEvent::Agent { agent, event } => visit_sensitive_event(event, Some(agent), visit),
         AgentEvent::SessionSnapshot { view, state, .. } => view
             .events
@@ -7266,12 +7260,12 @@ fn collect_sensitive_changes<'a>(
                     scrub_checklist_spans(text, spans, home, held);
                 }
             },
-            SensitiveEvent::ToolCallDisplay {
+            SensitiveEvent::ToolCall {
                 tool,
                 input,
                 display,
                 refused,
-            } => crate::tool::scrub_tool_call_display(tool, input, display, home, held, refused),
+            } => crate::tool::scrub_tool_call(tool, input, display, home, held, refused),
         }
         ControlFlow::Continue(())
     });

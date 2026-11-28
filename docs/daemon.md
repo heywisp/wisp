@@ -434,7 +434,7 @@ scrubbing where it hands events on: each JSONL line just before it is written
 window's opening view once. Each is scrubbed against the secrets known at that
 moment, so a secret Wisp learns while an event is still queued is hidden from
 the fields the kernel's scrubber covers: checklist steps and sections, a
-starting brief's checklist steps, hook audits and tool call displays (the rules
+starting brief's checklist steps, hook audits and tool call displays and inputs (the rules
 are in `docs/session-log.md`, under "Checklist privacy" and "Hook audit
 redaction"). Other fields are not rescanned here. An event already handed on is
 not revisited, as on a host: the one event waiting in the relay's slot, and a

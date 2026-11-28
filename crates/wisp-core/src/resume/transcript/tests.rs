@@ -1841,13 +1841,23 @@ fn replay_scrubs_refused_show_and_write_with_empty_held_and_preserves_benign_con
         refused: false,
     });
 
+    let recorded: Vec<_> = log
+        .iter()
+        .filter_map(|event| match event {
+            LogEvent::ToolCallRequested { input, .. } => Some(input.clone()),
+            _ => None,
+        })
+        .collect();
     let replayed: Vec<_> =
         crate::resume::transcript_with_home(&records(log), &Toolbox::default(), None, Some(home))
             .into_iter()
             .filter_map(|e| match e {
                 AgentEvent::ToolCallRequested {
-                    call_id, display, ..
-                } => Some((call_id, display)),
+                    call_id,
+                    display,
+                    input,
+                    ..
+                } => Some((call_id, display, input)),
                 _ => None,
             })
             .collect();
@@ -1867,6 +1877,11 @@ fn replay_scrubs_refused_show_and_write_with_empty_held_and_preserves_benign_con
     assert_eq!(replayed[3].1, benign_write);
     assert_eq!(replayed[4].1, valid_report);
     assert_eq!(replayed[5].1, valid_ask);
+    assert_eq!(replayed[0].2, json!({"files": null}));
+    assert_eq!(replayed[1].2, json!({"board": null}));
+    for (got, want) in replayed[2..].iter().zip(&recorded[2..]) {
+        assert_eq!(&got.2, want);
+    }
 }
 
 #[test]
@@ -2637,14 +2652,16 @@ fn legacy_pre_refusal_schema_replay_classifies_per_occurrence_and_preserves_conf
             call_id,
             display,
             refused,
+            input,
             ..
-        } => Some((call_id, display, refused)),
+        } => Some((call_id, display, refused, input)),
         _ => None,
     })
     .collect();
     assert_eq!(replayed.len(), 28, "{replayed:?}");
 
     for idx in [0usize, 1, 3, 6, 7, 8, 22] {
+        assert_eq!(replayed[idx].3, json!({"board": null}), "{idx}");
         assert!(replayed[idx].2, "{idx}: {:?}", replayed[idx]);
         assert_eq!(
             replayed[idx].1.action,
@@ -2674,6 +2691,11 @@ fn legacy_pre_refusal_schema_replay_classifies_per_occurrence_and_preserves_conf
     ] {
         assert!(!replayed[idx].2, "{idx}: {:?}", replayed[idx]);
         assert_eq!(&replayed[idx].1, expected, "{idx}: {:?}", replayed[idx]);
+        let sent = match idx {
+            9..=14 => f_calls[idx - 9].2.clone(),
+            _ => json!({"text": format!("/home/alice/src/lib.rs {email}")}),
+        };
+        assert_eq!(replayed[idx].3, sent, "{idx}");
     }
     for idx in [15usize, 16, 21] {
         assert!(replayed[idx].2, "{idx}: {:?}", replayed[idx]);

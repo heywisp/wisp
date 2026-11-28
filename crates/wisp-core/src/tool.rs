@@ -1352,18 +1352,87 @@ fn is_bare_brace_fallback(display: &ToolDisplay) -> bool {
                 .starts_with('{'))
 }
 
-pub(crate) fn tool_call_display_may_need_scrub(display: &ToolDisplay, refused: bool) -> bool {
-    refused || display.view.is_none()
+fn keys_only(input: &Value, home: Option<&Path>, held: &crate::session::Redactions) -> Value {
+    match input {
+        Value::Object(map)
+            if fallback_keys_safe(input, |text| {
+                display_text_is_safe_with_held(text, home, held)
+            }) =>
+        {
+            Value::Object(map.keys().map(|key| (key.clone(), Value::Null)).collect())
+        }
+        _ => Value::Null,
+    }
 }
 
-pub(crate) fn tool_call_display_may_need_scrub_without_held(
-    display: &ToolDisplay,
+fn scrub_checklist_fields(value: &mut Value, scrub: &impl Fn(&str) -> String) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                scrub_checklist_fields(item, scrub);
+            }
+        }
+        Value::Object(map) => {
+            for (key, item) in map.iter_mut() {
+                if key == wisp_tool_text::todos::FIELD {
+                    crate::session::scrub_json_strings(item, scrub);
+                } else {
+                    scrub_checklist_fields(item, scrub);
+                }
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn scrub_held_strings(input: &mut Value, held: &crate::session::Redactions) {
+    if !value_has_held_match(input, held) {
+        return;
+    }
+    crate::session::scrub_json_strings(input, &|text| {
+        if !text_has_held_match(text, held) {
+            return text.to_owned();
+        }
+        let clean = held.scrub(text);
+        if text_has_held_match(&clean, held) {
+            crate::session::REDACTED.to_owned()
+        } else {
+            clean
+        }
+    });
+}
+
+fn scrub_tool_call_input(
+    input: &mut Value,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
     refused: bool,
-) -> bool {
-    refused || is_bare_brace_fallback(display)
+) {
+    if refused {
+        if !value_is_safe_with_held(input, home, held) {
+            *input = keys_only(input, home, held);
+        }
+        return;
+    }
+    scrub_checklist_fields(input, &|text| {
+        crate::secrets::scan::scrub_field(text, home, held)
+    });
+    scrub_held_strings(input, held);
 }
 
-pub(crate) fn scrub_tool_call_display(
+pub(crate) fn scrub_tool_call(
+    tool: &str,
+    input: &mut Value,
+    display: &mut ToolDisplay,
+    home: Option<&Path>,
+    held: &crate::session::Redactions,
+    refused: bool,
+) {
+    scrub_tool_call_display(tool, input, display, home, held, refused);
+    scrub_tool_call_input(input, home, held, refused);
+}
+
+fn scrub_tool_call_display(
     tool: &str,
     input: &Value,
     display: &mut ToolDisplay,
@@ -1438,9 +1507,9 @@ pub(crate) fn scrub_tool_call_display(
     clippy::too_many_arguments,
     reason = "tool refusal display fields, redaction snapshot, and checked/current generation"
 )]
-pub(crate) fn scrub_refused_tool_call_display(
+pub(crate) fn scrub_refused_tool_call(
     tool: &str,
-    input: &Value,
+    input: &mut Value,
     display: &mut ToolDisplay,
     home: Option<&Path>,
     held: &crate::session::Redactions,
@@ -1449,23 +1518,18 @@ pub(crate) fn scrub_refused_tool_call_display(
     gen_now: u64,
 ) {
     scrub_tool_call_display(tool, input, display, home, held, true);
-    if gen_now == gen_checked {
-        return;
-    }
-    let purpose = display.purpose;
-    if is_canonical_data_free_fallback(tool, display)
-        && matches!(
-            &display.action,
-            ToolAction::Other { name }
-                if name == "tool" || display_text_is_safe_with_held(name, home, held)
-        )
+    if gen_now != gen_checked
+        && !(is_canonical_data_free_fallback(tool, display)
+            && matches!(
+                &display.action,
+                ToolAction::Other { name }
+                    if name == "tool" || display_text_is_safe_with_held(name, home, held)
+            ))
+        && (!display_text_is_safe_with_held(tool, home, held)
+            || !value_is_safe_with_held(input, home, held)
+            || !display_is_safe_with_held(display, home, held))
     {
-        return;
-    }
-    if !display_text_is_safe_with_held(tool, home, held)
-        || !value_is_safe_with_held(input, home, held)
-        || !display_is_safe_with_held(display, home, held)
-    {
+        let purpose = display.purpose;
         *display = if allows_input {
             fallback_display_with_held(tool, input, home, held)
         } else {
@@ -1473,6 +1537,7 @@ pub(crate) fn scrub_refused_tool_call_display(
         };
         display.purpose = purpose;
     }
+    scrub_tool_call_input(input, home, held, true);
 }
 
 pub fn fallback_display(name: &str, input: &Value) -> ToolDisplay {

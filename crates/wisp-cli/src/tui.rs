@@ -703,7 +703,7 @@ mod tests {
         let view = resumed_view(view);
         let shown = serde_json::to_string(&view.events).unwrap();
         assert!(!shown.contains(CANARY), "{shown}");
-        assert_eq!(shown.matches(REDACTED).count(), 3, "{shown}");
+        assert_eq!(shown.matches(REDACTED).count(), 4, "{shown}");
         assert_eq!(view.input_ids, ["tui-7"]);
     }
 

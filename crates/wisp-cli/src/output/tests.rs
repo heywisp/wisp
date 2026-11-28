@@ -558,7 +558,7 @@ async fn jsonl_scrubs_queued_events_against_a_secret_registered_after_they_were_
     for (path, out) in [("loop", looped), ("drain", drain)] {
         let text = String::from_utf8(out).unwrap();
         assert!(!text.contains(CANARY), "{path}: {text}");
-        assert_eq!(text.lines().count(), 3, "{path}: {text}");
+        assert_eq!(text.lines().count(), 4, "{path}: {text}");
         for line in text.lines() {
             assert_eq!(line.matches(REDACTED).count(), 1, "{path}: {line}");
         }

@@ -3708,6 +3708,11 @@ fn question_text_answers_tool_results_and_a_code_views_code_are_exempt_from_reda
     };
     log.record(shown("/v1", "bash /v1", &format!("{code}\r\n"), &code));
     log.record(shown("/v1", "bash /v1", "echo ready", &code));
+    let unregistered = shown("api", "bash", "echo ready", "echo ready");
+    assert_eq!(
+        redaction::scrub(&Redactions::default(), unregistered.clone(), None),
+        unregistered
+    );
     let events: Vec<LogEvent> = store
         .read("s")
         .unwrap()
@@ -4218,6 +4223,18 @@ fn agent_paths_names_and_preset_files_resume_reads_back_are_exempt_from_redactio
     ] {
         log.record(event);
     }
+    register(&Redactions::new(["CANARYreview".to_owned()]));
+    let mut held_segment = requested("send_message", "/CANARYreview");
+    if let LogEvent::ToolCallRequested { input, .. } = &mut held_segment {
+        input["text"] = json!("ask CANARYreview");
+    }
+    log.record(held_segment);
+    let mut refused_send = requested("send_message", "/api-review");
+    if let LogEvent::ToolCallRequested { input, refused, .. } = &mut refused_send {
+        input["text"] = json!(["alice", "example.invalid"].join("@"));
+        *refused = true;
+    }
+    log.record(refused_send);
     let events: Vec<LogEvent> = store
         .read("s")
         .unwrap()
@@ -4266,6 +4283,14 @@ fn agent_paths_names_and_preset_files_resume_reads_back_are_exempt_from_redactio
     assert_eq!(
         serde_json::to_value(&events[7]).unwrap()["display"]["view"]["code"],
         "echo [redacted]"
+    );
+    assert_eq!(
+        serde_json::to_value(&events[8]).unwrap()["input"],
+        json!({"to": "/CANARYreview", "text": "ask [redacted]"})
+    );
+    assert_eq!(
+        serde_json::to_value(&events[9]).unwrap()["input"],
+        json!({"to": null, "text": null})
     );
 }
 
@@ -4904,6 +4929,23 @@ fn session_log_scrubs_viewless_show_cutoff_identity_with_empty_held_while_preser
         .map(|r| r.event)
         .collect();
     assert_eq!(events.len(), 5);
+    let inputs: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            LogEvent::ToolCallRequested { input, .. } => Some(input.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        inputs,
+        [
+            json!({"files": null}),
+            json!({"text": format!("/home/alice/src/main.rs {email}")}),
+            json!({"board": null}),
+            json!({"pattern": null}),
+            json!({"id": "proj_01234567890123456789"}),
+        ]
+    );
     for idx in [0usize, 2, 3] {
         let LogEvent::ToolCallRequested { display, .. } = &events[idx] else {
             panic!("{:?}", events[idx]);
