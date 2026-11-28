@@ -1021,6 +1021,18 @@ pub(super) struct GoogleError {
     pub(super) message: Option<String>,
     pub(super) retry_ms: Option<u64>,
     pub(super) reset_at: Option<i64>,
+    pub(super) needs_verification: bool,
+}
+
+impl GoogleError {
+    fn summary(&self) -> Option<String> {
+        let text = self.message.as_deref().and_then(clean_error_message);
+        if self.needs_verification {
+            Some(with_verify_step(text))
+        } else {
+            text
+        }
+    }
 }
 
 #[allow(
@@ -1064,6 +1076,23 @@ pub(super) fn clean_error_message(msg: &str) -> Option<String> {
     super::clean_error_message(msg, Some(redact_google_projects))
 }
 
+const VERIFY_STEP: &str = "Open Antigravity (the app or agy) signed in to this account, follow its verification or appeal link, then try again.";
+
+fn holds_link(text: &str) -> bool {
+    text.contains('/')
+}
+
+fn with_verify_step(text: Option<String>) -> String {
+    let lead = text
+        .as_deref()
+        .map(|text| text.trim_end_matches(|c: char| c.is_whitespace() || ".!?:".contains(c)))
+        .filter(|text| !text.is_empty());
+    match lead {
+        Some(lead) => format!("{lead}. {VERIFY_STEP}"),
+        None => VERIFY_STEP.to_owned(),
+    }
+}
+
 pub(super) fn parse_google_error(raw: &Value, http_status: Option<u16>) -> Option<GoogleError> {
     let raw = unwrap_single_array(raw);
     let root_err = raw
@@ -1076,6 +1105,7 @@ pub(super) fn parse_google_error(raw: &Value, http_status: Option<u16>) -> Optio
     let mut message = object.as_ref().and_then(|o| o.message.clone());
     let mut retry_ms = None;
     let mut reset_at = None;
+    let mut needs_verification = false;
 
     if let Some(obj) = root_err.as_object() {
         code = obj.get("code").and_then(|c| {
@@ -1099,17 +1129,23 @@ pub(super) fn parse_google_error(raw: &Value, http_status: Option<u16>) -> Optio
         }
         if let Some(details) = obj.get("details").and_then(Value::as_array) {
             for item in details {
+                let metadata = item.get("metadata");
+                let item_reason = item
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                needs_verification |= item_reason == Some("VALIDATION_REQUIRED")
+                    || ["validation_url", "appeal_url"].into_iter().any(|key| {
+                        metadata
+                            .and_then(|metadata| metadata.get(key))
+                            .is_some_and(|url| !url.is_null())
+                    });
                 if reason.is_none() {
-                    reason = item
-                        .get("reason")
-                        .and_then(Value::as_str)
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_owned);
+                    reason = item_reason.map(str::to_owned);
                 }
                 if reset_at.is_none() {
-                    reset_at = item
-                        .get("metadata")
+                    reset_at = metadata
                         .and_then(|metadata| metadata.get("quotaResetTimeStamp"))
                         .and_then(Value::as_str)
                         .and_then(|s| s.parse::<jiff::Timestamp>().ok())
@@ -1165,6 +1201,10 @@ pub(super) fn parse_google_error(raw: &Value, http_status: Option<u16>) -> Optio
         .or_else(|| object.as_ref().and_then(|o| o.kind_at(effective_status)))
         .or_else(|| effective_status.map(classify::status_kind));
 
+    if needs_verification {
+        message = message.filter(|text| !holds_link(text));
+    }
+
     Some(GoogleError {
         code,
         kind,
@@ -1173,6 +1213,7 @@ pub(super) fn parse_google_error(raw: &Value, http_status: Option<u16>) -> Optio
         message,
         retry_ms,
         reset_at,
+        needs_verification,
     })
 }
 
@@ -1247,7 +1288,10 @@ pub(super) async fn http_error(
         .as_ref()
         .and_then(|o| o.message.as_deref())
         .or_else(|| google.as_ref().and_then(|g| g.message.as_deref()));
-    let summary = raw_message.and_then(clean_error_message);
+    let summary = match google.as_ref().filter(|google| google.needs_verification) {
+        Some(google) => google.summary(),
+        None => raw_message.and_then(clean_error_message),
+    };
     let error = ProviderError::classified(
         kind,
         format!(
@@ -2313,6 +2357,198 @@ pub(crate) mod tests {
             ]);
         } else {
             crate::test_guard::prefix::assert_gemini_prefix_stable(&bodies);
+        }
+    }
+
+    pub(super) const FAKE_LINK: &str =
+        "https://verify-host.invalid/CANARY_verify_path?token=CANARY_one_time";
+
+    pub(super) fn assert_no_link(text: &str) {
+        for part in "http :// verify-host.invalid CANARY_verify_path CANARY_one_time".split(' ') {
+            assert!(!text.contains(part), "{part} in {text}");
+        }
+    }
+
+    #[test]
+    fn the_verify_step_follows_the_text_and_stands_alone_without_one() {
+        let joined = with_verify_step(Some("Check needed:\n".into()));
+        assert_eq!(joined, format!("Check needed. {VERIFY_STEP}"));
+        assert_eq!(with_verify_step(Some("...".into())), VERIFY_STEP);
+    }
+
+    #[tokio::test]
+    async fn an_account_verification_refusal_gives_the_next_step_and_never_carries_the_link() {
+        use crate::agent::Agent;
+        use crate::agent::LogContext;
+        use crate::agent::testing::{stream_error, turn};
+        use crate::session::{MemoryStore, SessionLog};
+        use crate::test_guard::{log_context, records};
+        use wisp_protocol::{RetryClass, TurnOutcome};
+
+        let link = FAKE_LINK;
+        let plain = "Verify your account to continue.";
+        let appeal = "This service has been disabled in this account for violation of Terms of Service. Please submit an appeal to continue using this product.";
+        let refusal = |reason: &str, metadata: Value, message: &str| {
+            json!({"error": {
+                "code": 403,
+                "status": "PERMISSION_DENIED",
+                "message": message,
+                "details": [{
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": reason,
+                    "domain": "cloudcode-pa.googleapis.com",
+                    "metadata": metadata
+                }]
+            }})
+            .to_string()
+        };
+        let ready = r#"{"cloudaicompanionProject":"fixture-project"}"#.to_owned();
+        let tier = |message: &str, extra: Value| {
+            let mut entry = json!({"reasonCode": "INELIGIBLE_ACCOUNT", "reasonMessage": message});
+            entry
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            json!({"ineligibleTiers": [entry]}).to_string()
+        };
+        let refused = |text: &str| format!("Gemini request refused (HTTP 403): {text}");
+        let ineligible = |text: &str| format!("Antigravity subscription is not eligible: {text}");
+        let cases = [
+            (
+                ready.clone(),
+                refusal("VALIDATION_REQUIRED", json!({}), plain),
+                Some("VALIDATION_REQUIRED"),
+                refused(&format!("Verify your account to continue. {VERIFY_STEP}")),
+            ),
+            (
+                ready.clone(),
+                refusal("OTHER", json!({"validation_url": link}), "Denied."),
+                Some("OTHER"),
+                refused(&format!("Denied. {VERIFY_STEP}")),
+            ),
+            (
+                ready.clone(),
+                refusal(
+                    "OTHER",
+                    json!({
+                        "appeal_url": link,
+                        "appeal_url_link_text": "Submit Appeal",
+                        "uiMessage": "true"
+                    }),
+                    appeal,
+                ),
+                Some("OTHER"),
+                refused(&format!("{appeal} {VERIFY_STEP}")),
+            ),
+            (
+                ready.clone(),
+                refusal(
+                    "VALIDATION_REQUIRED",
+                    json!({}),
+                    &format!("Verify at {link}"),
+                ),
+                Some("VALIDATION_REQUIRED"),
+                refused(VERIFY_STEP),
+            ),
+            (
+                tier(plain, json!({"validationUrl": link})),
+                String::new(),
+                None,
+                ineligible(&format!("Verify your account to continue. {VERIFY_STEP}")),
+            ),
+            (
+                tier(&format!("Verify at {link}"), json!({"validationUrl": link})),
+                String::new(),
+                None,
+                ineligible(&format!(
+                    "account is not eligible for Antigravity. {VERIFY_STEP}"
+                )),
+            ),
+            (
+                ready.clone(),
+                refusal("CONSUMER_INVALID", json!({}), "Permission denied."),
+                Some("CONSUMER_INVALID"),
+                refused("Permission denied."),
+            ),
+            (
+                tier("Workspace policy blocks this account", json!({})),
+                String::new(),
+                None,
+                ineligible("Workspace policy blocks this account"),
+            ),
+        ];
+        for (load, stream, error_type, message) in cases {
+            let parsed = serde_json::from_str::<Value>(&stream)
+                .ok()
+                .and_then(|raw| parse_google_error(&raw, Some(403)));
+            let base = http::gateway(move |request| {
+                let (load, stream) = (load.clone(), stream.clone());
+                async move {
+                    if request.starts_with("POST /v1internal:loadCodeAssist") {
+                        return http::Reply::Send(http::json("200 OK", &load));
+                    }
+                    http::Reply::Send(http::json("403 Forbidden", &stream))
+                }
+            })
+            .await;
+            let dir = tempfile::tempdir().unwrap();
+            let provider = Arc::new(
+                GeminiProvider::from_endpoint(&endpoint(
+                    Credential::Subscription {
+                        kind: SubscriptionKind::Antigravity,
+                        secret: ANTIGRAVITY_TOKEN.into(),
+                        profile: Some(antigravity_profile(&dir.path().join("creds"), None)),
+                    },
+                    &base,
+                ))
+                .unwrap(),
+            );
+            let session = test_session();
+            let messages = [Message::user_text("hi")];
+            let rendering = Rendering::default();
+            let request = Request {
+                session: &session,
+                tools: &[],
+                deferred: &[],
+                by_value: &[],
+                server_tools: &[],
+                messages: &messages,
+                previous_response_id: None,
+                features: Features::default(),
+                options: RequestOptions::default(),
+                rendering: &rendering,
+                compaction: None,
+            };
+            let error = stream_error(provider.as_ref(), &request).await;
+            assert_eq!(error.message, message);
+            assert_eq!(error.kind, ErrorKind::Auth);
+            assert_eq!(error.detail.retry, RetryClass::Never);
+            assert_eq!(error.detail.error_type.as_deref(), error_type);
+            assert!(!error.possibly_billed && !error.detail.possibly_billed);
+
+            let store = MemoryStore::default();
+            let context = LogContext {
+                endpoint: "gateway".into(),
+                ..log_context()
+            };
+            let mut agent = Agent::new(provider, test_session())
+                .with_log(SessionLog::new(Box::new(store.clone()), "s1"), context);
+            let (outcome, _) = turn(&mut agent, "hi", &[]).await;
+            let TurnOutcome::Error {
+                message: logged, ..
+            } = outcome
+            else {
+                panic!("{outcome:?}")
+            };
+            assert!(logged.contains(&message), "{logged}");
+            let seen = [
+                error.to_string(),
+                format!("{error:?}"),
+                serde_json::to_string(&error.detail).unwrap(),
+                format!("{parsed:?}"),
+                serde_json::to_string(&records(&store)).unwrap(),
+            ];
+            seen.iter().for_each(|text| assert_no_link(text));
         }
     }
 

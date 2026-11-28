@@ -510,17 +510,15 @@ impl GeminiDecoder {
         }
 
         if let Some(google) = super::parse_google_error(&root, None) {
+            let message = google
+                .summary()
+                .unwrap_or_else(|| "Gemini stream reported an error".to_owned());
             let kind = google.kind.unwrap_or(ErrorKind::Server);
             let retry = super::super::classify::retry_for(kind, google.retry_ms);
             let mut detail = ErrorDetail::new(FailurePhase::Stream, FailureSource::Endpoint, retry);
             detail.status = google.code.or(Some(200));
             detail.error_type = google.reason.or(google.grpc_status);
             detail.possibly_billed = true;
-            let message = google
-                .message
-                .as_deref()
-                .and_then(super::clean_error_message)
-                .unwrap_or_else(|| "Gemini stream reported an error".to_owned());
             return Err(ProviderError::classified(kind, message, detail));
         }
 
@@ -1653,6 +1651,39 @@ mod tests {
         assert!(!err.message.contains("AIzaCANARY_stream_key_leak"));
         assert!(!err.message.contains("my-proj-123"));
         assert!(!err.message.contains("123456789012"));
+
+        let mut verify_decoder = GeminiDecoder::new(
+            "gemini-4-carbon".into(),
+            Billing::Metered,
+            None,
+            "id_gem_verify".into(),
+        );
+        let verify = sse_frame(&json!({
+            "error": {
+                "code": 403,
+                "status": "PERMISSION_DENIED",
+                "message": "Verify your account to continue.",
+                "details": [{
+                    "reason": "VALIDATION_REQUIRED",
+                    "metadata": {"validation_url": crate::provider::gemini::tests::FAKE_LINK}
+                }]
+            }
+        }));
+        let err = verify_decoder
+            .push(&verify)
+            .into_iter()
+            .find_map(Result::err)
+            .unwrap();
+        assert_eq!(err.kind, ErrorKind::Auth);
+        assert_eq!(err.detail.retry, RetryClass::Never);
+        assert_eq!(
+            err.message,
+            format!(
+                "Verify your account to continue. {}",
+                super::super::VERIFY_STEP
+            )
+        );
+        crate::provider::gemini::tests::assert_no_link(&format!("{err:?}"));
 
         let mut safety_decoder = GeminiDecoder::new(
             "gemini-4-carbon".into(),
