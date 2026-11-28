@@ -2100,6 +2100,68 @@ async fn refused_tool_call_publication_scrubs_secret_registered_after_rejected_d
 }
 
 #[test]
+fn with_scrubbed_link_frames_masks_held_secrets_in_restart_rows_and_process_targets() {
+    use wisp_protocol::link::ToClient;
+    use wisp_protocol::{AgentPath, BackgroundReason, RestartState, Unfinished, Unready};
+
+    use crate::agent::with_scrubbed_link_frames;
+    use crate::session::{REDACTED, register_secrets};
+
+    let canary = "CANARYOpaqueLinkFrameRowSecret";
+    register_secrets([canary.to_owned()]);
+    let row = |what, text: &str| Unready {
+        agent: AgentPath::root(),
+        what,
+        title: Some(format!("Run {text}")),
+        target: format!("run {text}"),
+        running_ms: 1,
+        opening: false,
+    };
+    let target = format!("run {canary}");
+    let mut frames = [
+        ToClient::event(AgentEvent::Restart {
+            state: RestartState::GettingReady,
+            open: vec![
+                row(Unfinished::ToolCall, canary),
+                row(Unfinished::Process, "benign"),
+            ],
+        }),
+        ToClient::event(AgentEvent::ProcessStarted {
+            id: 1,
+            call_id: "c1".into(),
+            target: target.clone(),
+            tty: false,
+            stdin: false,
+            size: None,
+            file: None,
+            reason: BackgroundReason::Started,
+            keeps_running: false,
+            pid: None,
+            log: None,
+        }),
+        ToClient::event(AgentEvent::ProcessRestored {
+            id: 2,
+            call_id: None,
+            target,
+            tty: false,
+            end: None,
+            duration_ms: 0,
+            keeps_running: false,
+            unchecked: false,
+            pid: None,
+            log: None,
+        }),
+    ];
+    let sent = with_scrubbed_link_frames(&mut frames, None, None, |out| {
+        serde_json::to_string(out).unwrap()
+    })
+    .unwrap();
+    assert!(!sent.contains(canary), "{sent}");
+    assert_eq!(sent.matches(REDACTED).count(), 4, "{sent}");
+    assert!(sent.contains("run benign"), "{sent}");
+}
+
+#[test]
 fn with_scrubbed_link_frames_scrubs_tool_call_displays_atomically_under_read_held() {
     use std::sync::Barrier;
     use std::sync::atomic::AtomicBool;
