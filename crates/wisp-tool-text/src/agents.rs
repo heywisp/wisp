@@ -29,6 +29,7 @@ use std::fmt::Write as _;
 use wisp_plugin_api::host::{
     AgentRow, Delivery, Relation, Renamed, Sent, StartedAgent, Stopped, WarmMark, WarmRow,
 };
+use wisp_plugin_api::tree::{AgentState, HoldReason, IdleOutcome, QueueReason};
 
 use crate::SEP;
 use crate::todos;
@@ -137,6 +138,72 @@ pub fn kept_warm_line(children: &[(&str, u64)]) -> String {
         "Children idle and still kept warm: {}. Each costs another cache refresh while it idles; end any you won't message again with {STOP_AGENT} and end: true.\n",
         named.join(", ")
     )
+}
+
+pub const REPORTS_ARRIVE_LINE: &str = "Their reports arrive as messages.";
+
+pub fn live_children_line(children: &[(&str, AgentState, u64)]) -> String {
+    let named: Vec<String> = children
+        .iter()
+        .map(|(path, state, ms)| format!("{path} ({}, {})", state_words(*state), ran(*ms)))
+        .collect();
+    format!(
+        "Child agents at the start of this context window, except those ended or idle after a report, each with its state and the time since it last started or stopped working or waiting (waiting for an endpoint counts as working): {}.\n{REPORTS_ARRIVE_LINE}\n",
+        named.join(", ")
+    )
+}
+
+pub fn state_words(state: AgentState) -> String {
+    let (word, detail) = match state {
+        AgentState::Queued(reason) => ("queued", Some(queue_word(reason))),
+        AgentState::Running => ("running", None),
+        AgentState::Stopping => ("stopping", None),
+        AgentState::Idle(outcome) => ("idle", outcome.map(outcome_word)),
+        AgentState::Held(reason) => ("held", Some(hold_word(reason))),
+        AgentState::Ended => ("ended", None),
+        AgentState::Unknown => ("unknown", None),
+    };
+    stated(word, detail)
+}
+
+pub fn stated(state: &str, detail: Option<&str>) -> String {
+    match detail {
+        Some(detail) => format!("{state}: {detail}"),
+        None => state.to_owned(),
+    }
+}
+
+fn queue_word(reason: QueueReason) -> &'static str {
+    match reason {
+        QueueReason::Concurrency => "concurrency",
+        QueueReason::Stagger => "stagger",
+        QueueReason::Endpoint => "endpoint",
+        QueueReason::Retry => "retry",
+        QueueReason::Unknown => "unknown",
+    }
+}
+
+fn hold_word(reason: HoldReason) -> &'static str {
+    match reason {
+        HoldReason::Stopped => "stopped",
+        HoldReason::HeldMessages => "held_messages",
+        HoldReason::RetryOffer => "retry_offer",
+        HoldReason::Concurrency => "concurrency",
+        HoldReason::Unknown => "unknown",
+    }
+}
+
+fn outcome_word(outcome: IdleOutcome) -> &'static str {
+    match outcome {
+        IdleOutcome::Reported => "reported",
+        IdleOutcome::Asked => "asked",
+        IdleOutcome::Waiting => "waiting",
+        IdleOutcome::NoReport => "no_report",
+        IdleOutcome::InvalidReport => "invalid_report",
+        IdleOutcome::Failed => "failed",
+        IdleOutcome::Stopped => "stopped",
+        IdleOutcome::Unknown => "unknown",
+    }
 }
 
 pub fn sent(sent: &Sent) -> String {
@@ -408,10 +475,8 @@ fn facts(agent: &AgentRow, with_state: bool) -> Vec<String> {
         let _ = write!(model, ", {}", on(endpoint, agent.provider.as_deref()));
     }
     parts.push(model);
-    match (&agent.state, &agent.detail) {
-        (Some(state), Some(detail)) if with_state => parts.push(format!("{state}: {detail}")),
-        (Some(state), None) if with_state => parts.push(state.clone()),
-        _ => {}
+    if let Some(state) = agent.state.as_deref().filter(|_| with_state) {
+        parts.push(stated(state, agent.detail.as_deref()));
     }
     if let Some(ms) = agent.running_ms {
         parts.push(format!("ran {}", ran(ms)));

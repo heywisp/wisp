@@ -3791,3 +3791,93 @@ fn checklist_scopes_to_host_world_caller_and_redacts_private_fields() {
     expected[5] = item(redacted, Some(redacted));
     assert_eq!(host.checklist(), expected);
 }
+
+fn every_protocol_state() -> Vec<wisp_protocol::AgentState> {
+    use wisp_protocol::{AgentState as S, HoldReason as H, IdleOutcome as I, QueueReason as Q};
+    let queued = [
+        Q::Concurrency,
+        Q::Stagger,
+        Q::Endpoint,
+        Q::Retry,
+        Q::Unknown,
+    ];
+    let held = [
+        H::Stopped,
+        H::HeldMessages,
+        H::RetryOffer,
+        H::Concurrency,
+        H::Unknown,
+    ];
+    let outcomes = [
+        I::Reported,
+        I::Asked,
+        I::Waiting,
+        I::NoReport,
+        I::InvalidReport,
+        I::Failed,
+        I::Stopped,
+        I::Unknown,
+    ];
+    let states: Vec<S> = [S::Running, S::Stopping, S::Ended, S::Unknown]
+        .into_iter()
+        .chain(queued.map(|reason| S::Queued { reason }))
+        .chain(held.map(|reason| S::Held { reason }))
+        .chain(
+            [None]
+                .into_iter()
+                .chain(outcomes.map(Some))
+                .map(|outcome| S::Idle { outcome }),
+        )
+        .collect();
+    for state in &states {
+        match state {
+            S::Queued {
+                reason: Q::Concurrency | Q::Stagger | Q::Endpoint | Q::Retry | Q::Unknown,
+            }
+            | S::Held {
+                reason: H::Stopped | H::HeldMessages | H::RetryOffer | H::Concurrency | H::Unknown,
+            }
+            | S::Idle {
+                outcome:
+                    None
+                    | Some(
+                        I::Reported
+                        | I::Asked
+                        | I::Waiting
+                        | I::NoReport
+                        | I::InvalidReport
+                        | I::Failed
+                        | I::Stopped
+                        | I::Unknown,
+                    ),
+            }
+            | S::Running
+            | S::Stopping
+            | S::Ended
+            | S::Unknown => {}
+        }
+    }
+    states
+}
+
+#[test]
+fn the_head_words_every_state_as_list_agents_does_and_an_unknown_one_as_unknown() {
+    let states = every_protocol_state();
+    assert_eq!(states.len(), 23);
+    for state in states {
+        let entry = crate::plugin::testing::agent_entry(state);
+        let (listed, detail) = state_words(&entry);
+        let head = wisp_tool_text::agents::state_words(convert::node(entry).state);
+        match listed {
+            Some(listed) => assert_eq!(
+                head,
+                wisp_tool_text::agents::stated(&listed, detail.as_deref()),
+                "{state:?}"
+            ),
+            None => {
+                assert_eq!(state, wisp_protocol::AgentState::Unknown);
+                assert_eq!((head.as_str(), detail), ("unknown", None));
+            }
+        }
+    }
+}

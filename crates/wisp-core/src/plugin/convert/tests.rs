@@ -339,14 +339,6 @@ fn every_node_state_round_trips_and_an_account_queued_agent_answers_working() {
         assert_eq!(api_state(slot_state(api)), api);
     }
     assert_eq!(api_state(NodeState::Unknown), Api::Waiting);
-    let entry = |state: wisp_protocol::AgentState| -> wisp_protocol::AgentEntry {
-        let mut json = serde_json::json!({
-            "path": "/a/b", "name": "b", "model": "m", "effort": "low", "depth": 2,
-            "activity": {"type": "idle"}, "spent_usd": 0.0,
-        });
-        json["state"] = serde_json::to_value(state).unwrap();
-        serde_json::from_value(json).unwrap()
-    };
     let queued = |reason| wisp_protocol::AgentState::Queued { reason };
     for (state, want) in [
         (queued(wisp_protocol::QueueReason::Endpoint), Api::Working),
@@ -356,7 +348,7 @@ fn every_node_state_round_trips_and_an_account_queued_agent_answers_working() {
         ),
         (wisp_protocol::AgentState::Ended, Api::Stopped),
     ] {
-        let shown = shown_state(&entry(state));
+        let shown = shown_state(&crate::plugin::testing::agent_entry(state));
         assert_eq!(
             (shown.path.as_str(), shown.state),
             ("/a/b", want),

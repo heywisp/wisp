@@ -1401,6 +1401,7 @@ async fn a_turn_is_logged_with_its_committed_message_and_stats() {
             "hook_ran",
             "hook_ran",
             "hook_ran",
+            "hook_ran",
             "turn_started",
             "retrying",
             "message_committed",
@@ -1410,8 +1411,8 @@ async fn a_turn_is_logged_with_its_committed_message_and_stats() {
     );
     let records = records(&store);
     let seqs: Vec<u64> = records.iter().map(|r| r.seq).collect();
-    assert_eq!(seqs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-    let runs: Vec<(&str, &HookOutcome)> = records[1..7]
+    assert_eq!(seqs, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    let runs: Vec<(&str, &HookOutcome)> = records[1..8]
         .iter()
         .map(|r| match &r.event {
             LogEvent::HookRan {
@@ -1429,6 +1430,7 @@ async fn a_turn_is_logged_with_its_committed_message_and_stats() {
         [
             ("workspace/environment", &HookOutcome::None),
             ("workspace/terminal", &HookOutcome::None),
+            ("agents/children", &HookOutcome::None),
             ("time/sent", &HookOutcome::Applied),
             ("context/fill", &HookOutcome::Applied),
             ("agents/kept-warm", &HookOutcome::None),
@@ -1457,7 +1459,7 @@ async fn a_turn_is_logged_with_its_committed_message_and_stats() {
         )
     );
     assert_eq!(
-        records[7].event,
+        records[8].event,
         LogEvent::TurnStarted {
             ends: Vec::new(),
             turn: 1,
@@ -1487,9 +1489,9 @@ async fn a_turn_is_logged_with_its_committed_message_and_stats() {
     );
     let LogEvent::MessageCommitted {
         turn: 1, message, ..
-    } = &records[9].event
+    } = &records[10].event
     else {
-        panic!("{:?}", records[9])
+        panic!("{:?}", records[10])
     };
     assert_eq!(message.inline().as_ref(), Some(&agent.history()[1]));
     let LogEvent::TurnEnded {
@@ -1497,9 +1499,9 @@ async fn a_turn_is_logged_with_its_committed_message_and_stats() {
         outcome: logged_outcome,
         stats,
         partial_output: None,
-    } = &records[11].event
+    } = &records[12].event
     else {
-        panic!("{:?}", records[11])
+        panic!("{:?}", records[12])
     };
     assert_eq!(logged_outcome, &outcome);
     assert_eq!(stats.retries, 1);

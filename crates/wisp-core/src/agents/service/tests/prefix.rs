@@ -4,7 +4,7 @@ use wisp_protocol::settings::{SettingChange, SettingValue};
 
 use super::hooks::{Heards, agent_hooks, heard_until, listener};
 use super::limits::{SUMMARY, priced};
-use super::resume::{child_send, environment_of, list, reported};
+use super::resume::{child_send, environment_of, list, reported, resume};
 use super::*;
 use crate::plugin::hooks::points::AGENT_POINTS;
 
@@ -348,6 +348,159 @@ async fn a_childs_own_commands_change_only_its_own_requests() {
         )
     };
     assert_eq!(client(&last), client(&two[0]));
+    let _ = run.quit().await;
+}
+
+const CHILDREN_LINE: &str = "Child agents at the start of this context window, except those ended or idle after a report, each with its state and the time since it last started or stopped working or waiting (waiting for an endpoint counts as working): ";
+
+async fn compacted(run: &mut Run) {
+    let request = run.request();
+    run.send(ClientCommand::Compact {
+        focus: None,
+        request,
+    })
+    .await;
+    run.until(
+        "the root's compaction",
+        |e| matches!(e, AgentEvent::Compacted { answers: Some(r), .. } if *r == request),
+    )
+    .await;
+}
+
+fn children_blocks(request: &Sent) -> Vec<String> {
+    let head = texts(&request.messages[0].content);
+    let context = head
+        .iter()
+        .position(|t| t.starts_with("<compacted_context"));
+    let blocks: Vec<(usize, String)> = head
+        .into_iter()
+        .enumerate()
+        .filter(|(_, t)| t.contains(CHILDREN_LINE))
+        .collect();
+    assert!(blocks.iter().all(|(i, _)| Some(*i) < context), "{blocks:?}");
+    blocks.into_iter().map(|(_, t)| t).collect()
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_head_lists_unreported_children_once_and_every_later_send_keeps_its_bytes() {
+    let gate = Arc::new(Semaphore::new(0));
+    let summary = || priced(done(SUMMARY), 5_000, 300);
+    let clock: Arc<dyn Clock> = Arc::new(ShiftedClock::paused(
+        "2026-10-28T06:00:00Z".parse().unwrap(),
+        None,
+    ));
+    let ticking = || Setup {
+        clock: Some(clock.clone()),
+        models: Some(crate::test_guard::WISP),
+        ..Setup::default()
+    };
+    let mut run = start(
+        "prefix-head-children",
+        ticking(),
+        vec![
+            (
+                "/",
+                vec![
+                    done("noted"),
+                    priced(done("noted"), 5_000, 10),
+                    summary(),
+                    priced(done("noted"), 5_000, 10),
+                    summary(),
+                    crate::test_guard::server_error_step(),
+                    done("noted"),
+                    done("noted"),
+                ],
+            ),
+            (
+                "/one",
+                vec![gated(uses(&[report_call("r1", "one")]), &gate)],
+            ),
+            ("/two", vec![uses(&[report_call("r2", "two")])]),
+        ],
+    )
+    .await;
+    run.say("Hello.").await;
+    run.root_ended().await;
+    run.spawn(spawn_request("two", "Second task.")).await;
+    run.child_ended("/two").await;
+    run.root_ended().await;
+    compacted(&mut run).await;
+    run.say("Mid.").await;
+    run.root_ended().await;
+    run.spawn(spawn_request("one", "First task.")).await;
+    tokio::time::sleep(Duration::from_secs(90)).await;
+    compacted(&mut run).await;
+    run.say("Next.").await;
+    assert!(matches!(run.root_ended().await, TurnOutcome::Error { .. }));
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    let request = run.request();
+    run.send(ClientCommand::Retry {
+        turn: 4,
+        endpoint: None,
+        request,
+    })
+    .await;
+    run.root_ended().await;
+    gate.add_permits(1);
+    run.child_ended("/one").await;
+    run.root_ended().await;
+    let root = run.requests("/");
+    assert_eq!(root.len(), 8);
+    assert!(children_blocks(&root[3]).is_empty());
+    let listed = children_blocks(&root[5]);
+    let [line] = listed.as_slice() else {
+        panic!("{listed:?}")
+    };
+    assert!(line.starts_with(&format!("{CHILDREN_LINE}/one (running, 1m3")));
+    assert!(
+        line.ends_with("s).\nTheir reports arrive as messages.\n"),
+        "{line}"
+    );
+    assert!(!line.contains("/two"), "{line}");
+    assert_eq!(root[6].messages[0], root[5].messages[0], "the retry");
+    assert_eq!(root[6].prefix(), root[5].prefix());
+    grows_from(&root[7], &root[6], "after the report");
+    assert_eq!(root[7].all_text().matches(CHILDREN_LINE).count(), 1);
+    let sections = pick!(run.records("/"), LogEvent::ContextCompacted { sections, .. } => sections);
+    let names: Vec<Vec<&str>> = sections
+        .iter()
+        .map(|s| s.iter().map(|s| s.name.as_str()).collect())
+        .collect();
+    assert!(!names[0].contains(&"agents/children"), "{names:?}");
+    assert!(names[1].contains(&"agents/children"), "{names:?}");
+    let back = resume(
+        run.quit().await,
+        ticking(),
+        vec![("/", vec![done("noted"), done("noted")])],
+    )
+    .await;
+    let mut run = back.run;
+    run.say("Again.").await;
+    run.root_ended().await;
+    let turns = pick!(run.records("/"), LogEvent::TurnStarted { turn, text, .. } => (turn, text));
+    let again = turns
+        .iter()
+        .find(|(_, text)| text == "Again.")
+        .map(|(turn, _)| *turn);
+    let request = run.request();
+    run.send(ClientCommand::Rewind {
+        to: wisp_protocol::RewindPoint::Turn {
+            turn: again.unwrap(),
+        },
+        request,
+    })
+    .await;
+    run.until("the rewind", |e| matches!(e, AgentEvent::Rewound { .. }))
+        .await;
+    run.say("Instead.").await;
+    run.root_ended().await;
+    let root = run.requests("/");
+    assert_eq!(root.len(), 10);
+    grows_from(&root[8], &root[7], "after the resume");
+    grows_from(&root[9], &root[7], "after the rewind");
+    assert!(!root[9].all_text().contains("Again."));
+    assert_eq!(children_blocks(&root[9]), listed);
+    assert_eq!(root[9].all_text().matches(CHILDREN_LINE).count(), 1);
     let _ = run.quit().await;
 }
 

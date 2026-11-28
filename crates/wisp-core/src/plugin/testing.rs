@@ -27,6 +27,15 @@ pub(crate) fn declared(
     wisp_protocol::settings::declare(plugin, &row).unwrap()
 }
 
+pub(crate) fn agent_entry(state: wisp_protocol::AgentState) -> wisp_protocol::AgentEntry {
+    let mut json = serde_json::json!({
+        "path": "/a/b", "name": "b", "model": "m", "effort": "low", "depth": 2,
+        "activity": {"type": "idle"}, "spent_usd": 0.0,
+    });
+    json["state"] = serde_json::to_value(state).unwrap();
+    serde_json::from_value(json).unwrap()
+}
+
 pub(crate) trait TestTool: Send + Sync + 'static {
     fn name(&self) -> String;
     fn description(&self) -> String {

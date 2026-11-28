@@ -1,6 +1,7 @@
 use wisp_plugin_api::host::{
     AgentRow, Delivery, Progress, Relation, Sent, StartedAgent, Stopped, WarmMark, WarmRow,
 };
+use wisp_plugin_api::tree::{AgentState, HoldReason, IdleOutcome, QueueReason};
 
 use super::*;
 
@@ -216,6 +217,29 @@ fn the_running_time_reads_in_seconds_minutes_or_hours() {
     assert_eq!(ran(59_000), "59s");
     assert_eq!(ran(372_000), "6m12s");
     assert_eq!(ran(3_723_000), "1h02m");
+}
+
+#[test]
+fn the_live_children_line_names_each_child_with_its_state_and_age_then_the_fixed_line() {
+    let line = live_children_line(&[
+        ("/lead/planner", AgentState::Running, 125_000),
+        (
+            "/lead/coder",
+            AgentState::Idle(Some(IdleOutcome::NoReport)),
+            41_000,
+        ),
+        (
+            "/lead/next",
+            AgentState::Queued(QueueReason::Concurrency),
+            3_723_000,
+        ),
+        ("/lead/held", AgentState::Held(HoldReason::RetryOffer), 999),
+        ("/lead/fresh", AgentState::Idle(None), 0),
+    ]);
+    assert_eq!(
+        line,
+        "Child agents at the start of this context window, except those ended or idle after a report, each with its state and the time since it last started or stopped working or waiting (waiting for an endpoint counts as working): /lead/planner (running, 2m05s), /lead/coder (idle: no_report, 41s), /lead/next (queued: concurrency, 1h02m), /lead/held (held: retry_offer, 0s), /lead/fresh (idle, 0s).\nTheir reports arrive as messages.\n"
+    );
 }
 
 #[test]
@@ -559,7 +583,18 @@ fn limit_reasons_keep_the_evidence_and_its_time_together() {
 #[test]
 fn the_agents_doc_quotes_the_system_lines() {
     let docs = include_str!("../../../../docs/agents.md");
-    for line in [MESSAGES_SENTENCE, REPORT_SENTENCE, SPAWN_LINE] {
+    let children = live_children_line(&[
+        ("/lead/planner", AgentState::Running, 125_000),
+        (
+            "/lead/coder",
+            AgentState::Idle(Some(IdleOutcome::NoReport)),
+            41_000,
+        ),
+    ]);
+    for line in [MESSAGES_SENTENCE, REPORT_SENTENCE, SPAWN_LINE]
+        .into_iter()
+        .chain(children.lines())
+    {
         assert!(docs.contains(line), "{line}");
     }
 }

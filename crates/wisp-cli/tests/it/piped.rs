@@ -396,6 +396,7 @@ fn a_blocked_line_is_rejected_and_the_next_line_runs_a_turn() {
             ("memory/list", "none"),
             ("workspace/terminal", "none"),
             ("todos/checklist", "none"),
+            ("agents/children", "none"),
             ("skills/nudge", "none"),
             ("context/fill", "applied"),
             ("idle/note", "none"),

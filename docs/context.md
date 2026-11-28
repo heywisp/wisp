@@ -342,6 +342,8 @@ Every head runs one async step after its summary is in and before the head is bu
 
 The bundled `todos/checklist` section shows the saved, redacted checklist at each new head, before `<compacted_context>`. An empty checklist adds nothing; ordinary turns do not repeat it.
 
+The bundled `agents/children` section, after it, lists at each new head the agent's direct children that haven't ended, other than those idle after a report, each with its state and the time since its `since_ms`, then `Their reports arrive as messages.` (`docs/agents.md`, "States"). With none to list it adds nothing; ordinary turns do not repeat it, and the ages stay as the head was built, since a retry, a resume and a rewind send the head that was installed and logged.
+
 **`compaction-head` in the step.** Once the section loop is done, and only if the track isn't stopped, the step fires `compaction-head` (`docs/plugins.md`) with the head's `head-info`: its epoch, trigger, engine and turns (a kept head's run from the next turn to the last kept one, a Convert's those of the converted head). Its appended texts follow `<compacted_context>` as text blocks, are logged with the head (in `context_compacted`'s head, or the kept head's additions), and are rebuilt byte for byte by resume and rewind, which never call a hook. The hooks share one room, counted in tokens and re-read as the step runs, so it is the room the head has once its sections rendered, corrected by how far their render moved from the estimate the head was sized with:
 
 - **Smaller than before.** For a compaction, the texts must leave the head smaller than what it summarised: `before − after`, with `after` the head without them.
