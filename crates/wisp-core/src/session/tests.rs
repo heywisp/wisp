@@ -1828,6 +1828,23 @@ fn secret_checks_respect_redaction_kind_and_boundaries() {
     assert!(all.has_match(short, RedactionKind::Held));
     assert_eq!(all.mask(long), long);
     assert_eq!(all.scrub(long), REDACTED);
+    for text in [
+        "pre CANARYlongh\u{2026}",
+        "CANARYpi\u{2026} tail",
+        "CAN\u{2026}",
+        "a\u{2026} CANARYpi\u{2026}",
+    ] {
+        assert!(all.has_cut_match(text), "{text}");
+    }
+    for text in [
+        "CANARYlongh",
+        "CA\u{2026}",
+        "CANARYpin\u{2026}",
+        "CANARYlongheldcredential\u{2026}",
+        "/CANARY-lo\u{2026}",
+    ] {
+        assert!(!all.has_cut_match(text), "{text}");
+    }
 
     let typed = Redactions::typed([short.to_owned()]);
     let strongest = all.union([&typed, &held, &log_only]);

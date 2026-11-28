@@ -270,6 +270,7 @@ fn the_fallback_display_lists_the_inputs_keys_and_never_a_value() {
 
 #[test]
 fn canonical_fallback_and_clipping_cover_other_name_code_lang_and_view_fields() {
+    use crate::session::REDACTED;
     use wisp_protocol::SignalKind;
 
     let canonical = |name: &str| ToolDisplay {
@@ -682,6 +683,102 @@ fn canonical_fallback_and_clipping_cover_other_name_code_lang_and_view_fields() 
     );
     assert_eq!(valid_redacted_write.action, ToolAction::Write);
     assert_eq!(valid_redacted_write.target, "prefix\u{2026}");
+
+    let cut_held = crate::session::Redactions::new(["CANARYheldPrefixSecret0123".to_owned()]);
+    let scrub_valid = |input: Value, mut display: ToolDisplay| {
+        scrub_tool_call_display("plug", &input, &mut display, None, &cut_held, false);
+        display
+    };
+    let old_write = ToolDisplay {
+        action: ToolAction::Write,
+        target: "proj-CANARYheldPr\u{2026}".to_owned(),
+        ..canonical("plug")
+    };
+    let probed = scrub_valid(json!({"board": "proj-[redacted]"}), old_write);
+    assert_eq!(probed, canonical("tool"));
+    let benign_write = ToolDisplay {
+        action: ToolAction::Write,
+        target: "prefix\u{2026}".to_owned(),
+        ..canonical("plug")
+    };
+    let kept = scrub_valid(json!({"board": "[redacted]"}), benign_write.clone());
+    assert_eq!(kept, benign_write);
+    let near_miss = ToolDisplay {
+        target: "proj-CAN\u{2026}".to_owned(),
+        ..benign_write.clone()
+    };
+    assert_eq!(
+        scrub_valid(json!({"board": "safe"}), near_miss.clone()),
+        near_miss
+    );
+    let spaced = ToolDisplay {
+        target: "proj-CANARY\u{200B}heldPr\u{2026}".to_owned(),
+        ..benign_write
+    };
+    assert_eq!(
+        scrub_valid(json!({"board": "[redacted]"}), spaced),
+        canonical("tool")
+    );
+    let braced = ToolDisplay {
+        target: "{k1, CANARYheldPr\u{2026}}".to_owned(),
+        ..canonical("plug")
+    };
+    assert_eq!(
+        scrub_valid(json!({"k1": 1, "[redacted]": 2}), braced),
+        canonical("plug")
+    );
+
+    let cut_title = "t-CANARYheldPrefixS\u{2026}".to_owned();
+    let file = DiffView {
+        path: Some("a.rs".to_owned()),
+        old_path: None,
+        language: None,
+        hunks: "+CANARYheldPrefixS\u{2026}\n".to_owned(),
+        added: 1,
+        removed: 0,
+    };
+    let viewed_diff = ToolDisplay {
+        action: ToolAction::Show,
+        target: "t-CANARYheldPre\u{2026}".to_owned(),
+        title: Some(cut_title.clone()),
+        view: Some(ToolView::Diff {
+            title: Some(cut_title),
+            files: vec![file.clone()],
+        }),
+        purpose: ToolPurpose::Show,
+        ..canonical("plug")
+    };
+    let masked_diff = scrub_valid(json!({"title": "[redacted]"}), viewed_diff);
+    assert_eq!(masked_diff.target, REDACTED);
+    assert_eq!(masked_diff.title.as_deref(), Some(REDACTED));
+    assert_eq!(masked_diff.purpose, ToolPurpose::Show);
+    assert_eq!(
+        masked_diff.view,
+        Some(ToolView::Diff {
+            title: Some(REDACTED.to_owned()),
+            files: vec![file],
+        })
+    );
+    let code = "echo CANARYheldPrefixS\u{2026}".to_owned();
+    let viewed_code = |language: &str, target: &str| ToolDisplay {
+        action: ToolAction::Show,
+        target: target.to_owned(),
+        view: Some(ToolView::Code {
+            language: Some(language.to_owned()),
+            code: code.clone(),
+        }),
+        ..canonical("plug")
+    };
+    let masked_code = scrub_valid(
+        json!({"language": "[redacted]"}),
+        viewed_code("CANARYheldPre\u{2026}", "Code\u{2026}"),
+    );
+    assert_eq!(masked_code, viewed_code(REDACTED, "Code\u{2026}"));
+    let near_miss_code = viewed_code("bash", "Code CAN\u{2026}");
+    assert_eq!(
+        scrub_valid(json!({"code": "echo"}), near_miss_code.clone()),
+        near_miss_code
+    );
 
     let mut braced_ascii_dots = ToolDisplay {
         target: "{a: dir/alice@exam...}".to_owned(),

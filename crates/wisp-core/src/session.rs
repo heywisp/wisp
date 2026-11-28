@@ -2004,6 +2004,22 @@ impl Redactions {
             || has_bounded_match(&short, bytes)
     }
 
+    pub(crate) fn has_cut_match(&self, text: &str) -> bool {
+        text.match_indices('\u{2026}').any(|(at, _)| {
+            let head = &text[..at];
+            self.0
+                .iter()
+                .filter(|entry| entry.kind >= RedactionKind::Held)
+                .any(|entry| {
+                    let value = &entry.value;
+                    value
+                        .char_indices()
+                        .skip(MIN_REDACTION_CHARS)
+                        .any(|(end, _)| head.ends_with(&value[..end]))
+                })
+        })
+    }
+
     fn replaced(
         &self,
         bytes: &[u8],

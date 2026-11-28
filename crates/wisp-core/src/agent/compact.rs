@@ -886,27 +886,67 @@ impl Agent {
         );
     }
 
+    fn kept_targets(
+        &self,
+        tool: &str,
+        input: &Value,
+        display: &wisp_protocol::ToolDisplay,
+        refused: bool,
+    ) -> (String, String) {
+        let raw = display.target.clone();
+        if refused {
+            return (raw.clone(), raw);
+        }
+        let held = crate::session::read_held();
+        if held.is_empty() {
+            return (raw.clone(), raw);
+        }
+        let mut shown = display.clone();
+        let home = self.secret_check_home();
+        crate::tool::scrub_tool_call_display(
+            tool,
+            input,
+            &mut shown,
+            home.as_deref(),
+            &held,
+            false,
+        );
+        let ledger = held.scrub(&shown.target);
+        let used = if crate::tool::text_has_held_match(&raw, &held)
+            && !crate::tool::text_is_cut_through_held(&raw, &held)
+        {
+            raw
+        } else {
+            shown.target
+        };
+        (ledger, used)
+    }
+
     pub(super) fn note_event(&mut self, event: &AgentEvent, seq: Option<u64>) {
         let turn = self.running_turn().unwrap_or(self.turns);
-        let lookup = match event {
-            AgentEvent::ToolCallRequested { tool, .. } => self.tool_lookup(tool).unwrap_or(true),
-            _ => false,
+        let (lookup, ledger, used) = match event {
+            AgentEvent::ToolCallRequested {
+                tool,
+                input,
+                display,
+                refused,
+                ..
+            } => {
+                let (ledger, used) = self.kept_targets(tool, input, display, *refused);
+                (self.tool_lookup(tool).unwrap_or(true), ledger, used)
+            }
+            _ => (false, String::new(), String::new()),
         };
         let state = &mut self.compaction;
         match event {
-            AgentEvent::ToolCallRequested {
-                call_id,
-                tool,
-                display,
-                ..
-            } => {
-                self.targets.insert(call_id.clone(), display.target.clone());
+            AgentEvent::ToolCallRequested { call_id, tool, .. } => {
+                self.targets.insert(call_id.clone(), used);
                 state.calls.push_back(LoggedCall {
                     call_id: call_id.clone(),
                     turn,
                     tool: tool.clone(),
                     lookup,
-                    target: display.target.clone(),
+                    target: ledger,
                     cwd: None,
                     status: None,
                     saved: None,

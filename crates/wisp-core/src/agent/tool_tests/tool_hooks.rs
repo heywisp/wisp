@@ -3769,6 +3769,48 @@ async fn halted_batch_refused_call_logs_refused_true_even_when_outcome_is_not_ru
             notes: None,
             typed: None,
         },
+        LogEvent::ToolCallRequested {
+            turn: 1,
+            step: 1,
+            block: 3,
+            call_id: "leg_valid".to_owned(),
+            tool: "board_write".to_owned(),
+            input: json!({"board": "proj-[redacted]"}),
+            display: ToolDisplay {
+                action: ToolAction::Write,
+                verbs: None,
+                target: "proj-CANARYvalidOn\u{2026}".to_owned(),
+                output: OutputKind::None,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+            refused: false,
+        },
+        LogEvent::ToolCallStarted {
+            turn: 1,
+            call_id: "leg_valid".to_owned(),
+            cwd: "~/proj".to_owned(),
+            movable: false,
+            file: None,
+        },
+        LogEvent::ToolCallFinished {
+            turn: 1,
+            call_id: "leg_valid".to_owned(),
+            outcome: ToolOutcome::Completed {
+                is_error: false,
+                exit: None,
+            },
+            output: Default::default(),
+            facts: Vec::new(),
+            state: None,
+            duration_ms: 0,
+            result: None,
+            process: None,
+            attachments: Vec::new(),
+            notes: None,
+            typed: None,
+        },
     ];
     let legacy_records: Vec<LogRecord> = legacy_events
         .into_iter()
@@ -3781,6 +3823,7 @@ async fn halted_batch_refused_call_logs_refused_true_even_when_outcome_is_not_ru
         })
         .collect();
     assert!(LOG_SCHEMA_VERSION > legacy_version);
+    crate::session::register_secrets(["CANARYvalidOnlySecret0123".to_owned()]);
 
     let resumed_legacy = Agent::new(scripted(vec![]), default_session())
         .with_clock(TickingClock::new())
@@ -3801,7 +3844,7 @@ async fn halted_batch_refused_call_logs_refused_true_even_when_outcome_is_not_ru
 
     let legacy_ledger = resumed_legacy.history_view().calls;
     let legacy_view = resumed_legacy.view(&legacy_records);
-    assert_eq!(legacy_ledger.len(), 3, "{legacy_ledger:?}");
+    assert_eq!(legacy_ledger.len(), 4, "{legacy_ledger:?}");
     for (idx, (id, tool)) in [
         ("leg_board", "board_write"),
         ("leg_diff", "show_diff"),
@@ -3830,6 +3873,16 @@ async fn halted_batch_refused_call_logs_refused_true_even_when_outcome_is_not_ru
         assert_eq!(display.target, "{}", "{id}: {display:?}");
         assert!(!serde_json::to_string(display).unwrap().contains("CANARY"));
     }
+    assert_eq!(
+        resumed_legacy.target_of("leg_valid", "board_write", &Value::Null),
+        "{}"
+    );
+    assert_eq!(legacy_ledger[3].target, "{}", "{legacy_ledger:?}");
+    assert!(
+        !serde_json::to_string(&legacy_view.events)
+            .unwrap()
+            .contains("CANARYvalidOn")
+    );
 }
 
 #[tokio::test]

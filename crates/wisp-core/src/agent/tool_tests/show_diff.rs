@@ -148,3 +148,80 @@ async fn a_refused_show_diff_call_is_shown_with_its_own_target() {
         }
     )));
 }
+
+#[tokio::test]
+async fn a_show_call_titled_through_a_held_secret_keeps_no_prefix_and_keeps_its_view() {
+    let secret = "CANARYheldTitleSecret0123456789";
+    let second = "CANARYheldSecondSecret9876543210";
+    crate::session::register_secrets([secret.to_owned(), second.to_owned()]);
+    let redacted = crate::session::REDACTED;
+    let flat = "t".repeat(70);
+    let titles = [
+        (
+            format!("{flat}{secret}"),
+            redacted.to_owned(),
+            format!("{flat}{redacted}"),
+            redacted.to_owned(),
+        ),
+        (
+            format!("k {secret}"),
+            format!("k {redacted}"),
+            format!("k {redacted}"),
+            format!("k {secret}"),
+        ),
+        (
+            format!("{secret} {}{second}", "t".repeat(38)),
+            redacted.to_owned(),
+            format!("{redacted} {}{redacted}", "t".repeat(38)),
+            redacted.to_owned(),
+        ),
+    ];
+    for (title, target, shown_title, used) in titles {
+        let cases = [
+            (
+                NAME,
+                json!({"title": title, "files": [{"path": "a.rs", "before": "a\n", "after": "b\n"}]}),
+            ),
+            (code::NAME, json!({"title": title, "code": "echo hi\n"})),
+        ];
+        for (tool, input) in cases {
+            let env = Env::new("show-diff-held");
+            let store = MemoryStore::default();
+            let scripted = scripted(vec![uses(&[call("d1", tool, input)]), done("shown")]);
+            let mut agent = showing(scripted, &env, &store, tool);
+            let (outcome, events) = turn(&mut agent, "show me").await;
+            assert!(
+                matches!(outcome, TurnOutcome::Completed { .. }),
+                "{events:#?}"
+            );
+            let live = pick!(
+                &events,
+                AgentEvent::ToolCallRequested { input, display, .. } => (input.clone(), display.target.clone())
+            );
+            assert_eq!(live.len(), 1, "{tool}");
+            assert!(!live[0].0.to_string().contains("CANARY"), "{tool}");
+            if target == redacted {
+                assert_eq!(live[0].1, redacted, "{tool}");
+            }
+            let logged: Vec<(Value, wisp_protocol::ToolDisplay)> = pick!(
+                log_events(&store),
+                LogEvent::ToolCallRequested { input, display, refused: false, .. } => (input, display)
+            );
+            assert_eq!(logged.len(), 1, "{tool}");
+            let display = &logged[0].1;
+            assert_eq!(display.target, target, "{tool}");
+            assert_eq!(
+                display.title.as_deref(),
+                Some(shown_title.as_str()),
+                "{tool}"
+            );
+            assert!(display.view.is_some(), "{tool}");
+            let shown = serde_json::to_string(&logged).unwrap();
+            assert!(!shown.contains("CANARY"), "{tool}: {shown}");
+            assert_eq!(agent.target_of("d1", tool, &Value::Null), used, "{tool}");
+            let ledger = agent.history_view().calls;
+            assert_eq!(ledger.len(), 1, "{tool}");
+            assert_eq!(ledger[0].target, target, "{tool}");
+        }
+    }
+}

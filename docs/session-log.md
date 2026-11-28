@@ -702,7 +702,8 @@ depth, in a call's `input` in the event and in the `tool_call_requested`
 record: `write_todos`, `spawn_agent` and a call forwarded to either. A `todos`
 string hidden for an identity does not wipe an accepted display, so a plugin
 that builds a clipped display from such a string keeps showing it on a later
-pass after a secret in it is registered.
+pass after a secret in it is registered, unless the cut runs through that
+secret.
 
 This applies before a successful checklist update or a child's starting list is
 published.
