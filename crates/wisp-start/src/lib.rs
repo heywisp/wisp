@@ -10,6 +10,7 @@ pub mod paths;
 pub mod presence;
 pub mod resume;
 pub mod run;
+pub mod scrub;
 pub mod settings;
 pub mod start;
 pub mod tools;

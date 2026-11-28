@@ -11,7 +11,6 @@ mod output;
 mod plugins;
 mod restart;
 mod resume;
-mod scrub;
 mod settings;
 mod setup_server;
 mod tui;
@@ -1464,7 +1463,7 @@ struct Started {
     task: agent::AgentTask,
     presentation: Presentation,
     view: Option<wisp_protocol::SessionView>,
-    scrub: scrub::Scrub,
+    scrub: wisp_start::scrub::Scrub,
 }
 
 enum Stop {
@@ -1560,16 +1559,14 @@ async fn start_session(
     at: Option<&StartAt>,
 ) -> Result<Started, Stop> {
     let (built, presentation) = build_session(args, setup, keychain, chosen, at, None).await?;
-    let home = built.agent.secret_check_home();
     let started = start::start(built);
-    let scrub = scrub::Scrub::new(home, started.task.brief_owners());
     Ok(Started {
         channels: started.channels,
         opening: started.opening,
         task: started.task,
         presentation,
         view: started.view,
-        scrub,
+        scrub: started.scrub,
     })
 }
 

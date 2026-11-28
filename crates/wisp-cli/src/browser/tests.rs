@@ -319,9 +319,9 @@ async fn the_relay_opens_each_live_link_and_passes_other_events_unchanged() {
 
 #[tokio::test]
 async fn the_relay_scrubs_events_queued_before_a_secret_registered() {
-    use crate::scrub::testing::{CANARY, queued, scrub};
     use std::sync::Arc;
     use wisp_core::session::{REDACTED, register_secrets};
+    use wisp_start::scrub::testing::{CANARY, queued, scrub};
 
     let events = queued();
     let (send, receive) = mpsc::channel(4);

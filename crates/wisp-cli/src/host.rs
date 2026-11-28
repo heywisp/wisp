@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::watch;
 use wisp_protocol::jsonl;
 use wisp_protocol::link::{self, Ready, Start};
+use wisp_start::scrub::Scrub;
 use wisp_start::start::{self, StartAt};
 use wisp_tui::present::choose::{Chosen, Presenter};
 
@@ -161,7 +162,6 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
         .held_redactions(Some(&built.book.log_context().redactions))
         .union([&wisp_core::session::held()]);
     built.agent = built.agent.with_opening_replay();
-    let secret_home = built.agent.secret_check_home();
     let started = start::start(built);
     let host = build_host(
         wispd::Session {
@@ -170,8 +170,7 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
             session: id.clone(),
             build: build(),
         },
-        secret_home,
-        Some(started.task.brief_owners()),
+        started.scrub,
     );
     let _ = ready(Ready::Socket { path: path.clone() });
     let null = std::fs::OpenOptions::new()
@@ -219,18 +218,9 @@ async fn serve(args: Args, setup: Setup) -> Result<(), String> {
     Ok(())
 }
 
-fn build_host(
-    session: wispd::Session,
-    secret_home: Option<PathBuf>,
-    owners: Option<wisp_core::agent::BriefOwners>,
-) -> wispd::Host {
+fn build_host(session: wispd::Session, scrub: Scrub) -> wispd::Host {
     wispd::Host::new(session).with_outbound(move |frames, publish| {
-        let _ = wisp_core::agent::with_scrubbed_link_frames(
-            frames,
-            secret_home.as_deref(),
-            owners.as_ref(),
-            publish,
-        );
+        let _ = scrub.frames(frames, publish);
     })
 }
 

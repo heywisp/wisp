@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use wisp_protocol::AgentEvent;
 use wisp_tui::term::caps::Env;
 
-use crate::scrub::Scrub;
+use wisp_start::scrub::Scrub;
 
 fn from_browser(browser: &str, url: &str) -> Option<Vec<String>> {
     let first = browser.split(':').next()?.trim();

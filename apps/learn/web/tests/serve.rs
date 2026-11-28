@@ -6,8 +6,10 @@
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use agent::{describe, page_call, page_done, port, snapshot};
 use client::{Socket, connect, get, get_over, next_text, open, open_over, page};
 use futures::{SinkExt, StreamExt};
 use hostile::{corpus, hostile_events};
@@ -38,6 +40,8 @@ use wisp_protocol::{
 use wisp_render::motion::Part;
 use wisp_render::theme::{self, Depth, Mode, Theme};
 
+#[path = "support/agent.rs"]
+mod agent;
 #[path = "support/client.rs"]
 mod client;
 #[path = "../../../../crates/wisp-cli/src/output/tests/hostile.rs"]
@@ -69,13 +73,6 @@ fn account(name: &str, keys_file: bool) -> Value {
     json!({"name": name, "provider": "anthropic", "priced": true, "default": false, "keys_file": keys_file})
 }
 
-fn snapshot(answers: u64, brain: &str, accounts: &[Value]) -> AgentEvent {
-    serde_json::from_value(json!({"type": "settings_snapshot", "answers": answers,
-        "context": {"endpoint": brain, "model": "m", "max_tokens": 1},
-        "settings": [], "endpoints": accounts, "file": {"type": "missing"}}))
-    .unwrap()
-}
-
 fn plain() -> WebSetup {
     WebSetup {
         port: 0,
@@ -98,6 +95,16 @@ async fn start_after(
     accounts: &[Value],
     replayed: Vec<AgentEvent>,
 ) -> Result<Running, String> {
+    start_masking(setup, brain, accounts, replayed, str::to_owned).await
+}
+
+async fn start_masking(
+    setup: WebSetup,
+    brain: &str,
+    accounts: &[Value],
+    replayed: Vec<AgentEvent>,
+    redact: impl Fn(&str) -> String + Send + Sync + 'static,
+) -> Result<Running, String> {
     let (commands, mut asked) = mpsc::channel(8);
     let (events, mut agent) = mpsc::channel(64);
     let (pass, passed) = mpsc::channel(8);
@@ -107,12 +114,7 @@ async fn start_after(
     let (told, address) = oneshot::channel::<String>();
     let (brain, accounts, answer) = (brain.to_owned(), accounts.to_vec(), events.clone());
     tokio::spawn(async move {
-        if let Some(ClientCommand::DescribeSettings { request }) = asked.recv().await {
-            let _ = answer
-                .send(snapshot(request.0 + 1, &brain, &accounts))
-                .await;
-            let _ = answer.send(snapshot(request.0, &brain, &accounts)).await;
-        }
+        describe(&mut asked, &answer, &brain, &accounts).await;
         drop(answer);
         while let Some(command) = asked.recv().await {
             let _ = pass.send(command).await;
@@ -129,15 +131,13 @@ async fn start_after(
             let _ = stopped.await;
         };
         let lane = (lane_up, lane_down);
-        learn_web::serve(setup, &replayed, commands, &mut agent, lane, stop, show).await
+        let replayed = (replayed.as_slice(), redact);
+        learn_web::serve(setup, replayed, commands, &mut agent, lane, stop, show).await
     });
     let Ok(line) = address.await else {
         return Err(served.await.unwrap().unwrap_err());
     };
-    let port = line
-        .split([':', ' '])
-        .find_map(|word| word.parse().ok())
-        .unwrap();
+    let port = port(&line);
     Ok(Running {
         port,
         line,
@@ -331,21 +331,6 @@ async fn the_board_frame_has_its_own_sandbox_and_no_network() {
     assert_eq!(get(port, &head).await.0, 403);
 }
 
-fn page_call(call: &str, input: Value) -> AgentEvent {
-    let display = json!({"action": {"type": "show"}, "target": "page", "output": {"type": "none"}});
-    serde_json::from_value(json!({"type": "tool_call_requested", "step": 1, "block": 1,
-        "call_id": call, "tool": wisp_plugin_page::NAME, "input": input, "display": display}))
-    .unwrap()
-}
-
-fn page_done(call: &str, is_error: bool) -> AgentEvent {
-    let outcome = ToolOutcome::Completed {
-        is_error,
-        exit: None,
-    };
-    AgentEvent::call_finished(call, outcome)
-}
-
 #[tokio::test]
 async fn a_new_screen_catches_up_on_the_successful_calls_of_the_last_mib() {
     let replayed = [
@@ -410,6 +395,47 @@ async fn a_new_screen_catches_up_on_the_successful_calls_of_the_last_mib() {
     let kept = &seen[2 * (calls - fits)..2 * calls];
     for line in kept.iter().chain([&asked]) {
         assert_eq!(next_text(&mut late).await.as_ref(), Some(line));
+    }
+    settled(&mut late).await;
+}
+
+#[tokio::test]
+async fn a_late_secret_is_masked_in_the_kept_and_live_calls_a_screen_gets() {
+    const CANARY: &str = "CANARYOpaqueRegisteredAfterKept";
+    let held = Arc::new(AtomicBool::new(false));
+    let masking = Arc::clone(&held);
+    let redact = move |line: &str| match masking.load(Ordering::SeqCst) {
+        true => line.replace(CANARY, "[redacted]"),
+        false => line.to_owned(),
+    };
+    let requested = |call: &str, html: &str| {
+        json!({"type": "tool_call_requested", "call_id": call, "tool": "show_page",
+            "input": {"html": html}})
+    };
+    let raw = format!("<p>{CANARY}</p>");
+    let replayed = vec![
+        page_call("old", json!({"html": raw})),
+        page_done("old", false),
+    ];
+    let accounts = [account("home", false)];
+    let running = start_masking(plain(), "home", &accounts, replayed, redact).await;
+    let running = running.unwrap();
+    let mut first = screen(running.port).await;
+    assert_eq!(next_text(&mut first).await, Some(requested("old", &raw)));
+    next_text(&mut first).await;
+    let live = page_call("new", json!({"html": raw}));
+    running.events.send(live).await.unwrap();
+    assert_eq!(next_text(&mut first).await, Some(requested("new", &raw)));
+    held.store(true, Ordering::SeqCst);
+    let mut late = screen(running.port).await;
+    let masked = "<p>[redacted]</p>";
+    assert_eq!(next_text(&mut late).await, Some(requested("old", masked)));
+    next_text(&mut late).await;
+    assert_eq!(next_text(&mut late).await, Some(requested("new", masked)));
+    let next = page_call("next", json!({"html": raw}));
+    running.events.send(next).await.unwrap();
+    for socket in [&mut first, &mut late] {
+        assert_eq!(next_text(socket).await, Some(requested("next", masked)));
     }
     settled(&mut late).await;
 }

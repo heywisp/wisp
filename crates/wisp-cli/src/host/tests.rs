@@ -10,8 +10,10 @@ use std::path::PathBuf;
 
 use script::{Script, end, event, reopening, text};
 use wisp_client::link as client;
+use wisp_core::agent::BriefOwners;
 use wisp_core::session::{REDACTED, register_secrets};
 use wisp_protocol::{AgentEvent, AgentPath, ClientCommand, SessionView, TodoItem, TodoStatus};
+use wisp_start::scrub::testing::scrub_with;
 
 fn todo(text: &str, section: &str, status: TodoStatus) -> TodoItem {
     TodoItem {
@@ -40,7 +42,8 @@ async fn hosted_first_open_and_reattach_scrub_cached_checklists_against_current_
         ..SessionView::default()
     };
     let mut script = Script::with(view(vec![checklist(early, home_section)]), 1, |session| {
-        super::build_host(session, Some(PathBuf::from("/opt/wisp-test-home")), None)
+        let home = Some(PathBuf::from("/opt/wisp-test-home"));
+        super::build_host(session, scrub_with(home, BriefOwners::default()))
     })
     .await;
     let connection = script
@@ -122,7 +125,7 @@ async fn hosted_build_host_wires_brief_owners_into_outbound_link_frames() {
     let (commands, _events, task) = wisp_core::agent::spawn(agent);
     let owners = task.brief_owners();
     let mut script = Script::with(SessionView::default(), 1, move |session| {
-        super::build_host(session, None, Some(owners.clone()))
+        super::build_host(session, scrub_with(None, owners))
     })
     .await;
     let mut link = script.open().await;

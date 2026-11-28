@@ -32,6 +32,7 @@ use crate::run::{
     Run, Setup, env_given, keychain_variable, named_preset, preset_place, saved_layers,
     start_layers, start_presets, start_summaries, tree_setup,
 };
+use crate::scrub::Scrub;
 use crate::tools::{self, ToolRule};
 use crate::watch::SourcesWatch;
 use crate::{context, endpoints, instructions, models, settings};
@@ -164,6 +165,7 @@ pub struct Started {
     pub task: agent::AgentTask,
     pub view: Option<SessionView>,
     pub opening: Opening,
+    pub scrub: Scrub,
 }
 
 pub const SAVE_CUT: &str = concat!(
@@ -1265,6 +1267,7 @@ pub fn start(built: Built) -> Started {
             wisp_core::voice::Earlier::of(&view.events, &view.input_ids)
         }),
     });
+    let home = agent.secret_check_home();
     let (commands, events, task) = wisp_core::agents::start_root(kit, tree, agent);
     let (commands, events, lane) = match voice {
         Some(voice) => {
@@ -1278,6 +1281,7 @@ pub fn start(built: Built) -> Started {
         worst: task.worst.clone(),
         margin: agent::QUIT_MARGIN,
     };
+    let scrub = Scrub::new(home, task.brief_owners());
     Started {
         channels: Channels {
             commands,
@@ -1288,6 +1292,7 @@ pub fn start(built: Built) -> Started {
         task,
         view,
         opening,
+        scrub,
     }
 }
 

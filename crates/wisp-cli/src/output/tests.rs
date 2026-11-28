@@ -524,8 +524,8 @@ fn jsonl_hides_server_sign_in_links_but_keeps_its_notes() {
 
 #[tokio::test]
 async fn jsonl_scrubs_queued_events_against_a_secret_registered_after_they_were_queued() {
-    use crate::scrub::testing::{CANARY, queued, scrub};
     use wisp_core::session::{REDACTED, register_secrets};
+    use wisp_start::scrub::testing::{CANARY, queued, scrub};
 
     let scrub = scrub();
     let (commands, _sent) = mpsc::channel(1);

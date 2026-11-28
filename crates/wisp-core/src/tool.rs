@@ -1408,7 +1408,7 @@ fn scrub_checklist_fields(value: &mut Value, scrub: &impl Fn(&str) -> String) {
     }
 }
 
-fn scrub_held_strings(input: &mut Value, held: &crate::session::Redactions) {
+pub fn scrub_held_strings(input: &mut Value, held: &crate::session::Redactions) {
     if !value_has_held_match(input, held) {
         return;
     }
