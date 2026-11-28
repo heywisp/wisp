@@ -2306,6 +2306,7 @@ const PLUGIN_HOOKS: &[&str] = &[
     "  memory/list \u{b7} prompt section\n",
     "  workspace/terminal \u{b7} prompt section\n",
     "  todos/checklist \u{b7} prompt section\n",
+    "  agents/children \u{b7} prompt section\n",
     "  core/tools\n",
     "  skills/nudge \u{b7} in core/notes \u{b7} on\n",
     "  time/sent \u{b7} in core/notes \u{b7} follows time \u{b7} off\n",

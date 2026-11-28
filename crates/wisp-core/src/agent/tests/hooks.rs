@@ -100,6 +100,7 @@ fn logged_runs(store: &MemoryStore) -> Vec<(String, String, HookOutcome)> {
 const TERMINAL: &str = "workspace/terminal";
 
 const KEPT_WARM: &str = "agents/kept-warm";
+const CHILDREN: &str = "agents/children";
 
 fn run(hook: &str, point: &str, outcome: HookOutcome) -> (String, String, HookOutcome) {
     (hook.to_owned(), point.to_owned(), outcome)
@@ -198,6 +199,7 @@ async fn esc_during_before_turn_sends_no_request_and_ends_the_turn_cancelled_onc
         [
             run(LEAD_ENVIRONMENT, "before-turn", HookOutcome::None),
             run(TERMINAL, "before-turn", HookOutcome::None),
+            run(CHILDREN, "before-turn", HookOutcome::None),
             run("aa/x", "before-turn", HookOutcome::Cancelled)
         ]
     );
@@ -227,6 +229,7 @@ async fn esc_during_before_request_sends_no_request() {
         [
             run(LEAD_ENVIRONMENT, "before-turn", HookOutcome::None),
             run(TERMINAL, "before-turn", HookOutcome::None),
+            run(CHILDREN, "before-turn", HookOutcome::None),
             run("time/sent", "before-turn", HookOutcome::Applied),
             run(KEPT_WARM, "before-turn", HookOutcome::None),
             run(LEAD_PROCESSES, "before-turn", HookOutcome::None),
@@ -254,6 +257,7 @@ async fn esc_during_after_response_on_a_reply_that_ended_the_turn_completes_it()
         [
             run(LEAD_ENVIRONMENT, "before-turn", HookOutcome::None),
             run(TERMINAL, "before-turn", HookOutcome::None),
+            run(CHILDREN, "before-turn", HookOutcome::None),
             run("time/sent", "before-turn", HookOutcome::Applied),
             run(KEPT_WARM, "before-turn", HookOutcome::None),
             run(LEAD_PROCESSES, "before-turn", HookOutcome::None),
@@ -412,6 +416,7 @@ async fn every_run_is_logged_and_a_point_without_hooks_logs_none() {
             run("aa/start", "session-start", HookOutcome::None),
             run(LEAD_ENVIRONMENT, "before-turn", HookOutcome::None),
             run(TERMINAL, "before-turn", HookOutcome::None),
+            run(CHILDREN, "before-turn", HookOutcome::None),
             run("time/sent", "before-turn", HookOutcome::Applied),
             run("context/fill", "before-turn", HookOutcome::Applied),
             run(KEPT_WARM, "before-turn", HookOutcome::None),
@@ -535,6 +540,7 @@ async fn a_message_sent_during_session_start_starts_its_turn_when_the_point_ends
             run("aa/start", "session-start", HookOutcome::None),
             run(LEAD_ENVIRONMENT, "before-turn", HookOutcome::None),
             run(TERMINAL, "before-turn", HookOutcome::None),
+            run(CHILDREN, "before-turn", HookOutcome::None),
             run("time/sent", "before-turn", HookOutcome::Applied),
             run(KEPT_WARM, "before-turn", HookOutcome::None),
             run(LEAD_PROCESSES, "before-turn", HookOutcome::None)
@@ -1054,6 +1060,7 @@ async fn esc_and_a_rewind_during_an_after_turn_hook_open_no_turn_and_wait_for_th
         [
             run(LEAD_ENVIRONMENT, "before-turn", HookOutcome::None),
             run(TERMINAL, "before-turn", HookOutcome::None),
+            run(CHILDREN, "before-turn", HookOutcome::None),
             run("time/sent", "before-turn", HookOutcome::Applied),
             run(KEPT_WARM, "before-turn", HookOutcome::None),
             run(LEAD_PROCESSES, "before-turn", HookOutcome::None),

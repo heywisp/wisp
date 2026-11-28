@@ -33,3 +33,10 @@ place = "lead"
 in = ["core/notes"]
 after = ["time/sent", "context/fill", "idle/note"]
 before = []
+
+[[prompt_sections]]
+name = "children"
+place = "lead"
+in = ["core/state"]
+after = ["workspace/environment", "workspace/terminal", "memory/list", "todos/checklist"]
+before = []

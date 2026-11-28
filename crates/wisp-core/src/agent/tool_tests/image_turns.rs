@@ -209,11 +209,11 @@ async fn an_image_turn_sends_context_stamp_images_then_text_and_saves_first() {
     let ops = ops.lock().unwrap().clone();
     assert_eq!(ops[..4], ["append", "blob", "blob", "append"], "{ops:?}");
     assert!(
-        records[1..7]
+        records[1..8]
             .iter()
             .all(|r| matches!(r.event, LogEvent::HookRan { .. }))
     );
-    assert!(matches!(records[7].event, LogEvent::TurnStarted { .. }));
+    assert!(matches!(records[8].event, LogEvent::TurnStarted { .. }));
 }
 
 #[test]

@@ -652,6 +652,7 @@ fn the_bundled_hooks_sit_between_the_tools_note_and_the_processes() {
         [
             "workspace/environment",
             "workspace/terminal",
+            "agents/children",
             "core/tools",
             "time/sent",
             "context/fill",

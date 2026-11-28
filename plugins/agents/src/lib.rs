@@ -14,7 +14,7 @@ use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
 use wisp_tool_text::agents::{
     LIST_AGENTS, MESSAGES_SENTENCE, QUEUED_SENTENCE, RENAME_AGENT, REPORT, REPORT_ARRIVES_SENTENCE,
     REPORT_SENTENCE, REPORTED, SEND_MESSAGE, SPAWN_AGENT, SPAWN_LINE, STOP_AGENT, WAKE,
-    kept_warm_line, listed, renamed, report_line, sent, started, stopped,
+    kept_warm_line, listed, live_children_line, renamed, report_line, sent, started, stopped,
 };
 
 pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
@@ -22,6 +22,8 @@ pub const MANIFEST: &str = include_str!("../wisp-plugin.toml");
 pub const ID: &str = "agents";
 
 pub const KEPT_WARM: &str = "kept-warm";
+
+pub const CHILDREN: &str = "children";
 
 pub const NAMES: [&str; 6] = [
     LIST_AGENTS,
@@ -558,13 +560,18 @@ pub async fn run(host: &dyn Host, call: Box<dyn Prepared>, ctx: &dyn CallContext
     answered(result)
 }
 
+fn own_children(host: &dyn Host) -> Option<Vec<AgentNode>> {
+    let me = host.current_agent()?;
+    let nodes = host.snapshot().into_iter();
+    Some(
+        nodes
+            .filter(|node| node.parent.as_deref() == Some(me.path.as_str()))
+            .collect(),
+    )
+}
+
 fn is_direct_child(host: &dyn Host, target: &str) -> bool {
-    let Some(me) = host.current_agent() else {
-        return false;
-    };
-    host.snapshot()
-        .into_iter()
-        .any(|node| node.path == target && node.parent.as_deref() == Some(me.path.as_str()))
+    own_children(host).is_some_and(|nodes| nodes.iter().any(|node| node.path == target))
 }
 
 fn listed_refreshes(node: &AgentNode, shown: &ShownState) -> Option<u32> {
@@ -581,14 +588,12 @@ fn now_ms(host: &dyn Host) -> u64 {
 }
 
 fn kept_warm(host: &dyn Host, previous: &Prior) -> Rendered {
-    let Some(me) = host.current_agent() else {
+    let Some(own) = own_children(host) else {
         return Rendered::default();
     };
     let states = host.states();
-    let children: Vec<(AgentNode, String)> = host
-        .snapshot()
+    let children: Vec<(AgentNode, String)> = own
         .into_iter()
-        .filter(|n| n.parent.as_deref() == Some(me.path.as_str()))
         .filter_map(|n| {
             let refreshes = states
                 .iter()
@@ -612,6 +617,49 @@ fn kept_warm(host: &dyn Host, previous: &Prior) -> Rendered {
     Rendered {
         text: (!named.is_empty()).then(|| kept_warm_line(&named)),
         snapshot: lines.join("\n"),
+    }
+}
+
+fn awaited(state: AgentState) -> bool {
+    match state {
+        AgentState::Ended | AgentState::Idle(Some(IdleOutcome::Reported)) => false,
+        AgentState::Queued(_)
+        | AgentState::Running
+        | AgentState::Stopping
+        | AgentState::Held(_)
+        | AgentState::Unknown
+        | AgentState::Idle(
+            None
+            | Some(
+                IdleOutcome::Asked
+                | IdleOutcome::Waiting
+                | IdleOutcome::NoReport
+                | IdleOutcome::InvalidReport
+                | IdleOutcome::Failed
+                | IdleOutcome::Stopped
+                | IdleOutcome::Unknown,
+            ),
+        ) => true,
+    }
+}
+
+fn live_children(host: &dyn Host) -> Rendered {
+    let nodes: Vec<AgentNode> = own_children(host)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|n| awaited(n.state))
+        .collect();
+    if nodes.is_empty() {
+        return Rendered::default();
+    }
+    let now = now_ms(host);
+    let children: Vec<(&str, AgentState, u64)> = nodes
+        .iter()
+        .map(|n| (n.path.as_str(), n.state, now.saturating_sub(n.since_ms)))
+        .collect();
+    Rendered {
+        text: Some(live_children_line(&children)),
+        snapshot: String::new(),
     }
 }
 
@@ -647,12 +695,13 @@ impl Plugin for AgentTools {
     fn render_section<'a>(
         &'a self,
         name: &'a str,
-        _at: At,
+        at: At,
         previous: Prior,
         _target: Option<&'a str>,
     ) -> BoxFuture<'a, Rendered> {
-        let rendered = match name {
-            KEPT_WARM => kept_warm(self.host.as_ref(), &previous),
+        let rendered = match (name, at) {
+            (KEPT_WARM, _) => kept_warm(self.host.as_ref(), &previous),
+            (CHILDREN, At::Head) => live_children(self.host.as_ref()),
             _ => Rendered::default(),
         };
         Box::pin(std::future::ready(rendered))

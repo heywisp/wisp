@@ -1,6 +1,7 @@
 use futures::executor::block_on;
 use wisp_plugin_api::host::{AgentRow, Instant, Relation, WarmRow};
 use wisp_plugin_api::manifest::{Manifest, Origin, Switch, is_static_sentence};
+use wisp_plugin_api::tree::HoldReason;
 use wisp_plugin_testkit::host::{FakeCall, FakeHost, agent_node as node, identity};
 
 use super::*;
@@ -803,4 +804,98 @@ fn a_child_is_named_again_only_after_another_refresh_and_a_head_names_every_list
     let head = kept_warm_text(&host, At::Head, Prior::None, Some(&first.snapshot));
     assert_eq!(head.text.as_deref(), Some(TWO_NAMED));
     assert!(TWO_NAMED.ends_with(".\n"));
+}
+
+const RUNNING_AND_NO_REPORT: &str = "Child agents at the start of this context window, except those ended or idle after a report, each with its state and the time since it last started or stopped working or waiting (waiting for an endpoint counts as working): /lead/planner (running, 2m05s), /lead/coder (idle: no_report, 41s).\nTheir reports arrive as messages.\n";
+
+fn children_text(host: &FakeHost, at: At, previous: Prior, target: Option<&str>) -> Rendered {
+    block_on(plugin(host).render_section(CHILDREN, at, previous, target))
+}
+
+#[test]
+fn a_head_lists_own_children_not_idle_after_a_report_and_nothing_else_does() {
+    let host = lead_tree(&[
+        ("/lead/planner", AgentState::Running, 125, None),
+        ("/lead/planner/deep", AgentState::Running, 60, None),
+        ("/lead/done", REPORTED, 4000, None),
+        (
+            "/lead/coder",
+            AgentState::Idle(Some(IdleOutcome::NoReport)),
+            41,
+            None,
+        ),
+        ("/lead/ended", AgentState::Ended, 9, None),
+        ("/other", AgentState::Running, 9, None),
+    ]);
+    let listed = Rendered {
+        text: Some(RUNNING_AND_NO_REPORT.to_owned()),
+        snapshot: String::new(),
+    };
+    assert_eq!(children_text(&host, At::Head, Prior::None, None), listed);
+    let seen = Prior::Snapshot(RUNNING_AND_NO_REPORT.to_owned());
+    assert_eq!(children_text(&host, At::Head, seen, Some("x")), listed);
+    for at in [At::Start, At::Turn] {
+        assert_eq!(
+            children_text(&host, at, Prior::None, None),
+            Rendered::default()
+        );
+    }
+    let outside = FakeHost {
+        identity: None,
+        ..host.clone()
+    };
+    let settled = lead_tree(&[
+        ("/lead/done", REPORTED, 4000, None),
+        ("/lead/ended", AgentState::Ended, 9, None),
+        ("/lead/planner/deep", AgentState::Running, 60, None),
+    ]);
+    for quiet in [outside, settled, lead_tree(&[])] {
+        assert_eq!(
+            children_text(&quiet, At::Head, Prior::None, None),
+            Rendered::default()
+        );
+    }
+}
+
+#[test]
+fn every_state_is_awaited_except_ended_and_idle_after_a_report() {
+    let queued = [
+        QueueReason::Concurrency,
+        QueueReason::Stagger,
+        QueueReason::Endpoint,
+        QueueReason::Retry,
+        QueueReason::Unknown,
+    ];
+    let held = [
+        HoldReason::Stopped,
+        HoldReason::HeldMessages,
+        HoldReason::RetryOffer,
+        HoldReason::Concurrency,
+        HoldReason::Unknown,
+    ];
+    let outcomes = [
+        IdleOutcome::Reported,
+        IdleOutcome::Asked,
+        IdleOutcome::Waiting,
+        IdleOutcome::NoReport,
+        IdleOutcome::InvalidReport,
+        IdleOutcome::Failed,
+        IdleOutcome::Stopped,
+        IdleOutcome::Unknown,
+    ];
+    let states: Vec<AgentState> = [
+        AgentState::Running,
+        AgentState::Stopping,
+        AgentState::Ended,
+        AgentState::Unknown,
+        AgentState::Idle(None),
+    ]
+    .into_iter()
+    .chain(queued.map(AgentState::Queued))
+    .chain(held.map(AgentState::Held))
+    .chain(outcomes.map(|o| AgentState::Idle(Some(o))))
+    .collect();
+    let left_out: Vec<AgentState> = states.iter().copied().filter(|s| !awaited(*s)).collect();
+    assert_eq!(left_out, [AgentState::Ended, REPORTED]);
+    assert_eq!(states.len(), 23);
 }
