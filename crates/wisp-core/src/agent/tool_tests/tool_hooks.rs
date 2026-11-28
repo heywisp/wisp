@@ -490,6 +490,7 @@ async fn after_tool_changes_reach_the_model_but_leave_tool_call_finished_as_toda
 async fn held_credentials_are_masked_before_hooks_events_and_commit() {
     const KEY: &str = "CANARY-held-tool-result-credential";
     const HOOK_KEY: &str = "CANARY-held-after-hook-credential";
+    const UNREGISTERED: &str = "sk-CANARYHookAuditFake1234567890";
     let note = wisp_tool_text::output::HELD_KEY_NOTE;
     crate::session::register_secrets([KEY.to_owned(), HOOK_KEY.to_owned()]);
     let env = Env::new("masked-tool-result");
@@ -502,6 +503,7 @@ async fn held_credentials_are_masked_before_hooks_events_and_commit() {
             echo("c4", "append"),
             echo("c5", KEY),
             echo("c6", KEY),
+            echo("c7", "plain"),
         ]),
         done("ok"),
     ]);
@@ -518,22 +520,42 @@ async fn held_credentials_are_masked_before_hooks_events_and_commit() {
             Event::AfterTool(result) if result.call_id == "c6" => {
                 Reply::Rewrite("value: [redacted]".into())
             }
+            Event::AfterTool(result) if result.call_id == "c7" => {
+                Reply::Append(vec![UNREGISTERED.into()])
+            }
             _ => Reply::None,
         };
         Box::pin(async move { reply })
     });
-    let mut agent = hooked(provider.clone(), &env, one("after-tool", script, &calls)).with_log(
+    let tail: HookScript = Arc::new(|_, _, event| {
+        let reply = match event {
+            Event::AfterTool(result) if result.call_id == "c3" => {
+                Reply::Append(vec!["tail".into()])
+            }
+            _ => Reply::None,
+        };
+        Box::pin(async move { reply })
+    });
+    let mut sources = one("after-tool", script, &calls);
+    sources.push(hook_source(
+        "bb",
+        &hook_body("tail", "after-tool", "after = [\"aa/h\"]\n"),
+        tail,
+        &calls,
+    ));
+    let mut agent = hooked(provider.clone(), &env, sources).with_log(
         SessionLog::new(Box::new(store.clone()), "s1"),
         log_context(),
     );
     let (_, events) = turn(&mut agent, "go").await;
     check_events(&events);
+    let plain = |id: &str| matches!(id, "c2" | "c7");
     let results = last_results(&provider);
     for (id, text, _) in &results {
         assert!(!text.contains(KEY) && !text.contains(HOOK_KEY));
-        assert_eq!(text.matches(note).count(), usize::from(id != "c2"));
-        assert_eq!(text.contains(crate::session::REDACTED), id != "c2");
-        if id != "c2" {
+        assert_eq!(text.matches(note).count(), usize::from(!plain(id)));
+        assert_eq!(text.contains(crate::session::REDACTED), !plain(id));
+        if !plain(id) {
             assert_eq!(text.lines().last(), Some(note));
         }
     }
@@ -561,7 +583,7 @@ async fn held_credentials_are_masked_before_hooks_events_and_commit() {
         );
         assert_eq!(
             notes.iter().filter(|line| line.as_str() == note).count(),
-            usize::from(call_id != "c2")
+            usize::from(!plain(&call_id))
         );
     }
     let seen = calls.of("h");
@@ -586,9 +608,23 @@ async fn held_credentials_are_masked_before_hooks_events_and_commit() {
     );
     let committed: Vec<_> = rebuilt.iter().flat_map(super::results).collect();
     for (id, text, _) in committed {
-        assert_eq!(text.matches(note).count(), usize::from(id != "c2"));
+        assert_eq!(text.matches(note).count(), usize::from(!plain(id)));
         assert!(!text.contains(KEY) && !text.contains(HOOK_KEY));
     }
+    let live = applied(&events);
+    let shown = serde_json::to_string(&live).unwrap();
+    assert!(!shown.contains(KEY) && !shown.contains(HOOK_KEY));
+    assert!(shown.contains(UNREGISTERED));
+    let redacted = crate::session::REDACTED;
+    assert!(live.contains(&(
+        "bb/tail".to_owned(),
+        HookChange::Result {
+            before: redacted.into(),
+            after: format!("{redacted}\ntail"),
+        }
+    )));
+    let logged = pick!(&records, LogRecord { event: LogEvent::HookApplied { hook, change, .. }, .. } => (hook.clone(), change.clone()));
+    assert_eq!(logged, live);
 }
 
 #[tokio::test]

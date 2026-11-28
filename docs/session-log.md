@@ -673,6 +673,10 @@ a bare compaction refusal gets `Compaction stopped:`
 so forwarding and reattachment can recheck it. Ordinary provider errors and
 committed history keep their existing rules.
 
+The `result`, `text` and `continue` copies are not scanned: they keep
+registered-only masking, which the log record, the live event, the frames a host
+relays and a replay all apply.
+
 ## Checklist privacy
 
 Wisp replaces a whole checklist field (step text or section name) with
