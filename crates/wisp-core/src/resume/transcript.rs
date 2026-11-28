@@ -991,7 +991,7 @@ pub(crate) fn scrub_replayed_tool_call(
         {
             *refused = true;
         }
-        crate::tool::scrub_tool_call_display(tool, input, display, home, held, *refused);
+        crate::tool::scrub_tool_call(tool, input, display, home, held, *refused);
     }
 }
 

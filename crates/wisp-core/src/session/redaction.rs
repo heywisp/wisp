@@ -281,34 +281,27 @@ fn has_checklist_spans(event: &LogEvent) -> bool {
     matches!(event, LogEvent::InputAccepted { checklist_spans, .. } if !checklist_spans.is_empty())
 }
 
-fn has_tool_call_display(event: &LogEvent) -> bool {
-    matches!(
-        event,
-        LogEvent::ToolCallRequested {
-            display,
-            refused,
-            ..
-        } if crate::tool::tool_call_display_may_need_scrub_without_held(display, *refused)
-    )
+fn has_tool_call(event: &LogEvent) -> bool {
+    matches!(event, LogEvent::ToolCallRequested { .. })
 }
 
 pub(crate) fn log_needs_home(event: &mut LogEvent) -> bool {
     has_checklist_todos(event)
         || has_checklist_spans(event)
-        || has_tool_call_display(event)
+        || has_tool_call(event)
         || log_hook_audit(event).is_some()
 }
 
 pub(super) fn scrub(redactions: &Redactions, mut event: LogEvent, home: Option<&Path>) -> LogEvent {
     let has_checklist = has_checklist_todos(&event) || has_checklist_spans(&event);
-    let has_tool_display = has_tool_call_display(&event);
+    let tool_call = has_tool_call(&event);
     let audit = log_hook_audit(&mut event);
-    let fallback = (home.is_none() && (has_checklist || has_tool_display || audit.is_some()))
+    let fallback = (home.is_none() && (has_checklist || tool_call || audit.is_some()))
         .then(os_detection_home)
         .flatten();
     let home = home.or(fallback.as_deref());
     let hook_audited = audit.is_some_and(|audit| audit.scrub(home, redactions));
-    if !redactions.is_empty() || has_checklist || has_tool_display {
+    if !redactions.is_empty() || has_checklist || tool_call {
         event.redact(&Scrub {
             held: redactions,
             home,
@@ -334,7 +327,12 @@ fn call(
     refused: bool,
     redactions: &Scrub<'_>,
 ) {
-    crate::tool::scrub_tool_call_display(
+    let send = tool == wisp_protocol::agents::SEND_MESSAGE;
+    let to = send.then(|| input.get("to").cloned()).flatten();
+    let keep_code = !refused
+        && !send
+        && matches!(&display.view, Some(ToolView::Code { language: _, code }) if holds(input, code));
+    crate::tool::scrub_tool_call(
         tool,
         input,
         display,
@@ -345,17 +343,15 @@ fn call(
     if redactions.held.is_empty() {
         return;
     }
-    let send = tool == wisp_protocol::agents::SEND_MESSAGE;
-    let to = send.then(|| input.get_mut("to").map(Value::take)).flatten();
     let code = match &mut display.view {
-        Some(ToolView::Code { language: _, code }) if !refused && !send && holds(input, code) => {
-            Some(std::mem::take(code))
-        }
+        Some(ToolView::Code { language: _, code }) if keep_code => Some(std::mem::take(code)),
         _ => None,
     };
     input.redact(redactions);
     display.redact(redactions);
-    if let (Some(to), Some(slot)) = (to, input.get_mut("to")) {
+    if let (Some(to), Some(slot)) = (to, input.get_mut("to"))
+        && !slot.is_null()
+    {
         *slot = to;
     }
     if let (

@@ -1023,9 +1023,27 @@ fn a_scrubbed_or_truncated_other_display_never_re_exposes_raw_input_keys() {
         }),
         ms(18),
     );
+    t.apply(
+        &tool_requested(Requested {
+            call_id: "s19".to_owned(),
+            tool: "wiped".to_owned(),
+            input: json!({
+                "description": "CANARY-desc-line",
+                "note": "{}\nCANARY-note-two\nCANARY-note-three"
+            }),
+            action: ToolAction::Other {
+                name: "wiped".to_owned(),
+            },
+            target: "{}".to_owned(),
+            ..Requested::default()
+        }),
+        ms(19),
+    );
     for detail in [Detail::Scrollback, Detail::Full] {
         let rows = text(&t.rows(&r(80), detail));
         assert!(rows.contains("tool {}"), "{rows}");
+        assert!(rows.contains("wiped {}"), "{rows}");
+        assert!(!rows.contains("(+"), "{rows}");
         assert!(rows.contains("gadget {}"), "{rows}");
         assert!(rows.contains("replay {}"), "{rows}");
         assert!(rows.contains("malformed {}"), "{rows}");
@@ -1059,6 +1077,16 @@ fn a_scrubbed_or_truncated_other_display_never_re_exposes_raw_input_keys() {
         ] {
             assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
         }
+    }
+    let renderer = Renderer::new(Layout::new(80, GlyphSet::Unicode));
+    let last = tool_cells(&t).last().map(|(index, _)| *index).unwrap();
+    let page = t.cell_page(last, &renderer).unwrap();
+    let page = format!("{}\n{}", text(&[page.title]), text(&page.body));
+    assert!(!page.contains("CANARY"), "{page}");
+    for openable in t.openables(Layout::new(80, GlyphSet::Unicode)) {
+        let line = text(&[openable.line]);
+        assert!(!line.contains("CANARY"), "{line}");
+        assert!(!openable.filter.contains("CANARY"), "{}", openable.filter);
     }
 }
 

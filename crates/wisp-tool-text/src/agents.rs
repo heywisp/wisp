@@ -354,7 +354,7 @@ pub fn renamed(renamed: &Renamed) -> String {
 pub fn check_todos(todos: &[String]) -> Result<(), String> {
     todos::check_count(todos.len(), 0)?;
     for (i, text) in todos.iter().enumerate() {
-        todos::check_step(&format!("`todos` item {}", i + 1), text)?;
+        todos::check_step(&format!("`{}` item {}", todos::FIELD, i + 1), text)?;
     }
     Ok(())
 }

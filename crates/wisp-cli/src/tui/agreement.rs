@@ -1486,6 +1486,22 @@ fn fallback_display_and_renderer_brace_corroboration_stay_in_agreement() {
         }
     }
 
+    let (display, rendered) = render_fallback(
+        "described",
+        json!({
+            "description": "CANARY-description-line",
+            "note": "{}\nCANARY-note-two",
+            "z.sk-ant-CANARY0123456789012345": 1
+        }),
+    );
+    assert_eq!(display.target, "{}");
+    for rows in &rendered {
+        assert!(rows.contains("Used described {}"), "{rows}");
+        for forbidden in ["CANARY", "(+"] {
+            assert!(!rows.contains(forbidden), "{forbidden}: {rows}");
+        }
+    }
+
     let (_, rendered) = render_fallback("tab_case", json!({"hello\tworld": 1}));
     for rows in &rendered {
         assert!(rows.contains("Used tab_case {}"), "{rows}");

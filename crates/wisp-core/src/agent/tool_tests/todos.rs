@@ -249,6 +249,44 @@ async fn a_rewritten_checklist_keeps_private_fields_out_of_its_result_and_update
 }
 
 #[tokio::test]
+async fn a_checklist_calls_private_text_is_hidden_in_its_event_and_record_and_resumed_as_sent() {
+    let email = ["CANARY-checklist-input", "example.invalid"].join("@");
+    let sent = input(&[item(&format!("Mail {email}"), TodoStatus::InProgress)]);
+    let hidden = input(&[item(crate::session::REDACTED, TodoStatus::InProgress)]);
+    let live = scripted(vec![uses(&[call("t1", NAME, sent)]), done("ok")]);
+    let env = Env::new("todos-private-input");
+    let store = MemoryStore::default();
+    let mut agent = checklisting(live.clone(), &env).with_log(
+        SessionLog::new(Box::new(store.clone()), "s1"),
+        log_context(),
+    );
+    let (_, events) = turn(&mut agent, "plan it").await;
+    assert_eq!(
+        pick!(&events, AgentEvent::ToolCallRequested { input, .. } => input.clone()),
+        std::slice::from_ref(&hidden)
+    );
+    let logged = log_events(&store);
+    assert_eq!(
+        pick!(&logged, LogEvent::ToolCallRequested { input, .. } => input.clone()),
+        [hidden]
+    );
+    let live = live.sent();
+    assert!(live[1].text().contains(&email), "{}", live[1].text());
+    let records = store.read("s1").unwrap();
+    let after = scripted(vec![done("again")]);
+    let mut resumed = resume_with(&env, &records, after.clone(), &[NAME]);
+    turn(&mut resumed, "go on").await;
+    let after = after.sent();
+    assert_eq!(
+        after[0].messages[..live[1].messages.len()],
+        live[1].messages[..]
+    );
+    let mut all = live;
+    all.extend(after);
+    assert_one_prefix(&all);
+}
+
+#[tokio::test]
 async fn a_rewind_past_an_update_restores_the_earlier_list_and_a_resume_shows_the_latest() {
     let env = Env::new("todos-rewind");
     let store = MemoryStore::default();

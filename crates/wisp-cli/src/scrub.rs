@@ -64,7 +64,10 @@ impl Scrub {
 
 #[cfg(test)]
 pub(crate) mod testing {
-    use wisp_protocol::{AgentPath, RejectKind, TodoItem, TodoStatus};
+    use wisp_protocol::{
+        AgentPath, OutputKind, RejectKind, TodoItem, TodoStatus, ToolAction, ToolDisplay,
+        ToolPurpose,
+    };
 
     use super::*;
 
@@ -93,6 +96,23 @@ pub(crate) mod testing {
             kind: Some(RejectKind::InputBlocked),
             reason: format!("blocked {CANARY}"),
         };
-        vec![checklist, child, blocked]
+        let call = AgentEvent::ToolCallRequested {
+            step: 1,
+            block: 0,
+            call_id: "c1".into(),
+            tool: "bash".into(),
+            input: serde_json::json!({"command": "ls", "description": format!("Check {CANARY}")}),
+            display: ToolDisplay {
+                action: ToolAction::Run,
+                verbs: None,
+                target: "ls".into(),
+                output: OutputKind::Text,
+                view: None,
+                title: None,
+                purpose: ToolPurpose::Run,
+            },
+            refused: false,
+        };
+        vec![checklist, child, blocked, call]
     }
 }

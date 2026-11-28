@@ -11,8 +11,8 @@ use wisp_plugin_api::tools::{
 use wisp_plugin_api::types::{Action, Display, Failure, Outcome, OutputKind, ToolRun};
 use wisp_plugin_api::{BoxFuture, Bundled, Plugin};
 use wisp_tool_text::todos::{
-    MAX_ITEMS, MIN_ITEMS, STATUSES, bad_status, check, check_count, normal, status_named, target,
-    updated,
+    FIELD, MAX_ITEMS, MIN_ITEMS, STATUSES, bad_status, check, check_count, normal, status_named,
+    target, updated,
 };
 
 pub use wisp_tool_text::todos::NAME;
@@ -40,7 +40,7 @@ pub fn schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "todos": {
+            FIELD: {
                 "type": "array",
                 "description": "The whole checklist, in order. It replaces the previous one.",
                 "minItems": MIN_ITEMS,
@@ -66,7 +66,7 @@ pub fn schema() -> Value {
                 }
             }
         },
-        "required": ["todos"],
+        "required": [FIELD],
         "additionalProperties": false
     })
 }
@@ -144,11 +144,11 @@ pub fn parse(input: &Value) -> Result<Vec<Todo>, String> {
     let map = input
         .as_object()
         .ok_or_else(|| "input must be an object".to_owned())?;
-    only_fields(map, &["todos"], "")?;
+    only_fields(map, &[FIELD], "")?;
     let list = map
-        .get("todos")
+        .get(FIELD)
         .and_then(Value::as_array)
-        .ok_or_else(|| "`todos` must be an array".to_owned())?;
+        .ok_or_else(|| format!("`{FIELD}` must be an array"))?;
     check_count(list.len(), MIN_ITEMS)?;
     let items = list
         .iter()

@@ -721,6 +721,12 @@ impl ToolCell {
         self.name = one_line(tool);
         self.call_id = Some(call_id.to_owned());
         let cleaned = clean_display(display, input);
+        let input = if matches!(cleaned.action, ToolAction::Other { .. }) && cleaned.target == "{}"
+        {
+            &Value::Null
+        } else {
+            input
+        };
         self.diff = display.view.as_ref().and_then(DiffBody::of).map(Box::new);
         self.process = display
             .view
