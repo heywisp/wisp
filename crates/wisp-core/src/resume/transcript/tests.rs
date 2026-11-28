@@ -54,6 +54,39 @@ fn replay_scrubs_legacy_hook_block_messages_and_results_independently() {
 }
 
 #[test]
+fn replay_masks_hook_changes_holding_a_secret_registered_after_the_write() {
+    use wisp_protocol::HookChange;
+
+    let canary = "CANARYOpaqueReplayHookChange";
+    let hooked = |change| LogEvent::HookApplied {
+        hook: "aa/h".into(),
+        point: "after-tool".into(),
+        turn: Some(1),
+        step: None,
+        call_id: None,
+        input_id: None,
+        change,
+    };
+    let logs = records(vec![
+        hooked(HookChange::Result {
+            before: canary.into(),
+            after: format!("{canary} tail"),
+        }),
+        hooked(HookChange::Text {
+            before: format!("typed {canary}"),
+            after: canary.into(),
+        }),
+        hooked(HookChange::Continue {
+            text: format!("{canary}!"),
+        }),
+    ]);
+    crate::session::register_secrets([canary.to_owned()]);
+    let shown = serde_json::to_string(&transcript(&logs, &Toolbox::default(), None)).unwrap();
+    assert!(!shown.contains(canary));
+    assert_eq!(shown.matches(REDACTED).count(), 5);
+}
+
+#[test]
 fn replay_scrubs_terminal_compaction_refusals_even_without_a_visible_failure() {
     use wisp_protocol::{SessionView, link::ToClient};
 

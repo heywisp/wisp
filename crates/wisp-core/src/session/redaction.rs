@@ -146,6 +146,7 @@ pub(crate) enum HookAudit<'a> {
     Text(&'a mut String),
     Formatted(&'a mut String),
     BlockedTool(Option<&'a mut String>, Option<&'a mut String>),
+    Held(Option<&'a mut String>, &'a mut String),
 }
 
 macro_rules! hook_audit {
@@ -155,6 +156,14 @@ macro_rules! hook_audit {
                 change: HookChange::Input { before, after },
                 ..
             } => Some(HookAudit::Input(before, after)),
+            $event_type::HookApplied {
+                change: HookChange::Result { before, after } | HookChange::Text { before, after },
+                ..
+            } => Some(HookAudit::Held(Some(before), after)),
+            $event_type::HookApplied {
+                change: HookChange::Continue { text },
+                ..
+            } => Some(HookAudit::Held(None, text)),
             $event_type::HookApplied {
                 change: HookChange::Blocked { reason },
                 ..
@@ -219,6 +228,11 @@ impl HookAudit<'_> {
                     scrub_hook_failure(text, home, held);
                 }
                 return audited_message;
+            }
+            Self::Held(before, after) => {
+                for text in before.into_iter().chain([after]) {
+                    *text = held.scrub(text);
+                }
             }
         }
         true
@@ -724,12 +738,10 @@ content!(wisp_protocol::HookOutcome, redactions, {
     Self::Blocked { reason: _ } | Self::Failed { message: _ } => [],
     Self::Rejected { rule } => [rule],
 });
-content!(wisp_protocol::HookChange, redactions, {
-    Self::Input { before: _, after: _ } => [],
-    Self::Result { before, after } | Self::Text { before, after } => [before, after],
-    Self::Continue { text } => [text],
-    Self::Blocked { reason: _ } => [],
-    Self::Unknown => [],
+content!(wisp_protocol::HookChange, _redactions, {
+    Self::Input { before: _, after: _ } | Self::Result { before: _, after: _ } |
+    Self::Text { before: _, after: _ } => [],
+    Self::Continue { text: _ } | Self::Blocked { reason: _ } | Self::Unknown => [],
 });
 content!(wisp_protocol::SearchEnd, redactions, {
     Self::Done(outcome) => [outcome],

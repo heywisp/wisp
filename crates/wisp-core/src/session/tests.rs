@@ -4648,18 +4648,19 @@ async fn send_scrubbed_handles_hook_audit_and_spanned_brief_together_without_dea
     .unwrap() else {
         panic!("expected a session snapshot fixture");
     };
-    let hook_event = AgentEvent::HookApplied {
+    let hooked = |change| AgentEvent::HookApplied {
         hook: "aa/h".into(),
         point: "before-tool".into(),
         turn: None,
         step: None,
         call_id: None,
         input_id: None,
-        change: HookChange::Input {
-            before: json!({"k": canary}),
-            after: json!({"k": canary, (REDACTED): "kept"}),
-        },
+        change,
     };
+    let hook_event = hooked(HookChange::Input {
+        before: json!({"k": canary}),
+        after: json!({"k": canary, (REDACTED): "kept"}),
+    });
     let terminal_event = AgentEvent::TurnEnded {
         outcome: TurnOutcome::Error {
             kind: ErrorKind::InvalidResponse,
@@ -4677,7 +4678,22 @@ async fn send_scrubbed_handles_hook_audit_and_spanned_brief_together_without_dea
     let snapshot = AgentEvent::SessionSnapshot {
         answers: RequestId(9),
         view: SessionView {
-            events: vec![hook_event, terminal_event, primed],
+            events: vec![
+                hook_event,
+                terminal_event,
+                primed,
+                hooked(HookChange::Result {
+                    before: canary.into(),
+                    after: format!("{canary} tail"),
+                }),
+                hooked(HookChange::Text {
+                    before: format!("typed {canary}"),
+                    after: canary.into(),
+                }),
+                hooked(HookChange::Continue {
+                    text: format!("{canary}!"),
+                }),
+            ],
             ..SessionView::default()
         },
         now,
@@ -4707,6 +4723,7 @@ async fn send_scrubbed_handles_hook_audit_and_spanned_brief_together_without_dea
             checklist_spans,
             ..
         },
+        held_changes @ ..,
     ] = view.events.as_slice()
     else {
         panic!("{:#?}", view.events);
@@ -4714,6 +4731,22 @@ async fn send_scrubbed_handles_hook_audit_and_spanned_brief_together_without_dea
     assert_eq!(before, &json!({"k": REDACTED}));
     assert_eq!(after, &json!({"k": REDACTED, (REDACTED): "kept"}));
     assert_eq!(message, "Compaction stopped: [redacted]");
+    assert_eq!(
+        held_changes,
+        [
+            hooked(HookChange::Result {
+                before: REDACTED.into(),
+                after: format!("{REDACTED} tail"),
+            }),
+            hooked(HookChange::Text {
+                before: format!("typed {REDACTED}"),
+                after: REDACTED.into(),
+            }),
+            hooked(HookChange::Continue {
+                text: format!("{REDACTED}!"),
+            }),
+        ]
+    );
     assert!(
         text.contains("Keep task") && !text.contains(canary),
         "{text}"
