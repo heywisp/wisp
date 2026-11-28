@@ -341,7 +341,9 @@ The service reports `Restart { state, open }` when the unfinished work changes:
 elapsed time. The first reply to a user message also carries `opening`.
 Descriptions come from the tool display, never from interpreting a command.
 Numbered processes retain the description of the call that started them;
-processes set to keep running after Wisp exits are not waited for.
+processes set to keep running after Wisp exits are not waited for. A row's
+description and target hide registered secrets the way an accepted call's input
+does: masked in place, and `[redacted]` when a match is still there.
 
 `GetReady { on: false }` reports `cancelled` and lets work carry on. A parked
 turn takes its waiting messages and mail before its next request. Getting

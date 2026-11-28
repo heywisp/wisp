@@ -1412,17 +1412,19 @@ fn scrub_held_strings(input: &mut Value, held: &crate::session::Redactions) {
     if !value_has_held_match(input, held) {
         return;
     }
-    crate::session::scrub_json_strings(input, &|text| {
-        if !text_has_held_match(text, held) {
-            return text.to_owned();
-        }
-        let clean = held.scrub(text);
-        if text_has_held_match(&clean, held) {
-            crate::session::REDACTED.to_owned()
-        } else {
-            clean
-        }
-    });
+    crate::session::scrub_json_strings(input, &|text| scrub_held_text(text, held));
+}
+
+pub(crate) fn scrub_held_text(text: &str, held: &crate::session::Redactions) -> String {
+    if !text_has_held_match(text, held) {
+        return text.to_owned();
+    }
+    let clean = held.scrub(text);
+    if text_has_held_match(&clean, held) {
+        crate::session::REDACTED.to_owned()
+    } else {
+        clean
+    }
 }
 
 fn scrub_tool_call_input(

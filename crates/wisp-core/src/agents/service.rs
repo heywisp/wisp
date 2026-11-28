@@ -2945,6 +2945,8 @@ pub fn start_root(
     let home = agent.secret_check_home();
     let brief_owner = agent.brief_owner();
     let forward = tokio::spawn(async move {
+        let resolve =
+            |target: Option<&AgentPath>| observer.brief_owner(target.unwrap_or(&AgentPath::root()));
         loop {
             let event = tokio::select! {
                 biased;
@@ -2956,7 +2958,7 @@ pub fn start_root(
             };
             let Some(event) = event else {
                 if let Some(report) = observer.report() {
-                    let _ = host.send(report).await;
+                    send_scrubbed(&host, report, home.as_deref(), resolve).await;
                 }
                 continue;
             };
@@ -2970,13 +2972,10 @@ pub fn start_root(
                 tree.restart_rows = None;
             } else {
                 observer.observe(&AgentPath::root(), &event);
-                send_scrubbed(&host, event, home.as_deref(), |target| {
-                    observer.brief_owner(target.unwrap_or(&AgentPath::root()))
-                })
-                .await;
+                send_scrubbed(&host, event, home.as_deref(), resolve).await;
             }
             if recount && let Some(report) = observer.report() {
-                let _ = host.send(report).await;
+                send_scrubbed(&host, report, home.as_deref(), resolve).await;
             }
         }
     });

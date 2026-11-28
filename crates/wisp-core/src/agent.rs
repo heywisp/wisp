@@ -7093,6 +7093,7 @@ enum SensitiveEvent<'a> {
         display: &'a mut wisp_protocol::ToolDisplay,
         refused: bool,
     },
+    HeldText(&'a mut String),
 }
 
 #[derive(Clone, Default)]
@@ -7186,6 +7187,13 @@ fn visit_sensitive_event<'a>(
             display,
             refused: *refused,
         }),
+        AgentEvent::Restart { open, .. } => open
+            .iter_mut()
+            .flat_map(|row| row.title.iter_mut().chain([&mut row.target]))
+            .try_for_each(|text| visit(SensitiveEvent::HeldText(text))),
+        AgentEvent::ProcessStarted { target, .. } | AgentEvent::ProcessRestored { target, .. } => {
+            visit(SensitiveEvent::HeldText(target))
+        }
         AgentEvent::Agent { agent, event } => visit_sensitive_event(event, Some(agent), visit),
         AgentEvent::SessionSnapshot { view, state, .. } => view
             .events
@@ -7266,6 +7274,7 @@ fn collect_sensitive_changes<'a>(
                 display,
                 refused,
             } => crate::tool::scrub_tool_call(tool, input, display, home, held, refused),
+            SensitiveEvent::HeldText(text) => *text = crate::tool::scrub_held_text(text, held),
         }
         ControlFlow::Continue(())
     });

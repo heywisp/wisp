@@ -434,17 +434,19 @@ scrubbing where it hands events on: each JSONL line just before it is written
 window's opening view once. Each is scrubbed against the secrets known at that
 moment, so a secret Wisp learns while an event is still queued is hidden from
 the fields the kernel's scrubber covers: checklist steps and sections, a
-starting brief's checklist steps, hook audits and tool call displays and inputs (the rules
-are in `docs/session-log.md`, under "Checklist privacy" and "Hook audit
-redaction"). Other fields are not rescanned here. An event already handed on is
-not revisited, as on a host: the one event waiting in the relay's slot, and a
-view already built for drawing. A JSONL line for such an event is written while
-the secret registry is held for reading, so a reader that stops reading the
-output also holds back a new secret's registration until that line is written. A
+starting brief's checklist steps, hook audits, tool call displays and inputs,
+restart rows' descriptions and targets, and process start and restore targets
+(the rules are in `docs/session-log.md`, under "Checklist privacy" and "Hook
+audit redaction", and in `docs/agents.md`, under "Getting ready for a restart").
+Other fields are not rescanned here. An event already handed on is not
+revisited, as on a host: the one event waiting in the relay's slot, and a view
+already built for drawing. A JSONL line for such an event is written while the
+secret registry is held for reading, so a reader that stops reading the output
+also holds back a new secret's registration until that line is written. A
 suppressed checklist brief is dropped or replaced by what the kernel emits, in
-the JSONL output and the window alike. A suppressed opening view opens the window
-without its events, where a host closes the peer. A window attached to a host
-leaves all of this to the host.
+the JSONL output and the window alike. A suppressed opening view opens the
+window without its events, where a host closes the peer. A window attached to a
+host leaves all of this to the host.
 
 A host still depends on the computer keeping it alive. A login service that
 kills user processes at logout ends hosts, just as it ends tmux. Windows

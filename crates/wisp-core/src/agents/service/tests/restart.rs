@@ -389,6 +389,140 @@ async fn numbered_processes_hold_readiness_but_kept_processes_do_not_and_exit_wa
     }
 }
 
+const KEY: &str = "CANARYOpaqueRestartRowKey";
+
+fn keyed_call(id: &str, background: bool, finish: &str) -> B {
+    call(
+        id,
+        "bash",
+        json!({
+            "command": format!("while test ! -f {finish}; do sleep 0.01; done # {KEY}"),
+            "description": format!("Wait for {KEY}"),
+            "run_in_background": background,
+        }),
+    )
+}
+
+fn owners(rows: &[wisp_protocol::Unready]) -> Vec<&str> {
+    rows.iter().map(|row| row.agent.as_str()).collect()
+}
+
+fn assert_hidden(rows: &[wisp_protocol::Unready], titled: bool) {
+    assert!(!rows.is_empty());
+    for row in rows {
+        let title = row.title.as_deref().unwrap_or_default();
+        assert!(row.target.contains(crate::session::REDACTED), "{row:?}");
+        assert!(!row.target.contains(KEY) && !title.contains(KEY), "{row:?}");
+        assert!(
+            !titled || title.contains(crate::session::REDACTED),
+            "{row:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rows_hide_a_secret_registered_after_the_calls_started_in_both_reports() {
+    let scripts = vec![
+        (
+            "/",
+            vec![
+                uses(&[keyed_call("c1", false, "finish-root")]),
+                done("finished"),
+                done("noted"),
+            ],
+        ),
+        (
+            "/a",
+            vec![
+                uses(&[keyed_call("c1", false, "finish-a")]),
+                uses(&[report_call("r1", "done")]),
+            ],
+        ),
+    ];
+    let setup = Setup {
+        shell: true,
+        ..Setup::default()
+    };
+    let mut run = start("restart-secret-rows", setup, scripts).await;
+    run.spawn(spawn_request("a", "Work.")).await;
+    run.until("the child's call", |e| {
+        matches!(inner(e, "/a"), Some(AgentEvent::ToolCallStarted { .. }))
+    })
+    .await;
+    run.say("Work.").await;
+    run.until("the root's call", |e| {
+        matches!(e, AgentEvent::ToolCallStarted { .. })
+    })
+    .await;
+    crate::session::register_secrets([KEY.to_owned()]);
+    run.send(ClientCommand::GetReady { on: true }).await;
+    let rows = restart(&mut run, RestartState::GettingReady).await;
+    assert_eq!(owners(&rows), ["/", "/a"]);
+    assert_hidden(&rows, true);
+    fs::write(run.env.dir("work").join("finish-a"), []).unwrap();
+    let rows = restart(&mut run, RestartState::GettingReady).await;
+    assert_eq!(owners(&rows), ["/"]);
+    assert_hidden(&rows, true);
+    fs::write(run.env.dir("work").join("finish-root"), []).unwrap();
+    restart(&mut run, RestartState::Ready).await;
+    run.send(ClientCommand::GetReady { on: false }).await;
+    run.child_ended("/a").await;
+    run.root_ended().await;
+    run.quit().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_background_process_hides_a_registered_secret_in_its_row_and_start_event() {
+    for late in [false, true] {
+        crate::session::reset_held_for_test();
+        if !late {
+            crate::session::register_secrets([KEY.to_owned()]);
+        }
+        let scripts = vec![(
+            "/",
+            vec![
+                uses(&[keyed_call("b1", true, "finish")]),
+                done("started"),
+                done("woken"),
+            ],
+        )];
+        let setup = Setup {
+            shell: true,
+            ..Setup::default()
+        };
+        let mut run = start("restart-secret-process", setup, scripts).await;
+        run.say("Work.").await;
+        run.root_ended().await;
+        if late {
+            crate::session::register_secrets([KEY.to_owned()]);
+        }
+        run.send(ClientCommand::GetReady { on: true }).await;
+        let rows = restart(&mut run, RestartState::GettingReady).await;
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0].what, Unfinished::Process);
+        assert_hidden(&rows, late);
+        let started = run
+            .until("the process start", |e| {
+                matches!(e, AgentEvent::ProcessStarted { .. })
+            })
+            .await;
+        let AgentEvent::ProcessStarted { target, .. } = started else {
+            unreachable!()
+        };
+        if !late {
+            assert!(target.contains(crate::session::REDACTED), "{target}");
+            assert!(!target.contains(KEY), "{target}");
+        }
+        fs::write(run.env.dir("work").join("finish"), []).unwrap();
+        restart(&mut run, RestartState::Ready).await;
+        run.send(ClientCommand::GetReady { on: false }).await;
+        run.root_ended().await;
+        run.quit().await;
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn mail_and_a_childs_report_wait_while_parked_and_survive_cancel_or_stop_and_resume() {
     for stop in [false, true] {
