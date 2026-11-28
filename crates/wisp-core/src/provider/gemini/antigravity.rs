@@ -6,6 +6,7 @@ use std::time::Duration;
 use jiff::SignedDuration;
 use reqwest::header::HeaderValue;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_json::{Value, json};
 use toml::de::DeValue;
 use wisp_protocol::settings::ClientVersion;
@@ -196,6 +197,8 @@ pub(super) struct IneligibleTier {
     pub(super) reason_message: Option<String>,
     #[serde(default, rename = "reasonCode")]
     pub(super) reason_code: Option<String>,
+    #[serde(default, rename = "validationUrl")]
+    pub(super) validation_url: Option<IgnoredAny>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -331,15 +334,25 @@ fn select_tier(allowed: &[AllowedTier]) -> &str {
 }
 
 fn ineligible_error(tiers: &[IneligibleTier]) -> ProviderError {
+    let verify = tiers.iter().any(|tier| tier.validation_url.is_some());
+    let usable = |text: &&str| !verify || !super::holds_link(text);
     let reason = tiers.first().and_then(|tier| match &tier.reason_message {
-        Some(message) => super::clean_error_message(message),
+        Some(message) => Some(message.as_str())
+            .filter(usable)
+            .and_then(super::clean_error_message),
         None => tier
             .reason_code
             .as_deref()
+            .filter(usable)
             .and_then(super::clean_error_message)
             .map(|code| code.chars().take(MAX_ERROR_DETAIL_CHARS).collect()),
     });
     let reason = reason.unwrap_or_else(|| "account is not eligible for Antigravity".to_owned());
+    let reason = if verify {
+        super::with_verify_step(Some(reason))
+    } else {
+        reason
+    };
     ProviderError::classified(
         ErrorKind::Auth,
         format!("Antigravity subscription is not eligible: {reason}"),
@@ -540,10 +553,13 @@ mod tests {
                 "reasonMessage": "Workspace policy blocks claude-sonnet-5-5-20260301 and context-1m-2025-08-07 on org-abcdefghijklmnopqrstuvwx",
                 "email": "person@example.com",
                 "organization_id": "org-secret-999",
-                "cloudaicompanionProject": "secret-gcp-project"
+                "cloudaicompanionProject": "secret-gcp-project",
+                "validationUrl": crate::provider::gemini::tests::FAKE_LINK
             }]
         });
         let parsed: LoadCodeAssistResponse = serde_json::from_value(raw).unwrap();
+        assert!(parsed.ineligible_tiers[0].validation_url.is_some());
+        crate::provider::gemini::tests::assert_no_link(&format!("{parsed:?}"));
         let err = ineligible_error(&parsed.ineligible_tiers);
         assert_eq!(err.kind, ErrorKind::Auth);
         assert_eq!(err.detail.retry, RetryClass::Never);
@@ -556,12 +572,25 @@ mod tests {
         let code = IneligibleTier {
             reason_message: None,
             reason_code: Some(format!("sk-proj-CANARY_ab1_cd2_ef3 {}", "a".repeat(80))),
+            validation_url: None,
         };
         assert_eq!(
             ineligible_error(&[code]).message,
             format!(
                 "Antigravity subscription is not eligible: [redacted] {}",
                 "a".repeat(53)
+            )
+        );
+        let linked = IneligibleTier {
+            reason_message: None,
+            reason_code: Some(crate::provider::gemini::tests::FAKE_LINK.to_owned()),
+            validation_url: Some(IgnoredAny),
+        };
+        assert_eq!(
+            ineligible_error(&[linked]).message,
+            format!(
+                "Antigravity subscription is not eligible: account is not eligible for Antigravity. {}",
+                crate::provider::gemini::VERIFY_STEP
             )
         );
     }
