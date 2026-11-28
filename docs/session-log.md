@@ -579,7 +579,10 @@ like the endpoint's path must not have it rewritten: `session_started.cwd`,
 `cd`), `process_started.file`, `tool_call_started.file` and
 `tool_call_finished.output.file` (the output files `process` reads after a
 resume; the rest of `output` is still scrubbed), and every field of `instructions_loaded` except each diagnostic's
-`message`, which is still scrubbed. From version 30 the agent paths, names
+`message`, which is still scrubbed. `context_compacted.head` and `additions` are exempt too, since a resume
+sends those bytes, as are `context_compacted.block` and `compaction_prepared.block`, the provider's block
+verbatim, object keys included; the rest of both records' text, `summary` and `focus` among it, is scrubbed,
+`context_compacted.sections` (below) aside. From version 30 the agent paths, names
 and preset files a tree's resume reads back are exempt as well:
 `session_started.preset`, `parent.agent` and `parent.config.instructions` (with
 `parent.config.preset_values.instructions`), `agent_spawned.agent`, `cwd`,
