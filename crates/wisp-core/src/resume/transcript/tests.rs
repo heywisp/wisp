@@ -1613,6 +1613,24 @@ fn replay_scrubs_clipped_tool_call_display_when_secret_is_held() {
         },
         refused: false,
     });
+    log.push(LogEvent::ToolCallRequested {
+        turn: 1,
+        step: 1,
+        block: 2,
+        call_id: "c_old_write".to_owned(),
+        tool: "board_write".to_owned(),
+        input: json!({"board": "proj-[redacted]"}),
+        display: ToolDisplay {
+            action: ToolAction::Write,
+            verbs: None,
+            target: "proj-CANARYReplayS\u{2026}".to_owned(),
+            output: OutputKind::None,
+            view: None,
+            title: None,
+            purpose: ToolPurpose::Run,
+        },
+        refused: false,
+    });
     let replayed: Vec<_> = transcript(&records(log), &Toolbox::default(), None)
         .into_iter()
         .filter_map(|e| match e {
@@ -1622,7 +1640,9 @@ fn replay_scrubs_clipped_tool_call_display_when_secret_is_held() {
             _ => None,
         })
         .collect();
-    assert_eq!(replayed.len(), 2, "{replayed:?}");
+    assert_eq!(replayed.len(), 3, "{replayed:?}");
+    assert_eq!(replayed[2].0, "c_old_write");
+    assert_eq!(replayed[2].1.target, "{}");
     assert_eq!(replayed[0].0, "c_fallback");
     assert_eq!(replayed[0].1.target, "{}");
     assert_eq!(replayed[1].0, "c_show");

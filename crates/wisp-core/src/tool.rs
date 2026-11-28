@@ -1295,7 +1295,7 @@ pub(crate) fn fallback_display_with_held(
     raw_fallback_display(name, &Value::Null)
 }
 
-fn text_has_held_match(text: &str, held: &crate::session::Redactions) -> bool {
+pub(crate) fn text_has_held_match(text: &str, held: &crate::session::Redactions) -> bool {
     !held.is_empty() && any_display_spelling(text, |s| held.has_secret_check_match(s))
 }
 
@@ -1305,6 +1305,29 @@ fn value_has_held_match(value: &Value, held: &crate::session::Redactions) -> boo
 
 fn display_has_held_match(display: &ToolDisplay, held: &crate::session::Redactions) -> bool {
     !held.is_empty() && !all_display_strings(display, &mut |s| !text_has_held_match(s, held))
+}
+
+pub(crate) fn text_is_cut_through_held(text: &str, held: &crate::session::Redactions) -> bool {
+    any_display_spelling(text, |s| held.has_cut_match(s))
+}
+
+fn display_is_cut_through_held(display: &ToolDisplay, held: &crate::session::Redactions) -> bool {
+    !all_display_strings(display, &mut |s| !text_is_cut_through_held(s, held))
+}
+
+fn mask_cut_through_held(display: &mut ToolDisplay, held: &crate::session::Redactions) {
+    let mut mask = |text: &mut String| {
+        if text_is_cut_through_held(text, held) {
+            *text = crate::session::REDACTED.to_owned();
+        }
+    };
+    mask(&mut display.target);
+    display.title.iter_mut().for_each(&mut mask);
+    match &mut display.view {
+        Some(ToolView::Diff { title, .. }) => title.iter_mut().for_each(&mut mask),
+        Some(ToolView::Code { language, .. }) => language.iter_mut().for_each(&mut mask),
+        _ => {}
+    }
 }
 
 fn display_is_clipped(display: &ToolDisplay) -> bool {
@@ -1432,7 +1455,7 @@ pub(crate) fn scrub_tool_call(
     scrub_tool_call_input(input, home, held, refused);
 }
 
-fn scrub_tool_call_display(
+pub(crate) fn scrub_tool_call_display(
     tool: &str,
     input: &Value,
     display: &mut ToolDisplay,
@@ -1470,6 +1493,7 @@ fn scrub_tool_call_display(
             };
             if collapsed_redacted
                 || value_prefix_risk
+                || (value_has_redacted(input) && text_is_cut_through_held(&display.target, held))
                 || !fallback_keys_safe(input, key_safe)
                 || !display_text_is_safe_with_held(&display.target, home, held)
             {
@@ -1493,13 +1517,22 @@ fn scrub_tool_call_display(
         }
         return;
     }
-    if display.view.is_none() && !held.is_empty() {
-        let lossy_held =
-            display_is_clipped(display) && source_is_unsafe(tool, input, home, held, false);
-        if display_has_held_match(display, held) || lossy_held {
-            *display = raw_fallback_display("tool", &Value::Null);
-            display.purpose = purpose;
+    if held.is_empty() {
+        return;
+    }
+    let clipped = display_is_clipped(display);
+    let lossy_held = clipped && source_is_unsafe(tool, input, home, held, false);
+    let masked_in_source = clipped && value_has_redacted(input);
+    if display.view.is_some() {
+        if lossy_held || masked_in_source {
+            mask_cut_through_held(display, held);
         }
+        return;
+    }
+    let cut_masked = masked_in_source && display_is_cut_through_held(display, held);
+    if display_has_held_match(display, held) || lossy_held || cut_masked {
+        *display = raw_fallback_display("tool", &Value::Null);
+        display.purpose = purpose;
     }
 }
 
