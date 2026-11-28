@@ -675,7 +675,7 @@ pub(super) fn session(
     };
     let view = (link.now.is_some() || link.view != wisp_protocol::SessionView::default())
         .then(|| std::mem::take(&mut link.view));
-    let (mut start, card) = crate::tui::session(opening, view, channels);
+    let (mut start, card) = crate::tui::session(opening, view, channels, None);
     start.session.attached = Some(wisp_tui::app::Attached {
         first_request: link.welcome.first_request,
         now: link.now.take(),

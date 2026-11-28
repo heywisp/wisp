@@ -11,6 +11,7 @@ mod output;
 mod plugins;
 mod restart;
 mod resume;
+mod scrub;
 mod settings;
 mod setup_server;
 mod tui;
@@ -1463,6 +1464,7 @@ struct Started {
     task: agent::AgentTask,
     presentation: Presentation,
     view: Option<wisp_protocol::SessionView>,
+    scrub: scrub::Scrub,
 }
 
 enum Stop {
@@ -1558,13 +1560,16 @@ async fn start_session(
     at: Option<&StartAt>,
 ) -> Result<Started, Stop> {
     let (built, presentation) = build_session(args, setup, keychain, chosen, at, None).await?;
+    let home = built.agent.secret_check_home();
     let started = start::start(built);
+    let scrub = scrub::Scrub::new(home, started.task.brief_owners());
     Ok(Started {
         channels: started.channels,
         opening: started.opening,
         task: started.task,
         presentation,
         view: started.view,
+        scrub,
     })
 }
 
@@ -1874,7 +1879,12 @@ async fn start_window(
     };
     notes.extend(leave_note.iter().cloned());
     let started = start_session(args, setup, keychain, chosen, at).await?;
-    let (mut session, card) = tui::session(started.opening, started.view, started.channels);
+    let (mut session, card) = tui::session(
+        started.opening,
+        started.view,
+        started.channels,
+        Some(started.scrub),
+    );
     session.session.leave_note = leave_note;
     session.warnings.extend(notes);
     session.session.alerts = keep::windows_notes(wsl_error);
@@ -2058,6 +2068,7 @@ async fn session(
                     started.channels,
                     started.opening,
                     started.view,
+                    started.scrub,
                 )
                 .await,
                 Completion::Local(started.task),

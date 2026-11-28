@@ -7485,6 +7485,15 @@ pub(crate) async fn send_scrubbed(
     }
 }
 
+pub async fn send_scrubbed_with_owners(
+    events: &mpsc::Sender<AgentEvent>,
+    event: AgentEvent,
+    home: Option<&Path>,
+    owners: &BriefOwners,
+) {
+    send_scrubbed(events, event, home, |path| owners.resolve(path)).await;
+}
+
 type StepStream = BoxStream<'static, Result<ProviderEvent, ProviderError>>;
 
 struct StepRequest<'a> {

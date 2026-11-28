@@ -15,6 +15,7 @@ use wisp_tui::term::Flags;
 use wisp_tui::term::prompt::CANCEL_EXIT;
 
 use crate::output::{RunEnd, SAVE_CUT};
+use crate::scrub::Scrub;
 pub(crate) use wisp_start::models::{Chosen, models};
 #[cfg(test)]
 pub(crate) use wisp_start::models::{caps_of, image_tier_of, rates_of, write_multipliers};
@@ -42,7 +43,12 @@ pub(crate) fn session(
     mut opening: ChatOpening,
     view: Option<SessionView>,
     channels: Channels,
+    scrub: Option<Scrub>,
 ) -> (SessionStart, CardSetup) {
+    let view = match (&scrub, view) {
+        (Some(scrub), Some(view)) => Some(scrub.opened_view(&opening, view)),
+        (_, view) => view,
+    };
     let card = std::mem::take(&mut opening.card);
     let start = opening.start.take().unwrap_or_default();
     let facts = SessionFacts::from(opening);
@@ -58,6 +64,7 @@ pub(crate) fn session(
     let events = crate::browser::opening(
         events,
         crate::auth::system_opener(wisp_core::mcp::is_sign_in_link),
+        scrub,
     );
     (
         SessionStart {
@@ -84,8 +91,9 @@ pub(crate) async fn run(
     channels: Channels,
     display: &wisp_tui::term::SavedDisplay,
     verbose: bool,
+    scrub: Scrub,
 ) -> RunEnd {
-    let (start, card) = session(opening, view, channels);
+    let (start, card) = session(opening, view, channels, Some(scrub));
     let opening = Opening::Session {
         session: Box::new(start.session),
         card,
@@ -658,5 +666,81 @@ mod tests {
         let help = Args::command().term_width(0).render_help().to_string();
         assert!(!help.contains("--replay"), "{help}");
         assert!(help.contains("--output"), "{help}");
+    }
+
+    fn resumed_view(view: SessionView) -> SessionView {
+        let opening: ChatOpening = serde_json::from_str(include_str!(
+            "../../wisp-protocol/tests/fixtures/opening.json"
+        ))
+        .unwrap();
+        let (commands, _sent) = tokio::sync::mpsc::channel(1);
+        let (_emit, events) = tokio::sync::mpsc::channel(1);
+        let channels = Channels {
+            commands,
+            events,
+            quit: None,
+        };
+        let (start, _) = session(
+            opening,
+            Some(view),
+            channels,
+            Some(crate::scrub::testing::scrub()),
+        );
+        start.session.resumed.unwrap().view
+    }
+
+    #[tokio::test]
+    async fn the_resumed_view_is_scrubbed_against_a_secret_registered_after_it_was_built() {
+        use crate::scrub::testing::{CANARY, queued};
+        use wisp_core::session::{REDACTED, register_secrets};
+
+        let view = SessionView {
+            events: queued(),
+            input_ids: vec!["tui-7".into()],
+            ..SessionView::default()
+        };
+        register_secrets([CANARY.to_owned()]);
+        let view = resumed_view(view);
+        let shown = serde_json::to_string(&view.events).unwrap();
+        assert!(!shown.contains(CANARY), "{shown}");
+        assert_eq!(shown.matches(REDACTED).count(), 3, "{shown}");
+        assert_eq!(view.input_ids, ["tui-7"]);
+    }
+
+    #[tokio::test]
+    async fn a_suppressed_resumed_view_loses_its_events_and_keeps_its_input_ids() {
+        use crate::scrub::testing::CANARY;
+        use wisp_core::session::register_secrets;
+        use wisp_protocol::{AgentEvent, AgentPath, DeliveryMode, InputId, TextSpan};
+
+        let prose = "Keep prose\n- [ ] ";
+        let text = format!("{prose}{CANARY}");
+        let brief = AgentEvent::Agent {
+            agent: AgentPath::new("/missing"),
+            event: Box::new(AgentEvent::InputAccepted {
+                opening: false,
+                id: InputId("brief-1".into()),
+                mode: DeliveryMode::Steer,
+                text: text.clone(),
+                images: Vec::new(),
+                replaces: None,
+                held: false,
+                front: false,
+                from: None,
+                checklist_spans: vec![TextSpan {
+                    start: prose.len(),
+                    end: text.len(),
+                }],
+            }),
+        };
+        let view = SessionView {
+            events: vec![brief],
+            input_ids: vec!["tui-1".into()],
+            ..SessionView::default()
+        };
+        register_secrets([CANARY.to_owned()]);
+        let view = resumed_view(view);
+        assert_eq!(view.events, []);
+        assert_eq!(view.input_ids, ["tui-1"]);
     }
 }

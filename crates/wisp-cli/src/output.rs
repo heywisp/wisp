@@ -5,6 +5,7 @@ use std::process::ExitCode;
 use tokio::sync::mpsc;
 use wisp_protocol::{AgentEvent, ClientCommand, InputId, Opening, SessionView};
 
+use crate::scrub::Scrub;
 use wisp_client::{AGENT_STOPPED, Channels, QuitBound, drain_within, interrupts};
 pub(crate) use wisp_start::start::{FORCED_EXIT, SAVE_CUT};
 use wisp_tui::present::choose::{self, Chosen, Presenter, Requested};
@@ -95,16 +96,19 @@ pub(crate) async fn run(
     channels: Channels,
     opening: Opening,
     view: Option<SessionView>,
+    scrub: Scrub,
 ) -> RunEnd {
     match p.presenter {
-        Presenter::Tui => crate::tui::run(opening, view, channels, &p.display, p.tui_verbose).await,
+        Presenter::Tui => {
+            crate::tui::run(opening, view, channels, &p.display, p.tui_verbose, scrub).await
+        }
         Presenter::Jsonl => {
             let used = view.map_or(0, |view| {
                 InputId::highest_numbered(JSONL_PREFIX, view.input_ids.iter().map(String::as_str))
             });
             let warnings = opening.start.map_or_else(Vec::new, |start| start.warnings);
             let warnings = warnings.into_iter().chain(jsonl_warnings(p));
-            piped(warnings, jsonl(channels, used)).await
+            piped(warnings, jsonl(channels, used, scrub)).await
         }
     }
 }
@@ -155,12 +159,13 @@ pub(crate) fn jsonl_line(event: &AgentEvent) -> Result<String, String> {
     wisp_protocol::jsonl::line(&event).map_err(|e| format!("could not encode an event: {e}"))
 }
 
-fn write_event(event: &AgentEvent) -> Result<(), String> {
-    let line = jsonl_line(event)?;
-    let mut out = std::io::stdout().lock();
-    out.write_all(line.as_bytes())
-        .and_then(|()| out.flush())
-        .map_err(|e| format!("could not write to stdout: {e}"))
+fn write_event(scrub: &Scrub, event: &AgentEvent, out: &mut impl Write) -> Result<(), String> {
+    scrub.write(event, |event| {
+        let line = jsonl_line(event)?;
+        out.write_all(line.as_bytes())
+            .and_then(|()| out.flush())
+            .map_err(|e| format!("could not write to stdout: {e}"))
+    })
 }
 
 pub(crate) fn read_lines(
@@ -246,9 +251,12 @@ fn settle(state: &mut JsonlState, event: JsonlEvent<'_>) -> Option<ClientCommand
     None
 }
 
-async fn jsonl(channels: Channels, sent: u64) -> Result<Drained, String> {
+async fn jsonl(channels: Channels, sent: u64, scrub: Scrub) -> Result<Drained, String> {
     let lines = read_lines(std::io::BufReader::new(std::io::stdin()));
-    jsonl_loop(channels, lines, interrupts()?, sent, write_event).await
+    jsonl_loop(channels, lines, interrupts()?, sent, move |event| {
+        write_event(&scrub, event, &mut std::io::stdout())
+    })
+    .await
 }
 
 pub(crate) async fn jsonl_loop(
