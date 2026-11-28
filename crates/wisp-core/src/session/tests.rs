@@ -3643,7 +3643,10 @@ fn question_text_answers_tool_results_and_a_code_views_code_are_exempt_from_reda
     };
     let store = MemoryStore::default();
     let mut log = SessionLog::new(Box::new(store.clone()), "s");
-    register(&Redactions::new(["/v1".to_owned()]));
+    register(&Redactions::new([
+        "/v1".to_owned(),
+        "CANARYheldPrefixSecret0123".to_owned(),
+    ]));
     let questions = vec![Question {
         header: "API /v1".into(),
         question: "Use the /v1 API?".into(),
@@ -3725,6 +3728,15 @@ fn question_text_answers_tool_results_and_a_code_views_code_are_exempt_from_reda
     };
     log.record(shown("/v1", "bash /v1", &format!("{code}\r\n"), &code));
     log.record(shown("/v1", "bash /v1", "echo ready", &code));
+    let cut_code = "echo [redacted] CANARYheldPrefixS\u{2026}".to_owned();
+    let apart = "echo CANARYheld\u{200B}PrefixSecret0123".to_owned();
+    log.record(shown(
+        "t-CANARYheldPrefixS\u{2026}",
+        "bash",
+        &cut_code,
+        &cut_code,
+    ));
+    log.record(shown("api", "bash", &apart, &apart));
     let unregistered = shown("api", "bash", "echo ready", "echo ready");
     assert_eq!(
         redaction::scrub(&Redactions::default(), unregistered.clone(), None),
@@ -3736,7 +3748,7 @@ fn question_text_answers_tool_results_and_a_code_views_code_are_exempt_from_reda
         .into_iter()
         .map(|r| r.event)
         .collect();
-    assert_eq!(events.len(), 5, "{events:?}");
+    assert_eq!(events.len(), 7, "{events:?}");
     assert_eq!(
         events[3],
         shown(
@@ -3755,6 +3767,23 @@ fn question_text_answers_tool_results_and_a_code_views_code_are_exempt_from_reda
             "curl https://api.example.com[redacted]/models"
         )
     );
+    for (event, code, shown_as) in [
+        (&events[5], cut_code, "[redacted]"),
+        (&events[6], apart, "List api"),
+    ] {
+        let LogEvent::ToolCallRequested { display, .. } = event else {
+            panic!("{event:?}");
+        };
+        assert_eq!(display.target, shown_as);
+        assert_eq!(display.title.as_deref(), Some(shown_as));
+        assert_eq!(
+            display.view,
+            Some(ToolView::Code {
+                language: Some("bash".into()),
+                code
+            })
+        );
+    }
     assert_eq!(
         events[..3],
         [

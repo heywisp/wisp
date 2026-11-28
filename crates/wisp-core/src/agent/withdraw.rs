@@ -338,8 +338,9 @@ impl Agent {
     }
 
     fn call_targets(&self) -> BTreeMap<String, String> {
+        let held = crate::session::held();
         self.calls()
-            .map(|(id, name, input)| (id.to_owned(), self.target_of(id, name, &input)))
+            .map(|(id, name, input)| (id.to_owned(), self.shown_target(id, name, &input, &held)))
             .collect()
     }
 

@@ -1185,6 +1185,63 @@ fn an_accepted_calls_input_hides_checklist_fields_and_registered_secrets_only() 
 }
 
 #[test]
+fn a_todos_string_hidden_for_an_identity_wipes_a_clipped_viewless_display_in_the_same_pass() {
+    let key = "sk-ant-CANARY0123456789012345";
+    let email = ["alice", "example.invalid"].join("@");
+    let none = crate::session::Redactions::default();
+    let late = crate::session::Redactions::new([email.clone(), key.to_owned()]);
+    let shown = |target: &str, view: Option<ToolView>| ToolDisplay {
+        action: ToolAction::Other {
+            name: "plug".to_owned(),
+        },
+        verbs: None,
+        target: target.to_owned(),
+        output: OutputKind::Text,
+        view,
+        title: None,
+        purpose: ToolPurpose::Show,
+    };
+    let wiped = ToolDisplay {
+        purpose: ToolPurpose::Show,
+        ..raw_fallback_display("tool", &Value::Null)
+    };
+    let code = || {
+        Some(ToolView::Code {
+            language: None,
+            code: "x".to_owned(),
+        })
+    };
+    let rows = [
+        (
+            format!("mail {email}"),
+            shown("mail al\u{2026}", None),
+            true,
+        ),
+        (format!("key {key}"), shown("key sk\u{2026}", None), true),
+        (
+            "Read the file".to_owned(),
+            shown("Read th\u{2026}", None),
+            false,
+        ),
+        (format!("mail {email}"), shown("mail alice", None), false),
+        (
+            format!("mail {email}"),
+            shown("mail al\u{2026}", code()),
+            false,
+        ),
+    ];
+    for (text, display, is_wiped) in rows {
+        let expected = if is_wiped { &wiped } else { &display };
+        let mut input = json!({"todos": [{"text": text, "status": "pending"}]});
+        let mut now = display.clone();
+        for held in [&none, &late] {
+            scrub_tool_call("plug", &mut input, &mut now, None, held, false);
+            assert_eq!(&now, expected, "{text}");
+        }
+    }
+}
+
+#[test]
 fn canonical_bytes_of_a_value_input_are_pinned() {
     let input: Value =
         serde_json::from_str(r#"{"z": 1, "a": {"y": [3, {"c": true, "b": null}], "x": "é"}}"#)

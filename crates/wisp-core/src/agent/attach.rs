@@ -145,10 +145,21 @@ impl Agent {
         })
     }
 
+    pub(super) fn shown_target(
+        &self,
+        call_id: &str,
+        name: &str,
+        input: &Value,
+        held: &crate::session::Redactions,
+    ) -> String {
+        crate::tool::scrub_held_text(&self.target_of(call_id, name, input), held)
+    }
+
     pub(super) fn call_target(&self, call_id: &str) -> Option<String> {
+        let held = crate::session::held();
         self.calls()
             .find(|(id, _, _)| *id == call_id)
-            .map(|(id, name, input)| self.target_of(id, name, &input))
+            .map(|(id, name, input)| self.shown_target(id, name, &input, &held))
     }
 
     pub(super) async fn attach(

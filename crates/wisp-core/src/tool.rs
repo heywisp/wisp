@@ -1276,6 +1276,12 @@ fn raw_fallback_display(name: &str, input: &Value) -> ToolDisplay {
     }
 }
 
+fn wipe_display(display: &mut ToolDisplay) {
+    let purpose = display.purpose;
+    *display = raw_fallback_display("tool", &Value::Null);
+    display.purpose = purpose;
+}
+
 pub(crate) fn fallback_display_with_held(
     name: &str,
     input: &Value,
@@ -1295,7 +1301,7 @@ pub(crate) fn fallback_display_with_held(
     raw_fallback_display(name, &Value::Null)
 }
 
-pub(crate) fn text_has_held_match(text: &str, held: &crate::session::Redactions) -> bool {
+fn text_has_held_match(text: &str, held: &crate::session::Redactions) -> bool {
     !held.is_empty() && any_display_spelling(text, |s| held.has_secret_check_match(s))
 }
 
@@ -1313,6 +1319,16 @@ pub(crate) fn text_is_cut_through_held(text: &str, held: &crate::session::Redact
 
 fn display_is_cut_through_held(display: &ToolDisplay, held: &crate::session::Redactions) -> bool {
     !all_display_strings(display, &mut |s| !text_is_cut_through_held(s, held))
+}
+
+fn scrub_viewed_held(display: &mut ToolDisplay, held: &crate::session::Redactions) {
+    if !display_has_held_match(display, held) {
+        return;
+    }
+    crate::session::redact_display(display, held);
+    if display_has_held_match(display, held) {
+        wipe_display(display);
+    }
 }
 
 fn mask_cut_through_held(display: &mut ToolDisplay, held: &crate::session::Redactions) {
@@ -1432,17 +1448,21 @@ fn scrub_tool_call_input(
     home: Option<&Path>,
     held: &crate::session::Redactions,
     refused: bool,
-) {
+) -> bool {
     if refused {
         if !value_is_safe_with_held(input, home, held) {
             *input = keys_only(input, home, held);
         }
-        return;
+        return false;
     }
+    let hid = std::cell::Cell::new(false);
     scrub_checklist_fields(input, &|text| {
-        crate::secrets::scan::scrub_field(text, home, held)
+        let clean = crate::secrets::scan::scrub_field(text, home, held);
+        hid.set(hid.get() || clean != text);
+        clean
     });
     scrub_held_strings(input, held);
+    hid.get()
 }
 
 pub(crate) fn scrub_tool_call(
@@ -1454,10 +1474,13 @@ pub(crate) fn scrub_tool_call(
     refused: bool,
 ) {
     scrub_tool_call_display(tool, input, display, home, held, refused);
-    scrub_tool_call_input(input, home, held, refused);
+    let todos_hidden = scrub_tool_call_input(input, home, held, refused);
+    if todos_hidden && display.view.is_none() && display_is_clipped(display) {
+        wipe_display(display);
+    }
 }
 
-pub(crate) fn scrub_tool_call_display(
+fn scrub_tool_call_display(
     tool: &str,
     input: &Value,
     display: &mut ToolDisplay,
@@ -1465,7 +1488,6 @@ pub(crate) fn scrub_tool_call_display(
     held: &crate::session::Redactions,
     refused: bool,
 ) {
-    let purpose = display.purpose;
     if is_bare_brace_fallback(display) {
         let ToolAction::Other { name } = &display.action else {
             return;
@@ -1478,8 +1500,7 @@ pub(crate) fn scrub_tool_call_display(
         if !display_text_is_safe_with_held(name, home, held)
             || ((name.contains('\u{2026}') || non_canonical_refused_name) && source_unsafe)
         {
-            *display = raw_fallback_display("tool", &Value::Null);
-            display.purpose = purpose;
+            wipe_display(display);
             return;
         }
         if display.target != "{}" {
@@ -1503,8 +1524,7 @@ pub(crate) fn scrub_tool_call_display(
             }
         }
         if !display_is_safe_with_held(display, home, held) {
-            *display = raw_fallback_display("tool", &Value::Null);
-            display.purpose = purpose;
+            wipe_display(display);
         }
         return;
     }
@@ -1514,8 +1534,7 @@ pub(crate) fn scrub_tool_call_display(
             || value_has_redacted(input))
             && source_is_unsafe(tool, input, home, held, true);
         if !display_is_safe_with_held(display, home, held) || lossy_risk {
-            *display = raw_fallback_display("tool", &Value::Null);
-            display.purpose = purpose;
+            wipe_display(display);
         }
         return;
     }
@@ -1529,12 +1548,12 @@ pub(crate) fn scrub_tool_call_display(
         if lossy_held || masked_in_source {
             mask_cut_through_held(display, held);
         }
+        scrub_viewed_held(display, held);
         return;
     }
     let cut_masked = masked_in_source && display_is_cut_through_held(display, held);
     if display_has_held_match(display, held) || lossy_held || cut_masked {
-        *display = raw_fallback_display("tool", &Value::Null);
-        display.purpose = purpose;
+        wipe_display(display);
     }
 }
 
